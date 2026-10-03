@@ -48,12 +48,13 @@ module RevaerDatabaseRebaseline
       if phase == "freeze" && File.exist?(init_path)
         raise Failure, "#{relative(init_path)} must remain absent during the freeze phase"
       end
-      if %w[assembly finalization].include?(phase) && !regular_file?(init_path)
+      if %w[assembly finalization feature-development].include?(phase) && !regular_file?(init_path)
         raise Failure, "#{relative(init_path)} is required during the #{phase} phase"
       end
       if phase == "finalization" && Digest::SHA256.file(init_path).hexdigest != final_sha256
         raise Failure, "final init SHA-256 does not match reviewed finalization bytes"
       end
+      SqlStatements.new(File.binread(init_path)) if phase == "feature-development"
 
       sha256_config("CANDIDATE_SHA256")
       positive_integer("CANDIDATE_STATEMENT_COUNT")
@@ -92,7 +93,7 @@ module RevaerDatabaseRebaseline
 
     def transition_phase
       phase = required_config("TRANSITION_PHASE")
-      return phase if %w[freeze assembly finalization].include?(phase)
+      return phase if %w[freeze assembly finalization feature-development].include?(phase)
 
       raise Failure, "unsupported or not-yet-implemented database transition phase: #{phase}"
     end

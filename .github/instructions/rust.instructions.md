@@ -29,6 +29,39 @@ If any Rust-path rule in this file conflicts with `AGENTS.md`, the root contract
 - Silent suppression is forbidden. `let _ = expr;` is forbidden when `expr` returns a `Result` or `Option` that represents a failure mode.
 - Discarding non-error values is acceptable when intentional; add a brief comment when the intent is not obvious.
 - Errors are logged once at the origin point, then propagated as data.
+- During discovery, a vanished candidate or descendant parent is expected
+  absence only after the retained declared root revalidates. Record the skipped
+  candidate and continue the batch; never downgrade declared-root loss or other
+  filesystem failures to absence.
+- Discovery directory inventory counts every raw filename byte before decoding
+  or filtering, rejects partial/over-limit inventories, and compares retained
+  descriptor observations before and after enumeration. A changed inventory
+  cannot supply stable aggregate membership or a clean absence census.
+- ADR 593 supersedes ADR 588/589's custom owner/controller and fingerprint
+  registration requirements. Restart unfinished steps and discard or overwrite
+  only their Revaer-owned temporary outputs. Preserve originals until verified
+  final replacement; reconcile an interrupted replacement before continuing.
+  Stop previous work before replay, retain ordinary cancellation/deadlines, and
+  record failures. Do not rebuild a custom ownership or control protocol.
+- Accepted ADR 594 replaces ADRs 512/513 and the named discovery coordination
+  contracts. Implement the full workflow locally; distributed workers and their
+  scaffolding are not approved. Rescan interrupted discovery without duplicate
+  jobs, reuse completed job checkpoints, and rebuild unfinished temporary outputs.
+  Budget peak scratch across concurrent jobs, remove obsolete intermediates after
+  their last consumer, and retain only needed recovery artifacts. Failed cleanup
+  stays charged until files are removed; retry it individually. Keep the existing
+  Revaer root lock and replacement safety, not distributed leases, recovery
+  leadership, rolling debit ledgers or an independent cleanup-owner protocol.
+- ADR 557 root startup precedes media facade and worker construction. Load the
+  approved source once, retain source descriptors and root locks through service
+  shutdown, and revalidate immediately before atomic activation. Missing or
+  rejected proof must persist the closed unavailable state without substituting
+  old readiness; a persistence failure prevents startup. Successful capability
+  probes alone never prove deployment ownership or persistent durability.
+  ADR 592 removes native external-writer assertions, not active-file change
+  handling. Unqualified filesystem/deployment evidence remains unavailable;
+  focused tmpfs tests are not package qualification or permission to drop the
+  required persistent-storage and Kubernetes paths.
 
 # Authoring And Lint Hygiene
 
@@ -63,15 +96,16 @@ If any Rust-path rule in this file conflicts with `AGENTS.md`, the root contract
   30-second application budget. Bootstrap must latch it before background-task
   waits; media-task cooperative waits must observe subsequent shortening and
   must not allocate fresh per-task grace. Preserve warnings and real join
-  classification. This local timer authority does not qualify independent
-  PID1 enforcement, post-abort/native/configuration settlement or recovery.
+  classification. ADR 593 removes independent PID1 enforcement as a required
+  implementation; local timer tests alone do not qualify restart recovery.
 - Bootstrap's configuration watcher shares that same authority with the media
   tasks. Stop polling and recheck drain before admitting a snapshot; once
   admitted, await its existing serial apply and completed limits result. Join
   cooperatively before the same shrinking cutoff, with no unbounded post-abort
   wait or fresh grace. Preserve WARN for deadline/abort, unconfirmed settlement
   and genuine join failure. A watcher join does not prove listener/pool, native
-  worker/destructor, revision-wide or PID1 quiescence; those S2 obligations remain.
+  worker/destructor or revision-wide settlement. ADR 593 governs recovery;
+  the superseded custom PID1 machinery must not become a prerequisite again.
 - ADR 586/588's E2E serving entry and its launch selection belong only in
   `cfg(test)` app bootstrap code. It must invoke the shared typed compliance
   preflight with an explicit test loader, then run the real application without

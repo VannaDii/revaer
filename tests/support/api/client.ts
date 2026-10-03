@@ -15,27 +15,10 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     headers: options.headers,
   });
 
-  return {
-    ...client,
-    GET: (...args: Parameters<typeof client.GET>) => {
-      recordApiCoverage('GET', String(args[0]));
-      return client.GET(...args);
+  client.use({
+    onRequest({ request, schemaPath }) {
+      recordApiCoverage(request.method, schemaPath);
     },
-    POST: (...args: Parameters<typeof client.POST>) => {
-      recordApiCoverage('POST', String(args[0]));
-      return client.POST(...args);
-    },
-    PUT: (...args: Parameters<typeof client.PUT>) => {
-      recordApiCoverage('PUT', String(args[0]));
-      return client.PUT(...args);
-    },
-    PATCH: (...args: Parameters<typeof client.PATCH>) => {
-      recordApiCoverage('PATCH', String(args[0]));
-      return client.PATCH(...args);
-    },
-    DELETE: (...args: Parameters<typeof client.DELETE>) => {
-      recordApiCoverage('DELETE', String(args[0]));
-      return client.DELETE(...args);
-    },
-  };
+  });
+  return client;
 }

@@ -282,3 +282,11 @@ db-seed:
     if [ -z "${DATABASE_URL:-}" ]; then db_managed="1"; fi; \
     REVAER_DB_MANAGED="${db_managed}" DATABASE_URL="${db_url}" just db-start; \
     cat scripts/dev-seed.sql | docker exec -i "${PG_CONTAINER:-revaer-db}" psql -U "${local_db_user}" -d revaer >/dev/null
+db-test-init name:
+    bash scripts/test-database-init.sh init {{quote(name)}}
+
+db-test-drop name:
+    bash scripts/test-database-init.sh drop {{quote(name)}}
+
+db-baseline-verify:
+    cargo run -p revaer-data --bin verify_database_baseline

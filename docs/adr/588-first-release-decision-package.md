@@ -1,6 +1,9 @@
 # First-Release Approval Proposal
 
-- Status: Accepted
+- Status: Superseded
+- Superseded by: [ADR 593](593-simple-checkpoint-recovery.md). Its recovery
+  decision replaces the custom supervisor machinery; unrelated approved choices
+  and transfer permissions remain in force as explicitly retained there.
 - Date: 2026-09-11
 - Operator approval: 2026-09-11: "Approved", in direct reply to the annotated
   approval question for choices 1-6 and, separately, transfers in 7.

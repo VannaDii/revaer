@@ -122,7 +122,12 @@ impl RootCatalogReadinessState {
         Ok(())
     }
 
-    pub(super) fn from_wire(
+    /// Validate closed source/attestation fields from a transport or database row.
+    ///
+    /// # Errors
+    /// Rejects unknown or incoherent states/reasons and noncanonical, zero or
+    /// out-of-range generations. Rejected values never appear in the error.
+    pub fn from_wire(
         source: &str,
         source_reason: Option<&str>,
         attestation: &str,

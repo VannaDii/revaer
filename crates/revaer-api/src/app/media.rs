@@ -82,6 +82,29 @@ pub struct MediaProfilePatchParams<'a> {
     pub schedule_interval_minutes: Option<i32>,
 }
 
+/// Server-selected admission mode; never inferred from client-supplied paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaAssociationRunTrigger {
+    /// Explicit operator discovery.
+    Manual,
+    /// Enabled scheduled discovery.
+    Schedule,
+    /// Enabled filesystem-event discovery.
+    Watcher,
+}
+
+impl MediaAssociationRunTrigger {
+    /// Canonical stored-procedure mode token.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Schedule => "schedule",
+            Self::Watcher => "watcher",
+        }
+    }
+}
+
 /// Preview media discovery for source paths under one profile association.
 #[derive(Debug, Clone)]
 pub struct MediaDiscoveryPreviewParams<'a> {
@@ -179,6 +202,8 @@ pub struct MediaProfileDesiredTargetParams {
 /// Upsert policy profile parameters.
 #[derive(Debug, Clone)]
 pub struct MediaPolicyUpsertParams<'a> {
+    /// Explicit complete output settings.
+    pub output: crate::models::MediaPolicyOutput,
     /// Actor performing the operation.
     pub actor_user_public_id: Uuid,
     /// Stable policy key.
@@ -314,6 +339,9 @@ pub struct MediaYamlDesiredTarget {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MediaYamlPolicy {
+    /// Portable output intent; omitted import settings remain dry-run-only.
+    #[serde(default)]
+    pub output: crate::models::MediaPolicyOutput,
     /// Stable policy key.
     pub policy_key: String,
     /// Positive catalog version.
@@ -384,8 +412,8 @@ pub struct MediaYamlValidationResult {
     pub valid: bool,
     /// Diagnostic issues.
     pub issues: Vec<MediaYamlIssue>,
-    /// Parsed bundle.
-    pub bundle: MediaYamlBundle,
+    /// Number of complete profile versions checked by the native compiler.
+    pub profile_count: usize,
 }
 
 /// Result of YAML apply.
@@ -473,6 +501,8 @@ pub struct MediaDesiredTargetResponse {
 /// Versioned policy profile response row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MediaPolicyResponse {
+    /// Complete output settings from the exact stored version.
+    pub output: crate::models::MediaPolicyOutput,
     /// Stable policy key.
     pub policy_key: String,
     /// Catalog version.
@@ -517,9 +547,9 @@ pub struct MediaJobRetentionResponse {
 pub struct MediaJobResponse {
     /// Job public id.
     pub media_job_public_id: Uuid,
-    /// Source path.
+    /// Candidate path relative to the job's immutable source root.
     pub source_path: String,
-    /// Output path.
+    /// Output path relative to the job's immutable output root.
     pub output_path: Option<String>,
     /// Status text.
     pub status: String,
@@ -725,6 +755,98 @@ impl Error for MediaServiceError {}
 /// Facade for media API operations.
 #[async_trait]
 pub trait MediaFacade: Send + Sync {
+    /// Read explicitly saved cadence for the latest immutable association.
+    async fn media_schedule_configuration(
+        &self,
+        id: Uuid,
+    ) -> Result<
+        Option<crate::models::media_schedule::MediaScheduleConfigurationResponse>,
+        MediaServiceError,
+    >;
+
+    /// Create explicitly selected cadence without enabling automatic discovery.
+    async fn media_schedule_configuration_create(
+        &self,
+        actor: Uuid,
+        id: Uuid,
+        request: &crate::models::media_schedule::MediaScheduleConfigurationRequest,
+    ) -> Result<crate::models::media_schedule::MediaScheduleConfigurationResponse, MediaServiceError>;
+    /// Replace cadence only when the persisted schedule revision matches.
+    async fn media_schedule_configuration_replace(
+        &self,
+        actor: Uuid,
+        id: Uuid,
+        request: &crate::models::media_schedule::MediaScheduleConfigurationRequest,
+        expected_revision: i64,
+    ) -> Result<crate::models::media_schedule::MediaScheduleConfigurationResponse, MediaServiceError>;
+
+    /// Read a bounded immutable association page using its collection-only cursor.
+    async fn media_association_page(
+        &self,
+        limit: u16,
+        cursor: Option<crate::models::media_root_contract::AssociationCollectionCursor>,
+    ) -> Result<
+        crate::models::media_root_contract::DiscoveryAssociationPageResponse,
+        MediaServiceError,
+    >;
+
+    /// Atomically create an exact source association to an active profile version.
+    async fn media_association_create(
+        &self,
+        actor_public_id: Uuid,
+        request: &crate::models::media_root_contract::DiscoveryAssociationRequest,
+    ) -> Result<crate::models::media_root_contract::DiscoveryAssociationResponse, MediaServiceError>;
+
+    /// Read one complete path-free latest association and current readiness.
+    async fn media_association(
+        &self,
+        id: Uuid,
+    ) -> Result<
+        Option<crate::models::media_root_contract::DiscoveryAssociationResponse>,
+        MediaServiceError,
+    >;
+
+    /// Read a complete path-free profile page using a profile-only cursor.
+    async fn media_profile_version_page(
+        &self,
+        limit: u16,
+        cursor: Option<crate::models::media_root_contract::ProfileCollectionCursor>,
+    ) -> Result<crate::models::media_root_contract::ProfileVersionPageResponse, MediaServiceError>;
+
+    /// Atomically create an exact immutable profile version and both heads.
+    async fn media_profile_version_create(
+        &self,
+        actor_public_id: Uuid,
+        request: &crate::models::media_root_contract::ProfileVersionRequest,
+    ) -> Result<crate::models::media_root_contract::ProfileVersionResponse, MediaServiceError>;
+
+    /// Atomically append a complete version fenced by the latest immutable head.
+    async fn media_profile_version_replace(
+        &self,
+        actor_public_id: Uuid,
+        id: Uuid,
+        expected_version: i32,
+        request: &crate::models::media_root_contract::ProfileVersionRequest,
+    ) -> Result<crate::models::media_root_contract::ProfileVersionResponse, MediaServiceError>;
+
+    /// Read one complete validated, path-free latest profile version.
+    async fn media_profile_version(
+        &self,
+        media_profile_public_id: Uuid,
+    ) -> Result<Option<crate::models::media_root_contract::ProfileVersionResponse>, MediaServiceError>;
+
+    /// Read one validated authenticated administrative catalog page.
+    async fn media_root_catalog_page(
+        &self,
+        limit: u16,
+        cursor: Option<crate::models::media_root_contract::RootCatalogCursor>,
+    ) -> Result<crate::models::media_root_contract::RootCatalogPageResponse, MediaServiceError>;
+
+    /// Read the validated path-free root catalog snapshot.
+    async fn media_root_catalog_readiness(
+        &self,
+    ) -> Result<crate::models::media_root_contract::RootCatalogReadinessResponse, MediaServiceError>;
+
     /// Upsert profile and return profile id.
     async fn media_profile_upsert(
         &self,
@@ -792,13 +914,27 @@ pub trait MediaFacade: Send + Sync {
         params: MediaJobRetentionUpdateParams,
     ) -> Result<MediaJobRetentionResponse, MediaServiceError>;
 
+    /// Preview scope eligibility using the exact active association.
+    async fn media_association_preview(
+        &self,
+        request: &revaer_api_models::MediaDiscoveryPreviewRequest,
+    ) -> Result<(Uuid, Vec<MediaDiscoveryPreviewResponse>), MediaServiceError>;
+
     /// Preview manual discovery for candidate source paths.
     async fn media_discovery_preview(
         &self,
         params: MediaDiscoveryPreviewParams<'_>,
     ) -> Result<Vec<MediaDiscoveryPreviewResponse>, MediaServiceError>;
 
-    /// Run manual discovery and queue jobs for accepted candidates.
+    /// Run discovery under the selected association mode and queue accepted candidates.
+    async fn media_association_run(
+        &self,
+        actor: Uuid,
+        request: &revaer_api_models::MediaDiscoveryPreviewRequest,
+        trigger: MediaAssociationRunTrigger,
+    ) -> Result<(Uuid, MediaDiscoveryRunResponse), MediaServiceError>;
+
+    /// Run profile-based discovery for callers pending the association cutover.
     async fn media_discovery_run(
         &self,
         params: MediaDiscoveryRunParams<'_>,
@@ -918,6 +1054,7 @@ pub trait MediaFacade: Send + Sync {
         &self,
         actor_user_public_id: Uuid,
         yaml_payload: &str,
+        preconditions: &[crate::models::MediaYamlResourcePrecondition],
     ) -> Result<MediaYamlApplyResult, MediaServiceError>;
 }
 
@@ -930,6 +1067,117 @@ fn media_unavailable<T>() -> Result<T, MediaServiceError> {
 
 #[async_trait]
 impl MediaFacade for NoopMedia {
+    async fn media_schedule_configuration_replace(
+        &self,
+        _actor: Uuid,
+        _id: Uuid,
+        _request: &crate::models::media_schedule::MediaScheduleConfigurationRequest,
+        _expected_revision: i64,
+    ) -> Result<crate::models::media_schedule::MediaScheduleConfigurationResponse, MediaServiceError>
+    {
+        media_unavailable()
+    }
+
+    async fn media_schedule_configuration(
+        &self,
+        _id: Uuid,
+    ) -> Result<
+        Option<crate::models::media_schedule::MediaScheduleConfigurationResponse>,
+        MediaServiceError,
+    > {
+        media_unavailable()
+    }
+
+    async fn media_schedule_configuration_create(
+        &self,
+        _actor: Uuid,
+        _id: Uuid,
+        _request: &crate::models::media_schedule::MediaScheduleConfigurationRequest,
+    ) -> Result<crate::models::media_schedule::MediaScheduleConfigurationResponse, MediaServiceError>
+    {
+        media_unavailable()
+    }
+    async fn media_association_page(
+        &self,
+        _limit: u16,
+        _cursor: Option<crate::models::media_root_contract::AssociationCollectionCursor>,
+    ) -> Result<
+        crate::models::media_root_contract::DiscoveryAssociationPageResponse,
+        MediaServiceError,
+    > {
+        media_unavailable()
+    }
+
+    async fn media_association_create(
+        &self,
+        _actor_public_id: Uuid,
+        _request: &crate::models::media_root_contract::DiscoveryAssociationRequest,
+    ) -> Result<crate::models::media_root_contract::DiscoveryAssociationResponse, MediaServiceError>
+    {
+        media_unavailable()
+    }
+
+    async fn media_association(
+        &self,
+        _id: Uuid,
+    ) -> Result<
+        Option<crate::models::media_root_contract::DiscoveryAssociationResponse>,
+        MediaServiceError,
+    > {
+        media_unavailable()
+    }
+
+    async fn media_profile_version_page(
+        &self,
+        _limit: u16,
+        _cursor: Option<crate::models::media_root_contract::ProfileCollectionCursor>,
+    ) -> Result<crate::models::media_root_contract::ProfileVersionPageResponse, MediaServiceError>
+    {
+        media_unavailable()
+    }
+
+    async fn media_profile_version_create(
+        &self,
+        _actor_public_id: Uuid,
+        _request: &crate::models::media_root_contract::ProfileVersionRequest,
+    ) -> Result<crate::models::media_root_contract::ProfileVersionResponse, MediaServiceError> {
+        media_unavailable()
+    }
+
+    async fn media_profile_version_replace(
+        &self,
+        _actor_public_id: Uuid,
+        _id: Uuid,
+        _expected_version: i32,
+        _request: &crate::models::media_root_contract::ProfileVersionRequest,
+    ) -> Result<crate::models::media_root_contract::ProfileVersionResponse, MediaServiceError> {
+        media_unavailable()
+    }
+
+    async fn media_profile_version(
+        &self,
+        _media_profile_public_id: Uuid,
+    ) -> Result<Option<crate::models::media_root_contract::ProfileVersionResponse>, MediaServiceError>
+    {
+        media_unavailable()
+    }
+
+    async fn media_root_catalog_page(
+        &self,
+        _limit: u16,
+        _cursor: Option<crate::models::media_root_contract::RootCatalogCursor>,
+    ) -> Result<crate::models::media_root_contract::RootCatalogPageResponse, MediaServiceError>
+    {
+        media_unavailable()
+    }
+
+    async fn media_root_catalog_readiness(
+        &self,
+    ) -> Result<crate::models::media_root_contract::RootCatalogReadinessResponse, MediaServiceError>
+    {
+        media_unavailable()
+    }
+
     async fn media_profile_upsert(
         &self,
         _params: MediaProfileUpsertParams<'_>,
@@ -1019,6 +1267,22 @@ impl MediaFacade for NoopMedia {
         &self,
         _params: MediaProfilePatchParams<'_>,
     ) -> Result<Uuid, MediaServiceError> {
+        media_unavailable()
+    }
+
+    async fn media_association_preview(
+        &self,
+        _request: &revaer_api_models::MediaDiscoveryPreviewRequest,
+    ) -> Result<(Uuid, Vec<MediaDiscoveryPreviewResponse>), MediaServiceError> {
+        media_unavailable()
+    }
+
+    async fn media_association_run(
+        &self,
+        _actor: Uuid,
+        _request: &revaer_api_models::MediaDiscoveryPreviewRequest,
+        _trigger: MediaAssociationRunTrigger,
+    ) -> Result<(Uuid, MediaDiscoveryRunResponse), MediaServiceError> {
         media_unavailable()
     }
 
@@ -1163,6 +1427,7 @@ impl MediaFacade for NoopMedia {
         &self,
         _actor_user_public_id: Uuid,
         _yaml_payload: &str,
+        _preconditions: &[crate::models::MediaYamlResourcePrecondition],
     ) -> Result<MediaYamlApplyResult, MediaServiceError> {
         media_unavailable()
     }

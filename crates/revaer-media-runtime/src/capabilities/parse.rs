@@ -34,10 +34,13 @@ fn parse_codec_line(line: &str) -> Option<(String, bool, bool)> {
     }
     let mut tokens = line.split_whitespace();
     let flags = tokens.next()?;
-    if flags.len() < 6 {
+    if flags.len() != 6 {
         return None;
     }
     let codec_name = tokens.next()?;
+    if codec_name == "=" {
+        return None;
+    }
     let mut chars = flags.chars();
     let decode_supported = chars.next().is_some_and(|item| item == 'D');
     let encode_supported = chars.next().is_some_and(|item| item == 'E');
@@ -62,7 +65,10 @@ fn parse_tool_name(line: &str) -> Option<String> {
     if flags.is_empty() {
         return None;
     }
-    tokens.next().map(str::to_string)
+    tokens
+        .next()
+        .filter(|name| *name != "=")
+        .map(str::to_string)
 }
 
 pub(super) fn parse_hwaccels(output: &str) -> Vec<String> {

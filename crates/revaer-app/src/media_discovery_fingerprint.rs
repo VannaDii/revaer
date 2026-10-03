@@ -9,7 +9,7 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 
-use rustix::fs::{Dir, Mode, OFlags, open, openat};
+use rustix::fs::{Dir, Mode, OFlags, Stat, fstat, open, openat};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
@@ -17,6 +17,7 @@ use crate::media_discovery_runtime::is_media_file;
 
 const HASH_BUFFER_BYTES: usize = 64 * 1024;
 const MAX_DIRECTORY_ENTRIES: usize = 4_096;
+const MAX_DIRECTORY_NAME_BYTES: usize = 1024 * 1024;
 const MAX_LOGICAL_SIDECARS: usize = 64;
 const MAX_SIDECAR_BYTES: u64 = 256 * 1024 * 1024;
 const SIDECAR_EXTENSIONS: &[&str] = &["ass", "idx", "srt", "ssa", "sub", "sup", "vtt"];
@@ -32,12 +33,16 @@ pub(crate) struct MediaAggregateFingerprint {
 
 #[derive(Debug, Error)]
 pub(crate) enum FingerprintError {
+    #[error(transparent)]
+    Root(#[from] revaer_media_runtime::root_catalog::RootDirectoryError),
     #[error("media discovery fingerprint io error for {path}: {source}")]
     Io { path: PathBuf, source: io::Error },
     #[error("media discovery fingerprint path is not a regular descendant of its root: {0}")]
     InvalidPath(PathBuf),
     #[error("media discovery fingerprint exceeded the {0} resource limit")]
     ResourceLimit(&'static str),
+    #[error("media discovery directory changed during enumeration")]
+    DirectoryChanged,
     #[error("media discovery fingerprint value is too large: {0}")]
     ValueTooLarge(&'static str),
 }
@@ -84,6 +89,42 @@ pub(crate) fn fingerprint_media_aggregate(
     root: &Path,
 ) -> Result<Option<MediaAggregateFingerprint>, FingerprintError> {
     let opened = open_media_parent(media_path, root)?;
+    fingerprint_media_aggregate_at(media_path, root, opened.directory)
+}
+
+pub(crate) fn fingerprint_media_aggregate_at(
+    media_path: &Path,
+    root: &Path,
+    parent: OwnedFd,
+) -> Result<Option<MediaAggregateFingerprint>, FingerprintError> {
+    let components = media_components(media_path, root)?;
+    let Some((source_name, directories)) = components.split_last() else {
+        return Err(FingerprintError::InvalidPath(media_path.to_path_buf()));
+    };
+    let opened = OpenedMediaParent {
+        directory: parent,
+        source_name: source_name.clone(),
+        relative_parent: directories.iter().collect(),
+    };
+    fingerprint_opened_aggregate(media_path, root, &opened)
+}
+
+fn fingerprint_opened_aggregate(
+    media_path: &Path,
+    root: &Path,
+    opened: &OpenedMediaParent,
+) -> Result<Option<MediaAggregateFingerprint>, FingerprintError> {
+    match fingerprint_stable_aggregate(media_path, root, opened) {
+        Err(FingerprintError::DirectoryChanged) => Ok(None),
+        result => result,
+    }
+}
+
+fn fingerprint_stable_aggregate(
+    media_path: &Path,
+    root: &Path,
+    opened: &OpenedMediaParent,
+) -> Result<Option<MediaAggregateFingerprint>, FingerprintError> {
     let Some(members) = owned_member_names(&opened.directory, &opened.source_name)? else {
         return Ok(None);
     };
@@ -180,19 +221,7 @@ fn open_media_parent(
     media_path: &Path,
     root: &Path,
 ) -> Result<OpenedMediaParent, FingerprintError> {
-    if !root.is_absolute() || !media_path.is_absolute() {
-        return Err(FingerprintError::InvalidPath(media_path.to_path_buf()));
-    }
-    let relative = media_path
-        .strip_prefix(root)
-        .map_err(|_| FingerprintError::InvalidPath(media_path.to_path_buf()))?;
-    let components = relative
-        .components()
-        .map(|component| match component {
-            Component::Normal(value) => Ok(value.to_os_string()),
-            _ => Err(FingerprintError::InvalidPath(media_path.to_path_buf())),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let components = media_components(media_path, root)?;
     let Some((source_name, directories)) = components.split_last() else {
         return Err(FingerprintError::InvalidPath(media_path.to_path_buf()));
     };
@@ -216,6 +245,22 @@ fn open_media_parent(
         source_name: source_name.clone(),
         relative_parent,
     })
+}
+
+fn media_components(media_path: &Path, root: &Path) -> Result<Vec<OsString>, FingerprintError> {
+    if !root.is_absolute() || !media_path.is_absolute() {
+        return Err(FingerprintError::InvalidPath(media_path.to_path_buf()));
+    }
+    let relative = media_path
+        .strip_prefix(root)
+        .map_err(|_| FingerprintError::InvalidPath(media_path.to_path_buf()))?;
+    relative
+        .components()
+        .map(|component| match component {
+            Component::Normal(value) => Ok(value.to_os_string()),
+            _ => Err(FingerprintError::InvalidPath(media_path.to_path_buf())),
+        })
+        .collect()
 }
 
 fn open_directory(path: &Path) -> Result<OwnedFd, FingerprintError> {
@@ -273,11 +318,50 @@ fn owned_member_names(
 }
 
 fn directory_names(directory: &OwnedFd) -> Result<Vec<OsString>, FingerprintError> {
+    let before = directory_observation(directory)?;
+    let names =
+        enumerate_directory_names(directory, MAX_DIRECTORY_ENTRIES, MAX_DIRECTORY_NAME_BYTES)?;
+    validate_directory_observation(directory, &before)?;
+    Ok(names)
+}
+
+fn directory_observation(directory: &OwnedFd) -> Result<Stat, FingerprintError> {
+    fstat(directory).map_err(|source| FingerprintError::Io {
+        path: PathBuf::from("<opened-media-directory>"),
+        source: io::Error::from(source),
+    })
+}
+
+fn validate_directory_observation(
+    directory: &OwnedFd,
+    before: &Stat,
+) -> Result<(), FingerprintError> {
+    let after = directory_observation(directory)?;
+    if before.st_dev != after.st_dev
+        || before.st_ino != after.st_ino
+        || before.st_mode != after.st_mode
+        || before.st_size != after.st_size
+        || before.st_mtime != after.st_mtime
+        || before.st_mtime_nsec != after.st_mtime_nsec
+        || before.st_ctime != after.st_ctime
+        || before.st_ctime_nsec != after.st_ctime_nsec
+    {
+        return Err(FingerprintError::DirectoryChanged);
+    }
+    Ok(())
+}
+
+fn enumerate_directory_names(
+    directory: &OwnedFd,
+    entry_limit: usize,
+    name_byte_limit: usize,
+) -> Result<Vec<OsString>, FingerprintError> {
     let mut entries = Dir::read_from(directory).map_err(|source| FingerprintError::Io {
         path: PathBuf::from("<opened-media-directory>"),
         source: io::Error::from(source),
     })?;
     let mut names = Vec::new();
+    let mut name_bytes = 0_usize;
     while let Some(entry) = entries.read() {
         let entry = entry.map_err(|source| FingerprintError::Io {
             path: PathBuf::from("<opened-media-directory>"),
@@ -287,10 +371,16 @@ fn directory_names(directory: &OwnedFd) -> Result<Vec<OsString>, FingerprintErro
         if bytes == b"." || bytes == b".." {
             continue;
         }
-        if names.len() == MAX_DIRECTORY_ENTRIES {
+        if names.len() == entry_limit {
             return Err(FingerprintError::ResourceLimit("directory entries"));
         }
-        if std::str::from_utf8(bytes).is_err() {
+        name_bytes = name_bytes
+            .checked_add(bytes.len())
+            .ok_or(FingerprintError::ResourceLimit("directory name bytes"))?;
+        if name_bytes > name_byte_limit {
+            return Err(FingerprintError::ResourceLimit("directory name bytes"));
+        }
+        if std::str::from_utf8(bytes).is_err() || bytes.contains(&b'\\') {
             return Err(FingerprintError::InvalidPath(
                 OsString::from_vec(bytes.to_vec()).into(),
             ));
@@ -298,6 +388,9 @@ fn directory_names(directory: &OwnedFd) -> Result<Vec<OsString>, FingerprintErro
         names.push(OsString::from_vec(bytes.to_vec()));
     }
     names.sort();
+    if names.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(FingerprintError::DirectoryChanged);
+    }
     Ok(names)
 }
 
@@ -414,6 +507,100 @@ mod tests {
         owner_for_changed_path, revalidate_media_aggregate,
     };
     use std::fs::{self, File};
+
+    #[test]
+    fn directory_inventory_counts_all_raw_names_and_rejects_partial_results() -> anyhow::Result<()>
+    {
+        let temp = tempfile::tempdir()?;
+        fs::write(temp.path().join("zz"), b"")?;
+        fs::write(temp.path().join("aa"), b"")?;
+        let directory = super::open_directory(temp.path())?;
+        assert_eq!(
+            super::enumerate_directory_names(&directory, 2, 4)?,
+            [
+                std::ffi::OsString::from("aa"),
+                std::ffi::OsString::from("zz")
+            ]
+        );
+        assert!(matches!(
+            super::enumerate_directory_names(&directory, 1, 4),
+            Err(FingerprintError::ResourceLimit("directory entries"))
+        ));
+        assert!(matches!(
+            super::enumerate_directory_names(&directory, 2, 3),
+            Err(FingerprintError::ResourceLimit("directory name bytes"))
+        ));
+        fs::write(temp.path().join("\u{e9}"), b"")?;
+        assert_eq!(super::enumerate_directory_names(&directory, 3, 6)?.len(), 3);
+        assert!(matches!(
+            super::enumerate_directory_names(&directory, 3, 5),
+            Err(FingerprintError::ResourceLimit("directory name bytes"))
+        ));
+        temp.close()?;
+        Ok(())
+    }
+
+    #[test]
+    fn directory_inventory_rejects_mutation_and_invalid_components() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let directory = super::open_directory(temp.path())?;
+        let before = super::directory_observation(&directory)?;
+        assert!(super::directory_names(&directory)?.is_empty());
+        fs::write(temp.path().join("new-name"), b"")?;
+        assert!(matches!(
+            super::validate_directory_observation(&directory, &before),
+            Err(FingerprintError::DirectoryChanged)
+        ));
+        fs::write(temp.path().join("invalid\\name"), b"")?;
+        assert!(matches!(
+            super::directory_names(&directory),
+            Err(FingerprintError::InvalidPath(_))
+        ));
+        temp.close()?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn directory_inventory_rejects_invalid_utf8() -> anyhow::Result<()> {
+        use std::os::unix::ffi::OsStringExt;
+
+        let temp = tempfile::tempdir()?;
+        let directory = super::open_directory(temp.path())?;
+        fs::write(
+            temp.path().join(std::ffi::OsString::from_vec(vec![0xff])),
+            b"",
+        )?;
+        assert!(matches!(
+            super::directory_names(&directory),
+            Err(FingerprintError::InvalidPath(_))
+        ));
+        temp.close()?;
+        Ok(())
+    }
+
+    #[test]
+    fn aggregate_at_retained_parent_does_not_reopen_a_replaced_path() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let directory = temp.path().join("Movies");
+        fs::create_dir(&directory)?;
+        let media = directory.join("movie.mkv");
+        fs::write(&media, b"original media")?;
+        fs::write(directory.join("movie.srt"), b"original subtitles")?;
+        let expected = fingerprint_media_aggregate(&media, temp.path())?;
+        let parent = super::open_directory(&directory)?;
+        fs::rename(&directory, temp.path().join("moved"))?;
+        fs::create_dir(&directory)?;
+        fs::write(&media, b"replacement media")?;
+        let retained = super::fingerprint_media_aggregate_at(&media, temp.path(), parent)?;
+        assert_eq!(retained, expected);
+        assert_ne!(fingerprint_media_aggregate(&media, temp.path())?, expected);
+        fs::remove_file(temp.path().join("moved/movie.mkv"))?;
+        let parent = super::open_directory(&temp.path().join("moved"))?;
+        assert!(super::fingerprint_media_aggregate_at(&media, temp.path(), parent)?.is_none());
+        temp.close()?;
+        Ok(())
+    }
 
     #[test]
     fn sidecars_change_identity_and_vobsub_pairs_share_one_owner() -> anyhow::Result<()> {

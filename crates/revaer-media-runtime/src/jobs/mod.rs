@@ -1035,6 +1035,7 @@ fn plan_job_from_selection_with_artifacts(
 
 const fn plan_generation_error_code(error: &PlanGenerationError) -> &'static str {
     match error {
+        PlanGenerationError::CostOverflow => "operation_cost_overflow",
         PlanGenerationError::MissingDesiredStream => "missing_desired_stream",
         PlanGenerationError::NoValidCandidate { .. } => "no_valid_candidate",
     }

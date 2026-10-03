@@ -1,10 +1,38 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { test, expect } from '../../fixtures/api';
+import { test, expect } from '../../fixtures/media';
 import { apiFetchRaw } from '../../support/api/raw';
 import { authHeaders } from '../../support/headers';
 
 const MISSING_JOB_ID = '00000000-0000-0000-0000-000000000001';
+const { load: loadYaml } = require('js-yaml') as { load: (text: string) => unknown };
+
+function fixtureImportPreconditions(yaml: string) {
+  const bundle = loadYaml(yaml) as Record<string, unknown>;
+  const families = [
+    ['compatibility_targets', 'compatibility_target_key'], ['targets', 'target_key'],
+    ['policies', 'policy_key'], ['profiles', 'profile_key'],
+    ['discovery_associations', 'association_key'],
+  ] as const;
+  type Kind = typeof families[number][0];
+  const fences = new Map<string, { intent: 'match'; kind: Kind; key: string; expected_version: number }>();
+  for (const [kind, keyField] of families) {
+    const rows = bundle[kind];
+    if (!Array.isArray(rows)) throw new Error('Missing native fixture resource array');
+    for (const row of rows) {
+      const key = row[keyField];
+      // This owned fixture creates associations only; none has a replacement head.
+      const version = kind === 'discovery_associations' ? 1 : row.version;
+      if (typeof key !== 'string' || !Number.isInteger(version) || version <= 0) {
+        throw new Error('Invalid native fixture resource identity');
+      }
+      const identity = JSON.stringify([kind, key]);
+      const previous = fences.get(identity);
+      fences.set(identity, { intent: 'match', kind, key,
+        expected_version: Math.max(version, previous?.expected_version ?? version) });
+    }
+  }
+  return [...fences.values()];
+}
 
 const ROUTED_OPERATIONS = [
   ['GET', '/v1/media/capabilities'],
@@ -30,8 +58,7 @@ const ROUTED_OPERATIONS = [
   ['GET', '/v1/media/profiles/{media_profile_public_id}'],
   ['GET', '/v1/media/targets'],
   ['PATCH', '/v1/media/job-retention'],
-  ['PATCH', '/v1/media/profiles/{media_profile_public_id}'],
-  ['PATCH', '/v1/media/profiles/{media_profile_public_id}/desired-target'],
+  ['PUT', '/v1/media/profiles/{media_profile_public_id}'],
   ['POST', '/v1/media/capabilities/refresh'],
   ['POST', '/v1/media/compatibility-targets'],
   ['POST', '/v1/media/discovery/preview'],
@@ -52,17 +79,41 @@ const ROUTED_OPERATIONS = [
 const RETIRED_WRITE_OPERATIONS = [
   ['POST', '/v1/media/jobs'],
   ['POST', '/v1/media/jobs/{media_job_public_id}/phases'],
+  ['PATCH', '/v1/media/profiles/{media_profile_public_id}'],
 ] as const;
 
-const mediaRootsToRemove = new Set<string>();
-
-test.afterEach(async () => {
-  const roots = [...mediaRootsToRemove];
-  mediaRootsToRemove.clear();
-  await Promise.all(roots.map((root) => rm(root, { recursive: true, force: true })));
-});
-
 test.describe('Media API', () => {
+  test('updates a compatibility target and preserves it after a rejected write', async ({ api }) => {
+    const target = {
+      compatibility_target_key: `target-write-${randomUUID()}`,
+      version: 1,
+      display_name: 'Original target',
+      video_codec: 'hevc',
+      audio_codec: 'aac',
+      audio_channels: 2,
+      audio_channel_layout: 'stereo',
+      subtitle_policy: 'selected',
+    };
+    const created = await api.POST('/v1/media/compatibility-targets', { body: target });
+    expect(created.response.status, JSON.stringify(created.error)).toBe(201);
+    expect(created.data).toMatchObject(target);
+
+    const updatedTarget = { ...target, display_name: 'Updated target' };
+    const updated = await api.POST('/v1/media/compatibility-targets', { body: updatedTarget });
+    expect(updated.response.status, JSON.stringify(updated.error)).toBe(201);
+    expect(updated.data).toMatchObject(updatedTarget);
+
+    const rejected = await api.POST('/v1/media/compatibility-targets', {
+      body: { ...target, display_name: '' },
+    });
+    expect(rejected.response.status, JSON.stringify(rejected.error)).toBe(400);
+    const persisted = await api.GET('/v1/media/compatibility-targets');
+    expect(persisted.response.status, JSON.stringify(persisted.error)).toBe(200);
+    expect(persisted.data?.targets.filter(
+      (entry) => entry.compatibility_target_key === target.compatibility_target_key
+    )).toEqual([updated.data]);
+  });
+
   test('routes bounded empty requests without server errors', async ({ baseUrl, session }) => {
     for (const [method, route] of ROUTED_OPERATIONS) {
       const response = await apiFetchRaw({
@@ -80,51 +131,37 @@ test.describe('Media API', () => {
     }
   });
 
-  test('keeps worker-owned media writes unavailable', async ({ baseUrl, session }) => {
+  test('keeps retired and worker-owned media writes unavailable', async ({ baseUrl, session }) => {
     for (const [method, route] of RETIRED_WRITE_OPERATIONS) {
       const response = await apiFetchRaw({
         baseUrl,
         method,
         route,
-        path: { media_job_public_id: MISSING_JOB_ID },
+        path: {
+          media_job_public_id: MISSING_JOB_ID,
+          media_profile_public_id: MISSING_JOB_ID,
+        },
         headers: authHeaders(session),
       });
       expect(response.status, `${method} ${route} must remain unavailable`).toBe(405);
+      if (method === 'PATCH') {
+        expect(response.headers.get('allow')).toBe('GET, HEAD, PUT');
+      }
     }
   });
 
-  test('covers media profiles jobs capabilities discovery and diagnostics', async ({ api }) => {
+  test('covers media profiles jobs capabilities manual discovery and diagnostics', async ({ api, profileFixture: fixture }) => {
     test.setTimeout(60_000);
 
-    const suffix = randomUUID().slice(0, 8);
-    const mediaRoot = `/tmp/revaer-media-e2e-${suffix}`;
-    mediaRootsToRemove.add(mediaRoot);
-    const sourceRoot = `${mediaRoot}/source`;
-    const outputRoot = `${mediaRoot}/output`;
-    const sourcePath = `${sourceRoot}/movie.mkv`;
-    const watcherPath = `${sourceRoot}/watcher-${suffix}.mkv`;
-    const manualPath = `${sourceRoot}/manual-${suffix}.mkv`;
-    const schedulePath = `${sourceRoot}/schedule-${suffix}.mkv`;
-
-    await mkdir(sourceRoot, { recursive: true });
-    await mkdir(outputRoot, { recursive: true });
-    await Promise.all([
-      writeFile(sourcePath, Buffer.from(`source-${suffix}`)),
-      writeFile(watcherPath, Buffer.from(`watcher-${suffix}`)),
-      writeFile(manualPath, Buffer.from(`manual-${suffix}`)),
-      writeFile(schedulePath, Buffer.from(`schedule-${suffix}`)),
-    ]);
+    const suffix = fixture.prefix;
+    const sourceRoot = '/proof/source';
+    const outputRoot = '/proof/output';
+    const sourcePath = fixture.relativePath;
+    const manualPath = fixture.relativePath;
 
     const createdProfile = await api.POST('/v1/media/profiles', {
-      body: {
-        profile_key: `e2e-media-${suffix}`,
-        source_root: sourceRoot,
-        output_root: outputRoot,
-        dry_run_only: true,
-        retention_days: 30,
-        schedule_enabled: false,
-        watcher_enabled: false,
-      },
+      params: { header: { 'If-None-Match': '*' } },
+      body: fixture.request,
     });
     expect(createdProfile.response.status, JSON.stringify(createdProfile.error)).toBe(201);
     const profileId = createdProfile.data?.media_profile_public_id;
@@ -142,16 +179,19 @@ test.describe('Media API', () => {
       params: { path: { media_profile_public_id: profileId } },
     });
     expect(profile.response.status).toBe(200);
-    expect(profile.data?.source_root).toBe(sourceRoot);
+    expect(profile.data).toEqual(createdProfile.data);
+    const profileTag = profile.response.headers.get('etag');
+    if (!profileTag) throw new Error('Missing profile version fence');
 
-    const patchedProfile = await api.PATCH('/v1/media/profiles/{media_profile_public_id}', {
-      params: { path: { media_profile_public_id: profileId } },
-      body: {
-        retention_days: 31,
-      },
+    const updatedBody = { ...fixture.request, description: 'Updated media profile metadata' };
+    const patchedProfile = await api.PUT('/v1/media/profiles/{media_profile_public_id}', {
+      params: { path: { media_profile_public_id: profileId }, header: { 'If-Match': profileTag } },
+      body: updatedBody,
     });
     expect(patchedProfile.response.status, JSON.stringify(patchedProfile.error)).toBe(200);
-    expect(patchedProfile.data?.retention_days).toBe(31);
+    expect(patchedProfile.data).toMatchObject(updatedBody);
+    expect(patchedProfile.data?.latest_version).toBe(2);
+    expect(fixture.readSource()).toEqual(fixture.sourceBytes);
 
     const validatedProfile = await api.POST('/v1/media/profiles/validate', {
       body: {
@@ -248,14 +288,17 @@ test.describe('Media API', () => {
       desiredTargets.data?.targets.some((target) => target.target_key === desiredTargetKey)
     ).toBeTruthy();
 
-    const pinnedDesiredTarget = await api.PATCH(
-      '/v1/media/profiles/{media_profile_public_id}/desired-target',
+    const updatedTag = patchedProfile.response.headers.get('etag');
+    if (!updatedTag) throw new Error('Missing updated profile version fence');
+    const pinnedDesiredTarget = await api.PUT(
+      '/v1/media/profiles/{media_profile_public_id}',
       {
-        params: { path: { media_profile_public_id: profileId } },
-        body: { target_key: desiredTargetKey, version: 1 },
+        params: { path: { media_profile_public_id: profileId }, header: { 'If-Match': updatedTag } },
+        body: { ...updatedBody, desired_target_key: desiredTargetKey, desired_target_version: 1 },
       }
     );
-    expect(pinnedDesiredTarget.response.status).toBe(204);
+    expect(pinnedDesiredTarget.response.status, JSON.stringify(pinnedDesiredTarget.error)).toBe(200);
+    expect(pinnedDesiredTarget.data?.latest_version).toBe(3);
 
     const profileWithDesiredTarget = await api.GET(
       '/v1/media/profiles/{media_profile_public_id}',
@@ -274,6 +317,8 @@ test.describe('Media API', () => {
     const upsertedPolicy = await api.POST('/v1/media/policies', {
       body: {
         policy_key: `e2e-policy-${suffix}`,
+        output: { dry_run: true, replacement_mode: 'disabled', quarantine_enabled: true,
+          preserve_permissions: true, preserve_ownership: true },
         version: 1,
         display_name: `E2E policy ${suffix}`,
         video_intent: 'general',
@@ -310,6 +355,7 @@ test.describe('Media API', () => {
     expect(invalidProfileValidation.data?.issues).toContain('media_profile_policy_profile_not_found');
 
     const invalidProfileCreate = await api.POST('/v1/media/profiles', {
+      params: { header: { 'If-None-Match': '*' } },
       body: {
         profile_key: `e2e-media-invalid-create-${suffix}`,
         source_root: `${sourceRoot}/invalid-create`,
@@ -367,7 +413,10 @@ test.describe('Media API', () => {
     );
     expect(profileReadiness.response.status).toBe(200);
     expect(profileReadiness.data?.profile.media_profile_public_id).toBe(profileId);
-    expect(typeof profileReadiness.data?.ready).toBe('boolean');
+    expect(profileReadiness.data?.binding_ready).toBe(true);
+    expect(profileReadiness.data?.destructive_ready).toBe(true);
+    expect(profileReadiness.data?.profile).toEqual(profileWithDesiredTarget.data);
+    expect(fixture.readSource()).toEqual(fixture.sourceBytes);
 
     const refresh = await api.POST('/v1/media/capabilities/refresh');
     expect([201, 500, 503]).toContain(refresh.response.status);
@@ -396,12 +445,18 @@ test.describe('Media API', () => {
       '  name: Invalid catalog references',
       'profiles:',
       `  - profile_key: e2e-yaml-invalid-${suffix}`,
-      `    source_root: ${sourceRoot}/yaml-invalid`,
-      `    output_root: ${outputRoot}/yaml-invalid`,
+      '    version: 1',
+      '    display_name: Invalid references',
+      "    description: ''",
+      '    enabled: false',
+      '    output_root_key: source',
+      '    workspace_root_key: workspace',
+      '    quarantine_root_key: quarantine',
       '    dry_run_only: true',
-      '    retention_days: 30',
-      `    compatibility_target_key: missing-target-${suffix}`,
+      `    desired_target_key: missing-target-${suffix}`,
+      '    desired_target_version: 1',
       `    policy_key: missing-policy-${suffix}`,
+      '    policy_version: 1',
     ].join('\n');
     const invalidYamlValidation = await api.POST('/v1/media/imports/validate', {
       body: { yaml_payload: invalidYamlPayload },
@@ -411,8 +466,8 @@ test.describe('Media API', () => {
     expect(
       invalidYamlValidation.data?.issues.some(
         (issue) =>
-          issue.code === 'media_yaml_compatibility_target_not_found' &&
-          issue.pointer === '/profiles/0/compatibility_target_key' &&
+          issue.code === 'media_yaml_desired_target_not_found' &&
+          issue.pointer === '/profiles/0/desired_target_key' &&
           issue.blocking
       )
     ).toBe(true);
@@ -426,14 +481,14 @@ test.describe('Media API', () => {
     ).toBe(true);
 
     const invalidYamlApply = await api.POST('/v1/media/imports/apply', {
-      body: { yaml_payload: invalidYamlPayload },
+      body: { yaml_payload: invalidYamlPayload, preconditions: [] },
     });
     expect(invalidYamlApply.response.status).toBe(400);
 
     const portableApply = await api.POST('/v1/media/imports/apply', {
-      body: { yaml_payload: yamlPayload },
+      body: { yaml_payload: yamlPayload, preconditions: fixtureImportPreconditions(yamlPayload) },
     });
-    expect(portableApply.response.status).toBe(201);
+    expect(portableApply.response.status, JSON.stringify(portableApply.error)).toBe(201);
     expect(portableApply.data?.forced_dry_run).toBe(true);
 
     const localExported = await api.GET('/v1/media/export', {
@@ -445,87 +500,63 @@ test.describe('Media API', () => {
       throw new Error('Missing local media YAML payload');
     }
 
+    const localSnapshot = loadYaml(localYamlPayload) as {
+      kind: string; local_root_paths: { logical_key: string; canonical_path: string | null }[];
+    };
+    expect(localSnapshot.kind).toBe('revaer.media.local_snapshot');
+    expect(localSnapshot.local_root_paths.some(row => row.logical_key === 'source'
+      && row.canonical_path === sourceRoot)).toBe(true);
+    expect(localSnapshot.local_root_paths.some(row => row.logical_key === 'workspace'
+      && row.canonical_path !== null)).toBe(true);
     const applied = await api.POST('/v1/media/imports/apply', {
-      body: { yaml_payload: localYamlPayload },
+      body: { yaml_payload: localYamlPayload, preconditions: fixtureImportPreconditions(yamlPayload) },
     });
-    expect(applied.response.status).toBe(201);
-    expect(applied.data?.forced_dry_run).toBe(true);
+    expect(applied.response.status).toBe(400);
+    expect(fixture.readSource()).toEqual(fixture.sourceBytes);
+    const afterLocalImport = await api.GET('/v1/media/export');
+    expect(afterLocalImport.response.status).toBe(200);
+    expect(afterLocalImport.data?.yaml_payload).toBe(yamlPayload);
 
-    const restoredProfile = await api.PATCH('/v1/media/profiles/{media_profile_public_id}', {
+    const currentProfile = await api.GET('/v1/media/profiles/{media_profile_public_id}', {
       params: { path: { media_profile_public_id: profileId } },
-      body: {
-        source_root: sourceRoot,
-        output_root: outputRoot,
-        dry_run_only: true,
-        retention_days: 31,
-        schedule_enabled: false,
-        watcher_enabled: false,
-      },
+    });
+    expect(currentProfile.response.status, JSON.stringify(currentProfile.error)).toBe(200);
+    const currentTag = currentProfile.response.headers.get('etag');
+    if (!currentTag) throw new Error('Missing post-import profile fence');
+    const restoredProfile = await api.PUT('/v1/media/profiles/{media_profile_public_id}', {
+      params: { path: { media_profile_public_id: profileId }, header: { 'If-Match': currentTag } },
+      body: updatedBody,
     });
     expect(restoredProfile.response.status, JSON.stringify(restoredProfile.error)).toBe(200);
-    expect(restoredProfile.data?.source_root).toBe(sourceRoot);
-    expect(restoredProfile.data?.output_root).toBe(outputRoot);
-
+    expect(restoredProfile.data).toMatchObject(updatedBody);
+    expect(restoredProfile.data?.latest_version).toBe(4);
+    const association = await api.POST('/v1/media/discovery-associations', {
+      params: { header: { 'If-None-Match': '*' } },
+      body: { association_key: suffix, media_profile_public_id: profileId, profile_version: 4,
+        source_root_key: 'source', root_relative_path: suffix, manual_enabled: true,
+        watcher_enabled: false, schedule_enabled: false },
+    });
+    expect(association.response.status, JSON.stringify(association.error)).toBe(201);
+    const associationId = association.data?.media_discovery_association_public_id;
+    if (!associationId) throw new Error('Missing native discovery association identity');
     const schedules = await api.GET('/v1/media/discovery/schedules');
-    expect(schedules.response.status).toBe(200);
-    const scheduleEntry = schedules.data?.schedules.find(
-      (schedule) => schedule.media_profile_public_id === profileId
-    );
-    expect(scheduleEntry).toBeTruthy();
-    expect(scheduleEntry?.enabled).toBe(false);
-
-    const scheduledProfile = await api.PATCH('/v1/media/profiles/{media_profile_public_id}', {
-      params: { path: { media_profile_public_id: profileId } },
-      body: {
-        schedule_enabled: true,
-        schedule_interval_minutes: 120,
-      },
-    });
-    expect(scheduledProfile.response.status, JSON.stringify(scheduledProfile.error)).toBe(200);
-    expect(scheduledProfile.data?.schedule_enabled).toBe(true);
-
+    expect(schedules.response.status, JSON.stringify(schedules.error)).toBe(200);
+    expect(schedules.data?.schedules.find(row =>
+      row.media_discovery_association_public_id === associationId)).toEqual(association.data);
     const watchers = await api.GET('/v1/media/discovery/watchers');
-    expect(watchers.response.status).toBe(200);
-    expect(
-      watchers.data?.watchers.some(
-        (watcher) => watcher.media_profile_public_id === profileId && watcher.enabled === false
-      )
-    ).toBeTruthy();
-
-    const watcherProfile = await api.PATCH('/v1/media/profiles/{media_profile_public_id}', {
-      params: { path: { media_profile_public_id: profileId } },
-      body: {
-        watcher_enabled: true,
-      },
-    });
-    expect(watcherProfile.response.status, JSON.stringify(watcherProfile.error)).toBe(200);
-    expect(watcherProfile.data?.watcher_enabled).toBe(true);
-
-    const enabledWatchers = await api.GET('/v1/media/discovery/watchers');
-    expect(enabledWatchers.response.status).toBe(200);
-    expect(
-      enabledWatchers.data?.watchers.some(
-        (watcher) => watcher.media_profile_public_id === profileId && watcher.enabled === true
-      )
-    ).toBeTruthy();
-
-    const watcherRun = await api.POST('/v1/media/discovery/watchers', {
-      body: {
-        media_profile_public_id: profileId,
-        source_paths: [watcherPath],
-      },
-    });
-    expect(watcherRun.response.status).toBe(201);
-    expect(
-      (watcherRun.data?.queued_jobs.length ?? 0) + (watcherRun.data?.skipped.length ?? 0)
-    ).toBe(1);
-    if (watcherRun.data?.queued_jobs.length === 0) {
-      expect(watcherRun.data?.skipped[0]?.reason).toBe('media_discovery_source_unchanged');
+    expect(watchers.response.status, JSON.stringify(watchers.error)).toBe(200);
+    expect(watchers.data?.watchers.find(row =>
+      row.media_discovery_association_public_id === associationId)).toEqual(association.data);
+    for (const endpoint of ['/v1/media/discovery/watchers', '/v1/media/discovery/schedules'] as const) {
+      const disabled = await api.POST(endpoint, {
+        body: { media_discovery_association_public_id: associationId, source_paths: [sourcePath] },
+      });
+      expect(disabled.response.status, JSON.stringify(disabled.error)).toBe(400);
     }
 
     const planningPreview = await api.POST('/v1/media/planning/preview', {
       body: {
-        media_profile_public_id: profileId,
+        media_discovery_association_public_id: associationId,
         source_path: sourcePath,
       },
     });
@@ -534,7 +565,7 @@ test.describe('Media API', () => {
 
     const preview = await api.POST('/v1/media/discovery/preview', {
       body: {
-        media_profile_public_id: profileId,
+        media_discovery_association_public_id: associationId,
         source_paths: [sourcePath],
       },
     });
@@ -543,11 +574,11 @@ test.describe('Media API', () => {
 
     const discoveryRun = await api.POST('/v1/media/discovery/runs', {
       body: {
-        media_profile_public_id: profileId,
+        media_discovery_association_public_id: associationId,
         source_paths: [manualPath],
       },
     });
-    expect(discoveryRun.response.status).toBe(201);
+    expect(discoveryRun.response.status, JSON.stringify(discoveryRun.error)).toBe(201);
     expect(
       (discoveryRun.data?.queued_jobs.length ?? 0) + (discoveryRun.data?.skipped.length ?? 0)
     ).toBe(1);
@@ -560,7 +591,7 @@ test.describe('Media API', () => {
     const manualRunQueuedJob = discoveryRun.data?.queued_jobs.length === 1;
     const duplicateDiscoveryRun = await api.POST('/v1/media/discovery/runs', {
       body: {
-        media_profile_public_id: profileId,
+        media_discovery_association_public_id: associationId,
         source_paths: [manualPath],
       },
     });
@@ -583,15 +614,7 @@ test.describe('Media API', () => {
       }
     }
 
-    const scheduleRun = await api.POST('/v1/media/discovery/schedules', {
-      body: {
-        media_profile_public_id: profileId,
-        source_paths: [schedulePath],
-      },
-    });
-    expect(scheduleRun.response.status).toBe(201);
-
-    const jobId = [discoveryRun, scheduleRun, watcherRun].flatMap((run) => run.data?.queued_jobs ?? [])[0]?.media_job_public_id;
+    const jobId = discoveryRun.data?.queued_jobs[0]?.media_job_public_id;
     if (!jobId) {
       throw new Error('Missing media job public id');
     }
@@ -601,12 +624,24 @@ test.describe('Media API', () => {
     });
     expect(jobs.response.status).toBe(200);
     expect(jobs.data?.jobs.map((job) => job.media_job_public_id) ?? []).toContain(jobId);
+    const listedJob = jobs.data?.jobs.find(row => row.media_job_public_id === jobId);
+    expect(listedJob?.source_path).toBe(manualPath);
+    expect(listedJob?.output_path).toBe(manualPath);
 
     const job = await api.GET('/v1/media/jobs/{media_job_public_id}', {
       params: { path: { media_job_public_id: jobId } },
     });
     expect(job.response.status).toBe(200);
-    expect([manualPath, schedulePath, watcherPath]).toContain(job.data?.source_path);
+    expect(job.data?.source_path).toBe(manualPath);
+    expect(job.data?.output_path).toBe(manualPath);
+    const recent = await api.GET('/v1/media/jobs/recent', {
+      params: { query: { limit: 1, media_profile_public_id: profileId } },
+    });
+    expect(recent.response.status, JSON.stringify(recent.error)).toBe(200);
+    expect(recent.data?.jobs[0]?.media_job_public_id).toBe(jobId);
+    expect(recent.data?.jobs[0]?.source_path).toBe(manualPath);
+    expect(recent.data?.jobs[0]?.output_path).toBe(manualPath);
+    expect(JSON.stringify({ listedJob, job: job.data, recent: recent.data })).not.toContain('/proof/');
 
     const phases = await api.GET('/v1/media/jobs/{media_job_public_id}/phases', {
       params: { path: { media_job_public_id: jobId } },
@@ -659,4 +694,33 @@ test.describe('Media API', () => {
     });
     expect([204, 409]).toContain(retry.response.status);
   });
+
+  for (const mode of ['watcher', 'schedule'] as const) {
+    test(`activates native ${mode} discovery and admits a dry-run job`, async ({ api, profileFixture: fixture }) => {
+      const created = await api.POST('/v1/media/profiles', {
+        params: { header: { 'If-None-Match': '*' } }, body: fixture.request,
+      });
+      expect(created.response.status, JSON.stringify(created.error)).toBe(201);
+      const profileId = created.data?.media_profile_public_id;
+      if (!profileId) throw new Error('Missing automation profile identity');
+      const association = await api.POST('/v1/media/discovery-associations', {
+        params: { header: { 'If-None-Match': '*' } },
+        body: { association_key: fixture.prefix, media_profile_public_id: profileId, profile_version: 1,
+          source_root_key: 'source', root_relative_path: fixture.prefix, manual_enabled: false,
+          watcher_enabled: mode === 'watcher', schedule_enabled: mode === 'schedule' },
+      });
+      expect(association.response.status, JSON.stringify(association.error)).toBe(201);
+      const associationId = association.data?.media_discovery_association_public_id;
+      if (!associationId) throw new Error('Missing automation association identity');
+      const route = mode === 'watcher' ? '/v1/media/discovery/watchers' : '/v1/media/discovery/schedules';
+      const run = await api.POST(route, {
+        body: { media_discovery_association_public_id: associationId, source_paths: [fixture.relativePath] },
+      });
+      expect(run.response.status, JSON.stringify(run.error)).toBe(201);
+      expect(run.data?.skipped).toEqual([]);
+      expect(run.data?.queued_jobs).toHaveLength(1);
+      expect(run.data?.queued_jobs[0]?.dry_run).toBe(true);
+      expect(fixture.readSource()).toEqual(fixture.sourceBytes);
+    });
+  }
 });

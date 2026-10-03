@@ -5156,13 +5156,56 @@
   {
     "id": "adr/589-hash-helper-registration-deadline",
     "title": "Fingerprint Helper Registration Deadline",
-    "summary": "Status: Proposed Date: 2026-09-12 Operator approval: Pending Supersedes: None. Clarifies only ADR 588's REGISTER_HASH deadline field. Implementation status: Not started; affected codec validation remains paused.",
+    "summary": "Status: Accepted Date: 2026-09-12 Operator approval: 2026-09-15, \"ADRs 590 and 589 are approved under your recommendations.\" Supersedes: None. Clarifies only ADR 588's REGISTER_HASH deadline field. Implementation status: Not started; approval hold released.",
     "tags": [
+      "approval-resolution",
       "proposed-rule",
       "requested-decision",
       "task-record"
     ],
     "href": "/adr/589-hash-helper-registration-deadline/"
+  },
+  {
+    "id": "adr/590-profile-version-wire-completion",
+    "title": "Complete profile version wire format",
+    "summary": "Status: Accepted Date: 2026-09-15 Operator approval: 2026-09-15, \"ADRs 590 and 589 are approved under your recommendations.\" Supersedes: None; completes the unassigned profile representation in ADRs 521/557. Implementation status: Validated request/response DTOs and create-editor transport implemented; server persistence, replace/archive UI and release qualification remain incomplete.",
+    "tags": [
+      "alternatives-and-consequences",
+      "approval-requested",
+      "approval-resolution",
+      "recommendation",
+      "task-record"
+    ],
+    "href": "/adr/590-profile-version-wire-completion/"
+  },
+  {
+    "id": "adr/591-outside-in-first-release-path",
+    "title": "Outside-in first-release execution path",
+    "summary": "Status: Accepted Date: 2026-09-15 Operator approval: 2026-09-15, \"ADR 591 is approved.\" Supersedes: Only the pre-cutover feature-schema prohibition and legacy-parity release prerequisite in ADRs 522/551, under approved decision 1. Implementation status: Approval and instruction alignment recorded; root readiness API and profile request implementation in progress under 557/590. Persisted workflow, single-init cutover and release qualification remain outstanding.",
+    "tags": [
+      "approval-resolution",
+      "current-operator-goal-2026-09-21",
+      "current-validation",
+      "decisions-requested",
+      "exact-replacement-boundary",
+      "task-record",
+      "tradeoff-and-rollback",
+      "why-decision-1-is-needed"
+    ],
+    "href": "/adr/591-outside-in-first-release-path/"
+  },
+  {
+    "id": "adr/592-native-root-writer-assertion",
+    "title": "Native root writer assertion",
+    "summary": "Status: Proposed Date: 2026-09-21 Operator approval: Pending Supersedes: None; proposes the native assertion input required by ADR 550. Implementation status: Not started",
+    "tags": [
+      "context",
+      "decision-requested",
+      "proposed-contract",
+      "task-record",
+      "tradeoffs"
+    ],
+    "href": "/adr/592-native-root-writer-assertion/"
   },
   {
     "id": "adr/index",
@@ -5181,9 +5224,21 @@
     "tags": [
       "authority-and-evidence",
       "eleven-family-reconciliation",
-      "execution-order"
+      "execution-order",
+      "rows-1-and-5-source-bindings"
     ],
     "href": "/adr/support/569-d3-closure-map/"
+  },
+  {
+    "id": "adr/support/569-d3-helper-dispositions",
+    "title": "D3 helper source dispositions",
+    "summary": "Status: In progress; bounded static mapping, **not D3 acceptance**, approval, or a new execution result. Inspected source: detached 1694ffb6c67675ff68b7469716ef79ca99f049bd, 2026-09-14. Scope: the ten names in [INGESTION_HELPERS](../../../scripts/database_rebaseline/ingestion_proof.rb#L61) other than search_result_ingest and search_result_ingest_v1. [ADR 569 D3](../569-init-privilege-and-timeout-resolution.md#d3-function-local-variable-resolution) and the [closure map](569-d3-closure-map.md) govern; caller/wrapper closure and integration remain parent-owned.",
+    "tags": [
+      "bounded-conclusion",
+      "source-and-witness-boundary",
+      "ten-finite-dispositions"
+    ],
+    "href": "/adr/support/569-d3-helper-dispositions/"
   },
   {
     "id": "adr/support/569-ingestion-reachability",
@@ -5430,7 +5485,7 @@
   {
     "id": "media-approval-register",
     "title": "Media Approval Register",
-    "summary": "Decision navigation as of 2026-09-11, including the operator's explicit approval of ADR 588 at reviewed commit 9575c077. Linked ADRs and their exact operator evidence remain authoritative. This register grants no consent and does not certify implementation. Read the complete linked contract before work; conditions and expiries are not discarded by a summary row.",
+    "summary": "Decision navigation as of 2026-09-21, including the operator's explicit approval of ADRs 589-591 on 2026-09-15 and ADR 588 at reviewed commit 9575c077. Linked ADRs and their exact operator evidence remain authoritative. This register grants no consent and does not certify implementation. Read the complete linked contract before work; conditions and expiries are not discarded by a summary row.",
     "tags": [
       "accepted-implementation-scope",
       "recorded-approvals",

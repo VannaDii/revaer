@@ -46,6 +46,8 @@ use revaer_torrent_core::{TorrentEngine, TorrentInspector, TorrentWorkflow};
 
 const SYSTEM_USER_PUBLIC_ID: Uuid = Uuid::from_u128(0);
 
+mod root_catalog;
+
 /// Dependencies required to bootstrap the Revaer application.
 pub(crate) struct BootstrapDependencies {
     source_compliance: SourceComplianceMetadata,
@@ -57,6 +59,7 @@ pub(crate) struct BootstrapDependencies {
     events: EventBus,
     telemetry: Metrics,
     media_workspace_root: PathBuf,
+    media_root_source: root_catalog::CatalogSource,
     #[cfg(feature = "libtorrent")]
     libtorrent: Option<LibtorrentOrchestratorDeps>,
 }
@@ -104,11 +107,7 @@ impl BootstrapDependencies {
             Metrics::new().map_err(|err| AppError::telemetry("telemetry.metrics", err))?;
 
         #[cfg(feature = "libtorrent")]
-        let runtime = Some(
-            RuntimeStore::new(config.pool().clone())
-                .await
-                .map_err(|err| AppError::runtime("runtime_store.new", err))?,
-        );
+        let runtime = Some(RuntimeStore::new(config.pool().clone()));
         #[cfg(not(feature = "libtorrent"))]
         let _runtime: Option<RuntimeStore> = None;
 
@@ -127,6 +126,7 @@ impl BootstrapDependencies {
             events,
             telemetry,
             media_workspace_root,
+            media_root_source: root_catalog::source_from_env(),
             #[cfg(feature = "libtorrent")]
             libtorrent,
         })
@@ -356,11 +356,14 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         events,
         telemetry,
         media_workspace_root,
+        media_root_source,
         #[cfg(feature = "libtorrent")]
         libtorrent,
     } = dependencies;
 
     let addr = bootstrap_listener_addr(&snapshot.app_profile, &telemetry, &events)?;
+    // Retain catalog descriptors and root locks until the service has stopped.
+    let media_roots = root_catalog::start(&config, media_root_source).await?;
     let (shutdown, receiver) = runtime_shutdown::channel();
 
     #[cfg(feature = "libtorrent")]
@@ -397,11 +400,14 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     };
 
     let native_process_supervisor = system_native_process_supervisor();
-    let media = Arc::new(build_media_service(
-        &config,
-        telemetry.clone(),
-        Arc::clone(&native_process_supervisor),
-    ));
+    let media = Arc::new(
+        build_media_service(
+            &config,
+            telemetry.clone(),
+            Arc::clone(&native_process_supervisor),
+        )
+        .with_association_source(media_roots.as_ref().map(Arc::clone)),
+    );
     refresh_startup_media_capabilities(&media, &events, &telemetry).await;
     let api = build_api_server(
         &config,

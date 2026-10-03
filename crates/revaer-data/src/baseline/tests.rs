@@ -185,6 +185,12 @@ fn baseline_read_errors_expose_only_closed_codes_and_sqlstate() {
             "baseline_read_denied",
         ),
         (BaselineReadReason::StatementFailed, "statement_failed"),
+        (
+            BaselineReadReason::PoolAcquireTimeout,
+            "pool_acquire_timeout",
+        ),
+        (BaselineReadReason::StatementTimeout, "statement_timeout"),
+        (BaselineReadReason::CleanupFailed, "cleanup_failed"),
     ];
     for (reason, code) in reasons {
         let error = BaselineReadError::new(reason);

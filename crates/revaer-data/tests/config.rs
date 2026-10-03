@@ -9,14 +9,13 @@ use revaer_data::config::{
     fetch_api_key_hash, fetch_api_keys, fetch_app_label_policies, fetch_app_profile_row,
     fetch_engine_profile_row, fetch_fs_policy_row, fetch_revision, fetch_secret_by_name,
     insert_api_key, insert_setup_token, invalidate_active_setup_tokens, mark_setup_token_consumed,
-    replace_app_label_policies, run_migrations, set_engine_alt_speed, set_engine_ip_filter,
-    set_engine_list_values, set_peer_classes, set_tracker_config, update_api_key_enabled,
-    update_api_key_expires_at, update_api_key_hash, update_api_key_label,
-    update_api_key_rate_limit, update_app_auth_mode, update_app_bind_addr, update_app_http_port,
-    update_app_immutable_keys, update_app_instance_name, update_app_local_networks,
-    update_app_mode, update_app_telemetry, update_engine_profile, update_fs_array_field,
-    update_fs_boolean_field, update_fs_optional_string_field, update_fs_string_field,
-    upsert_secret,
+    replace_app_label_policies, set_engine_alt_speed, set_engine_ip_filter, set_engine_list_values,
+    set_peer_classes, set_tracker_config, update_api_key_enabled, update_api_key_expires_at,
+    update_api_key_hash, update_api_key_label, update_api_key_rate_limit, update_app_auth_mode,
+    update_app_bind_addr, update_app_http_port, update_app_immutable_keys,
+    update_app_instance_name, update_app_local_networks, update_app_mode, update_app_telemetry,
+    update_engine_profile, update_fs_array_field, update_fs_boolean_field,
+    update_fs_optional_string_field, update_fs_string_field, upsert_secret, verify_database,
 };
 use revaer_test_support::postgres::start_postgres;
 use sqlx::postgres::PgPoolOptions;
@@ -81,7 +80,7 @@ async fn config_wrappers_round_trip() -> anyhow::Result<()> {
         .connect(postgres.connection_string())
         .await?;
 
-    run_migrations(&pool).await?;
+    verify_database(&pool).await?;
 
     let app_id = Uuid::parse_str(APP_PROFILE_ID)?;
     let engine_id = Uuid::parse_str(ENGINE_PROFILE_ID)?;
@@ -322,7 +321,7 @@ async fn config_factory_reset_clears_auth_material_and_restores_defaults() -> an
         .connect(postgres.connection_string())
         .await?;
 
-    run_migrations(&pool).await?;
+    verify_database(&pool).await?;
 
     let app_id = Uuid::parse_str(APP_PROFILE_ID)?;
     let baseline_app = fetch_app_profile_row(&pool, app_id).await?;
@@ -375,7 +374,7 @@ async fn config_setup_token_and_api_key_helpers_track_state_transitions() -> any
         .connect(postgres.connection_string())
         .await?;
 
-    run_migrations(&pool).await?;
+    verify_database(&pool).await?;
 
     insert_setup_token(
         &pool,
@@ -480,7 +479,7 @@ async fn config_fs_and_tracker_helpers_round_trip_full_state() -> anyhow::Result
         .connect(postgres.connection_string())
         .await?;
 
-    run_migrations(&pool).await?;
+    verify_database(&pool).await?;
 
     let engine_id = Uuid::parse_str(ENGINE_PROFILE_ID)?;
     let fs_id = Uuid::parse_str(FS_POLICY_ID)?;

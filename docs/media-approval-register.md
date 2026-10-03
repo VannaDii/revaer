@@ -1,10 +1,22 @@
 # Media Approval Register
 
-Decision navigation as of 2026-09-11, including the operator's explicit approval
-of ADR 588 at reviewed commit `9575c077`. Linked ADRs and their exact
+Decision navigation as of 2026-10-02, including the operator's explicit approval
+of ADRs 589-591 on 2026-09-15 and ADR 588 at reviewed commit `9575c077`. Linked ADRs and their exact
 operator evidence remain authoritative. This register grants no consent and
 does not certify implementation. Read the complete linked contract before work;
 conditions and expiries are not discarded by a summary row.
+
+## Current Simplification Resolution
+
+ADRs [593](adr/593-simple-checkpoint-recovery.md) and
+[594](adr/594-simple-discovery-worker-cleanup.md) replace the custom supervisor
+and registration contract (588 S2/LIFE-1 and 589), distributed worker recovery
+(512), cleanup ownership/obsolete-media retention (513), and the named discovery
+frontier/quota/lease requirements. Revaer must execute the full workflow locally,
+budget scratch, restart unfinished steps and promptly clean disposable media.
+Distributed workers are future work, not approved scope. Historical rows below
+do not restore superseded requirements. Unrelated approvals and quality gates
+remain binding; removal of the detour is not release qualification.
 
 ## Recorded Approvals
 
@@ -35,19 +47,31 @@ the named holds below without certifying implementation.
 | --- | --- | --- |
 | 1: D4/D5 ingestion family | Approved; [exact changes](adr/support/588-decision-details.md#exact-recommendation-for-review) | Final-init-only scratch-table lifetime and IMDb/TMDB/TVDB predicate fixes. No canonical merge or frozen-reference change. Complete conditional D3 before cutover. |
 | 2: C1/C1-D and E1 | Approved; E1 activation conditional; [startup contract](adr/support/588-decision-details.md#package-environment-and-compliance-startup) | Whole-service failure on invalid compliance metadata, verified immutable read-only bundle and exact 214-byte environment. Real current-source native amd64/arm64 closure and startup evidence before activation. |
-| 3: S2/LIFE-1 | Approved for implementation; [shutdown/recovery contract](adr/support/588-decision-details.md#s2-exact-lifecycle-and-recovery-proposal) | Exact supervisor, deadlines, task/control limits, quiescence, lease/retry and operator recovery rules. Native saturation, blocked-I/O, recovery and timing qualification; no kernel-progress guarantee. |
-| 4: DISC-1 through DISC-7 | Approved for implementation; [discovery contract](adr/support/588-decision-details.md#disc-1-through-disc-7-discovery-and-fingerprint-contract) | Exact normalized frontier, identities, read-only helpers and complete initial/hard admission tuple. Current-source storage, multi-replica, cancellation and recovery evidence before activation. |
+| 3: S2/LIFE-1 | Superseded by accepted [593](adr/593-simple-checkpoint-recovery.md) and [594](adr/594-simple-discovery-worker-cleanup.md) | Ordinary cancellation/shutdown, checkpoint replay and interrupted final-replacement recovery require real service evidence; no custom owner protocol. |
+| 4: DISC-1 through DISC-7 | Retained except exact deltas replaced by accepted [594](adr/594-simple-discovery-worker-cleanup.md) | Bounded rescans, duplicate prevention, identities and cancellation/recovery evidence; no distributed frontier/quota/lease qualification requirement. |
 | 5: AUDIO-1 | Approved for implementation; [audio contract](adr/support/588-decision-details.md#audio-1-full-versioned-audio-contract) | Three exact versioned intents, music scalar delta and bitrate/cap semantics. Full codec/layout/rate, meter, short-form and operator listening acceptance. |
 | 6: ASSET-1 | Narrow exception approved; [exact boundary](adr/support/588-decision-details.md#asset-1-content-bound-replay-and-permanent-expiry) | Only 213 content-bound binary deletions on PR 130; count/review all text normally. Fresh provider identity/history, exact content, permanent first-close/merge expiry and coordinated consent/guard/instruction implementation. The current guard is unchanged. |
 | 7: External transfers | Separately authorized; [exact scope](adr/support/588-decision-details.md#separately-scoped-upload-request) | Reviewed GitHub implementation/evidence, exact Sonar organization/project, and gated existing GHCR Revaer release destinations through merge or earlier revocation. No secrets, test media, unpublished experiments, unrelated files, criteria/server/billing changes or deployment. |
 
 ## Remaining Gates
 
-[ADR 589](adr/589-hash-helper-registration-deadline.md) proposes one newly found
-wire-field clarification: carry the existing effective fingerprint deadline in
-`REGISTER_HASH`, without new durations or clock resets. Operator approval is
-pending; only affected codec validation is paused. This does not withdraw or
-reopen any accepted ADR 588 choice.
+[ADR 591](adr/591-outside-in-first-release-path.md#approval-resolution) was
+approved on 2026-09-15. It replaces pre-cutover feature-schema and legacy-parity
+prerequisites with single-init application, security, transaction and workflow
+qualification. Earlier rows retain historical evidence, not superseded release
+prerequisites. Exclude unqualified D3 compiler substitutions; do not restart
+legacy-equivalence or migration work for this unreleased product.
+
+[ADR 590](adr/590-profile-version-wire-completion.md#approval-resolution) and
+[ADR 589](adr/589-hash-helper-registration-deadline.md#approval-resolution) were
+approved on the same date under their recommendations. Profile wire format and
+enabled-state behavior remain approved, not qualified by that approval. ADR 589's
+fingerprint registration contract is superseded by ADR 593.
+
+On 2026-09-21 the operator approved the next milestone: save configuration through
+the UI, restart the real service, and run a dry-run plan without modifying source
+media. Work is single-agent only unless the operator explicitly authorizes a
+change. The complete first-release scope and all quality gates remain required.
 
 No named design choice in ADR 588 awaits another vote. Its conditional
 qualification, original-preservation, full CI/UI, strict Sonar with positive
@@ -60,3 +84,12 @@ decision-specific approval. Existing accepted work continues while independent
 execution or verification problems are resolved. Record actual implementation,
 local verification, package qualification and merge separately in the
 [completion ledger](adr/564-media-completion-ledger.md).
+
+ADR 592 records the operator's 2026-09-21 direction: do not prove root
+exclusivity; lock or check active files, abandon missing inputs and refuse
+replacement of changed inputs. The operator affirmed that approach with
+"Great!". On 2026-10-01 its status was corrected to Accepted, removing the
+agent-created approval hold. It replaces only ADR 550's native external-writer
+assertion clauses. Notifications are optional; the residual external-writer race
+is documented. Implementation and qualification remain outstanding.
+See [ADR 592](adr/592-native-root-writer-assertion.md).

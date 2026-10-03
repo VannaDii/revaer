@@ -35,6 +35,12 @@ pub enum AppError {
         /// Name of the missing environment variable.
         name: &'static str,
     },
+    /// Root-catalog reconciliation could not persist a safe startup state.
+    #[error("media root catalog startup persistence failed")]
+    RootCatalogStorage {
+        /// Original database failure without caller paths in the outer diagnostic.
+        source: revaer_data::DataError,
+    },
     /// Configuration operations failed.
     #[error("configuration operation failed")]
     Config {
@@ -74,14 +80,6 @@ pub enum AppError {
         operation: &'static str,
         /// Source fsops error.
         source: revaer_fsops::FsOpsError,
-    },
-    /// Runtime persistence operations failed.
-    #[error("runtime persistence failed")]
-    Runtime {
-        /// Operation identifier.
-        operation: &'static str,
-        /// Source runtime data error.
-        source: revaer_data::DataError,
     },
     /// HTTP client operations failed.
     #[error("http operation failed")]
@@ -175,11 +173,6 @@ impl AppError {
     }
 
     #[cfg(feature = "libtorrent")]
-    pub(crate) const fn runtime(operation: &'static str, source: revaer_data::DataError) -> Self {
-        Self::Runtime { operation, source }
-    }
-
-    #[cfg(feature = "libtorrent")]
     pub(crate) const fn http(operation: &'static str, url: String, source: reqwest::Error) -> Self {
         Self::Http {
             operation,
@@ -245,14 +238,5 @@ mod tests {
             },
         );
         assert!(matches!(fsops, AppError::FsOps { .. }));
-
-        let runtime = AppError::runtime(
-            "save",
-            revaer_data::DataError::PathNotUtf8 {
-                field: "path",
-                path: PathBuf::from(".server_root/revaer"),
-            },
-        );
-        assert!(matches!(runtime, AppError::Runtime { .. }));
     }
 }

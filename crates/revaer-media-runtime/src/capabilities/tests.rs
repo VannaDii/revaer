@@ -9,6 +9,29 @@ use super::{
 #[derive(Debug)]
 struct StaticDetector;
 
+#[test]
+fn ffmpeg_capability_parsers_do_not_advertise_legend_delimiters() {
+    let codecs = super::parse::parse_codecs(
+        "Codecs:\n D..... = Decoding supported\n .E.... = Encoding supported\n ..V... = Video codec\n -------\n DEV.L. h264 H.264\n D.V.L. ffv1 FFmpeg video codec\n",
+    );
+    assert_eq!(codecs.len(), 2);
+    assert!(codecs.iter().all(|codec| codec.name != "="));
+    assert!(
+        codecs
+            .iter()
+            .any(|codec| codec.name == "h264" && codec.encode_supported && codec.decode_supported)
+    );
+    assert!(
+        codecs
+            .iter()
+            .any(|codec| codec.name == "ffv1" && !codec.encode_supported && codec.decode_supported)
+    );
+    for flags in ["V.....", "D", "E"] {
+        let output = format!(" {flags} = legend\n {flags} actual_tool tool\n");
+        assert_eq!(super::parse::parse_tool_names(&output), vec!["actual_tool"]);
+    }
+}
+
 impl CapabilityDetector for StaticDetector {
     fn detect(&self) -> Result<CapabilitySnapshot, CapabilityDetectError> {
         Ok(valid_snapshot())

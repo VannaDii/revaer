@@ -308,7 +308,7 @@ js-coverage-merge:
 validate:
     REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-${DATABASE_URL:?Set REVAER_TEST_DATABASE_URL or DATABASE_URL to a caller-supplied disposable test database}}" \
     DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}" \
-        just db-start fmt lint helm-lint instruction-drift check-assets udeps audit deny ui-build test test-features-min cov
+        just db-baseline-verify fmt lint helm-lint instruction-drift check-assets udeps audit deny ui-build test test-features-min cov
 
 ci: validate
     just build-release

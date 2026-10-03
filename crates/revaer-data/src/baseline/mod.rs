@@ -7,10 +7,16 @@
 //! bootstrap lifecycle; successful row verification is not that lifecycle.
 
 mod error;
+mod pool;
 mod row;
 
 pub use error::{BaselineReadError, BaselineReadReason};
+pub use pool::verify_runtime_pool;
 pub use row::VerifiedBaseline;
+
+/// SHA-256 of the exact init bytes built into this artifact's database contract.
+pub const PACKAGED_INIT_SHA256: &[u8; 32] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/init-sha256.bin"));
 
 use row::BaselineRow;
 use sqlx::PgConnection;

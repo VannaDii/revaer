@@ -18,6 +18,7 @@ use revaer_data::media::configuration::{
     update_media_job_retention_policy, upsert_media_compatibility_target,
     upsert_media_policy_profile,
 };
+use revaer_data::media::job_roots::{ReplacementRecoveryRow, list_replacement_recovery};
 use revaer_data::media::jobs::{
     AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput, AppendMediaJobOperationInput,
     AppendMediaJobPlanReasonInput, AppendMediaJobVerificationCheckInput, ClaimedMediaJobRow,
@@ -54,6 +55,17 @@ pub struct MediaStore {
 }
 
 impl MediaStore {
+    /// Read a bounded page of claimed destructive attempts for journal recovery.
+    ///
+    /// # Errors
+    /// Returns stale catalog, invalid immutable root evidence or persistence failures.
+    pub async fn list_replacement_recovery_candidates(
+        &self,
+        after_attempt_id: i64,
+    ) -> DataResult<Vec<ReplacementRecoveryRow>> {
+        list_replacement_recovery(&self.pool, after_attempt_id).await
+    }
+
     /// Construct a media store facade from a connection pool.
     #[must_use]
     pub const fn new(pool: PgPool) -> Self {
@@ -64,6 +76,16 @@ impl MediaStore {
     #[must_use]
     pub const fn pool(&self) -> &PgPool {
         &self.pool
+    }
+
+    /// Read the five path-free root readiness rows from one database snapshot.
+    ///
+    /// # Errors
+    /// Propagates stored-procedure failures without synthesizing readiness.
+    pub async fn root_catalog_readiness(
+        &self,
+    ) -> DataResult<Vec<revaer_data::media::root_catalog::RootCatalogReadinessRow>> {
+        revaer_data::media::root_catalog::read_root_catalog_readiness(&self.pool).await
     }
 
     /// Upsert a media profile.
@@ -485,6 +507,18 @@ impl MediaStore {
         media_job_public_id: Uuid,
     ) -> DataResult<Vec<MediaJobDesiredTargetStreamRow>> {
         list_media_job_desired_target_streams(&self.pool, media_job_public_id).await
+    }
+
+    /// Read the bounded immutable operation-cost family captured for a job.
+    ///
+    /// # Errors
+    /// Propagates stored-procedure errors without reading current policy values.
+    pub async fn list_job_operation_costs(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> DataResult<Vec<revaer_data::media::policy_snapshot::OperationCostSnapshotRow>> {
+        revaer_data::media::policy_snapshot::list_operation_costs(&self.pool, media_job_public_id)
+            .await
     }
 
     /// Refresh worker heartbeat for a claimed media job.
@@ -1498,6 +1532,7 @@ mod tests {
         assert!(store.mark_job_completed(job_id).await.is_err());
         assert!(store.claim_next_job().await.is_err());
         assert!(store.list_job_desired_target_streams(job_id).await.is_err());
+        assert!(store.list_job_operation_costs(job_id).await.is_err());
         assert!(store.heartbeat_job(job_id, 0).await.is_err());
         assert!(store.poll_job_control(job_id, 0, 0).await.is_err());
         assert!(store.acknowledge_job_cancel(job_id, 0, 0).await.is_err());

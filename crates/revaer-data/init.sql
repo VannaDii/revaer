@@ -1,7 +1,6 @@
 -- Revaer pre-v1 packaged database baseline.
 -- Frozen migration corpus SHA-256: 966d3a286c7fb6f221987fd4906e9fc25cd19fe4729afd70405dee6b72a6bbac
 -- Generated with PostgreSQL 16.14 from docker.io/library/postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
-
 --
 -- PostgreSQL database dump
 --
@@ -10234,7 +10233,6 @@ CREATE FUNCTION public.media_compatibility_target_upsert_v1(actor_public_id_inpu
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
-#variable_conflict use_column
 DECLARE
     actor_id BIGINT;
     version_value INT;
@@ -10242,6 +10240,8 @@ DECLARE
     audio_layout_channel_count INT;
 BEGIN
     actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
+    PERFORM 1 FROM public.media_root_catalog_state
+    WHERE media_root_catalog_state_id = 1 FOR SHARE;
 
     version_value := COALESCE(version_input, 1);
     audio_channel_layout_value := NULLIF(lower(btrim(audio_channel_layout_input)), '');
@@ -10283,7 +10283,7 @@ BEGIN
         TRUE,
         now()
     )
-    ON CONFLICT (lower(compatibility_target_key), version) DO UPDATE SET
+    ON CONFLICT (lower(media_compatibility_target.compatibility_target_key), (media_compatibility_target.version)) DO UPDATE SET
         display_name = EXCLUDED.display_name,
         video_codec = EXCLUDED.video_codec,
         audio_codec = EXCLUDED.audio_codec,
@@ -10319,6 +10319,8 @@ DECLARE
     target_public_id UUID;
 BEGIN
     actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
+    PERFORM 1 FROM public.media_root_catalog_state
+    WHERE media_root_catalog_state_id = 1 FOR SHARE;
 
     IF NULLIF(btrim(target_key_input), '') IS NULL
        OR COALESCE(version_input, 0) <= 0
@@ -11912,7 +11914,9 @@ BEGIN
     END IF;
     IF NOT (
         NEW.status = OLD.status
-        OR (OLD.status = media_job_status_queued_v1() AND NEW.status = media_job_status_running_v1())
+        OR (OLD.status = media_job_status_queued_v1() AND NEW.status IN (
+            media_job_status_running_v1(), media_job_status_cancelled_v1()
+        ))
         OR (OLD.status = media_job_status_running_v1() AND NEW.status IN (
             media_job_status_verifying_v1(), media_job_status_completed_v1(),
             media_job_status_failed_v1(), media_job_status_cancelled_v1()
@@ -12026,6 +12030,14 @@ BEGIN
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_not_found';
     END IF;
 
+    UPDATE media_job_attempt attempt
+       SET status = media_job_status_cancelled_v1(), completed_at = now()
+      FROM media_job job
+     WHERE job.media_job_public_id = media_job_public_id_input
+       AND job.current_attempt_id = attempt.media_job_attempt_id
+       AND job.status = media_job_status_cancelled_v1()
+       AND attempt.status = media_job_status_queued_v1();
+
     RETURN requested_generation;
 END;
 $$;
@@ -12039,33 +12051,6 @@ CREATE FUNCTION public.media_job_capture_configuration_v1() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    INSERT INTO media_job_configuration_snapshot (
-        media_job_id,
-        profile_configuration_version,
-        media_policy_profile_id,
-        policy_version,
-        media_desired_target_profile_id,
-        desired_target_version
-    )
-    SELECT NEW.media_job_id,
-           profile.configuration_version,
-           NEW.intent_policy_profile_id,
-           NEW.intent_policy_version,
-           NEW.intent_desired_target_profile_id,
-           NEW.intent_desired_target_version
-      FROM media_profile profile
-     WHERE profile.media_profile_id = NEW.media_profile_id;
-
-    INSERT INTO media_job_root_snapshot (
-        media_job_id, root_kind, requested_path, canonical_path,
-        filesystem_device, filesystem_inode, media_type, sort_order, enabled
-    )
-    SELECT NEW.media_job_id, root.root_kind, root.requested_path, root.canonical_path,
-           root.filesystem_device, root.filesystem_inode, root.media_type,
-           root.sort_order, root.enabled
-      FROM media_profile_root root
-     WHERE root.media_profile_id = NEW.media_profile_id;
-
     INSERT INTO media_job_file_rule_snapshot (
         media_job_id, rule_kind, matcher_kind, matcher_value, sort_order, enabled
     )
@@ -12190,6 +12175,7 @@ BEGIN
       LEFT JOIN media_policy_verification verification
         ON verification.media_policy_profile_id = policy.media_policy_profile_id
      WHERE policy.media_policy_profile_id = NEW.intent_policy_profile_id;
+    PERFORM public.media_job_capture_roots_v1(NEW.media_job_id);
     RETURN NEW;
 END;
 $$;
@@ -12367,6 +12353,8 @@ CREATE FUNCTION public.media_job_configuration_immutable_v1() RETURNS trigger
     AS $$
 BEGIN
     IF NEW.media_profile_id IS DISTINCT FROM OLD.media_profile_id
+       OR NEW.media_profile_version_id IS DISTINCT FROM OLD.media_profile_version_id
+       OR NEW.media_discovery_association_version_id IS DISTINCT FROM OLD.media_discovery_association_version_id
        OR NEW.source_path IS DISTINCT FROM OLD.source_path
        OR NEW.output_path IS DISTINCT FROM OLD.output_path
        OR NEW.dry_run IS DISTINCT FROM OLD.dry_run
@@ -12563,7 +12551,7 @@ $$;
 --
 
 CREATE FUNCTION public.media_job_current_attempt_required_v1() RETURNS trigger
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 BEGIN
     IF EXISTS (
@@ -13574,28 +13562,14 @@ CREATE FUNCTION public.media_job_snapshot_source_fingerprint_v1() RETURNS trigge
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
-DECLARE
-    fingerprint_row media_discovery_source_fingerprint%ROWTYPE;
 BEGIN
-    SELECT fingerprint.*
-      INTO fingerprint_row
-      FROM media_discovery_source_fingerprint fingerprint
-     WHERE fingerprint.media_profile_id = NEW.media_profile_id
-       AND fingerprint.source_path = NEW.source_path
-     FOR SHARE;
-
-    IF fingerprint_row.media_discovery_source_fingerprint_id IS NULL
-       OR fingerprint_row.source_identity IS NULL
-       OR fingerprint_row.source_changed_ns IS NULL THEN
+    IF num_nonnulls(NEW.intent_source_identity, NEW.intent_source_size_bytes,
+        NEW.intent_source_modified_ns, NEW.intent_source_changed_ns,
+        NEW.intent_source_sha256) <> 5 THEN
         RAISE EXCEPTION 'media job source fingerprint required'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_source_fingerprint_required';
     END IF;
 
-    NEW.intent_source_identity := fingerprint_row.source_identity;
-    NEW.intent_source_size_bytes := fingerprint_row.source_size_bytes;
-    NEW.intent_source_modified_ns := fingerprint_row.source_modified_ns;
-    NEW.intent_source_changed_ns := fingerprint_row.source_changed_ns;
-    NEW.intent_source_sha256 := fingerprint_row.source_sha256;
     RETURN NEW;
 END;
 $$;
@@ -14606,17 +14580,19 @@ CREATE FUNCTION public.media_policy_component_version_guard_v1() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
-    policy_id BIGINT;
+    policy_ids bigint[];
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        policy_id := OLD.media_policy_profile_id;
-    ELSE
-        policy_id := NEW.media_policy_profile_id;
-    END IF;
+    policy_ids := CASE TG_OP
+        WHEN 'DELETE' THEN ARRAY[OLD.media_policy_profile_id]
+        WHEN 'INSERT' THEN ARRAY[NEW.media_policy_profile_id]
+        ELSE ARRAY[OLD.media_policy_profile_id, NEW.media_policy_profile_id]
+    END;
     IF EXISTS (
-        SELECT 1
-          FROM media_job_configuration_snapshot snapshot
-         WHERE snapshot.media_policy_profile_id = policy_id
+        SELECT 1 FROM public.media_job_configuration_snapshot snapshot
+        WHERE snapshot.media_policy_profile_id = ANY(policy_ids)
+    ) OR EXISTS (
+        SELECT 1 FROM public.media_profile_version version
+        WHERE version.media_policy_profile_id = ANY(policy_ids)
     ) THEN
         RAISE EXCEPTION 'selected policy versions are immutable'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_policy_version_immutable';
@@ -14742,41 +14718,42 @@ $$;
 -- Name: media_policy_profile_list_v1(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_policy_profile_list_v1() RETURNS TABLE(policy_key text, version integer, display_name text, video_intent text, verification_strictness text, verification_duration_tolerance_millis bigint, verification_mux_validation boolean, verification_decode_all_streams boolean, verification_keyframe_seek boolean, verification_playback_probe boolean)
+CREATE FUNCTION public.media_policy_profile_list_v1() RETURNS TABLE(policy_key text, version integer, display_name text, video_intent text, verification_strictness text, verification_duration_tolerance_millis bigint, verification_mux_validation boolean, verification_decode_all_streams boolean, verification_keyframe_seek boolean, verification_playback_probe boolean, dry_run boolean, replacement_mode text, quarantine_enabled boolean, preserve_permissions boolean, preserve_ownership boolean)
     LANGUAGE sql STABLE
     AS $$
-    SELECT profile.policy_key,
-           profile.version,
-           profile.display_name,
-           profile.video_intent,
-           profile.verification_strictness,
-           profile.verification_duration_tolerance_millis,
-           profile.verification_mux_validation,
-           profile.verification_decode_all_streams,
-           profile.verification_keyframe_seek,
-           profile.verification_playback_probe
+    SELECT profile.policy_key, profile.version, profile.display_name, profile.video_intent,
+           profile.verification_strictness, profile.verification_duration_tolerance_millis,
+           profile.verification_mux_validation, profile.verification_decode_all_streams,
+           profile.verification_keyframe_seek, profile.verification_playback_probe,
+           output.dry_run, output.replacement_mode, output.quarantine_enabled,
+           output.preserve_permissions, output.preserve_ownership
       FROM media_policy_profile AS profile
+      JOIN media_policy_output AS output USING (media_policy_profile_id)
      WHERE profile.enabled
      ORDER BY lower(profile.policy_key), profile.version DESC;
 $$;
 
-
---
--- Name: media_policy_profile_upsert_v1(uuid, text, integer, text, text, text, bigint, boolean, boolean, boolean, boolean); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.media_policy_profile_upsert_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, display_name_input text, video_intent_input text, verification_strictness_input text, verification_duration_tolerance_millis_input bigint, verification_mux_validation_input boolean, verification_decode_all_streams_input boolean, verification_keyframe_seek_input boolean, verification_playback_probe_input boolean) RETURNS TABLE(policy_key text, version integer, display_name text, video_intent text, verification_strictness text, verification_duration_tolerance_millis bigint, verification_mux_validation boolean, verification_decode_all_streams boolean, verification_keyframe_seek boolean, verification_playback_probe boolean)
+CREATE FUNCTION public.media_policy_profile_upsert_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, display_name_input text, video_intent_input text, verification_strictness_input text, verification_duration_tolerance_millis_input bigint, verification_mux_validation_input boolean, verification_decode_all_streams_input boolean, verification_keyframe_seek_input boolean, verification_playback_probe_input boolean, dry_run_input boolean, replacement_mode_input text, quarantine_enabled_input boolean, preserve_permissions_input boolean, preserve_ownership_input boolean) RETURNS TABLE(policy_key text, version integer, display_name text, video_intent text, verification_strictness text, verification_duration_tolerance_millis bigint, verification_mux_validation boolean, verification_decode_all_streams boolean, verification_keyframe_seek boolean, verification_playback_probe boolean, dry_run boolean, replacement_mode text, quarantine_enabled boolean, preserve_permissions boolean, preserve_ownership boolean)
     LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'pg_temp'
+    SET search_path TO pg_catalog, public
     AS $$
-#variable_conflict use_column
 DECLARE
     actor_id BIGINT;
+    policy_id BIGINT;
 BEGIN
-    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
+    actor_id := public.media_actor_id_for_public_id_v1(actor_public_id_input);
+    PERFORM 1 FROM public.media_root_catalog_state
+    WHERE media_root_catalog_state_id = 1 FOR SHARE;
+    IF dry_run_input IS NULL OR replacement_mode_input IS NULL
+       OR replacement_mode_input NOT IN ('disabled', 'atomic_replace')
+       OR (NOT dry_run_input AND replacement_mode_input <> 'atomic_replace')
+       OR quarantine_enabled_input IS NULL OR preserve_permissions_input IS NULL
+       OR preserve_ownership_input IS NULL THEN
+        RAISE EXCEPTION 'invalid complete output policy'
+            USING ERRCODE = 'P0001', DETAIL = 'media_policy_output_invalid';
+    END IF;
     BEGIN
-        RETURN QUERY
-        INSERT INTO media_policy_profile (
+        INSERT INTO public.media_policy_profile (
             policy_key, version, display_name, video_intent,
             verification_strictness, verification_duration_tolerance_millis,
             verification_mux_validation, verification_decode_all_streams,
@@ -14787,18 +14764,29 @@ BEGIN
             verification_duration_tolerance_millis_input,
             verification_mux_validation_input, verification_decode_all_streams_input,
             verification_keyframe_seek_input, verification_playback_probe_input, TRUE
-        )
-        RETURNING media_policy_profile.policy_key, media_policy_profile.version,
-                  media_policy_profile.display_name, media_policy_profile.video_intent,
-                  media_policy_profile.verification_strictness,
-                  media_policy_profile.verification_duration_tolerance_millis,
-                  media_policy_profile.verification_mux_validation,
-                  media_policy_profile.verification_decode_all_streams,
-                  media_policy_profile.verification_keyframe_seek,
-                  media_policy_profile.verification_playback_probe;
+        ) RETURNING media_policy_profile_id INTO policy_id;
+        UPDATE public.media_policy_output AS output SET
+            dry_run = dry_run_input, replacement_mode = replacement_mode_input,
+            quarantine_enabled = quarantine_enabled_input,
+            preserve_permissions = preserve_permissions_input,
+            preserve_ownership = preserve_ownership_input
+        WHERE output.media_policy_profile_id = policy_id;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'output policy component missing'
+                USING ERRCODE = 'P0001', DETAIL = 'media_policy_output_invalid';
+        END IF;
+        RETURN QUERY SELECT profile.policy_key, profile.version, profile.display_name, profile.video_intent,
+           profile.verification_strictness, profile.verification_duration_tolerance_millis,
+           profile.verification_mux_validation, profile.verification_decode_all_streams,
+           profile.verification_keyframe_seek, profile.verification_playback_probe,
+           output.dry_run, output.replacement_mode, output.quarantine_enabled,
+           output.preserve_permissions, output.preserve_ownership
+            FROM public.media_policy_profile AS profile
+            JOIN public.media_policy_output AS output USING (media_policy_profile_id)
+            WHERE profile.media_policy_profile_id = policy_id;
     EXCEPTION WHEN unique_violation THEN
         RAISE EXCEPTION 'policy version already exists'
-            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_policy_version_conflict';
+            USING ERRCODE = public.media_app_error_code_v1(), DETAIL = 'media_policy_version_conflict';
     END;
 END;
 $$;
@@ -14960,6 +14948,30 @@ BEGIN
         preserve_permissions, preserve_ownership
     ) VALUES (policy_id_input, TRUE, 'disabled', TRUE, TRUE, TRUE)
     ON CONFLICT (media_policy_profile_id) DO NOTHING;
+
+    INSERT INTO media_policy_operation_cost (
+        media_policy_profile_id, operation_kind, cost_weight, sort_order, enabled
+    )
+    SELECT policy_id_input, c.operation_kind, c.cost_weight, c.sort_order, TRUE
+    FROM (VALUES
+        ('no_op', 0, 0),
+        ('remux', 5, 1),
+        ('metadata_rewrite', 1, 2),
+        ('disposition_rewrite', 1, 3),
+        ('label_rewrite', 1, 4),
+        ('stream_reorder', 2, 5),
+        ('embed_subtitle', 4, 6),
+        ('extract_subtitle', 3, 7),
+        ('copy_sidecar_subtitle', 2, 8),
+        ('remove_sidecar_subtitle', 2, 9),
+        ('subtitle_transcode', 80, 10),
+        ('audio_transcode', 20, 11),
+        ('video_transcode', 1000, 12)
+    ) AS c(operation_kind, cost_weight, sort_order)
+    WHERE NOT EXISTS (
+        SELECT 1 FROM media_policy_operation_cost existing
+        WHERE existing.media_policy_profile_id = policy_id_input
+    );
 
     INSERT INTO media_policy_workspace (
         media_policy_profile_id, retention_hours, diagnostics_enabled,
@@ -15872,7 +15884,7 @@ CREATE FUNCTION public.media_profile_validate_all_root_overlap_trigger_v1() RETU
 DECLARE
     effective_profile_id BIGINT;
 BEGIN
-    IF NEW.deleted_at IS NULL THEN
+    IF NEW.deleted_at IS NULL AND NEW.source_root IS NOT NULL AND NEW.output_root IS NOT NULL THEN
         effective_profile_id := NEW.media_profile_id;
 
         IF TG_OP = 'INSERT' THEN
@@ -16302,7 +16314,7 @@ $$;
 -- Name: media_workspace_retention_snapshot_v1(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_workspace_retention_snapshot_v1() RETURNS TABLE(media_job_public_id uuid, workspace_retention_seconds bigint, diagnostic_workspace_retention_seconds bigint, max_entries_per_tick integer)
+CREATE FUNCTION public.media_workspace_retention_snapshot_v1() RETURNS TABLE(media_job_public_id uuid, attempt_number integer, claim_generation bigint, workspace_retention_seconds bigint, diagnostic_workspace_retention_seconds bigint, max_entries_per_tick integer)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -16319,22 +16331,32 @@ CREATE FUNCTION public.media_workspace_retention_snapshot_v1() RETURNS TABLE(med
         ORDER BY retention.updated_at DESC, retention.media_job_retention_policy_id DESC
         LIMIT 1
     ), active_jobs AS MATERIALIZED (
-        SELECT job.media_job_public_id
+        SELECT job.media_job_public_id, attempt.attempt_number, attempt.claim_generation
         FROM media_job job
+        JOIN media_job_attempt attempt ON attempt.media_job_id = job.media_job_id
         WHERE job.status IN (
             media_job_status_queued_v1(),
             media_job_status_running_v1(),
             media_job_status_verifying_v1()
+        ) OR attempt.status IN (
+            media_job_status_running_v1(), media_job_status_verifying_v1()
+        ) OR EXISTS (
+            SELECT 1 FROM media_job_terminal_outbox terminal
+            WHERE terminal.media_job_attempt_id = attempt.media_job_attempt_id
+              AND terminal.published_at IS NULL
         )
     )
     SELECT
         active_jobs.media_job_public_id,
+        active_jobs.attempt_number,
+        active_jobs.claim_generation,
         policy.workspace_retention_seconds,
         policy.diagnostic_workspace_retention_seconds,
         policy.max_entries_per_tick
     FROM policy
     LEFT JOIN active_jobs ON TRUE
-    ORDER BY active_jobs.media_job_public_id NULLS FIRST;
+    ORDER BY active_jobs.media_job_public_id NULLS FIRST,
+             active_jobs.attempt_number, active_jobs.claim_generation;
 $$;
 
 
@@ -25849,7 +25871,6 @@ $$;
 CREATE FUNCTION public.search_result_ingest_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, source_guid_input character varying, details_url_input character varying, download_url_input character varying, magnet_uri_input character varying, title_raw_input character varying, size_bytes_input bigint, infohash_v1_input character, infohash_v2_input character, magnet_hash_input character, seeders_input integer, leechers_input integer, published_at_input timestamp with time zone, uploader_input character varying, observed_at_input timestamp with time zone, attr_keys_input public.observation_attr_key[], attr_types_input public.attr_value_type[], attr_value_text_input character varying[], attr_value_int_input integer[], attr_value_bigint_input bigint[], attr_value_numeric_input numeric[], attr_value_bool_input boolean[], attr_value_uuid_input uuid[]) RETURNS TABLE(canonical_torrent_public_id uuid, canonical_torrent_source_public_id uuid, observation_created boolean, durable_source_created boolean, canonical_changed boolean)
     LANGUAGE plpgsql
     AS $_$
-#variable_conflict use_column
 DECLARE
     base_message CONSTANT text := 'Failed to ingest search result';
     errcode CONSTANT text := 'P0001';
@@ -32097,6 +32118,16 @@ BEGIN
     SET revision = EXCLUDED.revision,
         updated_at = now();
 
+    INSERT INTO public.media_root_kind (media_root_kind_id, root_kind)
+    VALUES (1, 'source'), (2, 'output'), (3, 'workspace'), (4, 'backup'), (5, 'quarantine');
+
+    PERFORM public.media_discovery_rescan_seed_reason_kinds_v1();
+
+    INSERT INTO public.media_root_catalog_state
+        (media_root_catalog_state_id, active_media_root_catalog_generation_id, source_state,
+         source_reason_code, attestation_state, attestation_reason_code, reconciled_at)
+    VALUES (1, NULL, 'missing', 'media_root_catalog_source_missing', 'not_evaluated', NULL, transaction_timestamp());
+
     INSERT INTO public.app_profile (id, mode, instance_name)
     VALUES (
         '00000000-0000-0000-0000-000000000001',
@@ -33129,6 +33160,7 @@ BEGIN
         video_intent = EXCLUDED.video_intent,
         enabled = TRUE,
         updated_at = now();
+
 
     INSERT INTO media_job_retention_policy (
         policy_key,
@@ -36196,7 +36228,7 @@ ALTER TABLE public.media_discovery_schedule ALTER COLUMN media_discovery_schedul
 
 CREATE TABLE public.media_discovery_source_fingerprint (
     media_discovery_source_fingerprint_id bigint NOT NULL,
-    media_profile_id bigint NOT NULL,
+    media_discovery_association_version_id bigint NOT NULL,
     source_path text NOT NULL,
     source_size_bytes bigint NOT NULL,
     source_modified_ns bigint NOT NULL,
@@ -36204,8 +36236,8 @@ CREATE TABLE public.media_discovery_source_fingerprint (
     last_media_job_public_id uuid,
     first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
     last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
-    source_identity text,
-    source_changed_ns bigint,
+    source_identity text NOT NULL,
+    source_changed_ns bigint NOT NULL,
     CONSTRAINT media_discovery_source_identity_valid CHECK ((((source_identity IS NULL) AND (source_changed_ns IS NULL)) OR ((source_identity ~ '^[0-9a-f]{16}:[0-9a-f]{16}$'::text) AND (source_changed_ns >= 0)))),
     CONSTRAINT media_discovery_source_modified_nonnegative CHECK ((source_modified_ns >= 0)),
     CONSTRAINT media_discovery_source_path_nonempty CHECK ((btrim(source_path) <> ''::text)),
@@ -36446,7 +36478,16 @@ CREATE TABLE public.media_job_attempt (
     completed_at timestamp with time zone,
     last_error text,
     cancel_generation_at_claim bigint,
-    CONSTRAINT media_job_attempt_lifecycle CHECK ((((status = public.media_job_status_queued_v1()) AND (claimed_at IS NULL) AND (heartbeat_at IS NULL) AND (completed_at IS NULL)) OR ((status = ANY (ARRAY[public.media_job_status_running_v1(), public.media_job_status_verifying_v1()])) AND (claimed_at IS NOT NULL) AND (heartbeat_at IS NOT NULL) AND (completed_at IS NULL)) OR ((status = ANY (ARRAY[public.media_job_status_completed_v1(), public.media_job_status_failed_v1(), public.media_job_status_cancelled_v1()])) AND (claimed_at IS NOT NULL) AND (completed_at IS NOT NULL)))),
+    CONSTRAINT media_job_attempt_lifecycle CHECK (
+        (status = public.media_job_status_queued_v1()
+            AND claimed_at IS NULL AND heartbeat_at IS NULL AND completed_at IS NULL)
+        OR (status IN (public.media_job_status_running_v1(), public.media_job_status_verifying_v1())
+            AND claimed_at IS NOT NULL AND heartbeat_at IS NOT NULL AND completed_at IS NULL)
+        OR (status IN (public.media_job_status_completed_v1(), public.media_job_status_failed_v1(), public.media_job_status_cancelled_v1())
+            AND claimed_at IS NOT NULL AND completed_at IS NOT NULL)
+        OR (status = public.media_job_status_cancelled_v1()
+            AND claimed_at IS NULL AND heartbeat_at IS NULL AND completed_at IS NOT NULL)
+    ),
     CONSTRAINT media_job_attempt_number_positive CHECK ((attempt_number > 0))
 );
 
@@ -36919,14 +36960,66 @@ ALTER TABLE public.media_job_retention_policy ALTER COLUMN media_job_retention_p
 
 CREATE TABLE public.media_job_root_snapshot (
     media_job_id bigint NOT NULL,
-    root_kind text NOT NULL,
-    requested_path text NOT NULL,
-    canonical_path text NOT NULL,
-    filesystem_device bigint,
-    filesystem_inode bigint,
-    media_type text NOT NULL,
-    sort_order integer NOT NULL,
-    enabled boolean NOT NULL
+    media_root_kind_id smallint NOT NULL,
+    binding_state text NOT NULL,
+    media_root_catalog_generation_public_id uuid,
+    attestation_generation bigint,
+    source_sha256 bytea,
+    generation_sha256 bytea,
+    media_root_catalog_slot_public_id uuid,
+    logical_key text,
+    canonical_path text,
+    filesystem_device bytea,
+    filesystem_inode bytea,
+    mount_id bigint,
+    filesystem_type text,
+    capability_mask smallint,
+    durability_class text,
+    durability_evidence text,
+    sole_writer_class text,
+    sole_writer_evidence text,
+    root_relative_prefix text,
+    root_identity_sha256 bytea,
+    CONSTRAINT media_job_root_snapshot_binding_state_known CHECK (binding_state IN ('bound', 'not_required')),
+    CONSTRAINT media_job_root_snapshot_required_kinds_bound CHECK (media_root_kind_id NOT IN (1, 2, 3) OR binding_state = 'bound'),
+    CONSTRAINT media_job_root_snapshot_binding_coherent CHECK (
+        (binding_state = 'bound' AND num_nonnulls(
+            media_root_catalog_generation_public_id, attestation_generation, source_sha256,
+            generation_sha256, media_root_catalog_slot_public_id, logical_key, canonical_path,
+            filesystem_device, filesystem_inode, mount_id, filesystem_type, capability_mask,
+            durability_class, durability_evidence, sole_writer_class, sole_writer_evidence,
+            root_identity_sha256) = 17)
+        OR (binding_state = 'not_required' AND num_nonnulls(
+            media_root_catalog_generation_public_id, attestation_generation, source_sha256,
+            generation_sha256, media_root_catalog_slot_public_id, logical_key, canonical_path,
+            filesystem_device, filesystem_inode, mount_id, filesystem_type, capability_mask,
+            durability_class, durability_evidence, sole_writer_class, sole_writer_evidence,
+            root_relative_prefix, root_identity_sha256) = 0)
+    ),
+    CONSTRAINT media_job_root_snapshot_attestation_generation_positive CHECK (attestation_generation > 0),
+    CONSTRAINT media_job_root_snapshot_source_sha256_length CHECK (octet_length(source_sha256) = 32),
+    CONSTRAINT media_job_root_snapshot_generation_sha256_length CHECK (octet_length(generation_sha256) = 32),
+    CONSTRAINT media_job_root_snapshot_filesystem_device_length CHECK (octet_length(filesystem_device) = 8),
+    CONSTRAINT media_job_root_snapshot_filesystem_inode_length CHECK (octet_length(filesystem_inode) = 8),
+    CONSTRAINT media_job_root_snapshot_mount_id_nonnegative CHECK (mount_id >= 0),
+    CONSTRAINT media_job_root_snapshot_filesystem_type_bounds CHECK (octet_length(filesystem_type) BETWEEN 1 AND 64),
+    CONSTRAINT media_job_root_snapshot_capability_mask_bounds CHECK (capability_mask BETWEEN 0 AND 127),
+    CONSTRAINT media_job_root_snapshot_identity_sha256_length CHECK (octet_length(root_identity_sha256) = 32),
+    CONSTRAINT media_job_root_snapshot_path_bounds CHECK (
+        left(canonical_path, 1) = '/' AND canonical_path <> '/' AND octet_length(canonical_path) BETWEEN 1 AND 4096
+    ),
+    CONSTRAINT media_job_root_snapshot_durability_pair CHECK (
+        (durability_class, durability_evidence) IN (
+            ('disposable', 'none'), ('restart_persistent', 'linux_dedicated_mount'),
+            ('restart_persistent', 'kubernetes_persistent_volume_claim')
+        )
+    ),
+    CONSTRAINT media_job_root_snapshot_writer_pair CHECK (
+        (sole_writer_class, sole_writer_evidence) IN (
+            ('uncontrolled', 'none'), ('revaer_exclusive', 'linux_dedicated_service'),
+            ('revaer_exclusive', 'kubernetes_read_write_once_pod')
+        )
+    )
 );
 
 
@@ -40292,7 +40385,7 @@ ALTER TABLE ONLY public.media_job_retention_policy
 --
 
 ALTER TABLE ONLY public.media_job_root_snapshot
-    ADD CONSTRAINT media_job_root_snapshot_pkey PRIMARY KEY (media_job_id, root_kind, sort_order);
+    ADD CONSTRAINT media_job_root_snapshot_pkey PRIMARY KEY (media_job_id, media_root_kind_id);
 
 
 --
@@ -42187,10 +42280,10 @@ CREATE UNIQUE INDEX uq_media_desired_target_stream_order ON public.media_desired
 
 
 --
--- Name: uq_media_discovery_source_fingerprint_profile_path; Type: INDEX; Schema: public; Owner: -
+-- Name: uq_media_discovery_source_fingerprint_association_path; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_media_discovery_source_fingerprint_profile_path ON public.media_discovery_source_fingerprint USING btree (media_profile_id, source_path);
+CREATE UNIQUE INDEX uq_media_discovery_source_fingerprint_association_path ON public.media_discovery_source_fingerprint USING btree (media_discovery_association_version_id, source_path);
 
 
 --
@@ -43396,14 +43489,6 @@ ALTER TABLE ONLY public.media_discovery_schedule
 
 
 --
--- Name: media_discovery_source_fingerprint media_discovery_source_fingerprint_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.media_discovery_source_fingerprint
-    ADD CONSTRAINT media_discovery_source_fingerprint_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
-
-
---
 -- Name: media_discovery_watcher media_discovery_watcher_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -43664,7 +43749,7 @@ ALTER TABLE ONLY public.media_job_policy_retention_rule_snapshot
 --
 
 ALTER TABLE ONLY public.media_job_root_snapshot
-    ADD CONSTRAINT media_job_root_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+    ADD CONSTRAINT media_job_root_snapshot_job_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE RESTRICT;
 
 
 --
@@ -44623,11 +44708,6 @@ ALTER TABLE ONLY revaer_runtime.torrent_files
 -- PostgreSQL database dump complete
 --
 
--- Initialize the repository's existing canonical default state.
-SET search_path = public, revaer_config, revaer_runtime;
-SELECT revaer_config.factory_reset();
-RESET search_path;
-
 -- ADR 557 root catalog: immutable evidence, with a fail-closed current pointer.
 CREATE FUNCTION public.media_root_logical_key_valid_v1(value_input text)
 RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE
@@ -44649,9 +44729,6 @@ CREATE TABLE public.media_root_kind (
         )
     )
 );
-INSERT INTO public.media_root_kind (media_root_kind_id, root_kind)
-VALUES (1, 'source'), (2, 'output'), (3, 'workspace'), (4, 'backup'), (5, 'quarantine');
-
 CREATE FUNCTION public.media_root_kind_immutable_v1()
 RETURNS trigger LANGUAGE plpgsql
 SET search_path TO pg_catalog
@@ -44821,11 +44898,6 @@ CREATE TABLE public.media_root_catalog_state (
         ))
     ) IS TRUE)
 );
-INSERT INTO public.media_root_catalog_state
-    (media_root_catalog_state_id, active_media_root_catalog_generation_id, source_state,
-     source_reason_code, attestation_state, attestation_reason_code, reconciled_at)
-VALUES (1, NULL, 'missing', 'media_root_catalog_source_missing', 'not_evaluated', NULL, transaction_timestamp());
-
 CREATE FUNCTION public.media_root_catalog_immutable_v1()
 RETURNS trigger LANGUAGE plpgsql
 SET search_path TO pg_catalog
@@ -44847,6 +44919,431 @@ CREATE TRIGGER media_root_catalog_slot_kind_immutable_trigger
 BEFORE UPDATE OR DELETE ON public.media_root_catalog_slot_kind
 FOR EACH ROW EXECUTE FUNCTION public.media_root_catalog_immutable_v1();
 
+CREATE FUNCTION public.media_root_catalog_slot_identity_v1(attestation_id_input bigint)
+RETURNS bytea LANGUAGE plpgsql STABLE
+SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    a public.media_root_catalog_slot_attestation%ROWTYPE;
+    key_value text;
+    kind_mask integer;
+    capability_mask integer;
+    frame bytea;
+BEGIN
+    SELECT s.* INTO STRICT a FROM public.media_root_catalog_slot_attestation AS s
+    WHERE s.media_root_catalog_slot_attestation_id = attestation_id_input;
+    SELECT s.logical_key INTO STRICT key_value FROM public.media_root_catalog_slot AS s
+    WHERE s.media_root_catalog_slot_id = a.media_root_catalog_slot_id;
+    SELECT bit_or(1 << (k.media_root_kind_id - 1)) INTO kind_mask
+    FROM public.media_root_catalog_slot_kind AS k
+    WHERE k.media_root_catalog_slot_attestation_id = attestation_id_input;
+    IF kind_mask IS NULL OR kind_mask NOT BETWEEN 1 AND 31 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid',
+            DETAIL = 'media_root_attestation_invalid';
+    END IF;
+    capability_mask := a.read_capable::integer + 2 * a.write_capable::integer
+        + 4 * a.create_new_capable::integer + 8 * a.fsync_capable::integer
+        + 16 * a.rename_capable::integer + 32 * a.delete_capable::integer
+        + 64 * a.capacity_probe_capable::integer;
+    frame := convert_to('revaer-media-root-slot-attestation', 'UTF8') || decode('00', 'hex') || int4send(1)
+        || int4send(octet_length(convert_to(key_value, 'UTF8'))) || convert_to(key_value, 'UTF8')
+        || int4send(octet_length(convert_to(a.requested_path, 'UTF8'))) || convert_to(a.requested_path, 'UTF8')
+        || int4send(octet_length(convert_to(a.canonical_path, 'UTF8'))) || convert_to(a.canonical_path, 'UTF8')
+        || set_byte(decode('00', 'hex'), 0, kind_mask)
+        || a.filesystem_device || a.filesystem_inode || int8send(a.mount_id)
+        || int4send(octet_length(convert_to(a.filesystem_type, 'UTF8'))) || convert_to(a.filesystem_type, 'UTF8')
+        || set_byte(decode('00', 'hex'), 0, capability_mask)
+        || set_byte(decode('00', 'hex'), 0, CASE a.durability_class WHEN 'disposable' THEN 0 ELSE 1 END)
+        || set_byte(decode('00', 'hex'), 0, CASE a.durability_evidence WHEN 'none' THEN 0 WHEN 'linux_dedicated_mount' THEN 1 ELSE 2 END)
+        || set_byte(decode('00', 'hex'), 0, CASE a.sole_writer_class WHEN 'uncontrolled' THEN 0 ELSE 1 END)
+        || set_byte(decode('00', 'hex'), 0, CASE a.sole_writer_evidence WHEN 'none' THEN 0 WHEN 'linux_dedicated_service' THEN 1 ELSE 2 END)
+        || substring(int8send(a.owner_uid) FROM 5 FOR 4)
+        || substring(int8send(a.owner_gid) FROM 5 FOR 4) || int4send(a.mode_bits);
+    RETURN sha256(frame);
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_digests_v1(generation_id_input bigint)
+RETURNS TABLE (source_sha256 bytea, attestation_sha256 bytea, generation_sha256 bytea)
+LANGUAGE plpgsql STABLE
+SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    generation_row public.media_root_catalog_generation%ROWTYPE;
+    slot_row record;
+    source_frame bytea;
+    attestation_frame bytea;
+    slot_digest bytea;
+    actual_count integer;
+    source_digest bytea;
+    attestation_digest bytea;
+BEGIN
+    SELECT g.* INTO STRICT generation_row FROM public.media_root_catalog_generation AS g
+    WHERE g.media_root_catalog_generation_id = generation_id_input;
+    SELECT count(*) INTO actual_count FROM public.media_root_catalog_slot_attestation AS a
+    WHERE a.media_root_catalog_generation_id = generation_id_input;
+    IF actual_count <> generation_row.slot_count THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid',
+            DETAIL = 'media_root_attestation_invalid';
+    END IF;
+    source_frame := convert_to('revaer-media-root-catalog', 'UTF8') || decode('00', 'hex')
+        || int4send(1) || int4send(actual_count);
+    FOR slot_row IN
+        SELECT a.*, s.logical_key,
+            (SELECT bit_or(1 << (k.media_root_kind_id - 1)) FROM public.media_root_catalog_slot_kind AS k
+             WHERE k.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id) AS kind_mask
+        FROM public.media_root_catalog_slot_attestation AS a
+        JOIN public.media_root_catalog_slot AS s USING (media_root_catalog_slot_id)
+        WHERE a.media_root_catalog_generation_id = generation_id_input
+        ORDER BY s.logical_key COLLATE "C"
+    LOOP
+        IF slot_row.kind_mask IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid',
+                DETAIL = 'media_root_attestation_invalid';
+        END IF;
+        source_frame := source_frame
+            || int4send(octet_length(convert_to(slot_row.logical_key, 'UTF8'))) || convert_to(slot_row.logical_key, 'UTF8')
+            || int4send(octet_length(convert_to(slot_row.requested_path, 'UTF8'))) || convert_to(slot_row.requested_path, 'UTF8')
+            || set_byte(decode('00', 'hex'), 0, slot_row.kind_mask)
+            || set_byte(decode('00', 'hex'), 0, CASE slot_row.durability_class WHEN 'disposable' THEN 0 ELSE 1 END)
+            || set_byte(decode('00', 'hex'), 0, CASE slot_row.durability_evidence WHEN 'none' THEN 0 WHEN 'linux_dedicated_mount' THEN 1 ELSE 2 END)
+            || set_byte(decode('00', 'hex'), 0, CASE slot_row.sole_writer_class WHEN 'uncontrolled' THEN 0 ELSE 1 END)
+            || set_byte(decode('00', 'hex'), 0, CASE slot_row.sole_writer_evidence WHEN 'none' THEN 0 WHEN 'linux_dedicated_service' THEN 1 ELSE 2 END);
+    END LOOP;
+    source_digest := sha256(source_frame);
+    attestation_frame := convert_to('revaer-media-root-attestation', 'UTF8') || decode('00', 'hex')
+        || int4send(1) || source_digest || int4send(actual_count);
+    FOR slot_row IN
+        SELECT a.media_root_catalog_slot_attestation_id, a.root_identity_sha256, s.logical_key
+        FROM public.media_root_catalog_slot_attestation AS a
+        JOIN public.media_root_catalog_slot AS s USING (media_root_catalog_slot_id)
+        WHERE a.media_root_catalog_generation_id = generation_id_input
+        ORDER BY s.logical_key COLLATE "C"
+    LOOP
+        slot_digest := public.media_root_catalog_slot_identity_v1(slot_row.media_root_catalog_slot_attestation_id);
+        IF slot_digest <> slot_row.root_identity_sha256 THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid',
+                DETAIL = 'media_root_attestation_invalid';
+        END IF;
+        attestation_frame := attestation_frame
+            || int4send(octet_length(convert_to(slot_row.logical_key, 'UTF8'))) || convert_to(slot_row.logical_key, 'UTF8')
+            || slot_digest;
+    END LOOP;
+    attestation_digest := sha256(attestation_frame);
+    RETURN QUERY SELECT source_digest, attestation_digest,
+        sha256(convert_to('revaer-media-root-generation', 'UTF8') || decode('00', 'hex')
+            || int4send(1) || source_digest || attestation_digest);
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_reconcile_begin_v1(
+    source_format_version_input smallint, source_sha256_input bytea,
+    attestation_sha256_input bytea, generation_sha256_input bytea, slot_count_input smallint
+)
+RETURNS TABLE (media_root_catalog_generation_public_id uuid, attestation_generation bigint, already_current boolean)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    current_id bigint;
+    generation_row public.media_root_catalog_generation%ROWTYPE;
+BEGIN
+    IF (source_format_version_input = 1 AND octet_length(source_sha256_input) = 32
+        AND octet_length(attestation_sha256_input) = 32 AND slot_count_input BETWEEN 0 AND 256
+        AND generation_sha256_input = sha256(convert_to('revaer-media-root-generation', 'UTF8')
+            || decode('00', 'hex') || int4send(1) || source_sha256_input || attestation_sha256_input)) IS NOT TRUE
+        OR current_setting('transaction_isolation') <> 'serializable' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_root_catalog_reconcile_v1', 0));
+    -- Mark this transaction on the singleton tuple without refreshing proof time.
+    UPDATE public.media_root_catalog_state AS s SET reconciled_at = s.reconciled_at
+    WHERE s.media_root_catalog_state_id = 1;
+    SELECT s.active_media_root_catalog_generation_id INTO STRICT current_id
+    FROM public.media_root_catalog_state AS s WHERE s.media_root_catalog_state_id = 1 FOR UPDATE;
+    SELECT g.* INTO generation_row FROM public.media_root_catalog_generation AS g
+    WHERE g.media_root_catalog_generation_id = current_id
+        AND g.source_format_version = source_format_version_input
+        AND g.source_sha256 = source_sha256_input AND g.attestation_sha256 = attestation_sha256_input
+        AND g.generation_sha256 = generation_sha256_input AND g.slot_count = slot_count_input;
+    IF FOUND THEN
+        RETURN QUERY SELECT generation_row.media_root_catalog_generation_public_id,
+            generation_row.media_root_catalog_generation_id, true;
+        RETURN;
+    END IF;
+    INSERT INTO public.media_root_catalog_generation
+        (contract_version, source_format_version, source_sha256, attestation_sha256,
+         generation_sha256, slot_count, activated_at)
+    VALUES (1, source_format_version_input, source_sha256_input, attestation_sha256_input,
+        generation_sha256_input, slot_count_input, transaction_timestamp())
+    RETURNING * INTO generation_row;
+    RETURN QUERY SELECT generation_row.media_root_catalog_generation_public_id,
+        generation_row.media_root_catalog_generation_id, false;
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_pending_generation_v1(generation_public_id_input uuid)
+RETURNS bigint LANGUAGE plpgsql VOLATILE SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    generation_id bigint;
+    current_id bigint;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_root_catalog_reconcile_v1', 0));
+    SELECT s.active_media_root_catalog_generation_id INTO current_id
+    FROM public.media_root_catalog_state AS s WHERE s.media_root_catalog_state_id = 1
+        AND s.xmin::text::bigint = mod(pg_current_xact_id()::text::numeric, 4294967296)::bigint FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    SELECT g.media_root_catalog_generation_id INTO generation_id
+    FROM public.media_root_catalog_generation AS g
+    WHERE g.media_root_catalog_generation_public_id = generation_public_id_input
+        AND g.media_root_catalog_generation_id IS DISTINCT FROM current_id
+        AND g.xmin::text::bigint = mod(pg_current_xact_id()::text::numeric, 4294967296)::bigint;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    RETURN generation_id;
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_reconcile_slot_v1(
+    media_root_catalog_generation_public_id_input uuid, logical_key_input text,
+    requested_path_input text, canonical_path_input text, filesystem_device_input bytea,
+    filesystem_inode_input bytea, mount_id_input bigint, filesystem_type_input text,
+    read_capable_input boolean, write_capable_input boolean, create_new_capable_input boolean,
+    fsync_capable_input boolean, rename_capable_input boolean, delete_capable_input boolean,
+    capacity_probe_capable_input boolean, durability_class_input text, durability_evidence_input text,
+    sole_writer_class_input text, sole_writer_evidence_input text, owner_uid_input bigint,
+    owner_gid_input bigint, mode_bits_input integer, root_identity_sha256_input bytea
+)
+RETURNS uuid LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    generation_id bigint;
+    slot_row public.media_root_catalog_slot%ROWTYPE;
+    expected_count smallint;
+    actual_count integer;
+    last_key text;
+BEGIN
+    generation_id := public.media_root_catalog_pending_generation_v1(media_root_catalog_generation_public_id_input);
+    SELECT g.slot_count INTO STRICT expected_count FROM public.media_root_catalog_generation AS g
+    WHERE g.media_root_catalog_generation_id = generation_id;
+    SELECT count(*), max(s.logical_key COLLATE "C") INTO actual_count, last_key
+    FROM public.media_root_catalog_slot_attestation AS a
+    JOIN public.media_root_catalog_slot AS s USING (media_root_catalog_slot_id)
+    WHERE a.media_root_catalog_generation_id = generation_id;
+    IF actual_count >= expected_count OR public.media_root_logical_key_valid_v1(logical_key_input) IS NOT TRUE
+        OR (last_key IS NOT NULL AND logical_key_input COLLATE "C" <= last_key COLLATE "C") THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    INSERT INTO public.media_root_catalog_slot (logical_key) VALUES (logical_key_input)
+    ON CONFLICT ON CONSTRAINT media_root_catalog_slot_logical_key_key DO NOTHING;
+    SELECT s.* INTO STRICT slot_row FROM public.media_root_catalog_slot AS s WHERE s.logical_key = logical_key_input;
+    INSERT INTO public.media_root_catalog_slot_attestation
+        (media_root_catalog_generation_id, media_root_catalog_slot_id,
+         requested_path, canonical_path, filesystem_device, filesystem_inode, mount_id, filesystem_type,
+         read_capable, write_capable, create_new_capable, fsync_capable, rename_capable, delete_capable,
+         capacity_probe_capable, durability_class, durability_evidence, sole_writer_class, sole_writer_evidence,
+         owner_uid, owner_gid, mode_bits, validated_at, root_identity_sha256)
+    VALUES (generation_id, slot_row.media_root_catalog_slot_id,
+        requested_path_input, canonical_path_input, filesystem_device_input, filesystem_inode_input,
+        mount_id_input, filesystem_type_input, read_capable_input, write_capable_input, create_new_capable_input,
+        fsync_capable_input, rename_capable_input, delete_capable_input, capacity_probe_capable_input,
+        durability_class_input, durability_evidence_input, sole_writer_class_input, sole_writer_evidence_input,
+        owner_uid_input, owner_gid_input, mode_bits_input, transaction_timestamp(), root_identity_sha256_input);
+    RETURN slot_row.media_root_catalog_slot_public_id;
+EXCEPTION WHEN check_violation OR not_null_violation OR unique_violation OR foreign_key_violation THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_reconcile_slot_kind_v1(
+    media_root_catalog_generation_public_id_input uuid,
+    media_root_catalog_slot_public_id_input uuid, root_kind_input text
+)
+RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    generation_id bigint;
+    attestation_id bigint;
+    kind_id smallint;
+    previous_kind smallint;
+BEGIN
+    generation_id := public.media_root_catalog_pending_generation_v1(media_root_catalog_generation_public_id_input);
+    SELECT a.media_root_catalog_slot_attestation_id INTO attestation_id
+    FROM public.media_root_catalog_slot_attestation AS a
+    JOIN public.media_root_catalog_slot AS s USING (media_root_catalog_slot_id)
+    WHERE a.media_root_catalog_generation_id = generation_id
+        AND s.media_root_catalog_slot_public_id = media_root_catalog_slot_public_id_input;
+    SELECT k.media_root_kind_id INTO kind_id FROM public.media_root_kind AS k WHERE k.root_kind = root_kind_input;
+    SELECT max(k.media_root_kind_id) INTO previous_kind FROM public.media_root_catalog_slot_kind AS k
+    WHERE k.media_root_catalog_slot_attestation_id = attestation_id;
+    IF attestation_id IS NULL OR kind_id IS NULL OR kind_id <= previous_kind THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    INSERT INTO public.media_root_catalog_slot_kind (media_root_catalog_slot_attestation_id, media_root_kind_id)
+    VALUES (attestation_id, kind_id);
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_reconcile_activate_v1(media_root_catalog_generation_public_id_input uuid)
+RETURNS TABLE (media_root_catalog_generation_public_id uuid, attestation_generation bigint,
+    source_sha256 bytea, generation_sha256 bytea, slot_count smallint, activated_at timestamptz)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    current_id bigint;
+    generation_row public.media_root_catalog_generation%ROWTYPE;
+    digests record;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_root_catalog_reconcile_v1', 0));
+    SELECT s.active_media_root_catalog_generation_id INTO current_id
+    FROM public.media_root_catalog_state AS s WHERE s.media_root_catalog_state_id = 1
+        AND s.xmin::text::bigint = mod(pg_current_xact_id()::text::numeric, 4294967296)::bigint FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    SELECT g.* INTO STRICT generation_row FROM public.media_root_catalog_generation AS g
+    WHERE g.media_root_catalog_generation_public_id = media_root_catalog_generation_public_id_input;
+    IF generation_row.media_root_catalog_generation_id IS DISTINCT FROM current_id THEN
+        PERFORM public.media_root_catalog_pending_generation_v1(media_root_catalog_generation_public_id_input);
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM public.media_root_catalog_slot_attestation AS a
+        WHERE a.media_root_catalog_generation_id = generation_row.media_root_catalog_generation_id
+          AND (a.canonical_path ~ '(^|/)(\.|\.\.)($|/)' OR a.canonical_path LIKE '%//%'
+            OR right(a.canonical_path, 1) = '/' OR a.requested_path ~ '(^|/)(\.|\.\.)($|/)'
+            OR a.requested_path LIKE '%//%' OR right(a.requested_path, 1) = '/')
+    ) OR EXISTS (
+        SELECT 1 FROM public.media_root_catalog_slot_attestation AS a
+        JOIN public.media_root_catalog_slot_attestation AS b
+            ON a.media_root_catalog_generation_id = b.media_root_catalog_generation_id
+            AND a.media_root_catalog_slot_attestation_id < b.media_root_catalog_slot_attestation_id
+        WHERE a.media_root_catalog_generation_id = generation_row.media_root_catalog_generation_id
+            AND (starts_with(a.canonical_path, b.canonical_path || '/')
+                OR starts_with(b.canonical_path, a.canonical_path || '/'))
+    ) OR EXISTS (
+        SELECT 1 FROM public.media_root_catalog_slot_attestation AS a
+        JOIN public.media_root_catalog_slot_kind AS k USING (media_root_catalog_slot_attestation_id)
+        WHERE a.media_root_catalog_generation_id = generation_row.media_root_catalog_generation_id
+          AND ((k.media_root_kind_id = 1 AND NOT a.read_capable)
+            OR (k.media_root_kind_id <> 1 AND NOT (a.write_capable AND a.create_new_capable
+                AND a.fsync_capable AND a.rename_capable AND a.delete_capable
+                AND a.capacity_probe_capable AND a.sole_writer_class = 'revaer_exclusive')))
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM public.media_root_catalog_slot_attestation AS a
+        JOIN public.media_root_catalog_slot_kind AS k USING (media_root_catalog_slot_attestation_id)
+        WHERE a.media_root_catalog_generation_id = generation_row.media_root_catalog_generation_id
+        GROUP BY a.media_root_catalog_slot_attestation_id
+        HAVING count(*) > 1 AND bit_or(1 << (k.media_root_kind_id - 1)) <> 3
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    SELECT * INTO STRICT digests FROM public.media_root_catalog_digests_v1(generation_row.media_root_catalog_generation_id);
+    IF digests.source_sha256 <> generation_row.source_sha256
+        OR digests.attestation_sha256 <> generation_row.attestation_sha256
+        OR digests.generation_sha256 <> generation_row.generation_sha256 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    UPDATE public.media_root_catalog_state SET
+        active_media_root_catalog_generation_id = generation_row.media_root_catalog_generation_id,
+        source_state = 'ready', source_reason_code = NULL,
+        attestation_state = 'ready', attestation_reason_code = NULL,
+        reconciled_at = transaction_timestamp()
+    WHERE media_root_catalog_state_id = 1;
+    RETURN QUERY SELECT generation_row.media_root_catalog_generation_public_id,
+        generation_row.media_root_catalog_generation_id, generation_row.source_sha256,
+        generation_row.generation_sha256, generation_row.slot_count, generation_row.activated_at;
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_generation_commit_guard_v1()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM public.media_root_catalog_state AS s
+        WHERE s.media_root_catalog_state_id = 1
+            AND s.active_media_root_catalog_generation_id = NEW.media_root_catalog_generation_id) THEN
+        RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'media_root_catalog_generation_not_activated';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+CREATE CONSTRAINT TRIGGER media_root_catalog_generation_commit_guard
+AFTER INSERT ON public.media_root_catalog_generation
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+EXECUTE FUNCTION public.media_root_catalog_generation_commit_guard_v1();
+
+CREATE FUNCTION public.media_root_catalog_mark_unavailable_v1(
+    source_state_input text, source_reason_code_input text
+)
+RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+SET search_path TO pg_catalog, public
+AS $$
+BEGIN
+    IF (source_reason_code_input = CASE source_state_input
+        WHEN 'missing' THEN 'media_root_catalog_source_missing'
+        WHEN 'untrusted' THEN 'media_root_catalog_source_untrusted'
+        WHEN 'invalid' THEN 'media_root_catalog_format_invalid'
+        WHEN 'bound_exceeded' THEN 'media_root_catalog_bound_exceeded'
+        WHEN 'unsupported' THEN 'media_root_platform_unsupported'
+    END) IS NOT TRUE THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_root_catalog_reconcile_v1', 0));
+    UPDATE public.media_root_catalog_state SET
+        active_media_root_catalog_generation_id = NULL,
+        source_state = source_state_input, source_reason_code = source_reason_code_input,
+        attestation_state = 'not_evaluated', attestation_reason_code = NULL,
+        reconciled_at = transaction_timestamp()
+    WHERE media_root_catalog_state_id = 1;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid',
+            DETAIL = 'media_root_attestation_invalid';
+    END IF;
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_mark_attestation_invalid_v1(
+    attestation_reason_code_input text
+)
+RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+SET search_path TO pg_catalog, public
+AS $$
+BEGIN
+    IF (attestation_reason_code_input IN (
+        'media_root_attestation_invalid', 'media_root_overlap', 'media_root_unsafe_ancestry',
+        'media_root_durability_unproven', 'media_root_writer_control_unproven',
+        'media_root_identity_mismatch'
+    )) IS NOT TRUE THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_root_catalog_reconcile_v1', 0));
+    UPDATE public.media_root_catalog_state SET
+        active_media_root_catalog_generation_id = NULL,
+        source_state = 'ready', source_reason_code = NULL,
+        attestation_state = 'invalid', attestation_reason_code = attestation_reason_code_input,
+        reconciled_at = transaction_timestamp()
+    WHERE media_root_catalog_state_id = 1;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid',
+            DETAIL = 'media_root_attestation_invalid';
+    END IF;
+END;
+$$;
+
 CREATE FUNCTION public.media_root_catalog_state_get_v1()
 RETURNS TABLE (
     source_state text, source_reason_code text, attestation_state text, attestation_reason_code text,
@@ -44865,6 +45362,96 @@ AS $$
     LEFT JOIN public.media_root_catalog_generation AS g
         ON g.media_root_catalog_generation_id = s.active_media_root_catalog_generation_id
     WHERE s.media_root_catalog_state_id = 1;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_slot_page_v1(
+    limit_input smallint, cursor_logical_key_input text, cursor_slot_public_id_input uuid
+)
+RETURNS TABLE (
+    media_root_catalog_slot_public_id uuid, logical_key text, allowed_root_kind text,
+    requested_path text, canonical_path text, filesystem_device bytea, filesystem_inode bytea,
+    mount_id bigint, filesystem_type text, capability_mask smallint,
+    durability_class text, durability_evidence text, sole_writer_class text, sole_writer_evidence text,
+    owner_uid bigint, owner_gid bigint, mode_bits integer, validated_at timestamptz,
+    root_identity_sha256 bytea, binding_ready boolean, binding_reason_code text,
+    destructive_ready boolean, destructive_reason_code text, page_has_more boolean
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    generation_id bigint;
+BEGIN
+    IF limit_input IS NULL OR limit_input NOT BETWEEN 1 AND 200
+       OR (cursor_logical_key_input IS NULL) <> (cursor_slot_public_id_input IS NULL) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    SELECT s.active_media_root_catalog_generation_id INTO generation_id
+    FROM public.media_root_catalog_state AS s WHERE s.media_root_catalog_state_id = 1;
+    IF cursor_logical_key_input IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM public.media_root_catalog_slot AS s
+        JOIN public.media_root_catalog_slot_attestation AS a USING (media_root_catalog_slot_id)
+        WHERE a.media_root_catalog_generation_id = generation_id
+            AND s.logical_key = cursor_logical_key_input
+            AND s.media_root_catalog_slot_public_id = cursor_slot_public_id_input
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    RETURN QUERY
+    WITH candidates AS MATERIALIZED (
+        SELECT s.media_root_catalog_slot_public_id, s.logical_key, a.*
+        FROM public.media_root_catalog_slot AS s
+        JOIN public.media_root_catalog_slot_attestation AS a USING (media_root_catalog_slot_id)
+        WHERE a.media_root_catalog_generation_id = generation_id
+            AND (cursor_logical_key_input IS NULL OR
+                (s.logical_key COLLATE "C", s.media_root_catalog_slot_public_id) >
+                (cursor_logical_key_input COLLATE "C", cursor_slot_public_id_input))
+        ORDER BY s.logical_key COLLATE "C", s.media_root_catalog_slot_public_id
+        LIMIT limit_input + 1
+    ), page AS (
+        SELECT c.* FROM candidates AS c
+        ORDER BY c.logical_key COLLATE "C", c.media_root_catalog_slot_public_id LIMIT limit_input
+    ), evidence AS (
+        SELECT p.*, k.root_kind, k.media_root_kind_id,
+            p.write_capable AND p.create_new_capable AND p.fsync_capable
+                AND p.rename_capable AND p.delete_capable AND p.capacity_probe_capable AS write_probes,
+            EXISTS (SELECT 1 FROM public.media_root_catalog_slot_kind AS o
+                WHERE o.media_root_catalog_slot_attestation_id = p.media_root_catalog_slot_attestation_id
+                    AND o.media_root_kind_id = 2) AS has_output
+        FROM page AS p JOIN public.media_root_catalog_slot_kind AS sk
+            USING (media_root_catalog_slot_attestation_id)
+        JOIN public.media_root_kind AS k USING (media_root_kind_id)
+    ), reasons AS (
+        SELECT e.*,
+            CASE WHEN e.media_root_kind_id = 1 THEN
+                CASE WHEN NOT e.read_capable THEN 'media_root_binding_incomplete' END
+            WHEN NOT e.write_probes THEN 'media_root_binding_incomplete'
+            WHEN e.sole_writer_class <> 'revaer_exclusive' THEN 'media_root_writer_control_unproven'
+            END AS binding_reason,
+            CASE WHEN e.media_root_kind_id = 1 AND (NOT e.has_output OR NOT e.write_probes)
+                THEN 'media_root_binding_incomplete'
+            WHEN e.sole_writer_class <> 'revaer_exclusive' THEN 'media_root_writer_control_unproven'
+            WHEN e.durability_class <> 'restart_persistent' THEN 'media_root_durability_unproven'
+            END AS destructive_reason
+        FROM evidence AS e
+    )
+    SELECT r.media_root_catalog_slot_public_id, r.logical_key, r.root_kind,
+        r.requested_path, r.canonical_path, r.filesystem_device, r.filesystem_inode,
+        r.mount_id, r.filesystem_type,
+        (r.read_capable::integer + 2 * r.write_capable::integer + 4 * r.create_new_capable::integer
+            + 8 * r.fsync_capable::integer + 16 * r.rename_capable::integer
+            + 32 * r.delete_capable::integer + 64 * r.capacity_probe_capable::integer)::smallint,
+        r.durability_class, r.durability_evidence, r.sole_writer_class, r.sole_writer_evidence,
+        r.owner_uid, r.owner_gid, r.mode_bits, r.validated_at, r.root_identity_sha256,
+        r.binding_reason IS NULL, r.binding_reason,
+        r.binding_reason IS NULL AND r.destructive_reason IS NULL,
+        COALESCE(r.binding_reason, r.destructive_reason),
+        (SELECT count(*) > limit_input FROM candidates)
+    FROM reasons AS r
+    ORDER BY r.logical_key COLLATE "C", r.media_root_catalog_slot_public_id, r.media_root_kind_id;
+END;
 $$;
 
 CREATE FUNCTION public.media_root_catalog_readiness_get_v1()
@@ -44913,8 +45500,2084 @@ $$;
 REVOKE ALL ON FUNCTION public.media_root_logical_key_valid_v1(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.media_root_kind_immutable_v1() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.media_root_catalog_immutable_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_slot_identity_v1(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_digests_v1(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_reconcile_begin_v1(smallint, bytea, bytea, bytea, smallint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_pending_generation_v1(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_reconcile_slot_v1(uuid, text, text, text, bytea, bytea, bigint, text, boolean, boolean, boolean, boolean, boolean, boolean, boolean, text, text, text, text, bigint, bigint, integer, bytea) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_reconcile_slot_kind_v1(uuid, uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_reconcile_activate_v1(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_generation_commit_guard_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_mark_unavailable_v1(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_mark_attestation_invalid_v1(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.media_root_catalog_state_get_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_slot_page_v1(smallint, text, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.media_root_catalog_readiness_get_v1() FROM PUBLIC;
+
+-- ADRs 521/557/590: immutable profile versions and logical root bindings.
+CREATE TABLE public.media_profile_version (
+    media_profile_version_id bigint GENERATED ALWAYS AS IDENTITY,
+    media_profile_id bigint NOT NULL,
+    version integer NOT NULL,
+    lifecycle_state text NOT NULL,
+    display_name text NOT NULL,
+    description text NOT NULL,
+    enabled boolean NOT NULL,
+    dry_run_only boolean NOT NULL,
+    media_desired_target_profile_id bigint NOT NULL,
+    media_policy_profile_id bigint NOT NULL,
+    created_by_user_id bigint NOT NULL REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    CONSTRAINT media_profile_version_pkey PRIMARY KEY (media_profile_version_id),
+    CONSTRAINT media_profile_version_media_profile_fkey FOREIGN KEY (media_profile_id)
+        REFERENCES public.media_profile ON DELETE RESTRICT,
+    CONSTRAINT media_profile_version_profile_version_key UNIQUE (media_profile_id, version),
+    CONSTRAINT media_profile_version_profile_id_version_id_key UNIQUE (media_profile_id, media_profile_version_id),
+    CONSTRAINT media_profile_version_lifecycle_known CHECK (lifecycle_state IN ('draft', 'active', 'archived')),
+    CONSTRAINT media_profile_version_version_positive CHECK (version > 0),
+    CONSTRAINT media_profile_version_display_contract CHECK (octet_length(display_name) BETWEEN 1 AND 128),
+    CONSTRAINT media_profile_version_description_bounds CHECK (octet_length(description) <= 1024),
+    CONSTRAINT media_profile_version_target_fkey FOREIGN KEY (media_desired_target_profile_id)
+        REFERENCES public.media_desired_target_profile ON DELETE RESTRICT,
+    CONSTRAINT media_profile_version_policy_fkey FOREIGN KEY (media_policy_profile_id)
+        REFERENCES public.media_policy_profile ON DELETE RESTRICT
+);
+ALTER TABLE public.media_profile
+    ADD COLUMN latest_media_profile_version_id bigint,
+    ADD COLUMN active_media_profile_version_id bigint,
+    ADD CONSTRAINT media_profile_latest_version_fkey FOREIGN KEY (media_profile_id, latest_media_profile_version_id)
+        REFERENCES public.media_profile_version(media_profile_id, media_profile_version_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT media_profile_active_version_fkey FOREIGN KEY (media_profile_id, active_media_profile_version_id)
+        REFERENCES public.media_profile_version(media_profile_id, media_profile_version_id) ON DELETE RESTRICT;
+
+CREATE TABLE public.media_profile_version_root_binding (
+    media_profile_version_id bigint NOT NULL,
+    media_root_kind_id smallint NOT NULL,
+    logical_key text NOT NULL,
+    media_root_catalog_slot_attestation_id bigint,
+    resolution_state text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    CONSTRAINT media_profile_version_root_binding_pkey PRIMARY KEY (media_profile_version_id, media_root_kind_id),
+    CONSTRAINT media_profile_version_root_binding_profile_version_fkey FOREIGN KEY (media_profile_version_id)
+        REFERENCES public.media_profile_version ON DELETE RESTRICT,
+    CONSTRAINT media_profile_version_root_binding_kind_fkey FOREIGN KEY (media_root_kind_id)
+        REFERENCES public.media_root_kind ON DELETE RESTRICT,
+    CONSTRAINT media_profile_version_root_binding_attestation_fkey FOREIGN KEY (media_root_catalog_slot_attestation_id)
+        REFERENCES public.media_root_catalog_slot_attestation ON DELETE RESTRICT,
+    CONSTRAINT media_profile_version_root_binding_kind CHECK (media_root_kind_id BETWEEN 2 AND 5),
+    CONSTRAINT media_profile_version_root_binding_key_contract CHECK (public.media_root_logical_key_valid_v1(logical_key)),
+    CONSTRAINT media_profile_version_root_binding_resolution_known CHECK (resolution_state IN ('resolved', 'unmapped', 'kind_forbidden')),
+    CONSTRAINT media_profile_version_root_binding_resolution_coherent CHECK (
+        (resolution_state = 'resolved') = (media_root_catalog_slot_attestation_id IS NOT NULL)
+    )
+);
+CREATE INDEX ix_media_profile_version_root_binding_attestation
+    ON public.media_profile_version_root_binding(media_root_catalog_slot_attestation_id, media_profile_version_id);
+CREATE FUNCTION public.media_profile_version_immutable_v1()
+RETURNS trigger LANGUAGE plpgsql SET search_path TO pg_catalog AS $$
+BEGIN
+    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'media_profile_version_immutable';
+END;
+$$;
+CREATE TRIGGER media_profile_version_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_profile_version
+FOR EACH ROW EXECUTE FUNCTION public.media_profile_version_immutable_v1();
+CREATE TRIGGER media_profile_version_root_binding_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_profile_version_root_binding
+FOR EACH ROW EXECUTE FUNCTION public.media_profile_version_immutable_v1();
+REVOKE ALL ON FUNCTION public.media_profile_version_immutable_v1() FROM PUBLIC;
+
+ALTER TABLE public.media_profile
+    ALTER COLUMN source_root DROP NOT NULL,
+    ALTER COLUMN output_root DROP NOT NULL,
+    ADD CONSTRAINT media_profile_path_pair CHECK ((source_root IS NULL) = (output_root IS NULL));
+
+CREATE FUNCTION public.media_profile_version_write_v1(
+    actor_public_id_input uuid, profile_key_input text, display_name_input text,
+    description_input text, enabled_input boolean, dry_run_only_input boolean,
+    desired_target_key_input text, desired_target_version_input integer,
+    policy_key_input text, policy_version_input integer,
+    output_root_key_input text, workspace_root_key_input text,
+    backup_root_key_input text, quarantine_root_key_input text,
+    existing_public_id_input uuid, expected_version_input integer
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    actor_id bigint;
+    target_id bigint;
+    policy_id bigint;
+    parent_id bigint;
+    version_id bigint;
+    public_id uuid;
+    generation_id bigint;
+    backup_required boolean;
+    quarantine_required boolean;
+    binding record;
+    attestation record;
+    next_version integer := 1;
+    current_key text;
+    current_version integer;
+    source_attestation_id bigint;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    actor_id := public.media_actor_id_for_public_id_v1(actor_public_id_input);
+    IF NOT public.media_root_logical_key_valid_v1(profile_key_input)
+       OR NOT public.media_root_logical_key_valid_v1(desired_target_key_input)
+       OR NOT public.media_root_logical_key_valid_v1(policy_key_input)
+       OR display_name_input IS NULL OR octet_length(display_name_input) NOT BETWEEN 1 AND 128
+       OR description_input IS NULL OR octet_length(description_input) > 1024
+       OR enabled_input IS NULL OR dry_run_only_input IS NULL
+       OR desired_target_version_input IS NULL OR desired_target_version_input <= 0
+       OR policy_version_input IS NULL OR policy_version_input <= 0 THEN
+       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    SELECT s.active_media_root_catalog_generation_id INTO generation_id
+    FROM public.media_root_catalog_state s
+    WHERE s.media_root_catalog_state_id = 1 AND s.source_state = 'ready'
+        AND s.attestation_state = 'ready' FOR SHARE;
+    IF generation_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete',
+            DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    SELECT a.media_root_catalog_slot_attestation_id INTO source_attestation_id
+    FROM public.media_root_catalog_slot s
+    JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_id)
+    WHERE s.logical_key = output_root_key_input
+        AND a.media_root_catalog_generation_id = generation_id
+        AND EXISTS (SELECT 1 FROM public.media_root_catalog_slot_kind k
+            WHERE k.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id
+                AND k.media_root_kind_id = 1);
+    IF source_attestation_id IS NOT NULL THEN
+        PERFORM pg_advisory_xact_lock(hashtextextended(
+            'media_discovery_association_overlap_v1', source_attestation_id));
+    END IF;
+    SELECT t.media_desired_target_profile_id INTO target_id
+    FROM public.media_desired_target_profile t
+    WHERE t.target_key = desired_target_key_input AND t.version = desired_target_version_input
+        AND t.enabled FOR UPDATE;
+    IF target_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_desired_target_not_found',
+            DETAIL = 'media_desired_target_not_found';
+    END IF;
+    SELECT p.media_policy_profile_id INTO policy_id FROM public.media_policy_profile p
+    WHERE p.policy_key = policy_key_input AND p.version = policy_version_input AND p.enabled FOR SHARE;
+    IF policy_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_policy_profile_not_found',
+            DETAIL = 'media_policy_profile_not_found';
+    END IF;
+    SELECT b.enabled, o.quarantine_enabled INTO backup_required, quarantine_required
+    FROM public.media_policy_backup b JOIN public.media_policy_output o USING (media_policy_profile_id)
+    WHERE b.media_policy_profile_id = policy_id;
+    IF backup_required IS NULL OR quarantine_required IS NULL
+       OR backup_required <> (backup_root_key_input IS NOT NULL)
+       OR quarantine_required <> (quarantine_root_key_input IS NOT NULL) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete',
+            DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    IF existing_public_id_input IS NULL THEN
+        BEGIN
+            INSERT INTO public.media_profile (profile_key, dry_run_only, created_by_user_id, policy_key)
+            VALUES (profile_key_input, dry_run_only_input, actor_id, policy_key_input)
+            RETURNING media_profile_id, media_profile_public_id INTO parent_id, public_id;
+        EXCEPTION WHEN unique_violation THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_profile_key_conflict',
+                DETAIL = 'media_profile_key_conflict';
+        END;
+    ELSE
+        SELECT p.media_profile_id, p.media_profile_public_id, p.profile_key, v.version
+        INTO parent_id, public_id, current_key, current_version
+        FROM public.media_profile p JOIN public.media_profile_version v
+            ON v.media_profile_version_id = p.latest_media_profile_version_id
+        WHERE p.media_profile_public_id = existing_public_id_input AND p.deleted_at IS NULL
+        FOR UPDATE OF p;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_profile_not_found',
+                DETAIL = 'media_profile_not_found';
+        END IF;
+        IF current_version IS DISTINCT FROM expected_version_input THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_version_conflict',
+                DETAIL = 'media_configuration_version_conflict';
+        END IF;
+        IF current_key IS DISTINCT FROM profile_key_input OR current_version = 2147483647 THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+                DETAIL = 'media_configuration_invalid';
+        END IF;
+        next_version := current_version + 1;
+    END IF;
+    INSERT INTO public.media_profile_version (
+        media_profile_id, version, lifecycle_state, display_name, description, enabled,
+        dry_run_only, media_desired_target_profile_id, media_policy_profile_id, created_by_user_id
+    ) VALUES (parent_id, next_version, 'active', display_name_input, description_input, enabled_input,
+        dry_run_only_input, target_id, policy_id, actor_id)
+    RETURNING media_profile_version_id INTO version_id;
+    FOR binding IN SELECT * FROM (VALUES
+        (2::smallint, output_root_key_input), (3::smallint, workspace_root_key_input),
+        (4::smallint, backup_root_key_input), (5::smallint, quarantine_root_key_input)
+    ) AS required(kind_id, logical_key) WHERE kind_id IN (2, 3) OR logical_key IS NOT NULL LOOP
+        IF NOT public.media_root_logical_key_valid_v1(binding.logical_key) THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+                DETAIL = 'media_configuration_invalid';
+        END IF;
+        SELECT a.*, EXISTS (SELECT 1 FROM public.media_root_catalog_slot_kind k
+            WHERE k.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id
+                AND k.media_root_kind_id = binding.kind_id) AS kind_allowed
+        INTO attestation FROM public.media_root_catalog_slot s
+        JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_id)
+        WHERE s.logical_key = binding.logical_key AND a.media_root_catalog_generation_id = generation_id;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_root_unmapped',
+                DETAIL = 'media_configuration_root_unmapped';
+        END IF;
+        IF NOT attestation.kind_allowed THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_kind_forbidden',
+                DETAIL = 'media_root_kind_forbidden';
+        END IF;
+        IF NOT (attestation.write_capable AND attestation.create_new_capable AND attestation.fsync_capable
+            AND attestation.rename_capable AND attestation.delete_capable AND attestation.capacity_probe_capable)
+            OR attestation.sole_writer_class <> 'revaer_exclusive' THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete',
+                DETAIL = 'media_root_binding_incomplete';
+        END IF;
+        INSERT INTO public.media_profile_version_root_binding (
+            media_profile_version_id, media_root_kind_id, logical_key,
+            media_root_catalog_slot_attestation_id, resolution_state
+        ) VALUES (version_id, binding.kind_id, binding.logical_key,
+            attestation.media_root_catalog_slot_attestation_id, 'resolved');
+    END LOOP;
+    PERFORM public.media_desired_target_validate_and_activate_v1(target_id);
+    UPDATE public.media_profile SET latest_media_profile_version_id = version_id,
+        active_media_profile_version_id = version_id, updated_at = transaction_timestamp()
+    WHERE media_profile_id = parent_id;
+    RETURN public_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_profile_version_write_v1(uuid, text, text, text, boolean, boolean, text, integer, text, integer, text, text, text, text, uuid, integer) FROM PUBLIC;
+
+CREATE FUNCTION public.media_profile_version_create_v1(
+    actor_public_id_input uuid, profile_key_input text, display_name_input text,
+    description_input text, enabled_input boolean, dry_run_only_input boolean,
+    desired_target_key_input text, desired_target_version_input integer,
+    policy_key_input text, policy_version_input integer,
+    output_root_key_input text, workspace_root_key_input text,
+    backup_root_key_input text, quarantine_root_key_input text
+)
+RETURNS uuid LANGUAGE sql SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+    SELECT public.media_profile_version_write_v1($1, $2, $3, $4, $5, $6, $7, $8,
+        $9, $10, $11, $12, $13, $14, NULL, NULL);
+$$;
+REVOKE ALL ON FUNCTION public.media_profile_version_create_v1(uuid, text, text, text, boolean, boolean, text, integer, text, integer, text, text, text, text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_profile_version_replace_v1(
+    actor_public_id_input uuid, profile_key_input text, display_name_input text,
+    description_input text, enabled_input boolean, dry_run_only_input boolean,
+    desired_target_key_input text, desired_target_version_input integer,
+    policy_key_input text, policy_version_input integer,
+    output_root_key_input text, workspace_root_key_input text,
+    backup_root_key_input text, quarantine_root_key_input text,
+    media_profile_public_id_input uuid, expected_version_input integer
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+BEGIN
+    IF media_profile_public_id_input IS NULL OR expected_version_input IS NULL
+        OR expected_version_input <= 0 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    RETURN public.media_profile_version_write_v1($1, $2, $3, $4, $5, $6, $7, $8,
+        $9, $10, $11, $12, $13, $14, $15, $16);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_profile_version_replace_v1(uuid, text, text, text, boolean, boolean, text, integer, text, integer, text, text, text, text, uuid, integer) FROM PUBLIC;
+
+-- Read an already-persisted version without changing heads, bindings or policy.
+CREATE FUNCTION public.media_profile_version_get_v1(media_profile_public_id_input uuid, active_input boolean DEFAULT false)
+RETURNS TABLE (
+    media_profile_public_id uuid, profile_key text, display_name text, description text,
+    enabled boolean, dry_run_only boolean, desired_target_key text, desired_target_version integer,
+    policy_key text, policy_version integer, latest_version integer, active_version integer,
+    lifecycle_state text, created_at timestamptz, updated_at timestamptz,
+    root_kind text, logical_key text, resolution_state text,
+    binding_ready boolean, binding_reason text, destructive_ready boolean, destructive_reason text
+)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+    WITH bindings AS (
+        SELECT p.media_profile_public_id, p.profile_key, v.display_name, v.description,
+            v.enabled, v.dry_run_only, t.target_key, t.version AS target_version,
+            policy.policy_key, policy.version AS policy_version, v.version AS latest_version,
+            active.version AS active_version, v.lifecycle_state, p.created_at, p.updated_at,
+            k.root_kind, k.media_root_kind_id, b.logical_key, b.resolution_state,
+            a.durability_class,
+            CASE WHEN b.resolution_state <> 'resolved'
+                    OR state.active_media_root_catalog_generation_id IS DISTINCT FROM a.media_root_catalog_generation_id
+                    OR state.source_state <> 'ready' OR state.attestation_state <> 'ready'
+                    OR NOT (a.write_capable AND a.create_new_capable AND a.fsync_capable
+                        AND a.rename_capable AND a.delete_capable AND a.capacity_probe_capable)
+                THEN 'media_root_binding_incomplete'
+                WHEN a.sole_writer_class <> 'revaer_exclusive' THEN 'media_root_writer_control_unproven'
+            END AS binding_reason
+        FROM public.media_profile p
+        JOIN public.media_profile_version v ON v.media_profile_version_id = CASE
+            WHEN active_input THEN p.active_media_profile_version_id ELSE p.latest_media_profile_version_id END
+        LEFT JOIN public.media_profile_version active ON active.media_profile_version_id = p.active_media_profile_version_id
+        JOIN public.media_desired_target_profile t ON t.media_desired_target_profile_id = v.media_desired_target_profile_id
+        JOIN public.media_policy_profile policy ON policy.media_policy_profile_id = v.media_policy_profile_id
+        JOIN public.media_profile_version_root_binding b ON b.media_profile_version_id = v.media_profile_version_id
+        JOIN public.media_root_kind k ON k.media_root_kind_id = b.media_root_kind_id
+        LEFT JOIN public.media_root_catalog_slot_attestation a ON a.media_root_catalog_slot_attestation_id = b.media_root_catalog_slot_attestation_id
+        CROSS JOIN public.media_root_catalog_state state
+        WHERE p.media_profile_public_id = media_profile_public_id_input AND p.deleted_at IS NULL
+            AND state.media_root_catalog_state_id = 1
+    ), readiness AS (
+        SELECT b.*, COALESCE(b.binding_reason,
+            CASE WHEN b.durability_class <> 'restart_persistent' THEN 'media_root_durability_unproven' END
+        ) AS destructive_reason FROM bindings b
+    )
+    SELECT r.media_profile_public_id, r.profile_key, r.display_name, r.description,
+        r.enabled, r.dry_run_only, r.target_key, r.target_version, r.policy_key, r.policy_version,
+        r.latest_version, r.active_version, r.lifecycle_state, r.created_at, r.updated_at,
+        r.root_kind, r.logical_key, r.resolution_state, r.binding_reason IS NULL, r.binding_reason,
+        r.destructive_reason IS NULL, r.destructive_reason
+    FROM readiness r ORDER BY r.media_root_kind_id;
+$$;
+REVOKE ALL ON FUNCTION public.media_profile_version_get_v1(uuid, boolean) FROM PUBLIC;
+
+-- Bound parents first so each complete representation shares one read snapshot.
+CREATE FUNCTION public.media_profile_version_page_v1(
+    limit_input integer, cursor_key_input text, cursor_id_input uuid
+)
+RETURNS TABLE (
+    media_profile_public_id uuid, profile_key text, display_name text, description text,
+    enabled boolean, dry_run_only boolean, desired_target_key text, desired_target_version integer,
+    policy_key text, policy_version integer, latest_version integer, active_version integer,
+    lifecycle_state text, created_at timestamptz, updated_at timestamptz,
+    root_kind text, logical_key text, resolution_state text,
+    binding_ready boolean, binding_reason text, destructive_ready boolean, destructive_reason text
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+BEGIN
+    IF limit_input IS NULL OR limit_input < 1 OR limit_input > 200
+        OR (cursor_key_input IS NULL) <> (cursor_id_input IS NULL) THEN
+        RAISE EXCEPTION 'invalid profile page' USING ERRCODE = 'P0001', DETAIL = 'media_configuration_invalid';
+    END IF;
+    IF cursor_key_input IS NOT NULL AND (
+        NOT public.media_root_logical_key_valid_v1(cursor_key_input)
+        OR NOT EXISTS (
+            SELECT 1 FROM public.media_profile p
+            WHERE p.profile_key = cursor_key_input AND p.media_profile_public_id = cursor_id_input
+                AND p.deleted_at IS NULL AND p.latest_media_profile_version_id IS NOT NULL
+        )
+    ) THEN
+        RAISE EXCEPTION 'invalid profile continuation' USING ERRCODE = 'P0001', DETAIL = 'media_configuration_invalid';
+    END IF;
+    RETURN QUERY
+    WITH page AS (
+        SELECT p.media_profile_public_id, p.profile_key
+        FROM public.media_profile p
+        WHERE p.deleted_at IS NULL AND p.latest_media_profile_version_id IS NOT NULL
+            AND (cursor_key_input IS NULL OR
+                (p.profile_key COLLATE "C", p.media_profile_public_id) > (cursor_key_input COLLATE "C", cursor_id_input))
+        ORDER BY p.profile_key COLLATE "C", p.media_profile_public_id
+        LIMIT limit_input + 1
+    )
+    SELECT version.* FROM page p
+    CROSS JOIN LATERAL public.media_profile_version_get_v1(p.media_profile_public_id) version
+    ORDER BY p.profile_key COLLATE "C", p.media_profile_public_id,
+        CASE version.root_kind WHEN 'output' THEN 2 WHEN 'workspace' THEN 3 WHEN 'backup' THEN 4 WHEN 'quarantine' THEN 5 END;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_profile_version_page_v1(integer, text, uuid) FROM PUBLIC;
+
+-- ADR 557: immutable discovery associations own source-relative scope.
+CREATE FUNCTION public.media_root_relative_prefix_valid_v1(value_input text)
+RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path TO pg_catalog AS $$
+    SELECT value_input IS NOT NULL AND (value_input = '' OR (
+        octet_length(value_input) BETWEEN 1 AND 4096 AND NOT EXISTS (
+            SELECT 1 FROM unnest(string_to_array(value_input, '/')) component
+            WHERE component IN ('', '.', '..') OR strpos(component, chr(92)) > 0
+        )
+    ));
+$$;
+
+CREATE TABLE public.media_discovery_association (
+    media_discovery_association_id bigint GENERATED ALWAYS AS IDENTITY,
+    media_discovery_association_public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+    association_key text NOT NULL,
+    latest_media_discovery_association_version_id bigint,
+    active_media_discovery_association_version_id bigint,
+    created_by_user_id bigint NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    CONSTRAINT media_discovery_association_pkey PRIMARY KEY (media_discovery_association_id),
+    CONSTRAINT media_discovery_association_public_id_key UNIQUE (media_discovery_association_public_id),
+    CONSTRAINT media_discovery_association_association_key_key UNIQUE (association_key),
+    CONSTRAINT media_discovery_association_key_contract CHECK (public.media_root_logical_key_valid_v1(association_key)),
+    CONSTRAINT media_discovery_association_created_by_user_id_fkey FOREIGN KEY (created_by_user_id)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT
+);
+CREATE TABLE public.media_discovery_association_version (
+    media_discovery_association_version_id bigint GENERATED ALWAYS AS IDENTITY,
+    media_discovery_association_id bigint NOT NULL,
+    version integer NOT NULL,
+    lifecycle_state text NOT NULL,
+    media_profile_version_id bigint NOT NULL,
+    source_logical_key text NOT NULL,
+    media_root_catalog_slot_attestation_id bigint,
+    resolution_state text NOT NULL,
+    root_relative_path text NOT NULL,
+    manual_enabled boolean NOT NULL,
+    watcher_enabled boolean NOT NULL,
+    schedule_enabled boolean NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    CONSTRAINT media_discovery_association_version_pkey PRIMARY KEY (media_discovery_association_version_id),
+    CONSTRAINT media_discovery_association_version_association_version_key UNIQUE (media_discovery_association_id, version),
+    CONSTRAINT media_discovery_association_version_parent_id_key UNIQUE (media_discovery_association_id, media_discovery_association_version_id),
+    CONSTRAINT media_discovery_association_version_association_fkey FOREIGN KEY (media_discovery_association_id)
+        REFERENCES public.media_discovery_association ON DELETE RESTRICT,
+    CONSTRAINT media_discovery_association_version_profile_version_fkey FOREIGN KEY (media_profile_version_id)
+        REFERENCES public.media_profile_version ON DELETE RESTRICT,
+    CONSTRAINT media_discovery_association_version_source_attestation_fkey FOREIGN KEY (media_root_catalog_slot_attestation_id)
+        REFERENCES public.media_root_catalog_slot_attestation ON DELETE RESTRICT,
+    CONSTRAINT media_discovery_association_version_created_by_user_id_fkey FOREIGN KEY (created_by_user_id)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    CONSTRAINT media_discovery_association_version_source_key_contract CHECK (public.media_root_logical_key_valid_v1(source_logical_key)),
+    CONSTRAINT media_discovery_association_version_positive CHECK (version > 0),
+    CONSTRAINT media_discovery_association_version_lifecycle_known CHECK (lifecycle_state IN ('draft', 'active', 'archived')),
+    CONSTRAINT media_discovery_association_version_resolution_known CHECK (resolution_state IN ('resolved', 'unmapped', 'kind_forbidden')),
+    CONSTRAINT media_discovery_association_version_resolution_coherent CHECK (
+        (resolution_state = 'resolved') = (media_root_catalog_slot_attestation_id IS NOT NULL)),
+    CONSTRAINT media_discovery_association_version_relative_path_contract CHECK (public.media_root_relative_prefix_valid_v1(root_relative_path)),
+    CONSTRAINT media_discovery_association_version_automatic_discovery_held CHECK (NOT watcher_enabled AND NOT schedule_enabled),
+    CONSTRAINT media_discovery_association_version_activation_coherent CHECK (
+        (lifecycle_state = 'active' AND resolution_state = 'resolved') OR
+        (lifecycle_state IN ('draft', 'archived') AND NOT manual_enabled AND NOT watcher_enabled AND NOT schedule_enabled))
+);
+ALTER TABLE public.media_discovery_association
+    ADD CONSTRAINT media_discovery_association_latest_version_fkey FOREIGN KEY
+        (media_discovery_association_id, latest_media_discovery_association_version_id)
+        REFERENCES public.media_discovery_association_version(media_discovery_association_id, media_discovery_association_version_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT media_discovery_association_active_version_fkey FOREIGN KEY
+        (media_discovery_association_id, active_media_discovery_association_version_id)
+        REFERENCES public.media_discovery_association_version(media_discovery_association_id, media_discovery_association_version_id) ON DELETE RESTRICT;
+CREATE INDEX ix_media_discovery_association_version_profile
+    ON public.media_discovery_association_version(media_profile_version_id, media_discovery_association_version_id);
+CREATE INDEX ix_media_discovery_association_version_source_prefix
+    ON public.media_discovery_association_version(media_root_catalog_slot_attestation_id, root_relative_path, media_discovery_association_version_id);
+CREATE TRIGGER media_discovery_association_version_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_discovery_association_version
+FOR EACH ROW EXECUTE FUNCTION public.media_profile_version_immutable_v1();
+
+-- Portable configuration reads retain heads and every latest association's pin.
+CREATE FUNCTION public.media_portable_profile_versions_v1()
+RETURNS TABLE (
+    profile_key text, version integer, display_name text, description text,
+    enabled boolean, dry_run_only boolean, desired_target_key text,
+    desired_target_version integer, policy_key text, policy_version integer,
+    output_root_key text, workspace_root_key text, backup_root_key text,
+    quarantine_root_key text
+)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    WITH selected AS (
+        SELECT p.latest_media_profile_version_id AS version_id FROM public.media_profile p
+        WHERE p.deleted_at IS NULL
+        UNION
+        SELECT p.active_media_profile_version_id FROM public.media_profile p
+        WHERE p.deleted_at IS NULL
+        UNION
+        SELECT v.media_profile_version_id
+        FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v
+            ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+    ), versions AS (
+        SELECT p.profile_key, v.* FROM selected s
+        JOIN public.media_profile_version v ON v.media_profile_version_id = s.version_id
+        JOIN public.media_profile p ON p.media_profile_id = v.media_profile_id
+        ORDER BY p.profile_key COLLATE "C", v.version LIMIT 129
+    )
+    SELECT v.profile_key, v.version, v.display_name, v.description, v.enabled, v.dry_run_only,
+        t.target_key, t.version, policy.policy_key, policy.version,
+        max(b.logical_key) FILTER (WHERE b.media_root_kind_id = 2),
+        max(b.logical_key) FILTER (WHERE b.media_root_kind_id = 3),
+        max(b.logical_key) FILTER (WHERE b.media_root_kind_id = 4),
+        max(b.logical_key) FILTER (WHERE b.media_root_kind_id = 5)
+    FROM versions v
+    JOIN public.media_desired_target_profile t USING (media_desired_target_profile_id)
+    JOIN public.media_policy_profile policy USING (media_policy_profile_id)
+    JOIN public.media_profile_version_root_binding b USING (media_profile_version_id)
+    GROUP BY v.profile_key, v.version, v.display_name, v.description, v.enabled, v.dry_run_only,
+        t.target_key, t.version, policy.policy_key, policy.version
+    ORDER BY v.profile_key COLLATE "C", v.version;
+$$;
+REVOKE ALL ON FUNCTION public.media_portable_profile_versions_v1() FROM PUBLIC;
+
+CREATE FUNCTION public.media_portable_associations_v1()
+RETURNS TABLE (
+    association_key text, profile_key text, profile_version integer,
+    source_root_key text, root_relative_path text, manual_enabled boolean,
+    watcher_enabled boolean, schedule_enabled boolean
+)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT a.association_key, p.profile_key, profile.version, v.source_logical_key,
+        v.root_relative_path, v.manual_enabled, v.watcher_enabled, v.schedule_enabled
+    FROM public.media_discovery_association a
+    JOIN public.media_discovery_association_version v
+        ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+    JOIN public.media_profile_version profile USING (media_profile_version_id)
+    JOIN public.media_profile p ON p.media_profile_id = profile.media_profile_id
+    ORDER BY a.association_key COLLATE "C" LIMIT 129;
+$$;
+REVOKE ALL ON FUNCTION public.media_portable_associations_v1() FROM PUBLIC;
+
+CREATE FUNCTION public.media_local_root_paths_v1()
+RETURNS TABLE(logical_key text, canonical_path text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT paths.logical_key, paths.canonical_path FROM (
+        SELECT b.logical_key, a.canonical_path
+        FROM public.media_portable_profile_versions_v1() exported
+        JOIN public.media_profile p ON p.profile_key = exported.profile_key
+        JOIN public.media_profile_version v ON v.media_profile_id = p.media_profile_id AND v.version = exported.version
+        JOIN public.media_profile_version_root_binding b USING (media_profile_version_id)
+        LEFT JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_attestation_id)
+        UNION
+        SELECT v.source_logical_key, attestation.canonical_path
+        FROM public.media_discovery_association parent
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = parent.latest_media_discovery_association_version_id
+        LEFT JOIN public.media_root_catalog_slot_attestation attestation USING (media_root_catalog_slot_attestation_id)
+    ) paths ORDER BY paths.logical_key COLLATE "C", paths.canonical_path COLLATE "C" NULLS FIRST LIMIT 4097;
+$$;
+REVOKE ALL ON FUNCTION public.media_local_root_paths_v1() FROM PUBLIC;
+
+CREATE FUNCTION public.media_configuration_import_prepare_v1(
+    actor_public_id_input uuid, kinds_input text[], keys_input text[],
+    create_intents_input boolean[], expected_versions_input integer[],
+    source_keys_input text[]
+)
+RETURNS bigint LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    generation_id bigint;
+    source_id bigint;
+    resource record;
+    head_value integer;
+    resource_exists boolean;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable'
+        OR kinds_input IS NULL OR keys_input IS NULL OR create_intents_input IS NULL
+        OR expected_versions_input IS NULL OR source_keys_input IS NULL
+        OR cardinality(kinds_input) > 128 OR cardinality(source_keys_input) > 128
+        OR cardinality(keys_input) <> cardinality(kinds_input)
+        OR cardinality(create_intents_input) <> cardinality(kinds_input)
+        OR cardinality(expected_versions_input) <> cardinality(kinds_input)
+        OR EXISTS (SELECT 1 FROM unnest(source_keys_input) k
+            WHERE NOT public.media_root_logical_key_valid_v1(k))
+        OR EXISTS (SELECT 1 FROM unnest(kinds_input, keys_input, create_intents_input, expected_versions_input)
+            r(kind, key, create_intent, expected_version)
+            WHERE kind IS NULL OR kind NOT IN ('compatibility_targets', 'targets', 'policies', 'profiles', 'discovery_associations')
+                OR (CASE WHEN kind IN ('profiles', 'discovery_associations')
+                    THEN public.media_root_logical_key_valid_v1(key)
+                    ELSE public.media_key_valid_v1(key) END) IS NOT TRUE OR create_intent IS NULL
+                OR (create_intent AND expected_version IS NOT NULL)
+                OR (NOT create_intent AND (expected_version IS NULL OR expected_version <= 0)))
+        OR EXISTS (SELECT 1 FROM unnest(kinds_input, keys_input) r(kind, key)
+            GROUP BY kind, key HAVING count(*) > 1) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    PERFORM public.media_actor_id_for_public_id_v1(actor_public_id_input);
+    SELECT CASE WHEN s.source_state = 'ready' AND s.attestation_state = 'ready'
+        THEN s.active_media_root_catalog_generation_id END INTO generation_id
+    FROM public.media_root_catalog_state s WHERE s.media_root_catalog_state_id = 1 FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete',
+            DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    FOR source_id IN
+        SELECT DISTINCT a.media_root_catalog_slot_attestation_id
+        FROM public.media_root_catalog_slot_attestation a
+        JOIN public.media_root_catalog_slot s USING (media_root_catalog_slot_id)
+        JOIN public.media_root_catalog_slot_kind k USING (media_root_catalog_slot_attestation_id)
+        WHERE a.media_root_catalog_generation_id = generation_id
+            AND s.logical_key = ANY(source_keys_input) AND k.media_root_kind_id = 1
+        ORDER BY a.media_root_catalog_slot_attestation_id
+    LOOP
+        PERFORM pg_advisory_xact_lock(hashtextextended('media_discovery_association_overlap_v1', source_id));
+    END LOOP;
+    FOR resource IN
+        SELECT * FROM unnest(kinds_input, keys_input, create_intents_input, expected_versions_input)
+            r(kind, key, create_intent, expected_version)
+        ORDER BY CASE kind WHEN 'compatibility_targets' THEN 1 WHEN 'targets' THEN 2
+            WHEN 'policies' THEN 3 WHEN 'profiles' THEN 4 ELSE 5 END, key COLLATE "C"
+    LOOP
+        head_value := NULL;
+        CASE resource.kind
+        WHEN 'compatibility_targets' THEN
+            PERFORM 1 FROM public.media_compatibility_target t
+            WHERE t.compatibility_target_key = resource.key ORDER BY t.version FOR UPDATE;
+            resource_exists := FOUND;
+            SELECT max(t.version) INTO head_value FROM public.media_compatibility_target t
+            WHERE t.compatibility_target_key = resource.key;
+        WHEN 'targets' THEN
+            PERFORM 1 FROM public.media_desired_target_profile t
+            WHERE t.target_key = resource.key ORDER BY t.version FOR UPDATE;
+            resource_exists := FOUND;
+            SELECT max(t.version) INTO head_value FROM public.media_desired_target_profile t
+            WHERE t.target_key = resource.key;
+        WHEN 'policies' THEN
+            PERFORM 1 FROM public.media_policy_profile p
+            WHERE p.policy_key = resource.key ORDER BY p.version FOR UPDATE;
+            resource_exists := FOUND;
+            SELECT max(p.version) INTO head_value FROM public.media_policy_profile p
+            WHERE p.policy_key = resource.key;
+        WHEN 'profiles' THEN
+            SELECT v.version INTO head_value FROM public.media_profile p
+            LEFT JOIN public.media_profile_version v ON v.media_profile_version_id = p.latest_media_profile_version_id
+            WHERE p.profile_key = resource.key FOR UPDATE OF p;
+            resource_exists := FOUND;
+        WHEN 'discovery_associations' THEN
+            SELECT v.version INTO head_value FROM public.media_discovery_association a
+            LEFT JOIN public.media_discovery_association_version v
+                ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+            WHERE a.association_key = resource.key FOR UPDATE OF a;
+            resource_exists := FOUND;
+        END CASE;
+        IF resource.create_intent AND resource_exists THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_create_conflict',
+                DETAIL = 'media_configuration_create_conflict';
+        END IF;
+        IF NOT resource.create_intent AND (NOT resource_exists OR head_value IS DISTINCT FROM resource.expected_version) THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_version_conflict',
+                DETAIL = 'media_configuration_version_conflict';
+        END IF;
+    END LOOP;
+    RETURN generation_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_configuration_import_prepare_v1(uuid,text[],text[],boolean[],integer[],text[]) FROM PUBLIC;
+
+CREATE FUNCTION public.media_profile_version_import_v1(
+    actor_input uuid, key_input text, version_input integer, expected_head_input integer,
+    name_input text, description_input text, enabled_input boolean,
+    target_key_input text, target_version_input integer, policy_key_input text,
+    policy_version_input integer, output_key_input text, workspace_key_input text,
+    backup_key_input text, quarantine_key_input text
+)
+RETURNS TABLE (profile_public_id uuid, latest_version integer, draft boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    actor_id bigint;
+    generation_id bigint;
+    target_id bigint;
+    policy_id bigint;
+    parent_id bigint;
+    parent_public_id uuid;
+    current_head integer;
+    body_id bigint;
+    unresolved boolean := false;
+    backup_required boolean;
+    quarantine_required boolean;
+    binding record;
+    attestation record;
+    kinds smallint[] := ARRAY[]::smallint[];
+    keys text[] := ARRAY[]::text[];
+    attestations bigint[] := ARRAY[]::bigint[];
+    states text[] := ARRAY[]::text[];
+    source_id bigint;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable'
+        OR NOT public.media_root_logical_key_valid_v1(key_input)
+        OR NOT public.media_root_logical_key_valid_v1(target_key_input)
+        OR NOT public.media_root_logical_key_valid_v1(policy_key_input)
+        OR version_input IS NULL OR version_input <= 0
+        OR (expected_head_input IS NOT NULL AND expected_head_input <= 0)
+        OR target_version_input IS NULL OR target_version_input <= 0
+        OR policy_version_input IS NULL OR policy_version_input <= 0
+        OR name_input IS NULL OR octet_length(name_input) NOT BETWEEN 1 AND 128
+        OR description_input IS NULL OR octet_length(description_input) > 1024
+        OR enabled_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    actor_id := public.media_actor_id_for_public_id_v1(actor_input);
+    SELECT CASE WHEN s.source_state = 'ready' AND s.attestation_state = 'ready'
+        THEN s.active_media_root_catalog_generation_id END INTO generation_id
+    FROM public.media_root_catalog_state s WHERE s.media_root_catalog_state_id = 1 FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    SELECT a.media_root_catalog_slot_attestation_id INTO source_id
+    FROM public.media_root_catalog_slot s JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_id)
+    JOIN public.media_root_catalog_slot_kind k USING (media_root_catalog_slot_attestation_id)
+    WHERE s.logical_key = output_key_input AND a.media_root_catalog_generation_id = generation_id AND k.media_root_kind_id = 1;
+    IF source_id IS NOT NULL THEN
+        PERFORM pg_advisory_xact_lock(hashtextextended('media_discovery_association_overlap_v1', source_id));
+    END IF;
+    SELECT t.media_desired_target_profile_id INTO target_id FROM public.media_desired_target_profile t
+    WHERE t.target_key = target_key_input AND t.version = target_version_input FOR UPDATE;
+    SELECT p.media_policy_profile_id INTO policy_id FROM public.media_policy_profile p
+    WHERE p.policy_key = policy_key_input AND p.version = policy_version_input AND p.enabled FOR SHARE;
+    IF target_id IS NULL OR policy_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_reference_missing', DETAIL = 'media_configuration_reference_missing';
+    END IF;
+    SELECT b.enabled, o.quarantine_enabled INTO backup_required, quarantine_required
+    FROM public.media_policy_backup b JOIN public.media_policy_output o USING (media_policy_profile_id)
+    WHERE b.media_policy_profile_id = policy_id;
+    IF backup_required IS NULL OR quarantine_required IS NULL
+        OR backup_required <> (backup_key_input IS NOT NULL)
+        OR quarantine_required <> (quarantine_key_input IS NOT NULL) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    FOR binding IN SELECT * FROM (VALUES
+        (2::smallint, output_key_input), (3::smallint, workspace_key_input),
+        (4::smallint, backup_key_input), (5::smallint, quarantine_key_input)
+    ) r(kind, key) WHERE kind IN (2,3) OR key IS NOT NULL ORDER BY kind LOOP
+        IF NOT public.media_root_logical_key_valid_v1(binding.key) THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+        END IF;
+        kinds := array_append(kinds, binding.kind);
+        keys := array_append(keys, binding.key);
+        SELECT a.*, EXISTS (SELECT 1 FROM public.media_root_catalog_slot_kind k
+            WHERE k.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id
+                AND k.media_root_kind_id = binding.kind) AS kind_allowed
+        INTO attestation FROM public.media_root_catalog_slot s
+        JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_id)
+        WHERE s.logical_key = binding.key AND a.media_root_catalog_generation_id = generation_id;
+        IF NOT FOUND THEN
+            attestations := array_append(attestations, NULL::bigint);
+            states := array_append(states, 'unmapped');
+            unresolved := true;
+        ELSIF NOT attestation.kind_allowed THEN
+            attestations := array_append(attestations, NULL::bigint);
+            states := array_append(states, 'kind_forbidden');
+            unresolved := true;
+        ELSE
+            IF NOT (attestation.write_capable AND attestation.create_new_capable AND attestation.fsync_capable
+                AND attestation.rename_capable AND attestation.delete_capable AND attestation.capacity_probe_capable)
+                OR attestation.sole_writer_class <> 'revaer_exclusive' THEN
+                RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+            END IF;
+            attestations := array_append(attestations, attestation.media_root_catalog_slot_attestation_id);
+            states := array_append(states, 'resolved');
+        END IF;
+    END LOOP;
+    SELECT p.media_profile_id, p.media_profile_public_id, v.version
+    INTO parent_id, parent_public_id, current_head FROM public.media_profile p
+    LEFT JOIN public.media_profile_version v ON v.media_profile_version_id = p.latest_media_profile_version_id
+    WHERE p.profile_key = key_input AND p.deleted_at IS NULL FOR UPDATE OF p;
+    IF expected_head_input IS NULL THEN
+        IF FOUND THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_create_conflict', DETAIL = 'media_configuration_create_conflict';
+        END IF;
+        INSERT INTO public.media_profile(profile_key, dry_run_only, created_by_user_id, policy_key)
+        VALUES (key_input, true, actor_id, policy_key_input)
+        RETURNING media_profile_id, media_profile_public_id INTO parent_id, parent_public_id;
+    ELSIF NOT FOUND OR current_head IS DISTINCT FROM expected_head_input THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_version_conflict', DETAIL = 'media_configuration_version_conflict';
+    END IF;
+    SELECT v.media_profile_version_id INTO body_id FROM public.media_profile_version v
+    WHERE v.media_profile_id = parent_id AND v.version = version_input;
+    IF FOUND THEN
+        IF NOT EXISTS (SELECT 1 FROM public.media_profile_version v WHERE v.media_profile_version_id = body_id
+            AND v.display_name = name_input AND v.description = description_input
+            AND v.enabled = (enabled_input AND NOT unresolved) AND v.dry_run_only
+            AND v.media_desired_target_profile_id = target_id AND v.media_policy_profile_id = policy_id)
+            OR EXISTS ((SELECT k.kind, k.key FROM unnest(kinds, keys) k(kind,key))
+                EXCEPT (SELECT b.media_root_kind_id, b.logical_key FROM public.media_profile_version_root_binding b WHERE b.media_profile_version_id = body_id))
+            OR EXISTS ((SELECT b.media_root_kind_id, b.logical_key FROM public.media_profile_version_root_binding b WHERE b.media_profile_version_id = body_id)
+                EXCEPT (SELECT k.kind, k.key FROM unnest(kinds, keys) k(kind,key))) THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_version_conflict', DETAIL = 'media_configuration_version_conflict';
+        END IF;
+        RETURN QUERY SELECT parent_public_id, current_head, v.lifecycle_state = 'draft'
+            FROM public.media_profile p JOIN public.media_profile_version v
+                ON v.media_profile_version_id = p.latest_media_profile_version_id WHERE p.media_profile_id = parent_id;
+        RETURN;
+    END IF;
+    INSERT INTO public.media_profile_version(media_profile_id, version, lifecycle_state, display_name,
+        description, enabled, dry_run_only, media_desired_target_profile_id, media_policy_profile_id, created_by_user_id)
+    VALUES (parent_id, version_input, CASE WHEN unresolved THEN 'draft' ELSE 'active' END,
+        name_input, description_input, enabled_input AND NOT unresolved, true, target_id, policy_id, actor_id)
+    RETURNING media_profile_version_id INTO body_id;
+    INSERT INTO public.media_profile_version_root_binding(media_profile_version_id, media_root_kind_id,
+        logical_key, media_root_catalog_slot_attestation_id, resolution_state)
+    SELECT body_id, r.kind, r.key, r.attestation, r.state FROM unnest(kinds, keys, attestations, states) r(kind,key,attestation,state);
+    PERFORM public.media_desired_target_validate_and_activate_v1(target_id);
+    IF current_head IS NULL OR version_input > current_head THEN
+        UPDATE public.media_profile SET latest_media_profile_version_id = body_id,
+            active_media_profile_version_id = CASE WHEN unresolved THEN active_media_profile_version_id ELSE body_id END,
+            updated_at = transaction_timestamp() WHERE media_profile_id = parent_id;
+        current_head := version_input;
+    END IF;
+    RETURN QUERY SELECT parent_public_id, current_head, v.lifecycle_state = 'draft'
+        FROM public.media_profile p JOIN public.media_profile_version v
+            ON v.media_profile_version_id = p.latest_media_profile_version_id WHERE p.media_profile_id = parent_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_profile_version_import_v1(uuid,text,integer,integer,text,text,boolean,text,integer,text,integer,text,text,text,text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_association_import_v1(
+    actor_input uuid, key_input text, expected_head_input integer, profile_key_input text,
+    profile_version_input integer, source_key_input text, prefix_input text,
+    manual_input boolean, watcher_input boolean, schedule_input boolean
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    actor_id bigint;
+    generation_id bigint;
+    source_id bigint;
+    profile_row record;
+    parent_id bigint;
+    public_id uuid;
+    head record;
+    next_version integer := 1;
+    body_id bigint;
+    resolution text := 'unmapped';
+    active boolean := false;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable'
+        OR NOT public.media_root_logical_key_valid_v1(key_input)
+        OR NOT public.media_root_logical_key_valid_v1(profile_key_input)
+        OR NOT public.media_root_logical_key_valid_v1(source_key_input)
+        OR NOT public.media_root_relative_prefix_valid_v1(prefix_input)
+        OR profile_version_input IS NULL OR profile_version_input <= 0
+        OR (expected_head_input IS NOT NULL AND expected_head_input <= 0)
+        OR manual_input IS NULL OR watcher_input IS NULL OR schedule_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    IF watcher_input OR schedule_input THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_pending_contract', DETAIL = 'media_configuration_pending_contract';
+    END IF;
+    actor_id := public.media_actor_id_for_public_id_v1(actor_input);
+    SELECT CASE WHEN s.source_state = 'ready' AND s.attestation_state = 'ready'
+        THEN s.active_media_root_catalog_generation_id END INTO generation_id
+    FROM public.media_root_catalog_state s WHERE s.media_root_catalog_state_id = 1 FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    SELECT a.media_root_catalog_slot_attestation_id,
+        CASE WHEN EXISTS (SELECT 1 FROM public.media_root_catalog_slot_kind k
+            WHERE k.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id AND k.media_root_kind_id = 1)
+            THEN 'resolved' ELSE 'kind_forbidden' END
+    INTO source_id, resolution FROM public.media_root_catalog_slot s
+    JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_id)
+    WHERE s.logical_key = source_key_input AND a.media_root_catalog_generation_id = generation_id;
+    IF NOT FOUND THEN resolution := 'unmapped'; END IF;
+    IF resolution = 'resolved' THEN
+        PERFORM pg_advisory_xact_lock(hashtextextended('media_discovery_association_overlap_v1', source_id));
+    ELSE source_id := NULL;
+    END IF;
+    SELECT v.*, p.active_media_profile_version_id INTO profile_row FROM public.media_profile p
+    JOIN public.media_profile_version v USING (media_profile_id)
+    WHERE p.profile_key = profile_key_input AND p.deleted_at IS NULL AND v.version = profile_version_input FOR UPDATE OF p;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_reference_missing', DETAIL = 'media_configuration_reference_missing';
+    END IF;
+    active := resolution = 'resolved' AND profile_row.lifecycle_state = 'active'
+        AND profile_row.media_profile_version_id = profile_row.active_media_profile_version_id AND profile_row.enabled;
+    IF active AND (NOT EXISTS (SELECT 1 FROM public.media_profile_version_root_binding b
+        WHERE b.media_profile_version_id = profile_row.media_profile_version_id AND b.media_root_kind_id = 2
+            AND b.media_root_catalog_slot_attestation_id = source_id AND b.resolution_state = 'resolved')
+        OR EXISTS (SELECT 1 FROM public.media_profile_version_root_binding b
+            LEFT JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_attestation_id)
+            WHERE b.media_profile_version_id = profile_row.media_profile_version_id
+                AND (b.resolution_state <> 'resolved' OR a.media_root_catalog_generation_id IS DISTINCT FROM generation_id))
+        OR NOT EXISTS (SELECT 1 FROM public.media_root_catalog_slot_attestation a
+            WHERE a.media_root_catalog_slot_attestation_id = source_id AND a.read_capable)) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    SELECT a.media_discovery_association_id, a.media_discovery_association_public_id
+    INTO parent_id, public_id FROM public.media_discovery_association a WHERE a.association_key = key_input FOR UPDATE;
+    IF expected_head_input IS NULL THEN
+        IF FOUND THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_create_conflict', DETAIL = 'media_configuration_create_conflict';
+        END IF;
+        INSERT INTO public.media_discovery_association(association_key, created_by_user_id)
+        VALUES (key_input, actor_id) RETURNING media_discovery_association_id, media_discovery_association_public_id INTO parent_id, public_id;
+    ELSE
+        IF NOT FOUND THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_version_conflict', DETAIL = 'media_configuration_version_conflict';
+        END IF;
+        SELECT v.* INTO head FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+        WHERE a.media_discovery_association_id = parent_id;
+        IF NOT FOUND OR head.version IS DISTINCT FROM expected_head_input OR head.version = 2147483647 THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_version_conflict', DETAIL = 'media_configuration_version_conflict';
+        END IF;
+        IF head.media_profile_version_id = profile_row.media_profile_version_id
+            AND head.source_logical_key = source_key_input AND head.root_relative_path = prefix_input
+            AND head.manual_enabled = (CASE WHEN head.lifecycle_state = 'draft' THEN manual_input AND active ELSE manual_input END)
+            AND NOT head.watcher_enabled AND NOT head.schedule_enabled THEN
+            RETURN public_id;
+        END IF;
+        next_version := head.version + 1;
+    END IF;
+    IF active AND (SELECT count(*) FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+        WHERE a.media_discovery_association_id <> parent_id AND v.media_profile_version_id = profile_row.media_profile_version_id) >= 128 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_bound_exceeded', DETAIL = 'media_configuration_bound_exceeded';
+    END IF;
+    IF active AND EXISTS (SELECT 1 FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+        WHERE a.media_discovery_association_id <> parent_id AND v.media_root_catalog_slot_attestation_id = source_id
+            AND (v.root_relative_path = '' OR prefix_input = '' OR v.root_relative_path = prefix_input
+                OR starts_with(v.root_relative_path, prefix_input || '/') OR starts_with(prefix_input, v.root_relative_path || '/'))) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_overlap', DETAIL = 'media_configuration_overlap';
+    END IF;
+    INSERT INTO public.media_discovery_association_version(media_discovery_association_id, version, lifecycle_state,
+        media_profile_version_id, source_logical_key, media_root_catalog_slot_attestation_id, resolution_state,
+        root_relative_path, manual_enabled, watcher_enabled, schedule_enabled, created_by_user_id)
+    VALUES (parent_id, next_version, CASE WHEN active THEN 'active' ELSE 'draft' END,
+        profile_row.media_profile_version_id, source_key_input, source_id, resolution, prefix_input,
+        manual_input AND active, false, false, actor_id) RETURNING media_discovery_association_version_id INTO body_id;
+    UPDATE public.media_discovery_association SET latest_media_discovery_association_version_id = body_id,
+        active_media_discovery_association_version_id = CASE WHEN active THEN body_id ELSE active_media_discovery_association_version_id END
+    WHERE media_discovery_association_id = parent_id;
+    RETURN public_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_association_import_v1(uuid,text,integer,text,integer,text,text,boolean,boolean,boolean) FROM PUBLIC;
+
+CREATE TABLE public.media_configuration_import_audit (
+    media_configuration_import_audit_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    actor_user_id bigint NOT NULL REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    payload_sha256 bytea NOT NULL CHECK (octet_length(payload_sha256) = 32),
+    resource_count integer NOT NULL CHECK (resource_count BETWEEN 0 AND 128),
+    created_at timestamptz NOT NULL DEFAULT transaction_timestamp()
+);
+CREATE FUNCTION public.media_configuration_import_audit_v1(actor_input uuid, digest_input bytea, count_input integer)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable' OR digest_input IS NULL
+        OR octet_length(digest_input) <> 32 OR count_input IS NULL OR count_input NOT BETWEEN 0 AND 128 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    INSERT INTO public.media_configuration_import_audit(actor_user_id, payload_sha256, resource_count)
+    VALUES (public.media_actor_id_for_public_id_v1(actor_input), digest_input, count_input);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_configuration_import_audit_v1(uuid,bytea,integer) FROM PUBLIC;
+
+CREATE FUNCTION public.media_profile_active_association_count_v1(media_profile_public_id_input uuid)
+RETURNS bigint LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+    SELECT count(*) FROM public.media_discovery_association a
+    JOIN public.media_discovery_association_version v
+        ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+    JOIN public.media_profile_version profile ON profile.media_profile_version_id = v.media_profile_version_id
+    JOIN public.media_profile p ON p.media_profile_id = profile.media_profile_id
+    WHERE p.media_profile_public_id = media_profile_public_id_input AND p.deleted_at IS NULL
+        AND v.media_profile_version_id = p.active_media_profile_version_id
+        AND v.lifecycle_state = 'active';
+$$;
+REVOKE ALL ON FUNCTION public.media_profile_active_association_count_v1(uuid) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_association_create_v1(
+    actor_public_id_input uuid, association_key_input text, media_profile_public_id_input uuid,
+    profile_version_input integer, source_root_key_input text, root_relative_path_input text,
+    manual_enabled_input boolean, watcher_enabled_input boolean, schedule_enabled_input boolean
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    actor_id bigint;
+    generation_id bigint;
+    source_id bigint;
+    profile_row record;
+    parent_id bigint;
+    version_id bigint;
+    public_id uuid;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable'
+       OR NOT public.media_root_logical_key_valid_v1(association_key_input)
+       OR NOT public.media_root_logical_key_valid_v1(source_root_key_input)
+       OR NOT public.media_root_relative_prefix_valid_v1(root_relative_path_input)
+       OR profile_version_input IS NULL OR profile_version_input <= 0
+       OR manual_enabled_input IS NULL OR watcher_enabled_input IS NULL OR schedule_enabled_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    IF watcher_enabled_input OR schedule_enabled_input THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_pending_contract', DETAIL = 'media_configuration_pending_contract';
+    END IF;
+    actor_id := public.media_actor_id_for_public_id_v1(actor_public_id_input);
+    SELECT s.active_media_root_catalog_generation_id INTO generation_id
+    FROM public.media_root_catalog_state s WHERE s.media_root_catalog_state_id = 1
+        AND s.source_state = 'ready' AND s.attestation_state = 'ready' FOR SHARE;
+    IF generation_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    SELECT a.media_root_catalog_slot_attestation_id INTO source_id
+    FROM public.media_root_catalog_slot_attestation a JOIN public.media_root_catalog_slot s USING (media_root_catalog_slot_id)
+    WHERE a.media_root_catalog_generation_id = generation_id AND s.logical_key = source_root_key_input;
+    IF source_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_root_unmapped', DETAIL = 'media_configuration_root_unmapped';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.media_root_catalog_slot_kind k
+        WHERE k.media_root_catalog_slot_attestation_id = source_id AND k.media_root_kind_id = 1) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_kind_forbidden', DETAIL = 'media_root_kind_forbidden';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_discovery_association_overlap_v1', source_id));
+    SELECT p.media_profile_id, v.media_profile_version_id, v.version, v.enabled INTO profile_row
+    FROM public.media_profile p JOIN public.media_profile_version v ON v.media_profile_version_id = p.active_media_profile_version_id
+    WHERE p.media_profile_public_id = media_profile_public_id_input FOR UPDATE OF p;
+    IF NOT FOUND OR profile_row.version <> profile_version_input OR NOT profile_row.enabled THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_reference_missing', DETAIL = 'media_configuration_reference_missing';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.media_profile_version_root_binding b
+        WHERE b.media_profile_version_id = profile_row.media_profile_version_id AND b.media_root_kind_id = 2
+            AND b.media_root_catalog_slot_attestation_id = source_id AND b.resolution_state = 'resolved') THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM public.media_profile_version_root_binding b
+        LEFT JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_attestation_id)
+        WHERE b.media_profile_version_id = profile_row.media_profile_version_id AND (
+            b.resolution_state <> 'resolved' OR a.media_root_catalog_generation_id IS DISTINCT FROM generation_id
+            OR NOT (a.write_capable AND a.create_new_capable AND a.fsync_capable AND a.rename_capable
+                AND a.delete_capable AND a.capacity_probe_capable AND a.sole_writer_class = 'revaer_exclusive')
+        )
+    ) OR NOT EXISTS (SELECT 1 FROM public.media_root_catalog_slot_attestation a
+        WHERE a.media_root_catalog_slot_attestation_id = source_id AND a.read_capable) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_stale', DETAIL = 'media_root_attestation_stale';
+    END IF;
+    PERFORM a.media_discovery_association_id FROM public.media_discovery_association a
+    JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+    WHERE v.media_root_catalog_slot_attestation_id = source_id
+    ORDER BY v.media_root_catalog_slot_attestation_id, v.root_relative_path COLLATE "C", a.media_discovery_association_id
+    FOR UPDATE OF a;
+    IF (SELECT count(*) FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+        WHERE v.media_profile_version_id = profile_row.media_profile_version_id) >= 128 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_bound_exceeded', DETAIL = 'media_configuration_bound_exceeded';
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+        WHERE v.media_root_catalog_slot_attestation_id = source_id AND (
+            v.root_relative_path = '' OR root_relative_path_input = '' OR v.root_relative_path = root_relative_path_input
+            OR starts_with(v.root_relative_path, root_relative_path_input || '/')
+            OR starts_with(root_relative_path_input, v.root_relative_path || '/'))) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_overlap', DETAIL = 'media_configuration_overlap';
+    END IF;
+    BEGIN
+        INSERT INTO public.media_discovery_association(association_key, created_by_user_id)
+        VALUES (association_key_input, actor_id)
+        RETURNING media_discovery_association_id, media_discovery_association_public_id INTO parent_id, public_id;
+    EXCEPTION WHEN unique_violation THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_association_key_conflict', DETAIL = 'media_association_key_conflict';
+    END;
+    INSERT INTO public.media_discovery_association_version(
+        media_discovery_association_id, version, lifecycle_state, media_profile_version_id,
+        source_logical_key, media_root_catalog_slot_attestation_id, resolution_state,
+        root_relative_path, manual_enabled, watcher_enabled, schedule_enabled, created_by_user_id
+    ) VALUES (parent_id, 1, 'active', profile_row.media_profile_version_id,
+        source_root_key_input, source_id, 'resolved', root_relative_path_input,
+        manual_enabled_input, FALSE, FALSE, actor_id)
+    RETURNING media_discovery_association_version_id INTO version_id;
+    UPDATE public.media_discovery_association SET latest_media_discovery_association_version_id = version_id,
+        active_media_discovery_association_version_id = version_id WHERE media_discovery_association_id = parent_id;
+    PERFORM public.media_discovery_rescan_publish_v1(version_id, 'configuration_activated');
+    RETURN public_id;
+END;
+$$;
+CREATE FUNCTION public.media_discovery_association_get_v1(public_id_input uuid)
+RETURNS TABLE (
+    media_discovery_association_public_id uuid, association_key text, latest_version integer, active_version integer,
+    media_profile_public_id uuid, profile_version integer, source_root_key text, root_relative_path text,
+    manual_enabled boolean, watcher_enabled boolean, schedule_enabled boolean, lifecycle_state text,
+    resolution_state text, binding_ready boolean, binding_reason text,
+    destructive_ready boolean, destructive_reason text, created_at timestamptz, effective_dry_run boolean
+)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    WITH association AS (
+        SELECT a.media_discovery_association_public_id, a.association_key, a.active_media_discovery_association_version_id,
+            a.created_at AS parent_created_at, v.*, p.media_profile_public_id, p.active_media_profile_version_id,
+            pv.version AS profile_version, pv.enabled AS profile_enabled,
+            pv.dry_run_only OR COALESCE(o.dry_run, TRUE) AS effective_dry_run,
+            a2.version AS active_version
+        FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+        LEFT JOIN public.media_discovery_association_version a2 ON a2.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+        JOIN public.media_profile_version pv ON pv.media_profile_version_id = v.media_profile_version_id
+        LEFT JOIN public.media_policy_output o ON o.media_policy_profile_id = pv.media_policy_profile_id
+        JOIN public.media_profile p ON p.media_profile_id = pv.media_profile_id
+        WHERE a.media_discovery_association_public_id = public_id_input
+    ), ready AS (
+        SELECT v.*, s.active_media_root_catalog_generation_id, a.durability_class,
+            v.media_discovery_association_version_id = v.active_media_discovery_association_version_id
+            AND v.media_profile_version_id = v.active_media_profile_version_id AND v.profile_enabled
+            AND v.resolution_state = 'resolved' AND s.source_state = 'ready' AND s.attestation_state = 'ready'
+            AND a.media_root_catalog_generation_id = s.active_media_root_catalog_generation_id
+            AND a.read_capable AND NOT EXISTS (
+                SELECT 1 FROM public.media_profile_version_root_binding b
+                LEFT JOIN public.media_root_catalog_slot_attestation ba USING (media_root_catalog_slot_attestation_id)
+                WHERE b.media_profile_version_id = v.media_profile_version_id AND (
+                    b.resolution_state <> 'resolved' OR ba.media_root_catalog_generation_id IS DISTINCT FROM s.active_media_root_catalog_generation_id
+                    OR NOT (ba.write_capable AND ba.create_new_capable AND ba.fsync_capable AND ba.rename_capable
+                        AND ba.delete_capable AND ba.capacity_probe_capable AND ba.sole_writer_class = 'revaer_exclusive'))
+            ) AS ready,
+            NOT EXISTS (SELECT 1 FROM public.media_profile_version_root_binding b
+                JOIN public.media_root_catalog_slot_attestation ba USING (media_root_catalog_slot_attestation_id)
+                WHERE b.media_profile_version_id = v.media_profile_version_id AND ba.durability_class <> 'restart_persistent') AS persistent
+        FROM association v CROSS JOIN public.media_root_catalog_state s
+        LEFT JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_attestation_id)
+        WHERE s.media_root_catalog_state_id = 1
+    )
+    SELECT r.media_discovery_association_public_id, r.association_key, r.version, r.active_version,
+        r.media_profile_public_id, r.profile_version, r.source_logical_key, r.root_relative_path,
+        r.manual_enabled, r.watcher_enabled, r.schedule_enabled, r.lifecycle_state,
+        r.resolution_state, COALESCE(r.ready, FALSE), CASE WHEN COALESCE(r.ready, FALSE) THEN NULL ELSE 'media_root_binding_incomplete' END,
+        COALESCE(r.ready AND r.persistent AND r.durability_class = 'restart_persistent', FALSE),
+        CASE WHEN NOT COALESCE(r.ready, FALSE) THEN 'media_root_binding_incomplete'
+            WHEN NOT r.persistent OR r.durability_class <> 'restart_persistent' THEN 'media_root_durability_unproven' ELSE NULL END,
+        r.parent_created_at, r.effective_dry_run FROM ready r;
+$$;
+REVOKE ALL ON FUNCTION public.media_root_relative_prefix_valid_v1(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_discovery_association_create_v1(uuid,text,uuid,integer,text,text,boolean,boolean,boolean) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_discovery_association_get_v1(uuid) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_association_page_v1(limit_input integer, cursor_key_input text, cursor_id_input uuid)
+RETURNS TABLE (
+    media_discovery_association_public_id uuid, association_key text, latest_version integer, active_version integer,
+    media_profile_public_id uuid, profile_version integer, source_root_key text, root_relative_path text,
+    manual_enabled boolean, watcher_enabled boolean, schedule_enabled boolean, lifecycle_state text,
+    resolution_state text, binding_ready boolean, binding_reason text,
+    destructive_ready boolean, destructive_reason text, created_at timestamptz, effective_dry_run boolean
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+BEGIN
+    IF limit_input IS NULL OR limit_input < 1 OR limit_input > 200
+        OR (cursor_key_input IS NULL) <> (cursor_id_input IS NULL) THEN
+        RAISE EXCEPTION 'invalid association page' USING ERRCODE = 'P0001', DETAIL = 'media_configuration_invalid';
+    END IF;
+    IF cursor_key_input IS NOT NULL AND (
+        NOT public.media_root_logical_key_valid_v1(cursor_key_input)
+        OR NOT EXISTS (SELECT 1 FROM public.media_discovery_association a
+            WHERE a.association_key = cursor_key_input AND a.media_discovery_association_public_id = cursor_id_input
+                AND a.latest_media_discovery_association_version_id IS NOT NULL)
+    ) THEN
+        RAISE EXCEPTION 'invalid association continuation' USING ERRCODE = 'P0001', DETAIL = 'media_configuration_invalid';
+    END IF;
+    RETURN QUERY WITH page AS (
+        SELECT a.media_discovery_association_public_id, a.association_key
+        FROM public.media_discovery_association a WHERE a.latest_media_discovery_association_version_id IS NOT NULL
+            AND (cursor_key_input IS NULL OR
+                (a.association_key COLLATE "C", a.media_discovery_association_public_id) > (cursor_key_input COLLATE "C", cursor_id_input))
+        ORDER BY a.association_key COLLATE "C", a.media_discovery_association_public_id LIMIT limit_input + 1
+    ) SELECT representation.* FROM page p
+    CROSS JOIN LATERAL public.media_discovery_association_get_v1(p.media_discovery_association_public_id) representation
+    ORDER BY p.association_key COLLATE "C", p.media_discovery_association_public_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_association_page_v1(integer,text,uuid) FROM PUBLIC;
+
+-- Immutable admission identities and the exact ADR 557 five-root contract.
+ALTER TABLE public.media_discovery_association_version
+    ADD CONSTRAINT media_discovery_association_version_profile_pair_key
+        UNIQUE (media_discovery_association_version_id, media_profile_version_id);
+ALTER TABLE public.media_discovery_source_fingerprint
+    ADD CONSTRAINT media_discovery_source_fingerprint_association_version_fkey
+        FOREIGN KEY (media_discovery_association_version_id)
+        REFERENCES public.media_discovery_association_version(media_discovery_association_version_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT media_discovery_source_fingerprint_relative_path CHECK (
+        public.media_root_relative_prefix_valid_v1(source_path) AND source_path <> ''
+    );
+ALTER TABLE public.media_job
+    ADD COLUMN media_profile_version_id bigint NOT NULL,
+    ADD COLUMN media_discovery_association_version_id bigint NOT NULL,
+    ADD CONSTRAINT media_job_profile_version_fkey FOREIGN KEY (media_profile_id, media_profile_version_id)
+        REFERENCES public.media_profile_version(media_profile_id, media_profile_version_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT media_job_association_version_fkey FOREIGN KEY (media_discovery_association_version_id, media_profile_version_id)
+        REFERENCES public.media_discovery_association_version(media_discovery_association_version_id, media_profile_version_id) ON DELETE RESTRICT;
+ALTER TABLE public.media_job_root_snapshot
+    ADD CONSTRAINT media_job_root_snapshot_kind_fkey FOREIGN KEY (media_root_kind_id)
+        REFERENCES public.media_root_kind(media_root_kind_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT media_job_root_snapshot_generation_fkey FOREIGN KEY (attestation_generation)
+        REFERENCES public.media_root_catalog_generation(media_root_catalog_generation_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT media_job_root_snapshot_logical_key_contract CHECK (logical_key IS NULL OR public.media_root_logical_key_valid_v1(logical_key)),
+    ADD CONSTRAINT media_job_root_snapshot_relative_prefix CHECK (
+        (binding_state = 'bound' AND media_root_kind_id IN (1, 2)
+            AND root_relative_prefix IS NOT NULL AND public.media_root_relative_prefix_valid_v1(root_relative_prefix))
+        OR (media_root_kind_id NOT IN (1, 2) AND root_relative_prefix IS NULL)
+    );
+CREATE INDEX ix_media_job_root_snapshot_generation
+    ON public.media_job_root_snapshot(attestation_generation, media_job_id);
+ALTER TABLE public.media_job_configuration_snapshot
+    ADD COLUMN root_snapshot_contract_version smallint NOT NULL,
+    ADD COLUMN root_snapshot_row_count smallint NOT NULL,
+    ADD COLUMN root_snapshot_byte_count bigint NOT NULL,
+    ADD COLUMN root_snapshot_sha256 bytea NOT NULL,
+    ADD CONSTRAINT media_job_configuration_snapshot_root_contract_v1 CHECK (root_snapshot_contract_version = 1),
+    ADD CONSTRAINT media_job_configuration_snapshot_root_row_count CHECK (root_snapshot_row_count = 5),
+    ADD CONSTRAINT media_job_configuration_snapshot_root_byte_count_positive CHECK (root_snapshot_byte_count > 0),
+    ADD CONSTRAINT media_job_configuration_snapshot_root_sha256_length CHECK (octet_length(root_snapshot_sha256) = 32);
+
+CREATE FUNCTION public.media_job_root_snapshot_text_v1(value_input text) RETURNS bytea
+LANGUAGE sql IMMUTABLE STRICT SET search_path TO pg_catalog, public AS $$
+    SELECT int4send(octet_length(convert_to(value_input, 'UTF8'))) || convert_to(value_input, 'UTF8');
+$$;
+
+CREATE FUNCTION public.media_job_root_snapshot_frame_v1(job_id_input bigint) RETURNS bytea
+LANGUAGE plpgsql STABLE SET search_path TO pg_catalog, public AS $$
+DECLARE
+    r public.media_job_root_snapshot%ROWTYPE;
+    frame bytea := convert_to('revaer-media-job-root-snapshot', 'UTF8') || decode('00', 'hex') || int4send(1);
+BEGIN
+    FOR r IN SELECT s.* FROM public.media_job_root_snapshot s
+        WHERE s.media_job_id = job_id_input ORDER BY s.media_root_kind_id LOOP
+        frame := frame || int2send(r.media_root_kind_id)
+            || public.media_job_root_snapshot_text_v1(r.binding_state);
+        IF r.binding_state = 'bound' THEN
+            frame := frame || uuid_send(r.media_root_catalog_generation_public_id)
+                || int8send(r.attestation_generation) || r.source_sha256 || r.generation_sha256
+                || uuid_send(r.media_root_catalog_slot_public_id)
+                || public.media_job_root_snapshot_text_v1(r.logical_key)
+                || public.media_job_root_snapshot_text_v1(r.canonical_path)
+                || r.filesystem_device || r.filesystem_inode || int8send(r.mount_id)
+                || public.media_job_root_snapshot_text_v1(r.filesystem_type) || int2send(r.capability_mask)
+                || public.media_job_root_snapshot_text_v1(r.durability_class)
+                || public.media_job_root_snapshot_text_v1(r.durability_evidence)
+                || public.media_job_root_snapshot_text_v1(r.sole_writer_class)
+                || public.media_job_root_snapshot_text_v1(r.sole_writer_evidence)
+                || CASE WHEN r.root_relative_prefix IS NULL THEN decode('00', 'hex')
+                    ELSE decode('01', 'hex') || public.media_job_root_snapshot_text_v1(r.root_relative_prefix) END
+                || r.root_identity_sha256;
+        END IF;
+    END LOOP;
+    RETURN frame;
+END;
+$$;
+
+CREATE FUNCTION public.media_job_root_snapshot_complete_v1(media_job_id_input bigint) RETURNS void
+LANGUAGE plpgsql STABLE SET search_path TO pg_catalog, public AS $$
+DECLARE
+    policy_row public.media_job_policy_behavior_snapshot%ROWTYPE;
+BEGIN
+    SELECT p.* INTO policy_row FROM public.media_job_policy_behavior_snapshot p WHERE p.media_job_id = media_job_id_input;
+    IF NOT FOUND OR policy_row.backup_enabled IS NULL OR policy_row.quarantine_enabled IS NULL
+       OR (SELECT count(*) FROM public.media_job_root_snapshot r WHERE r.media_job_id = media_job_id_input) <> 5
+       OR EXISTS (SELECT 1 FROM public.media_root_kind k WHERE NOT EXISTS (
+            SELECT 1 FROM public.media_job_root_snapshot r
+            WHERE r.media_job_id = media_job_id_input AND r.media_root_kind_id = k.media_root_kind_id))
+       OR EXISTS (SELECT 1 FROM public.media_job_root_snapshot r WHERE r.media_job_id = media_job_id_input AND (
+            (r.media_root_kind_id = 4 AND (r.binding_state = 'bound') <> policy_row.backup_enabled)
+            OR (r.media_root_kind_id = 5 AND (r.binding_state = 'bound') <> policy_row.quarantine_enabled)))
+       OR (SELECT count(DISTINCT (r.attestation_generation, r.source_sha256, r.generation_sha256))
+            FROM public.media_job_root_snapshot r WHERE r.media_job_id = media_job_id_input AND r.binding_state = 'bound') <> 1
+       OR NOT EXISTS (SELECT 1 FROM public.media_job_root_snapshot s JOIN public.media_job_root_snapshot o USING (media_job_id)
+            WHERE s.media_job_id = media_job_id_input AND s.media_root_kind_id = 1 AND o.media_root_kind_id = 2
+                AND s.attestation_generation = o.attestation_generation
+                AND s.media_root_catalog_slot_public_id = o.media_root_catalog_slot_public_id
+                AND s.root_relative_prefix = o.root_relative_prefix) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_root_snapshot_invalid', DETAIL = 'media_job_root_snapshot_invalid';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM public.media_job_root_snapshot r
+        JOIN public.media_job j ON j.media_job_id = r.media_job_id
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = j.media_discovery_association_version_id
+        JOIN public.media_profile_version pv ON pv.media_profile_version_id = j.media_profile_version_id
+        LEFT JOIN public.media_profile_version_root_binding b ON b.media_profile_version_id = j.media_profile_version_id
+            AND b.media_root_kind_id = r.media_root_kind_id
+        LEFT JOIN public.media_root_catalog_generation g ON g.media_root_catalog_generation_id = r.attestation_generation
+        LEFT JOIN public.media_root_catalog_slot s ON s.media_root_catalog_slot_public_id = r.media_root_catalog_slot_public_id
+        LEFT JOIN public.media_root_catalog_slot_attestation a
+            ON a.media_root_catalog_generation_id = r.attestation_generation AND a.media_root_catalog_slot_id = s.media_root_catalog_slot_id
+        WHERE r.media_job_id = media_job_id_input AND r.binding_state = 'bound' AND (
+            a.media_root_catalog_slot_attestation_id IS NULL
+            OR a.media_root_catalog_slot_attestation_id IS DISTINCT FROM
+                CASE WHEN r.media_root_kind_id = 1 THEN v.media_root_catalog_slot_attestation_id
+                    ELSE b.media_root_catalog_slot_attestation_id END
+            OR (r.media_root_kind_id IN (1, 2) AND r.root_relative_prefix IS DISTINCT FROM v.root_relative_path)
+            OR j.intent_policy_profile_id IS DISTINCT FROM pv.media_policy_profile_id
+            OR j.intent_desired_target_profile_id IS DISTINCT FROM pv.media_desired_target_profile_id
+            OR NOT EXISTS (SELECT 1 FROM public.media_root_catalog_slot_kind k
+                WHERE k.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id
+                    AND k.media_root_kind_id = r.media_root_kind_id)
+            OR ROW(r.media_root_catalog_generation_public_id, r.source_sha256, r.generation_sha256, r.logical_key,
+                r.canonical_path, r.filesystem_device, r.filesystem_inode, r.mount_id, r.filesystem_type,
+                r.capability_mask, r.durability_class, r.durability_evidence, r.sole_writer_class, r.sole_writer_evidence,
+                r.root_identity_sha256) IS DISTINCT FROM
+               ROW(g.media_root_catalog_generation_public_id, g.source_sha256, g.generation_sha256, s.logical_key,
+                a.canonical_path, a.filesystem_device, a.filesystem_inode, a.mount_id, a.filesystem_type,
+                (a.read_capable::integer + 2*a.write_capable::integer + 4*a.create_new_capable::integer
+                    + 8*a.fsync_capable::integer + 16*a.rename_capable::integer + 32*a.delete_capable::integer
+                    + 64*a.capacity_probe_capable::integer)::smallint,
+                a.durability_class, a.durability_evidence, a.sole_writer_class, a.sole_writer_evidence, a.root_identity_sha256)
+        )
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid', DETAIL = 'media_root_attestation_invalid';
+    END IF;
+END;
+$$;
+
+CREATE FUNCTION public.media_job_capture_roots_v1(job_id_input bigint) RETURNS void
+LANGUAGE plpgsql SET search_path TO pg_catalog, public AS $$
+DECLARE
+    frame bytea;
+BEGIN
+    INSERT INTO public.media_job_root_snapshot (
+        media_job_id, media_root_kind_id, binding_state, media_root_catalog_generation_public_id,
+        attestation_generation, source_sha256, generation_sha256, media_root_catalog_slot_public_id,
+        logical_key, canonical_path, filesystem_device, filesystem_inode, mount_id, filesystem_type,
+        capability_mask, durability_class, durability_evidence, sole_writer_class, sole_writer_evidence,
+        root_relative_prefix, root_identity_sha256
+    )
+    SELECT j.media_job_id, k.media_root_kind_id, CASE WHEN a.media_root_catalog_slot_attestation_id IS NULL THEN 'not_required' ELSE 'bound' END,
+        g.media_root_catalog_generation_public_id, g.media_root_catalog_generation_id, g.source_sha256,
+        g.generation_sha256, s.media_root_catalog_slot_public_id, s.logical_key, a.canonical_path,
+        a.filesystem_device, a.filesystem_inode, a.mount_id, a.filesystem_type,
+        (a.read_capable::integer + 2*a.write_capable::integer + 4*a.create_new_capable::integer
+            + 8*a.fsync_capable::integer + 16*a.rename_capable::integer + 32*a.delete_capable::integer
+            + 64*a.capacity_probe_capable::integer)::smallint,
+        a.durability_class, a.durability_evidence, a.sole_writer_class, a.sole_writer_evidence,
+        CASE WHEN k.media_root_kind_id IN (1, 2) THEN v.root_relative_path ELSE NULL END, a.root_identity_sha256
+    FROM public.media_job j
+    JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = j.media_discovery_association_version_id
+    JOIN public.media_job_policy_behavior_snapshot p ON p.media_job_id = j.media_job_id
+    CROSS JOIN public.media_root_kind k
+    LEFT JOIN public.media_profile_version_root_binding b
+        ON b.media_profile_version_id = j.media_profile_version_id AND b.media_root_kind_id = k.media_root_kind_id
+    LEFT JOIN public.media_root_catalog_slot_attestation a ON a.media_root_catalog_slot_attestation_id =
+        CASE WHEN k.media_root_kind_id = 1 THEN v.media_root_catalog_slot_attestation_id
+            WHEN k.media_root_kind_id = 4 AND NOT p.backup_enabled THEN NULL
+            WHEN k.media_root_kind_id = 5 AND NOT p.quarantine_enabled THEN NULL
+            ELSE b.media_root_catalog_slot_attestation_id END
+    LEFT JOIN public.media_root_catalog_generation g ON g.media_root_catalog_generation_id = a.media_root_catalog_generation_id
+    LEFT JOIN public.media_root_catalog_slot s ON s.media_root_catalog_slot_id = a.media_root_catalog_slot_id
+    WHERE j.media_job_id = job_id_input ORDER BY k.media_root_kind_id;
+    PERFORM public.media_job_root_snapshot_complete_v1(job_id_input);
+    frame := public.media_job_root_snapshot_frame_v1(job_id_input);
+    INSERT INTO public.media_job_configuration_snapshot (
+        media_job_id, profile_configuration_version, media_policy_profile_id, policy_version,
+        media_desired_target_profile_id, desired_target_version, root_snapshot_contract_version,
+        root_snapshot_row_count, root_snapshot_byte_count, root_snapshot_sha256
+    ) SELECT j.media_job_id, v.version, j.intent_policy_profile_id, j.intent_policy_version,
+        j.intent_desired_target_profile_id, j.intent_desired_target_version, 1, 5, octet_length(frame), sha256(frame)
+    FROM public.media_job j JOIN public.media_profile_version v USING (media_profile_version_id)
+    WHERE j.media_job_id = job_id_input;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_job_root_snapshot_text_v1(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_job_root_snapshot_frame_v1(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_job_root_snapshot_complete_v1(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_job_capture_roots_v1(bigint) FROM PUBLIC;
+
+CREATE FUNCTION public.media_job_policy_snapshot_root_list_v1(
+    job_public_id_input uuid, attempt_number_input integer, claim_generation_input bigint
+) RETURNS SETOF public.media_job_root_snapshot
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    job_id bigint;
+    frame bytea;
+BEGIN
+    SELECT j.media_job_id INTO job_id FROM public.media_job j
+    JOIN public.media_job_attempt a ON a.media_job_attempt_id = j.current_attempt_id
+    WHERE j.media_job_public_id = job_public_id_input
+        AND a.attempt_number = attempt_number_input AND a.claim_generation = claim_generation_input
+        AND j.status = public.media_job_status_running_v1()
+        AND a.status = public.media_job_status_running_v1()
+    FOR SHARE OF j, a;
+    IF job_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_claim_stale', DETAIL = 'media_job_claim_stale';
+    END IF;
+    PERFORM s.media_root_catalog_state_id FROM public.media_root_catalog_state s
+    JOIN public.media_job_root_snapshot r
+        ON r.attestation_generation = s.active_media_root_catalog_generation_id
+    WHERE s.media_root_catalog_state_id = 1 AND s.source_state = 'ready'
+        AND s.attestation_state = 'ready' AND r.media_job_id = job_id AND r.media_root_kind_id = 1
+    FOR SHARE OF s;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_identity_mismatch', DETAIL = 'media_root_identity_mismatch';
+    END IF;
+    PERFORM public.media_job_root_snapshot_complete_v1(job_id);
+    frame := public.media_job_root_snapshot_frame_v1(job_id);
+    IF NOT EXISTS (
+        SELECT 1 FROM public.media_job_configuration_snapshot s
+        WHERE s.media_job_id = job_id AND s.root_snapshot_contract_version = 1
+            AND s.root_snapshot_row_count = 5 AND s.root_snapshot_byte_count = octet_length(frame)
+            AND s.root_snapshot_sha256 = sha256(frame)
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_root_snapshot_invalid', DETAIL = 'media_job_root_snapshot_invalid';
+    END IF;
+    RETURN QUERY SELECT r.* FROM public.media_job_root_snapshot r
+        WHERE r.media_job_id = job_id ORDER BY r.media_root_kind_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_job_policy_snapshot_root_list_v1(uuid,integer,bigint) FROM PUBLIC;
+
+CREATE FUNCTION public.media_job_replacement_recovery_list_v1(after_attempt_id_input bigint)
+RETURNS TABLE(attempt_id bigint, media_job_public_id uuid, claim_generation bigint,
+    source_root text, terminal_committed boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    candidate record;
+    frame bytea;
+BEGIN
+    IF after_attempt_id_input IS NULL OR after_attempt_id_input < 0 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid';
+    END IF;
+    FOR candidate IN
+        SELECT a.media_job_attempt_id, a.claim_generation, j.media_job_id, j.media_job_public_id
+        FROM public.media_job_attempt a
+        JOIN public.media_job j ON j.media_job_id = a.media_job_id
+        WHERE a.media_job_attempt_id > after_attempt_id_input
+            AND a.claimed_at IS NOT NULL AND NOT j.dry_run
+        ORDER BY a.media_job_attempt_id LIMIT 64
+    LOOP
+        PERFORM public.media_job_root_snapshot_complete_v1(candidate.media_job_id);
+        frame := public.media_job_root_snapshot_frame_v1(candidate.media_job_id);
+        IF NOT EXISTS (
+            SELECT 1 FROM public.media_job_configuration_snapshot s
+            WHERE s.media_job_id = candidate.media_job_id AND s.root_snapshot_contract_version = 1
+                AND s.root_snapshot_row_count = 5 AND s.root_snapshot_byte_count = octet_length(frame)
+                AND s.root_snapshot_sha256 = sha256(frame)
+        ) THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_root_snapshot_invalid';
+        END IF;
+        PERFORM s.media_root_catalog_state_id FROM public.media_root_catalog_state s
+        JOIN public.media_job_root_snapshot r
+            ON r.attestation_generation = s.active_media_root_catalog_generation_id
+        WHERE s.media_root_catalog_state_id = 1 AND s.source_state = 'ready'
+            AND s.attestation_state = 'ready'
+            AND r.media_job_id = candidate.media_job_id AND r.media_root_kind_id = 1
+        FOR SHARE OF s;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_identity_mismatch';
+        END IF;
+        RETURN QUERY SELECT candidate.media_job_attempt_id, candidate.media_job_public_id,
+            candidate.claim_generation, r.canonical_path, EXISTS (
+                SELECT 1 FROM public.media_job_terminal_outbox o
+                WHERE o.media_job_id = candidate.media_job_id
+                    AND o.media_job_attempt_id = candidate.media_job_attempt_id AND o.event_kind = 'completed'
+            ) FROM public.media_job_root_snapshot r
+            WHERE r.media_job_id = candidate.media_job_id AND r.media_root_kind_id = 1;
+    END LOOP;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_job_replacement_recovery_list_v1(bigint) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_association_job_enqueue_v1(
+    actor_public_id_input uuid, association_public_id_input uuid, source_relative_path_input text,
+    dry_run_input boolean, source_identity_input text, source_size_bytes_input bigint,
+    source_modified_ns_input bigint, source_changed_ns_input bigint, source_sha256_input text,
+    association_version_input integer, expected_generation_input bigint, expected_generation_sha256_input bytea,
+    trigger_input text
+) RETURNS TABLE(media_job_public_id uuid, dry_run boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    actor_id bigint;
+    generation_id bigint;
+    association_row record;
+    readiness_row record;
+    profile_row public.media_profile_version%ROWTYPE;
+    policy_row public.media_policy_profile%ROWTYPE;
+    target_row public.media_desired_target_profile%ROWTYPE;
+    root_path text;
+    container_format_value text;
+    effective_dry_run boolean;
+    job_id bigint;
+    job_public_id uuid;
+    fingerprint_changed boolean;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable'
+       OR trigger_input IS NULL OR trigger_input NOT IN ('manual', 'schedule', 'watcher')
+       OR source_relative_path_input IS NULL OR source_relative_path_input = ''
+       OR NOT public.media_root_relative_prefix_valid_v1(source_relative_path_input) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    IF source_identity_input IS NULL OR source_identity_input !~ '^[0-9a-f]{16}:[0-9a-f]{16}$'
+       OR source_size_bytes_input IS NULL OR source_size_bytes_input < 0
+       OR source_modified_ns_input IS NULL OR source_modified_ns_input < 0
+       OR source_changed_ns_input IS NULL OR source_changed_ns_input < 0
+       OR source_sha256_input IS NULL OR source_sha256_input !~ '^[0-9a-f]{64}$' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_fingerprint_invalid', DETAIL = 'media_discovery_fingerprint_invalid';
+    END IF;
+    actor_id := public.media_actor_id_for_public_id_v1(actor_public_id_input);
+    SELECT s.active_media_root_catalog_generation_id INTO generation_id
+    FROM public.media_root_catalog_state s WHERE s.media_root_catalog_state_id = 1
+        AND s.source_state = 'ready' AND s.attestation_state = 'ready' FOR SHARE;
+    IF generation_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    IF generation_id IS DISTINCT FROM expected_generation_input OR NOT EXISTS (
+        SELECT 1 FROM public.media_root_catalog_generation g WHERE g.media_root_catalog_generation_id = generation_id
+            AND g.generation_sha256 = expected_generation_sha256_input
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_stale', DETAIL = 'media_root_attestation_stale';
+    END IF;
+    SELECT v.*, p.media_profile_id, p.media_profile_public_id INTO association_row
+    FROM public.media_discovery_association a
+    JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+    JOIN public.media_profile_version pv ON pv.media_profile_version_id = v.media_profile_version_id
+    JOIN public.media_profile p ON p.media_profile_id = pv.media_profile_id
+    WHERE a.media_discovery_association_public_id = association_public_id_input;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_association_not_found', DETAIL = 'media_discovery_association_not_found';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_discovery_association_overlap_v1', association_row.media_root_catalog_slot_attestation_id));
+    PERFORM p.media_profile_id FROM public.media_profile p
+        WHERE p.media_profile_id = association_row.media_profile_id FOR UPDATE;
+    PERFORM a.media_discovery_association_id FROM public.media_discovery_association a
+        WHERE a.media_discovery_association_id = association_row.media_discovery_association_id FOR UPDATE;
+    IF association_row.version IS DISTINCT FROM association_version_input THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_stale', DETAIL = 'media_root_attestation_stale';
+    END IF;
+    SELECT r.* INTO readiness_row FROM public.media_discovery_association_get_v1(association_public_id_input) r;
+    IF NOT (CASE trigger_input
+        WHEN 'manual' THEN association_row.manual_enabled
+        WHEN 'schedule' THEN association_row.schedule_enabled
+        WHEN 'watcher' THEN association_row.watcher_enabled
+        ELSE FALSE END) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_' || trigger_input || '_disabled',
+            DETAIL = 'media_discovery_' || trigger_input || '_disabled';
+    END IF;
+    IF NOT COALESCE(readiness_row.binding_ready, FALSE) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    SELECT v.* INTO STRICT profile_row FROM public.media_profile_version v
+        WHERE v.media_profile_version_id = association_row.media_profile_version_id;
+    IF NOT (COALESCE(dry_run_input, TRUE) OR readiness_row.effective_dry_run)
+        AND NOT readiness_row.destructive_ready THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_durability_unproven', DETAIL = 'media_root_durability_unproven';
+    END IF;
+    IF association_row.root_relative_path <> ''
+       AND source_relative_path_input <> association_row.root_relative_path
+       AND NOT starts_with(source_relative_path_input, association_row.root_relative_path || '/') THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_source_path_outside_profile_root', DETAIL = 'media_discovery_source_path_outside_profile_root';
+    END IF;
+    SELECT a.canonical_path INTO root_path FROM public.media_root_catalog_slot_attestation a
+        WHERE a.media_root_catalog_slot_attestation_id = association_row.media_root_catalog_slot_attestation_id
+            AND a.media_root_catalog_generation_id = generation_id;
+    IF root_path IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_stale', DETAIL = 'media_root_attestation_stale';
+    END IF;
+    SELECT p.* INTO STRICT policy_row FROM public.media_policy_profile p
+        WHERE p.media_policy_profile_id = profile_row.media_policy_profile_id AND p.enabled;
+    SELECT t.* INTO STRICT target_row FROM public.media_desired_target_profile t
+        WHERE t.media_desired_target_profile_id = profile_row.media_desired_target_profile_id AND t.enabled;
+    SELECT c.container_format INTO STRICT container_format_value FROM public.media_desired_target_container c
+        WHERE c.media_desired_target_profile_id = target_row.media_desired_target_profile_id;
+    SELECT COALESCE(dry_run_input, TRUE) OR profile_row.dry_run_only OR o.dry_run INTO STRICT effective_dry_run
+        FROM public.media_policy_output o WHERE o.media_policy_profile_id = policy_row.media_policy_profile_id;
+    WITH changed AS (
+        INSERT INTO public.media_discovery_source_fingerprint (
+            media_discovery_association_version_id, source_path, source_identity,
+            source_size_bytes, source_modified_ns, source_changed_ns, source_sha256
+        ) VALUES (
+            association_row.media_discovery_association_version_id, source_relative_path_input,
+            source_identity_input, source_size_bytes_input, source_modified_ns_input,
+            source_changed_ns_input, source_sha256_input
+        ) ON CONFLICT (media_discovery_association_version_id, source_path) DO UPDATE
+        SET source_identity = EXCLUDED.source_identity, source_size_bytes = EXCLUDED.source_size_bytes,
+            source_modified_ns = EXCLUDED.source_modified_ns, source_changed_ns = EXCLUDED.source_changed_ns,
+            source_sha256 = EXCLUDED.source_sha256, last_seen_at = transaction_timestamp()
+        WHERE ROW(media_discovery_source_fingerprint.source_identity, media_discovery_source_fingerprint.source_size_bytes,
+            media_discovery_source_fingerprint.source_modified_ns, media_discovery_source_fingerprint.source_changed_ns,
+            media_discovery_source_fingerprint.source_sha256) IS DISTINCT FROM
+            ROW(EXCLUDED.source_identity, EXCLUDED.source_size_bytes, EXCLUDED.source_modified_ns,
+                EXCLUDED.source_changed_ns, EXCLUDED.source_sha256)
+        RETURNING 1
+    ) SELECT EXISTS (SELECT 1 FROM changed) INTO fingerprint_changed;
+    IF NOT fingerprint_changed THEN
+        RETURN;
+    END IF;
+    INSERT INTO public.media_job (
+        media_profile_id, media_profile_version_id, media_discovery_association_version_id,
+        source_path, output_path, dry_run, intent_source_root, intent_output_root, intent_policy_key,
+        intent_policy_profile_id, intent_policy_version, intent_policy_video_intent,
+        intent_desired_target_profile_id, intent_desired_target_key, intent_desired_target_version,
+        intent_desired_container_format, intent_unmatched_stream_policy,
+        intent_verification_strictness, intent_verification_duration_tolerance_millis,
+        intent_verification_mux_validation, intent_verification_decode_all_streams,
+        intent_verification_keyframe_seek, intent_verification_playback_probe,
+        intent_source_identity, intent_source_size_bytes, intent_source_modified_ns,
+        intent_source_changed_ns, intent_source_sha256, created_by_user_id
+    ) VALUES (
+        profile_row.media_profile_id, profile_row.media_profile_version_id, association_row.media_discovery_association_version_id,
+        root_path || '/' || source_relative_path_input, root_path || '/' || source_relative_path_input,
+        effective_dry_run, root_path, root_path, policy_row.policy_key,
+        policy_row.media_policy_profile_id, policy_row.version, policy_row.video_intent,
+        target_row.media_desired_target_profile_id, target_row.target_key, target_row.version,
+        container_format_value, policy_row.unmatched_stream_policy,
+        policy_row.verification_strictness, policy_row.verification_duration_tolerance_millis,
+        policy_row.verification_mux_validation, policy_row.verification_decode_all_streams,
+        policy_row.verification_keyframe_seek, policy_row.verification_playback_probe,
+        source_identity_input, source_size_bytes_input, source_modified_ns_input,
+        source_changed_ns_input, source_sha256_input, actor_id
+    ) RETURNING public.media_job.media_job_id, public.media_job.media_job_public_id INTO job_id, job_public_id;
+    INSERT INTO public.media_job_desired_target_stream (
+        media_job_id, stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec,
+        channel_count, channel_layout, video_profile, video_level, video_bitrate_bps, color_primaries,
+        color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition,
+        subtitle_placement, image_subtitle_action
+    ) SELECT job_id, s.stream_key, s.stream_kind, s.semantic_role, s.language_code, s.optional, s.sort_order, s.codec,
+        a.channel_count, a.channel_layout, s.video_profile, s.video_level, s.video_bitrate_bps, s.color_primaries,
+        s.color_transfer, s.color_space, s.hdr_format, s.title, s.default_disposition, s.forced_disposition,
+        s.subtitle_placement, s.image_subtitle_action
+    FROM public.media_desired_target_stream s LEFT JOIN public.media_desired_target_audio_stream a
+        ON a.media_desired_target_stream_id = s.media_desired_target_stream_id
+    WHERE s.media_desired_target_profile_id = target_row.media_desired_target_profile_id ORDER BY s.sort_order;
+    PERFORM public.media_job_root_snapshot_complete_v1(job_id);
+    UPDATE public.media_discovery_source_fingerprint SET last_media_job_public_id = job_public_id
+    WHERE media_discovery_association_version_id = association_row.media_discovery_association_version_id
+        AND source_path = source_relative_path_input;
+    RETURN QUERY SELECT job_public_id, effective_dry_run;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_association_job_enqueue_v1(uuid,uuid,text,boolean,text,bigint,bigint,bigint,text,integer,bigint,bytea,text) FROM PUBLIC;
+
+CREATE TABLE public.media_discovery_rescan (
+    media_discovery_association_version_id bigint PRIMARY KEY
+        REFERENCES public.media_discovery_association_version(media_discovery_association_version_id),
+    requested_sequence bigint NOT NULL CHECK (requested_sequence > 0),
+    satisfied_sequence bigint NOT NULL DEFAULT 0 CHECK (satisfied_sequence >= 0),
+    first_requested_at timestamptz NOT NULL,
+    last_requested_at timestamptz NOT NULL,
+    not_before timestamptz NOT NULL,
+    CONSTRAINT media_discovery_rescan_sequence CHECK (satisfied_sequence <= requested_sequence),
+    CONSTRAINT media_discovery_rescan_times CHECK (first_requested_at <= last_requested_at)
+);
+
+CREATE TABLE public.media_discovery_rescan_reason_kind (
+    reason_code text PRIMARY KEY
+);
+CREATE TABLE public.media_discovery_execution_slot (
+    slot_id smallint PRIMARY KEY CHECK (slot_id BETWEEN 1 AND 2),
+    claim_generation bigint NOT NULL DEFAULT 0 CHECK (claim_generation >= 0),
+    owner_public_id uuid,
+    instance_public_id uuid,
+    principal_user_id bigint REFERENCES public.app_user(user_id),
+    media_discovery_association_version_id bigint
+        REFERENCES public.media_discovery_association_version(media_discovery_association_version_id),
+    media_root_catalog_generation_id bigint
+        REFERENCES public.media_root_catalog_generation(media_root_catalog_generation_id),
+    media_root_catalog_slot_attestation_id bigint
+        REFERENCES public.media_root_catalog_slot_attestation(media_root_catalog_slot_attestation_id),
+    media_policy_profile_id bigint REFERENCES public.media_policy_profile(media_policy_profile_id),
+    captured_sequence bigint,
+    lease_expires_at timestamptz,
+    CONSTRAINT media_discovery_execution_slot_coherent CHECK (
+        (owner_public_id IS NULL AND instance_public_id IS NULL AND principal_user_id IS NULL
+            AND media_discovery_association_version_id IS NULL AND media_root_catalog_generation_id IS NULL
+            AND media_root_catalog_slot_attestation_id IS NULL AND media_policy_profile_id IS NULL
+            AND captured_sequence IS NULL AND lease_expires_at IS NULL)
+        OR (owner_public_id IS NOT NULL AND instance_public_id IS NOT NULL AND principal_user_id IS NOT NULL
+            AND media_discovery_association_version_id IS NOT NULL AND media_root_catalog_generation_id IS NOT NULL
+            AND media_root_catalog_slot_attestation_id IS NOT NULL AND media_policy_profile_id IS NOT NULL
+            AND captured_sequence IS NOT NULL AND captured_sequence > 0
+            AND lease_expires_at IS NOT NULL AND claim_generation > 0))
+);
+CREATE UNIQUE INDEX media_discovery_execution_instance ON public.media_discovery_execution_slot(instance_public_id);
+CREATE UNIQUE INDEX media_discovery_execution_root ON public.media_discovery_execution_slot(media_root_catalog_slot_attestation_id);
+CREATE UNIQUE INDEX media_discovery_execution_policy ON public.media_discovery_execution_slot(media_policy_profile_id);
+CREATE UNIQUE INDEX media_discovery_execution_owner ON public.media_discovery_execution_slot(owner_public_id);
+
+CREATE FUNCTION public.media_discovery_rescan_seed_reason_kinds_v1()
+RETURNS void LANGUAGE sql SET search_path TO pg_catalog, public AS $$
+    INSERT INTO public.media_discovery_rescan_reason_kind(reason_code) VALUES
+        ('manual'), ('schedule'), ('overflow'), ('watcher_uncertain'),
+        ('directory_changed'), ('configuration_activated'), ('restart_reconcile')
+    ON CONFLICT (reason_code) DO NOTHING;
+    INSERT INTO public.media_discovery_execution_slot(slot_id) VALUES (1), (2)
+    ON CONFLICT (slot_id) DO NOTHING;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_rescan_seed_reason_kinds_v1() FROM PUBLIC;
+SELECT public.media_discovery_rescan_seed_reason_kinds_v1();
+
+CREATE TABLE public.media_discovery_rescan_reason (
+    media_discovery_association_version_id bigint NOT NULL
+        REFERENCES public.media_discovery_rescan(media_discovery_association_version_id),
+    reason_code text NOT NULL REFERENCES public.media_discovery_rescan_reason_kind(reason_code),
+    last_requested_sequence bigint NOT NULL CHECK (last_requested_sequence > 0),
+    first_requested_at timestamptz NOT NULL,
+    last_requested_at timestamptz NOT NULL,
+    PRIMARY KEY (media_discovery_association_version_id, reason_code),
+    CONSTRAINT media_discovery_rescan_reason_times CHECK (first_requested_at <= last_requested_at)
+);
+
+-- Only a locked, validated association writer may publish an activation request.
+CREATE FUNCTION public.media_discovery_rescan_publish_v1(version_id_input bigint, reason_input text)
+RETURNS bigint LANGUAGE plpgsql SET search_path TO pg_catalog, public AS $$
+DECLARE
+    sequence_value bigint;
+    observed_at timestamptz := clock_timestamp();
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM public.media_discovery_rescan_reason_kind k
+        WHERE k.reason_code = reason_input) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    INSERT INTO public.media_discovery_rescan AS s (
+        media_discovery_association_version_id, requested_sequence, first_requested_at, last_requested_at, not_before
+    ) VALUES (version_id_input, 1, observed_at, observed_at, observed_at)
+    ON CONFLICT (media_discovery_association_version_id) DO UPDATE
+        SET requested_sequence = s.requested_sequence + 1,
+            last_requested_at = GREATEST(observed_at, s.last_requested_at),
+            not_before = LEAST(s.not_before, observed_at)
+    RETURNING requested_sequence INTO sequence_value;
+    INSERT INTO public.media_discovery_rescan_reason AS r (
+        media_discovery_association_version_id, reason_code, last_requested_sequence, first_requested_at, last_requested_at
+    ) VALUES (version_id_input, reason_input, sequence_value, observed_at, observed_at)
+    ON CONFLICT (media_discovery_association_version_id, reason_code) DO UPDATE
+        SET last_requested_sequence = sequence_value,
+            last_requested_at = GREATEST(observed_at, r.last_requested_at);
+    RETURN sequence_value;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_rescan_publish_v1(bigint, text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_rescan_get_v1(public_id_input uuid)
+RETURNS TABLE (association_version integer, requested_sequence bigint, satisfied_sequence bigint,
+    first_requested_at timestamptz, last_requested_at timestamptz, not_before timestamptz,
+    reason_code text, last_requested_sequence bigint)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT v.version, s.requested_sequence, s.satisfied_sequence,
+        s.first_requested_at, s.last_requested_at, s.not_before,
+        r.reason_code, r.last_requested_sequence
+    FROM public.media_discovery_association a
+    JOIN public.media_discovery_association_version v
+        ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+    JOIN public.media_discovery_rescan s USING (media_discovery_association_version_id)
+    JOIN public.media_discovery_rescan_reason r USING (media_discovery_association_version_id)
+    WHERE a.media_discovery_association_public_id = public_id_input
+    ORDER BY r.reason_code COLLATE "C";
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_rescan_get_v1(uuid) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_execution_claim_v1(
+    actor_input uuid, association_input uuid, version_input integer,
+    generation_input bigint, generation_sha256_input bytea, instance_input uuid, owner_input uuid
+)
+RETURNS TABLE(slot_id smallint, claim_generation bigint, captured_sequence bigint, lease_expires_at timestamptz)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public SET lock_timeout TO '250ms' AS $$
+DECLARE
+    principal_id bigint;
+    current_generation bigint;
+    binding record;
+    request_sequence bigint;
+    selected_slot smallint;
+    existing public.media_discovery_execution_slot%ROWTYPE;
+BEGIN
+    IF instance_input IS NULL OR owner_input IS NULL
+       OR instance_input = '00000000-0000-0000-0000-000000000000'::uuid
+       OR owner_input = '00000000-0000-0000-0000-000000000000'::uuid
+       OR version_input IS NULL OR version_input <= 0 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    principal_id := public.media_actor_id_for_public_id_v1(actor_input);
+    SELECT s.active_media_root_catalog_generation_id INTO current_generation
+    FROM public.media_root_catalog_state s WHERE s.media_root_catalog_state_id = 1
+        AND s.source_state = 'ready' AND s.attestation_state = 'ready' FOR SHARE;
+    IF current_generation IS NULL OR current_generation IS DISTINCT FROM generation_input
+       OR NOT EXISTS (SELECT 1 FROM public.media_root_catalog_generation g
+           WHERE g.media_root_catalog_generation_id = current_generation AND g.generation_sha256 = generation_sha256_input) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_stale', DETAIL = 'media_root_attestation_stale';
+    END IF;
+    SELECT v.*, pv.media_profile_id, pv.media_policy_profile_id INTO binding
+    FROM public.media_discovery_association a JOIN public.media_discovery_association_version v
+        ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+    JOIN public.media_profile_version pv USING (media_profile_version_id)
+    WHERE a.media_discovery_association_public_id = association_input;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_association_not_found', DETAIL = 'media_discovery_association_not_found';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_discovery_association_overlap_v1', binding.media_root_catalog_slot_attestation_id));
+    PERFORM p.media_profile_id FROM public.media_profile p WHERE p.media_profile_id = binding.media_profile_id FOR UPDATE;
+    PERFORM a.media_discovery_association_id FROM public.media_discovery_association a
+        WHERE a.media_discovery_association_public_id = association_input
+            AND a.active_media_discovery_association_version_id = binding.media_discovery_association_version_id FOR UPDATE;
+    IF NOT FOUND OR binding.version <> version_input OR NOT EXISTS (
+        SELECT 1 FROM public.media_discovery_association_get_v1(association_input) r
+        WHERE r.binding_ready AND r.active_version = version_input AND r.latest_version = version_input
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    SELECT s.requested_sequence INTO request_sequence FROM public.media_discovery_rescan s
+        WHERE s.media_discovery_association_version_id = binding.media_discovery_association_version_id
+            AND s.requested_sequence > s.satisfied_sequence AND s.not_before <= clock_timestamp() FOR UPDATE;
+    IF NOT FOUND THEN RETURN; END IF;
+    -- Serialize the two capacity rows; an expired owner still occupies its slot.
+    PERFORM s.slot_id FROM public.media_discovery_execution_slot s ORDER BY s.slot_id FOR UPDATE;
+    SELECT s.* INTO existing FROM public.media_discovery_execution_slot s WHERE s.owner_public_id = owner_input;
+    IF FOUND THEN
+        IF existing.instance_public_id <> instance_input OR existing.principal_user_id <> principal_id
+           OR existing.media_discovery_association_version_id <> binding.media_discovery_association_version_id
+           OR existing.media_root_catalog_generation_id <> current_generation THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_claim_conflict', DETAIL = 'media_discovery_claim_conflict';
+        END IF;
+        IF existing.lease_expires_at <= clock_timestamp() THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_claim_expired', DETAIL = 'media_discovery_claim_expired';
+        END IF;
+        RETURN QUERY SELECT existing.slot_id, existing.claim_generation, existing.captured_sequence, existing.lease_expires_at;
+        RETURN;
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.media_discovery_execution_slot s WHERE s.owner_public_id IS NOT NULL
+        AND (s.instance_public_id = instance_input
+            OR s.media_root_catalog_slot_attestation_id = binding.media_root_catalog_slot_attestation_id
+            OR s.media_policy_profile_id = binding.media_policy_profile_id)) THEN RETURN; END IF;
+    SELECT s.slot_id INTO selected_slot FROM public.media_discovery_execution_slot s
+        WHERE s.owner_public_id IS NULL ORDER BY s.slot_id LIMIT 1;
+    IF selected_slot IS NULL THEN RETURN; END IF;
+    RETURN QUERY UPDATE public.media_discovery_execution_slot AS s SET
+        claim_generation = s.claim_generation + 1, owner_public_id = owner_input, instance_public_id = instance_input,
+        principal_user_id = principal_id, media_discovery_association_version_id = binding.media_discovery_association_version_id,
+        media_root_catalog_generation_id = current_generation,
+        media_root_catalog_slot_attestation_id = binding.media_root_catalog_slot_attestation_id,
+        media_policy_profile_id = binding.media_policy_profile_id, captured_sequence = request_sequence,
+        lease_expires_at = clock_timestamp() + interval '20 seconds'
+    WHERE s.slot_id = selected_slot
+    RETURNING s.slot_id, s.claim_generation, s.captured_sequence, s.lease_expires_at;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_execution_claim_v1(uuid, uuid, integer, bigint, bytea, uuid, uuid) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_execution_renew_v1(slot_input smallint, fence_input bigint, owner_input uuid)
+RETURNS timestamptz LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public SET lock_timeout TO '250ms' AS $$
+DECLARE
+    renewed_at timestamptz;
+    current_generation bigint;
+BEGIN
+    SELECT c.active_media_root_catalog_generation_id INTO current_generation
+    FROM public.media_root_catalog_state c WHERE c.media_root_catalog_state_id = 1
+        AND c.source_state = 'ready' AND c.attestation_state = 'ready' FOR SHARE;
+    IF current_generation IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_stale', DETAIL = 'media_root_attestation_stale';
+    END IF;
+    UPDATE public.media_discovery_execution_slot s SET lease_expires_at = clock_timestamp() + interval '20 seconds'
+    WHERE s.slot_id = slot_input AND s.claim_generation = fence_input AND s.owner_public_id = owner_input
+        AND s.lease_expires_at > clock_timestamp()
+        AND s.media_root_catalog_generation_id = current_generation
+        AND EXISTS (
+            SELECT 1 FROM public.media_discovery_association a
+            JOIN public.media_discovery_association_version v
+                ON v.media_discovery_association_version_id = s.media_discovery_association_version_id
+            JOIN public.media_discovery_association_get_v1(a.media_discovery_association_public_id) r ON TRUE
+            WHERE a.active_media_discovery_association_version_id = v.media_discovery_association_version_id
+                AND r.binding_ready AND r.active_version = v.version AND r.latest_version = v.version)
+    RETURNING s.lease_expires_at INTO renewed_at;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_claim_expired', DETAIL = 'media_discovery_claim_expired';
+    END IF;
+    RETURN renewed_at;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_execution_renew_v1(smallint, bigint, uuid) FROM PUBLIC;
+
+-- The caller releases only after scanner quiescence; lease expiry is not release.
+CREATE FUNCTION public.media_discovery_execution_release_v1(slot_input smallint, fence_input bigint, owner_input uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public SET lock_timeout TO '250ms' AS $$
+BEGIN
+    UPDATE public.media_discovery_execution_slot s SET owner_public_id = NULL, instance_public_id = NULL,
+        principal_user_id = NULL, media_discovery_association_version_id = NULL, media_root_catalog_generation_id = NULL,
+        media_root_catalog_slot_attestation_id = NULL, media_policy_profile_id = NULL,
+        captured_sequence = NULL, lease_expires_at = NULL
+    WHERE s.slot_id = slot_input AND s.claim_generation = fence_input AND s.owner_public_id = owner_input;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_claim_conflict', DETAIL = 'media_discovery_claim_conflict';
+    END IF;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_execution_release_v1(smallint, bigint, uuid) FROM PUBLIC;
+
+CREATE TABLE public.media_discovery_schedule_state (
+    media_discovery_association_version_id bigint PRIMARY KEY
+        REFERENCES public.media_discovery_association_version(media_discovery_association_version_id),
+    interval_quantity integer NOT NULL,
+    interval_unit text NOT NULL,
+    anchor_due_at timestamptz NOT NULL,
+    next_due_at timestamptz NOT NULL,
+    last_coalesced_first_due_at timestamptz,
+    last_coalesced_last_due_at timestamptz,
+    last_coalesced_count bigint NOT NULL DEFAULT 0,
+    updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    CONSTRAINT media_discovery_schedule_interval_v1 CHECK (
+        (interval_unit = 'minutes' AND interval_quantity BETWEEN 1 AND 43200)
+        OR (interval_unit = 'hours' AND interval_quantity BETWEEN 1 AND 720)),
+    CONSTRAINT media_discovery_schedule_coalescing_v1 CHECK (
+        (last_coalesced_count = 0 AND last_coalesced_first_due_at IS NULL AND last_coalesced_last_due_at IS NULL)
+        OR (last_coalesced_count > 0 AND last_coalesced_first_due_at IS NOT NULL
+            AND last_coalesced_last_due_at IS NOT NULL
+            AND last_coalesced_first_due_at <= last_coalesced_last_due_at)),
+    CONSTRAINT media_discovery_schedule_due_v1 CHECK (next_due_at >= anchor_due_at)
+);
+CREATE INDEX media_discovery_schedule_due_v1 ON public.media_discovery_schedule_state
+    (next_due_at, media_discovery_association_version_id);
+REVOKE ALL ON TABLE public.media_discovery_schedule_state FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_schedule_configuration_get_v1(public_id_input uuid)
+RETURNS TABLE(media_discovery_association_public_id uuid, association_version integer,
+    interval_quantity integer, interval_unit text, anchor_due_at timestamptz, updated_at timestamptz)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT a.media_discovery_association_public_id, v.version,
+        s.interval_quantity, s.interval_unit, s.anchor_due_at, s.updated_at
+    FROM public.media_discovery_association a
+    JOIN public.media_discovery_association_version v
+        ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+    JOIN public.media_discovery_schedule_state s USING (media_discovery_association_version_id)
+    WHERE a.media_discovery_association_public_id = public_id_input;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_schedule_configuration_get_v1(uuid) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_schedule_configuration_write_v1(
+    actor_public_id_input uuid, public_id_input uuid, association_version_input integer,
+    interval_quantity_input integer, interval_unit_input text, expected_updated_at_input timestamptz
+) RETURNS TABLE(media_discovery_association_public_id uuid, association_version integer,
+    interval_quantity integer, interval_unit text, anchor_due_at timestamptz, updated_at timestamptz)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    association_row record;
+    readiness_row record;
+BEGIN
+    IF association_version_input IS NULL OR association_version_input <= 0
+        OR interval_quantity_input IS NULL OR interval_unit_input IS NULL
+        OR NOT ((interval_unit_input = 'minutes' AND interval_quantity_input BETWEEN 1 AND 43200)
+            OR (interval_unit_input = 'hours' AND interval_quantity_input BETWEEN 1 AND 720)) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    PERFORM public.media_actor_id_for_public_id_v1(actor_public_id_input);
+    PERFORM s.media_root_catalog_state_id FROM public.media_root_catalog_state s
+    WHERE s.media_root_catalog_state_id = 1 AND s.source_state = 'ready'
+        AND s.attestation_state = 'ready' FOR SHARE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    SELECT a.latest_media_discovery_association_version_id AS version_id,
+        a.active_media_discovery_association_version_id AS active_id, v.version
+    INTO association_row FROM public.media_discovery_association a
+    JOIN public.media_discovery_association_version v
+        ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+    WHERE a.media_discovery_association_public_id = public_id_input FOR UPDATE OF a;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_schedule_association_not_found', DETAIL = 'media_schedule_association_not_found';
+    END IF;
+    IF association_row.version <> association_version_input
+        OR association_row.active_id IS DISTINCT FROM association_row.version_id THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_schedule_association_stale', DETAIL = 'media_schedule_association_stale';
+    END IF;
+    SELECT r.* INTO readiness_row FROM public.media_discovery_association_get_v1(public_id_input) r;
+    IF NOT COALESCE(readiness_row.binding_ready, FALSE) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    IF expected_updated_at_input IS NULL THEN
+    BEGIN
+        INSERT INTO public.media_discovery_schedule_state(media_discovery_association_version_id,
+            interval_quantity, interval_unit, anchor_due_at, next_due_at)
+        VALUES (association_row.version_id, interval_quantity_input, interval_unit_input,
+            transaction_timestamp(), transaction_timestamp());
+    EXCEPTION WHEN unique_violation THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_schedule_configuration_conflict', DETAIL = 'media_schedule_configuration_conflict';
+    END;
+    ELSE
+        UPDATE public.media_discovery_schedule_state s
+        SET interval_quantity = interval_quantity_input, interval_unit = interval_unit_input,
+            updated_at = GREATEST(clock_timestamp(), s.updated_at + interval '1 microsecond')
+        WHERE s.media_discovery_association_version_id = association_row.version_id
+            AND s.updated_at = expected_updated_at_input;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_schedule_configuration_stale', DETAIL = 'media_schedule_configuration_stale';
+        END IF;
+    END IF;
+    RETURN QUERY SELECT * FROM public.media_discovery_schedule_configuration_get_v1(public_id_input);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_schedule_configuration_write_v1(uuid,uuid,integer,integer,text,timestamptz) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_schedule_configuration_create_v1(
+    actor_public_id_input uuid, public_id_input uuid, association_version_input integer,
+    interval_quantity_input integer, interval_unit_input text
+) RETURNS TABLE(media_discovery_association_public_id uuid, association_version integer,
+    interval_quantity integer, interval_unit text, anchor_due_at timestamptz, updated_at timestamptz)
+LANGUAGE sql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT * FROM public.media_discovery_schedule_configuration_write_v1(
+        actor_public_id_input, public_id_input, association_version_input,
+        interval_quantity_input, interval_unit_input, NULL::timestamptz);
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_schedule_configuration_create_v1(uuid,uuid,integer,integer,text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_schedule_configuration_replace_v1(
+    actor_public_id_input uuid, public_id_input uuid, association_version_input integer,
+    interval_quantity_input integer, interval_unit_input text, expected_updated_at_input timestamptz
+) RETURNS TABLE(media_discovery_association_public_id uuid, association_version integer,
+    interval_quantity integer, interval_unit text, anchor_due_at timestamptz, updated_at timestamptz)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+BEGIN
+    IF expected_updated_at_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    RETURN QUERY SELECT * FROM public.media_discovery_schedule_configuration_write_v1(
+        actor_public_id_input, public_id_input, association_version_input,
+        interval_quantity_input, interval_unit_input, expected_updated_at_input);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_schedule_configuration_replace_v1(uuid,uuid,integer,integer,text,timestamptz) FROM PUBLIC;
+
+CREATE FUNCTION public.media_job_operator_path_v1(path_input text, root_input text)
+RETURNS text LANGUAGE plpgsql IMMUTABLE SET search_path TO pg_catalog, public AS $$
+DECLARE relative_value text;
+BEGIN
+    IF path_input IS NULL THEN RETURN NULL; END IF;
+    IF root_input IS NULL OR root_input = '' OR NOT starts_with(path_input, root_input || '/') THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_path_snapshot_invalid', DETAIL = 'media_job_path_snapshot_invalid';
+    END IF;
+    relative_value := substring(path_input FROM char_length(root_input) + 2);
+    IF relative_value = '' OR NOT public.media_root_relative_prefix_valid_v1(relative_value) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_path_snapshot_invalid', DETAIL = 'media_job_path_snapshot_invalid';
+    END IF;
+    RETURN relative_value;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_job_operator_path_v1(text,text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_job_operator_get_v1(media_job_public_id_input uuid)
+RETURNS TABLE(media_job_public_id uuid, source_path text, output_path text, status public.media_job_status,
+    dry_run boolean, queued_at timestamptz, started_at timestamptz, completed_at timestamptz, last_error text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT reported.media_job_public_id,
+        public.media_job_operator_path_v1(reported.source_path, job.intent_source_root),
+        public.media_job_operator_path_v1(reported.output_path, job.intent_output_root),
+        reported.status, reported.dry_run, reported.queued_at, reported.started_at, reported.completed_at, reported.last_error
+    FROM public.media_job_get_v1(media_job_public_id_input) reported
+    JOIN public.media_job job USING (media_job_public_id);
+$$;
+REVOKE ALL ON FUNCTION public.media_job_operator_get_v1(uuid) FROM PUBLIC;
+
+CREATE FUNCTION public.media_job_operator_list_v1(media_profile_public_id_input uuid, status_input public.media_job_status)
+RETURNS TABLE(media_job_public_id uuid, source_path text, output_path text, status public.media_job_status,
+    dry_run boolean, queued_at timestamptz, started_at timestamptz, completed_at timestamptz, last_error text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT reported.media_job_public_id,
+        public.media_job_operator_path_v1(reported.source_path, job.intent_source_root),
+        public.media_job_operator_path_v1(reported.output_path, job.intent_output_root),
+        reported.status, reported.dry_run, reported.queued_at, reported.started_at, reported.completed_at, reported.last_error
+    FROM public.media_job_list_v1(media_profile_public_id_input, status_input) WITH ORDINALITY reported
+    JOIN public.media_job job USING (media_job_public_id) ORDER BY reported.ordinality;
+$$;
+REVOKE ALL ON FUNCTION public.media_job_operator_list_v1(uuid,public.media_job_status) FROM PUBLIC;
+
+CREATE FUNCTION public.media_job_operator_recent_page_v1(limit_input integer, cursor_queued_at_input timestamptz,
+    cursor_public_id_input uuid, media_profile_public_id_input uuid)
+RETURNS TABLE(media_job_public_id uuid, media_profile_public_id uuid, source_path text, output_path text,
+    status_text text, dry_run boolean, queued_at timestamptz, started_at timestamptz, completed_at timestamptz,
+    last_error text, operation_count bigint, violation_count bigint, plan_reason_count bigint,
+    verification_check_count bigint, artifact_count bigint, compact_audit_count bigint)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT reported.media_job_public_id, reported.media_profile_public_id,
+        public.media_job_operator_path_v1(reported.source_path, job.intent_source_root),
+        public.media_job_operator_path_v1(reported.output_path, job.intent_output_root),
+        reported.status_text, reported.dry_run, reported.queued_at, reported.started_at, reported.completed_at,
+        reported.last_error, reported.operation_count, reported.violation_count, reported.plan_reason_count,
+        reported.verification_check_count, reported.artifact_count, reported.compact_audit_count
+    FROM public.media_job_recent_page_v1(limit_input, cursor_queued_at_input, cursor_public_id_input,
+        media_profile_public_id_input) WITH ORDINALITY reported
+    JOIN public.media_job job USING (media_job_public_id) ORDER BY reported.ordinality;
+$$;
+REVOKE ALL ON FUNCTION public.media_job_operator_recent_page_v1(integer,timestamptz,uuid,uuid) FROM PUBLIC;
+
+-- Seed defaults only after every application relation exists. The same reset
+-- procedure restores the closed root kinds and fail-closed catalog state.
+SET search_path = public, revaer_config, revaer_runtime;
+SELECT revaer_config.factory_reset();
+RESET search_path;
 
 -- ADR 551 finalization: lifecycle and explicit authored routine privileges.
 CREATE SCHEMA revaer_system;
@@ -45147,7 +47810,7 @@ ALTER FUNCTION public.media_job_compact_audit_append_v1(uuid, bigint, integer, t
 ALTER FUNCTION public.media_job_compact_audit_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_job_configuration_immutable_v1() SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_job_create_v1(uuid, uuid, text, text, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.media_job_current_attempt_required_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_current_attempt_required_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_job_current_attempt_v1(uuid, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_job_desired_target_audio_constraints_snapshot_v1() SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_job_desired_target_snapshot_guard_v1() SET search_path TO pg_catalog, public;
@@ -45155,6 +47818,19 @@ ALTER FUNCTION public.media_job_desired_target_stream_list_v1(uuid) SECURITY DEF
 ALTER FUNCTION public.media_job_desired_target_stream_list_v2(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_job_desired_target_stream_list_v3(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_job_desired_target_stream_list_v4(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+CREATE FUNCTION public.media_job_operation_cost_snapshot_list_v1(media_job_public_id_input uuid)
+RETURNS TABLE(operation_kind text, cost_weight integer, sort_order integer, enabled boolean)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+    SELECT cost.operation_kind, cost.cost_weight, cost.sort_order, cost.enabled
+      FROM public.media_job job
+      JOIN public.media_job_policy_operation_cost_snapshot cost
+        ON cost.media_job_id = job.media_job_id
+     WHERE job.media_job_public_id = media_job_public_id_input
+     ORDER BY cost.sort_order
+     LIMIT 14
+$$;
+
 ALTER FUNCTION public.media_job_desired_target_stream_list_v5(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_job_get_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_job_initial_attempt_v1() SET search_path TO pg_catalog, public;
@@ -45212,7 +47888,7 @@ ALTER FUNCTION public.media_policy_operation_cost_append_v1(uuid, text, integer,
 ALTER FUNCTION public.media_policy_profile_id_v1(uuid, text, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_policy_profile_immutable_v1() SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_policy_profile_list_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.media_policy_profile_upsert_v1(uuid, text, integer, text, text, text, bigint, boolean, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_profile_upsert_v1(uuid, text, integer, text, text, text, bigint, boolean, boolean, boolean, boolean, boolean, text, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_policy_retention_rule_append_v1(uuid, text, integer, text, text, text, text, text, text, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_policy_runtime_limit_set_v1(uuid, text, integer, integer, integer, integer, integer, bigint, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_policy_runtime_limit_set_v2(uuid, text, integer, integer, integer, integer, integer, bigint, boolean, integer, text, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
@@ -45619,8 +48295,20 @@ BEGIN
     ALTER DEFAULT PRIVILEGES REVOKE ALL ON SCHEMAS FROM PUBLIC;
 
     FOREACH routine_identity IN ARRAY ARRAY[
+            'public.media_root_catalog_reconcile_begin_v1(smallint,bytea,bytea,bytea,smallint)',
+            'public.media_root_catalog_reconcile_activate_v1(uuid)',
+            'public.media_root_catalog_reconcile_slot_v1(uuid,text,text,text,bytea,bytea,bigint,text,boolean,boolean,boolean,boolean,boolean,boolean,boolean,text,text,text,text,bigint,bigint,integer,bytea)',
+            'public.media_root_catalog_reconcile_slot_kind_v1(uuid,uuid,text)',
+            'public.media_root_catalog_mark_unavailable_v1(text,text)',
+            'public.media_root_catalog_mark_attestation_invalid_v1(text)',
             'public.media_root_catalog_state_get_v1()',
+            'public.media_root_catalog_slot_page_v1(smallint,text,uuid)',
             'public.media_root_catalog_readiness_get_v1()',
+            'public.media_discovery_association_create_v1(uuid,text,uuid,integer,text,text,boolean,boolean,boolean)',
+            'public.media_discovery_association_get_v1(uuid)',
+            'public.media_discovery_association_page_v1(integer,text,uuid)',
+            'public.media_discovery_association_job_enqueue_v1(uuid,uuid,text,boolean,text,bigint,bigint,bigint,text,integer,bigint,bytea,text)',
+            'public.media_job_policy_snapshot_root_list_v1(uuid,integer,bigint)',
         -- Generated authored routine grants begin.
             'public.policy_action_to_decision_type(public.policy_action)',
             'public.app_user_create(character varying, character varying)',
@@ -45801,9 +48489,6 @@ BEGIN
             'public.media_desired_target_stream_list_v4(uuid)',
             'public.media_desired_target_stream_list_v5(uuid)',
             'public.media_desired_target_validate_and_activate_v1(bigint)',
-            'public.media_discovery_job_enqueue_v1(uuid, uuid, text, text, bigint, bigint, text)',
-            'public.media_discovery_job_enqueue_v2(uuid, uuid, text, text, text, bigint, bigint, bigint, text)',
-            'public.media_discovery_job_enqueue_v3(uuid, uuid, text, text, boolean, text, bigint, bigint, bigint, text)',
             'public.media_discovery_root_assert_current_v1(uuid, text, bigint, bigint)',
             'public.media_discovery_schedule_claim_v1(uuid, text, bigint, bigint, timestamp with time zone)',
             'public.media_discovery_schedule_create_v1(uuid, uuid, integer, text, integer, boolean, timestamp with time zone)',
@@ -45825,14 +48510,24 @@ BEGIN
             'public.media_job_cleanup_failed_terminal_diagnostics_v1(timestamp with time zone, integer)',
             'public.media_job_compact_audit_append_v1(uuid, bigint, integer, text, text)',
             'public.media_job_compact_audit_list_v1(uuid)',
-            'public.media_job_create_v1(uuid, uuid, text, text, boolean)',
             'public.media_job_current_attempt_v1(uuid, bigint)',
             'public.media_job_desired_target_stream_list_v1(uuid)',
             'public.media_job_desired_target_stream_list_v2(uuid)',
             'public.media_job_desired_target_stream_list_v3(uuid)',
             'public.media_job_desired_target_stream_list_v4(uuid)',
             'public.media_job_desired_target_stream_list_v5(uuid)',
+            'public.media_job_operation_cost_snapshot_list_v1(uuid)',
             'public.media_job_get_v1(uuid)',
+            'public.media_job_operator_get_v1(uuid)',
+            'public.media_discovery_schedule_configuration_get_v1(uuid)',
+            'public.media_discovery_rescan_get_v1(uuid)',
+            'public.media_discovery_execution_claim_v1(uuid, uuid, integer, bigint, bytea, uuid, uuid)',
+            'public.media_discovery_execution_renew_v1(smallint, bigint, uuid)',
+            'public.media_discovery_execution_release_v1(smallint, bigint, uuid)',
+            'public.media_discovery_schedule_configuration_create_v1(uuid,uuid,integer,integer,text)',
+            'public.media_discovery_schedule_configuration_replace_v1(uuid,uuid,integer,integer,text,timestamptz)',
+            'public.media_job_operator_list_v1(uuid, public.media_job_status)',
+            'public.media_job_operator_recent_page_v1(integer, timestamp with time zone, uuid, uuid)',
             'public.media_job_list_v1(uuid, public.media_job_status, integer, timestamp with time zone, uuid)',
             'public.media_job_mark_completed_v1(uuid)',
             'public.media_job_normalized_absolute_path_v1(text)',
@@ -45857,6 +48552,7 @@ BEGIN
             'public.media_job_status_running_v1()',
             'public.media_job_status_verifying_v1()',
             'public.media_job_terminal_outbox_list_unpublished_v1()',
+            'public.media_job_replacement_recovery_list_v1(bigint)',
             'public.media_job_terminal_outbox_mark_published_v1(uuid)',
             'public.media_job_validate_path_within_root_v1(text, text, text)',
             'public.media_job_verification_check_append_v1(uuid, bigint, integer, text, text, text, text, text)',
@@ -45883,7 +48579,7 @@ BEGIN
             'public.media_policy_operation_cost_append_v1(uuid, text, integer, text, integer, integer, boolean)',
             'public.media_policy_profile_id_v1(uuid, text, integer)',
             'public.media_policy_profile_list_v1()',
-            'public.media_policy_profile_upsert_v1(uuid, text, integer, text, text, text, bigint, boolean, boolean, boolean, boolean)',
+            'public.media_policy_profile_upsert_v1(uuid, text, integer, text, text, text, bigint, boolean, boolean, boolean, boolean, boolean, text, boolean, boolean, boolean)',
             'public.media_policy_retention_rule_append_v1(uuid, text, integer, text, text, text, text, text, text, integer, boolean)',
             'public.media_policy_runtime_limit_set_v1(uuid, text, integer, integer, integer, integer, integer, bigint, boolean)',
             'public.media_policy_runtime_limit_set_v2(uuid, text, integer, integer, integer, integer, integer, bigint, boolean, integer, text, boolean)',
@@ -45905,6 +48601,18 @@ BEGIN
             'public.media_profile_list_v1()',
             'public.media_profile_list_v2()',
             'public.media_profile_list_v3()',
+            'public.media_profile_version_get_v1(uuid, boolean)',
+            'public.media_profile_active_association_count_v1(uuid)',
+            'public.media_portable_profile_versions_v1()',
+            'public.media_portable_associations_v1()',
+            'public.media_local_root_paths_v1()',
+            'public.media_configuration_import_prepare_v1(uuid,text[],text[],boolean[],integer[],text[])',
+            'public.media_profile_version_import_v1(uuid,text,integer,integer,text,text,boolean,text,integer,text,integer,text,text,text,text)',
+            'public.media_discovery_association_import_v1(uuid,text,integer,text,integer,text,text,boolean,boolean,boolean)',
+            'public.media_configuration_import_audit_v1(uuid,bytea,integer)',
+            'public.media_profile_version_page_v1(integer, text, uuid)',
+            'public.media_profile_version_create_v1(uuid, text, text, text, boolean, boolean, text, integer, text, integer, text, text, text, text)',
+            'public.media_profile_version_replace_v1(uuid, text, text, text, boolean, boolean, text, integer, text, integer, text, text, text, text, uuid, integer)',
             'public.media_profile_normalized_root_v1(text)',
             'public.media_profile_root_add_v1(uuid, text, text, text, bigint, bigint, text, integer, boolean)',
             'public.media_profile_root_list_v1(uuid)',

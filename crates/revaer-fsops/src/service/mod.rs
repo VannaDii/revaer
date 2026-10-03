@@ -2609,7 +2609,7 @@ mod tests {
             .max_connections(5)
             .connect(postgres.connection_string())
             .await?;
-        let store = PersistedRuntimeStore::new(pool).await?;
+        let store = PersistedRuntimeStore::new(pool);
         Ok(Some((postgres, store)))
     }
 

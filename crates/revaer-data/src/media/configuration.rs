@@ -4,6 +4,133 @@ use crate::error::{Result, try_op};
 use sqlx::{Executor, PgPool, Postgres};
 use uuid::Uuid;
 
+/// Open the single serializable transaction required for configuration import.
+///
+/// # Errors
+/// Propagates transaction setup and connection failures.
+pub async fn begin_import_transaction(pool: &PgPool) -> Result<sqlx::Transaction<'_, Postgres>> {
+    pool.begin_with("BEGIN ISOLATION LEVEL SERIALIZABLE")
+        .await
+        .map_err(try_op("begin media configuration import"))
+}
+
+/// One explicit resource intent checked under the import's parent locks.
+pub struct ImportResourcePrecondition<'a> {
+    /// Exact native resource family.
+    pub kind: &'a str,
+    /// Exact logical key.
+    pub key: &'a str,
+    /// Explicit new-key intent, never inferred from absence.
+    pub create: bool,
+    /// Present only for an explicitly matched existing head.
+    pub expected_version: Option<i32>,
+}
+
+/// Lock the catalog, all applicable sources, then resource parents and compare heads.
+///
+/// # Errors
+/// Propagates invalid intent, conflicts, privilege and database failures.
+pub async fn prepare_import(
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    actor_public_id: Uuid,
+    preconditions: &[ImportResourcePrecondition<'_>],
+    source_keys: &[String],
+) -> Result<()> {
+    let kinds = preconditions.iter().map(|row| row.kind).collect::<Vec<_>>();
+    let keys = preconditions.iter().map(|row| row.key).collect::<Vec<_>>();
+    let creates = preconditions
+        .iter()
+        .map(|row| row.create)
+        .collect::<Vec<_>>();
+    let versions = preconditions
+        .iter()
+        .map(|row| row.expected_version)
+        .collect::<Vec<_>>();
+    // The held catalog lock pins this generation, including legitimate absence.
+    let _generation = sqlx::query_scalar::<_, Option<i64>>("SELECT media_configuration_import_prepare_v1(actor_public_id_input => $1, kinds_input => $2, keys_input => $3, create_intents_input => $4, expected_versions_input => $5, source_keys_input => $6)")
+        .bind(actor_public_id).bind(kinds).bind(keys).bind(creates).bind(versions).bind(source_keys)
+        .fetch_one(&mut **transaction).await.map_err(try_op("prepare media configuration import"))?;
+    Ok(())
+}
+
+/// Native profile body persisted with forced dry-run and an explicit head fence.
+#[derive(sqlx::FromRow)]
+pub struct ImportedProfile {
+    /// Host-local profile identity, never taken from YAML.
+    pub profile_public_id: Uuid,
+    /// Head retained or advanced by this body.
+    pub latest_version: i32,
+    /// Whether the persisted body is a disabled draft.
+    pub draft: bool,
+}
+
+/// Import one exact immutable profile body in the caller's bundle transaction.
+///
+/// # Errors
+/// Propagates fence, mapping, reference and storage failures.
+pub async fn import_profile(
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    actor: Uuid,
+    row: &super::portable::PortableProfileRow,
+    expected_head: Option<i32>,
+) -> Result<ImportedProfile> {
+    sqlx::query_as("SELECT * FROM media_profile_version_import_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)")
+        .bind(actor).bind(&row.profile_key).bind(row.version).bind(expected_head)
+        .bind(&row.display_name).bind(&row.description).bind(row.enabled)
+        .bind(&row.desired_target_key).bind(row.desired_target_version)
+        .bind(&row.policy_key).bind(row.policy_version).bind(&row.output_root_key)
+        .bind(&row.workspace_root_key).bind(&row.backup_root_key).bind(&row.quarantine_root_key)
+        .fetch_one(&mut **transaction).await.map_err(try_op("import native media profile"))
+}
+
+/// Import one exact association pin without following the latest profile head.
+///
+/// # Errors
+/// Propagates fence, overlap, reference and storage failures.
+pub async fn import_association(
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    actor: Uuid,
+    row: &super::portable::PortableAssociationRow,
+    expected_head: Option<i32>,
+) -> Result<Uuid> {
+    sqlx::query_scalar(
+        "SELECT media_discovery_association_import_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+    )
+    .bind(actor)
+    .bind(&row.association_key)
+    .bind(expected_head)
+    .bind(&row.profile_key)
+    .bind(row.profile_version)
+    .bind(&row.source_root_key)
+    .bind(&row.root_relative_path)
+    .bind(row.manual_enabled)
+    .bind(row.watcher_enabled)
+    .bind(row.schedule_enabled)
+    .fetch_one(&mut **transaction)
+    .await
+    .map_err(try_op("import native media association"))
+}
+
+/// Record one bounded import fact inside the same transaction as all writes.
+///
+/// # Errors
+/// Propagates actor, audit bounds and storage failures.
+pub async fn audit_import(
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    actor: Uuid,
+    digest: &[u8],
+    resource_count: i32,
+) -> Result<()> {
+    sqlx::query("SELECT media_configuration_import_audit_v1($1,$2,$3)")
+        .bind(actor)
+        .bind(digest)
+        .bind(resource_count)
+        .execute(&mut **transaction)
+        .await
+        .map_err(try_op("audit native media import"))?;
+    Ok(())
+}
+
 /// Typed boolean used by persisted media verification contracts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
@@ -25,8 +152,8 @@ impl From<bool> for MediaVerificationToggle {
 
 const MEDIA_COMPATIBILITY_TARGET_LIST_V1: &str = "SELECT compatibility_target_key, version, display_name, video_codec, audio_codec, audio_channels, audio_channel_layout, subtitle_policy FROM media_compatibility_target_list_v1()";
 const MEDIA_COMPATIBILITY_TARGET_UPSERT_V1: &str = "SELECT compatibility_target_key, version, display_name, video_codec, audio_codec, audio_channels, audio_channel_layout, subtitle_policy FROM media_compatibility_target_upsert_v1($1, $2, $3, $4, $5, $6, $7, $8, $9)";
-const MEDIA_POLICY_PROFILE_LIST_V1: &str = "SELECT policy_key, version, display_name, video_intent, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe FROM media_policy_profile_list_v1()";
-const MEDIA_POLICY_PROFILE_UPSERT_V1: &str = "SELECT policy_key, version, display_name, video_intent, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe FROM media_policy_profile_upsert_v1(actor_public_id_input => $1, policy_key_input => $2, version_input => $3, display_name_input => $4, video_intent_input => $5, verification_strictness_input => $6, verification_duration_tolerance_millis_input => $7, verification_mux_validation_input => $8, verification_decode_all_streams_input => $9, verification_keyframe_seek_input => $10, verification_playback_probe_input => $11)";
+const MEDIA_POLICY_PROFILE_LIST_V1: &str = "SELECT policy_key, version, display_name, video_intent, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, dry_run, replacement_mode, quarantine_enabled, preserve_permissions, preserve_ownership FROM media_policy_profile_list_v1()";
+const MEDIA_POLICY_PROFILE_UPSERT_V1: &str = "SELECT policy_key, version, display_name, video_intent, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, dry_run, replacement_mode, quarantine_enabled, preserve_permissions, preserve_ownership FROM media_policy_profile_upsert_v1(actor_public_id_input => $1, policy_key_input => $2, version_input => $3, display_name_input => $4, video_intent_input => $5, verification_strictness_input => $6, verification_duration_tolerance_millis_input => $7, verification_mux_validation_input => $8, verification_decode_all_streams_input => $9, verification_keyframe_seek_input => $10, verification_playback_probe_input => $11, dry_run_input => $12, replacement_mode_input => $13, quarantine_enabled_input => $14, preserve_permissions_input => $15, preserve_ownership_input => $16)";
 const MEDIA_JOB_RETENTION_POLICY_GET_V2: &str = "SELECT completed_enabled, completed_mode, completed_limit, failed_diagnostic_enabled, failed_diagnostic_mode, failed_diagnostic_limit FROM media_job_retention_policy_get_v2()";
 const MEDIA_JOB_RETENTION_POLICY_UPDATE_V2: &str = "SELECT completed_enabled, completed_mode, completed_limit, failed_diagnostic_enabled, failed_diagnostic_mode, failed_diagnostic_limit FROM media_job_retention_policy_update_v2(actor_public_id_input => $1, completed_enabled_input => $2, completed_mode_input => $3, completed_limit_input => $4, failed_diagnostic_enabled_input => $5, failed_diagnostic_mode_input => $6, failed_diagnostic_limit_input => $7)";
 const MEDIA_DESIRED_TARGET_CREATE_V1: &str = "SELECT media_desired_target_create_v1(actor_public_id_input => $1, target_key_input => $2, version_input => $3, display_name_input => $4, container_format_input => $5)";
@@ -59,9 +186,36 @@ pub struct UpsertMediaCompatibilityTargetInput<'a> {
     pub subtitle_policy: &'a str,
 }
 
+/// Append an explicitly authored operation-cost row before a policy is captured.
+///
+/// # Errors
+/// Propagates stored-procedure validation and immutable-version errors.
+pub async fn append_media_policy_operation_cost(
+    pool: &PgPool,
+    actor: Uuid,
+    policy_key: &str,
+    version: i32,
+    row: &super::policy_snapshot::OperationCostSnapshotRow,
+) -> Result<()> {
+    sqlx::query("SELECT media_policy_operation_cost_append_v1(actor_public_id_input => $1, policy_key_input => $2, version_input => $3, operation_kind_input => $4, cost_weight_input => $5, sort_order_input => $6, enabled_input => $7)")
+        .bind(actor)
+        .bind(policy_key)
+        .bind(version)
+        .bind(&row.operation_kind)
+        .bind(row.cost_weight)
+        .bind(row.sort_order)
+        .bind(row.enabled)
+        .execute(pool)
+        .await
+        .map_err(try_op("media policy operation cost append"))?;
+    Ok(())
+}
+
 /// Policy profile upsert payload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpsertMediaPolicyProfileInput<'a> {
+    /// Complete output settings written atomically with the policy.
+    pub output: MediaPolicyOutputRow,
     /// Actor performing the write.
     pub actor_public_id: Uuid,
     /// Stable policy key.
@@ -282,6 +436,9 @@ pub struct MediaCompatibilityTargetRow {
 /// Versioned policy profile row.
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct MediaPolicyProfileRow {
+    /// Complete normalized output settings.
+    #[sqlx(flatten)]
+    pub output: MediaPolicyOutputRow,
     /// Stable policy key.
     pub policy_key: String,
     /// Policy version.
@@ -302,6 +459,43 @@ pub struct MediaPolicyProfileRow {
     pub verification_keyframe_seek: MediaVerificationToggle,
     /// Whether the noninteractive playback smoke probe is selected.
     pub verification_playback_probe: MediaVerificationToggle,
+}
+
+/// Permission and ownership preservation stored with the policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaOutputPreservationRow {
+    /// Preserve source permissions on replacement.
+    pub preserve_permissions: bool,
+    /// Preserve source ownership on replacement.
+    pub preserve_ownership: bool,
+}
+
+/// Complete output settings from the normalized policy component.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaPolicyOutputRow {
+    /// Forbid mutation independently of the profile restriction.
+    pub dry_run: bool,
+    /// Explicit replacement mode.
+    pub replacement_mode: String,
+    /// Quarantine failed candidates.
+    pub quarantine_enabled: bool,
+    /// Source metadata preservation.
+    #[sqlx(flatten)]
+    pub preservation: MediaOutputPreservationRow,
+}
+
+impl Default for MediaPolicyOutputRow {
+    fn default() -> Self {
+        Self {
+            dry_run: true,
+            replacement_mode: "disabled".into(),
+            quarantine_enabled: true,
+            preservation: MediaOutputPreservationRow {
+                preserve_permissions: true,
+                preserve_ownership: true,
+            },
+        }
+    }
 }
 
 /// Job retention policy row.
@@ -422,6 +616,11 @@ where
         .bind(input.verification_decode_all_streams.enabled())
         .bind(input.verification_keyframe_seek.enabled())
         .bind(input.verification_playback_probe.enabled())
+        .bind(input.output.dry_run)
+        .bind(input.output.replacement_mode)
+        .bind(input.output.quarantine_enabled)
+        .bind(input.output.preservation.preserve_permissions)
+        .bind(input.output.preservation.preserve_ownership)
         .fetch_one(executor)
         .await
         .map_err(try_op("media policy profile upsert"))
@@ -871,6 +1070,7 @@ mod tests {
         let result = upsert_media_policy_profile(
             pool,
             UpsertMediaPolicyProfileInput {
+                output: crate::media::configuration::MediaPolicyOutputRow::default(),
                 actor_public_id,
                 policy_key: "invalid-fast",
                 version: 1,
@@ -964,6 +1164,7 @@ mod tests {
         let policy = upsert_media_policy_profile(
             db.pool(),
             UpsertMediaPolicyProfileInput {
+                output: crate::media::configuration::MediaPolicyOutputRow::default(),
                 actor_public_id: actor,
                 policy_key: "archive-quality",
                 version: 3,

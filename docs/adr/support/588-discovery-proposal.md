@@ -1,5 +1,11 @@
 # DISCOVERY/FINGERPRINT Consolidated Decision Evidence: v2
 
+> Current decision: accepted [ADR 594](../594-simple-discovery-worker-cleanup.md)
+> replaces the named traversal-frontier, pre-release upgrade, distributed quota,
+> lease and quiescence requirements in this historical record. Other discovery
+> functionality and applicable bounds remain; do not restore replaced machinery
+> or its acceptance tests as implementation prerequisites.
+
 > Current approval: The operator accepted ADR 588's exact applicable choices
 > on 2026-09-11 at reviewed commit `9575c077`. The [resolution](../588-first-release-decision-package.md#approval-resolution)
 > releases only those named design holds. Earlier pending/candidate wording

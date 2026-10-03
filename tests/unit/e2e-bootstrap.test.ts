@@ -6,6 +6,7 @@ import test from 'node:test';
 
 import { E2E_SERVING_ENTRY, e2eServingCommand, requirePortFree } from '../global-setup';
 import { setupChangeset } from '../support/api/setup-changeset';
+import { testDatabase, verifyTestDatabaseEndpoint } from '../support/e2e-database';
 import { repoRoot, resolveFsRoot } from '../support/paths';
 
 const root = path.resolve('/fixture/current-worktree');
@@ -22,6 +23,61 @@ const artifact = {
 };
 const finished = { reason: 'build-finished', success: true };
 const output = (...messages: unknown[]) => messages.map((value) => JSON.stringify(value)).join('\n');
+
+test('disposable database URL uses only the restricted runtime identity', () => {
+  const name = 'revaer_test_123_456';
+  const password = 'a'.repeat(64);
+  const database = testDatabase('postgres://admin@127.0.0.1:54321/postgres', name, password);
+  const url = new URL(database.runtimeUrl);
+  assert.equal(database.name, name);
+  assert.equal(url.username, `${name}_runtime`);
+  assert.equal(url.password, password);
+  assert.equal(url.pathname, `/${name}`);
+  assert.equal(url.hostname, '127.0.0.1');
+  assert.equal(url.port, '54321');
+});
+
+test('database provisioning and application connections use the same loopback service', () => {
+  verifyTestDatabaseEndpoint('postgres://localhost:54321/postgres', '127.0.0.1:54321\n');
+  verifyTestDatabaseEndpoint('postgres://127.0.0.1/postgres', '127.0.0.1:5432\n');
+  for (const binding of ['127.0.0.1:12345', '0.0.0.0:54321', '[::]:54321', '',
+    '127.0.0.1:54321\n0.0.0.0:54321']) {
+    assert.throws(() => verifyTestDatabaseEndpoint('postgres://localhost:54321', binding));
+  }
+  assert.throws(() => verifyTestDatabaseEndpoint('postgres://other:54321', '127.0.0.1:54321'));
+});
+
+for (const url of [
+  'postgres://database.example/postgres',
+  'https://localhost/postgres',
+  'postgres://localhost/postgres?user=admin',
+  'postgres://localhost/postgres?password=override',
+  'postgres://localhost/postgres?host=other',
+  'postgres://localhost/postgres#fragment',
+  'not a URL',
+]) {
+  test(`rejects unsafe database endpoint ${url}`, () => {
+    assert.throws(() => testDatabase(url, 'revaer_test_123_456', 'a'.repeat(64)));
+    assert.throws(() => verifyTestDatabaseEndpoint(url, '127.0.0.1:5432'));
+  });
+}
+
+test('malformed endpoint errors do not retain credential-bearing input', () => {
+  const input = 'postgres://fixture:private-value@[invalid';
+  assert.throws(() => verifyTestDatabaseEndpoint(input, '127.0.0.1:5432'),
+    new Error('Invalid test database service URL.'));
+});
+
+test('disposable names and credentials fail closed without exposing their values', () => {
+  for (const name of ['postgres', 'revaer_test_1', 'revaer_test_1_2_owner', `revaer_test_${'1'.repeat(50)}_2`]) {
+    assert.throws(() => testDatabase('postgres://localhost', name, 'a'.repeat(64)),
+      new Error('Invalid owned test database name.'));
+  }
+  for (const password of ['', 'short', 'A'.repeat(64), 'a'.repeat(65)]) {
+    assert.throws(() => testDatabase('postgres://localhost', 'revaer_test_1_2', password),
+      new Error('Invalid temporary runtime password.'));
+  }
+});
 
 test('selects only the current app library test executable and exact serving entry', () => {
   const command = e2eServingCommand(output(

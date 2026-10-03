@@ -9,6 +9,8 @@ export type E2EState = {
   apiPid?: number;
   uiPid?: number;
   dbUrl?: string;
+  testDatabaseName?: string;
+  testDatabaseContainer?: string;
   apiSession?: ApiSession;
 };
 

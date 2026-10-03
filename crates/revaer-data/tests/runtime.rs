@@ -22,7 +22,7 @@ async fn runtime_store_persists_status_and_fs_jobs() -> anyhow::Result<()> {
         .max_connections(5)
         .connect(postgres.connection_string())
         .await?;
-    let store = RuntimeStore::new(pool.clone()).await?;
+    let store = RuntimeStore::new(pool.clone());
 
     let torrent_id = Uuid::new_v4();
     let status = TorrentStatus {
@@ -105,7 +105,7 @@ async fn runtime_store_round_trips_files_and_failed_state() -> anyhow::Result<()
         .max_connections(5)
         .connect(postgres.connection_string())
         .await?;
-    let store = RuntimeStore::new(pool).await?;
+    let store = RuntimeStore::new(pool);
 
     let torrent_id = Uuid::new_v4();
     let added_at = chrono::Utc::now();
@@ -223,7 +223,7 @@ async fn runtime_store_rejects_non_utf8_fs_job_paths() -> anyhow::Result<()> {
         .max_connections(5)
         .connect(postgres.connection_string())
         .await?;
-    let store = RuntimeStore::new(pool).await?;
+    let store = RuntimeStore::new(pool);
     let torrent_id = Uuid::new_v4();
     let invalid_path = std::path::PathBuf::from(OsString::from_vec(vec![0x66, 0x6f, 0x80]));
 

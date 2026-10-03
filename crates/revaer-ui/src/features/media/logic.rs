@@ -3,37 +3,6 @@
 use crate::features::media::state::MediaJobDiagnostics;
 use uuid::Uuid;
 
-const MIN_RETENTION_DAYS: i32 = 1;
-const MAX_RETENTION_DAYS: i32 = 3650;
-const MIN_SCHEDULE_INTERVAL_MINUTES: i32 = 1;
-const MAX_SCHEDULE_INTERVAL_MINUTES: i32 = 525_600;
-const RETENTION_DAYS_PARSE_ERROR: &str = "Retention days must be a whole number";
-const RETENTION_DAYS_BOUNDS_ERROR: &str = "Retention days must be between 1 and 3650";
-const SCHEDULE_INTERVAL_PARSE_ERROR: &str = "Schedule interval must be a whole number";
-const SCHEDULE_INTERVAL_BOUNDS_ERROR: &str = "Schedule interval must be between 1 and 525600";
-
-pub(crate) fn parse_retention_days_input(input: &str) -> Result<i32, &'static str> {
-    let parsed = input
-        .trim()
-        .parse::<i32>()
-        .map_err(|_| RETENTION_DAYS_PARSE_ERROR)?;
-    if !(MIN_RETENTION_DAYS..=MAX_RETENTION_DAYS).contains(&parsed) {
-        return Err(RETENTION_DAYS_BOUNDS_ERROR);
-    }
-    Ok(parsed)
-}
-
-pub(crate) fn parse_schedule_interval_input(input: &str) -> Result<i32, &'static str> {
-    let parsed = input
-        .trim()
-        .parse::<i32>()
-        .map_err(|_| SCHEDULE_INTERVAL_PARSE_ERROR)?;
-    if !(MIN_SCHEDULE_INTERVAL_MINUTES..=MAX_SCHEDULE_INTERVAL_MINUTES).contains(&parsed) {
-        return Err(SCHEDULE_INTERVAL_BOUNDS_ERROR);
-    }
-    Ok(parsed)
-}
-
 pub(crate) fn media_recent_jobs_path(
     limit: u16,
     cursor: Option<&str>,
@@ -49,10 +18,6 @@ pub(crate) fn media_recent_jobs_path(
         path.push_str(&profile_id.to_string());
     }
     path
-}
-
-pub(crate) const fn media_discovery_preview_path() -> &'static str {
-    "/v1/media/discovery/preview"
 }
 
 pub(crate) fn media_job_diagnostics_path(media_job_public_id: Uuid) -> String {
@@ -79,8 +44,7 @@ pub(crate) fn summarize_media_job_diagnostics(diagnostics: &MediaJobDiagnostics)
 #[cfg(test)]
 mod tests {
     use super::{
-        media_discovery_preview_path, media_job_diagnostics_path, media_recent_jobs_path,
-        parse_retention_days_input, parse_schedule_interval_input, summarize_media_job_diagnostics,
+        media_job_diagnostics_path, media_recent_jobs_path, summarize_media_job_diagnostics,
     };
     use crate::features::media::state::MediaJobDiagnostics;
     use crate::models::{
@@ -107,48 +71,6 @@ mod tests {
         assert_eq!(
             media_recent_jobs_path(10, None, None),
             "/v1/media/jobs/recent?limit=10"
-        );
-    }
-
-    #[test]
-    fn media_discovery_preview_path_uses_preview_route() {
-        assert_eq!(
-            media_discovery_preview_path(),
-            "/v1/media/discovery/preview"
-        );
-    }
-
-    #[test]
-    fn parse_retention_days_input_rejects_non_numeric_and_unbounded_values() {
-        assert_eq!(parse_retention_days_input("30"), Ok(30));
-        assert_eq!(
-            parse_retention_days_input("not-a-number"),
-            Err("Retention days must be a whole number")
-        );
-        assert_eq!(
-            parse_retention_days_input("0"),
-            Err("Retention days must be between 1 and 3650")
-        );
-        assert_eq!(
-            parse_retention_days_input("3651"),
-            Err("Retention days must be between 1 and 3650")
-        );
-    }
-
-    #[test]
-    fn parse_schedule_interval_input_rejects_non_numeric_and_unbounded_values() {
-        assert_eq!(parse_schedule_interval_input("60"), Ok(60));
-        assert_eq!(
-            parse_schedule_interval_input("later"),
-            Err("Schedule interval must be a whole number")
-        );
-        assert_eq!(
-            parse_schedule_interval_input("0"),
-            Err("Schedule interval must be between 1 and 525600")
-        );
-        assert_eq!(
-            parse_schedule_interval_input("525601"),
-            Err("Schedule interval must be between 1 and 525600")
         );
     }
 

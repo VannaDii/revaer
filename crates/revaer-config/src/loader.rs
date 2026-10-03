@@ -16,7 +16,7 @@ use revaer_data::config::{
     FsOptionalStringField, FsPolicyRow, FsStringField, LabelPolicyRow, NewSetupToken,
     SETTINGS_CHANNEL, SeedingToggleSet,
 };
-use sqlx::postgres::{PgListener, PgNotification, PgPoolOptions};
+use sqlx::postgres::{PgConnectOptions, PgListener, PgNotification, PgPoolOptions};
 use sqlx::{Executor, Postgres, Transaction};
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -137,23 +137,23 @@ pub struct ConfigService {
 }
 
 impl ConfigService {
-    /// Establish a connection pool and ensure migrations are applied.
+    /// Establish a connection pool and verify its packaged database baseline.
     ///
     /// # Errors
     ///
     /// Returns an error if the `PostgreSQL` connection cannot be established or
-    /// migrations fail to run.
+    /// the runtime database does not match this artifact.
     #[instrument(name = "config_service.new", skip(database_url))]
     pub async fn new(database_url: impl Into<String>) -> ConfigResult<Self> {
         Self::new_with_session(database_url, None).await
     }
 
-    /// Establish a connection pool and ensure migrations are applied with session settings.
+    /// Verify the packaged baseline, then establish a pool with session settings.
     ///
     /// # Errors
     ///
     /// Returns an error if the `PostgreSQL` connection cannot be established or
-    /// migrations fail to run.
+    /// the runtime database does not match this artifact.
     #[instrument(
         name = "config_service.new_with_session",
         skip(database_url, session_config)
@@ -170,14 +170,29 @@ impl ConfigService {
             }
             None => None,
         };
-        let migrator_pool = PgPoolOptions::new()
+        let options = PgConnectOptions::from_str(&database_url).map_err(|_| {
+            tracing::error!(
+                reason = "invalid_configuration",
+                "database baseline configuration failed"
+            );
+            ConfigError::InvalidField {
+                section: "database".to_owned(),
+                field: "connection".to_owned(),
+                value: None,
+                reason: "invalid_configuration",
+            }
+        })?;
+        let verification_pool = PgPoolOptions::new()
             .max_connections(1)
             .acquire_timeout(Duration::from_secs(10))
-            .connect(&database_url)
-            .await
-            .map_err(map_sqlx_err("config.connect.migrations"))?;
+            .connect_lazy_with(options.clone().options([("statement_timeout", "10000")]));
 
-        apply_migrations(&migrator_pool).await?;
+        let verified = data_config::verify_database(&verification_pool).await;
+        verification_pool.close().await;
+        verified.map_err(|source| ConfigError::DataAccess {
+            operation: "config.baseline",
+            source,
+        })?;
 
         let pool = PgPoolOptions::new()
             .max_connections(8)
@@ -197,7 +212,7 @@ impl ConfigService {
                     Ok(())
                 })
             })
-            .connect(&database_url)
+            .connect_with(options)
             .await
             .map_err(map_sqlx_err("config.connect"))?;
 
@@ -794,16 +809,6 @@ impl SettingsFacade for ConfigService {
         info!("factory reset completed");
         Ok(())
     }
-}
-
-async fn apply_migrations(pool: &sqlx::PgPool) -> Result<()> {
-    data_config::run_migrations(pool)
-        .await
-        .map_err(|source| ConfigError::DataAccess {
-            operation: "config.migrations",
-            source,
-        })?;
-    Ok(())
 }
 
 async fn fetch_app_profile(pool: &sqlx::PgPool) -> Result<AppProfile> {

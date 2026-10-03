@@ -126,7 +126,17 @@ impl MediaDiscoveryRuntime {
 
     async fn run_tick(&mut self) -> Result<(), MediaDiscoveryRuntimeError> {
         let profiles = self.store.list_profiles().await?;
-        for error in self.watcher.synchronize(&profiles) {
+        let watch_roots = profiles
+            .iter()
+            .filter(|profile| profile.watcher_enabled)
+            .map(|profile| {
+                (
+                    profile.media_profile_public_id,
+                    PathBuf::from(&profile.source_root),
+                )
+            })
+            .collect();
+        for error in self.watcher.synchronize(&watch_roots) {
             warn!(error = %error, "media watcher synchronization failed");
             self.telemetry
                 .inc_media_discovery_candidate("watcher", "setup_failed");
@@ -361,7 +371,7 @@ impl MediaDiscoveryRuntime {
     }
 
     fn record_watch_event(&mut self, event: &MediaWatchEvent) {
-        let Some(profile) = self.watcher_profiles.get(&event.media_profile_public_id) else {
+        let Some(profile) = self.watcher_profiles.get(&event.registration_public_id) else {
             return;
         };
         let Some(profile_path) = rebase_watch_event_path(&event.path, &profile.source_root) else {
@@ -371,12 +381,12 @@ impl MediaDiscoveryRuntime {
         else {
             return;
         };
-        let key = (event.media_profile_public_id, owner);
+        let key = (event.registration_public_id, owner);
         if self.pending_watch_events.len() >= WATCH_EVENT_CAPACITY
             && !self.pending_watch_events.contains_key(&key)
         {
             self.overflowed_profiles
-                .insert(event.media_profile_public_id);
+                .insert(event.registration_public_id);
             return;
         }
         self.pending_watch_events

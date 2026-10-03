@@ -31,6 +31,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use uuid::Uuid;
 
 mod association;
+mod association_response;
 mod catalog;
 mod catalog_capability;
 mod catalog_generation;
@@ -39,16 +40,27 @@ mod catalog_scalar;
 mod catalog_slot;
 mod catalog_state;
 mod object;
+pub(crate) use object::deserialize as deserialize_root_object;
 mod profile;
+mod profile_response;
 mod readiness;
 
 pub use association::{DiscoveryAssociationRequest, DiscoveryModes};
+pub use association_response::{DiscoveryAssociationResponse, DiscoveryAssociationResponseFields};
+mod association_page;
+pub use association_page::{AssociationCollectionCursor, DiscoveryAssociationPageResponse};
 pub use catalog::{RootCatalogError, RootCatalogPageResponse};
 pub use catalog_capability::RootCatalogCapability;
 pub use catalog_generation::{RootCatalogGeneration, RootCatalogGenerationFields};
 pub use catalog_kind::RootCatalogAllowedKind;
 pub use catalog_slot::{RootCatalogSlot, RootCatalogSlotFields};
 pub use profile::{ProfileVersionRequest, ProfileVersionRequestFields};
+mod profile_page;
+pub use profile_page::{ProfileCollectionCursor, ProfileVersionPageResponse};
+pub use profile_response::{
+    ProfileLifecycle, ProfileRootBinding, ProfileRootResolution, ProfileVersionResponse,
+    ProfileVersionResponseFields,
+};
 
 pub use readiness::{
     RootAttestationFailure, RootCatalogReadinessResponse, RootCatalogReadinessState, RootKind,

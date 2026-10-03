@@ -104,6 +104,13 @@ expect_failure() {
 make_fixture "${baseline}"
 run_guardrail "${baseline}" >/dev/null
 
+case_root="$(new_case tracked-source-inventory)"
+mkdir -p "${case_root}/operator-scratch"
+printf '%s\n' 'local diagnostic output' > "${case_root}/operator-scratch/output.txt"
+run_guardrail "${case_root}" >/dev/null
+git -C "${case_root}" add operator-scratch/output.txt
+expect_failure "a tracked top-level source absent from sonar.sources" "${case_root}"
+
 case_root="$(new_case deceptive-text)"
 printf '%s\n' '# uses: owner/action@main' >> "${case_root}/.github/workflows/pr.yml"
 replace_once "${case_root}/.github/workflows/pr.yml" \

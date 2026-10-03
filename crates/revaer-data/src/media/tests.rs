@@ -8,7 +8,7 @@ use super::{
     MediaRootIdentity, MediaRootIdentityError, MediaRootIdentityResolver,
     StdMediaRootIdentityResolver,
 };
-use crate::config::run_migrations;
+use crate::config::verify_database;
 use crate::media::jobs::{
     EnqueueDiscoveredMediaJobInput, enqueue_discovered_media_job, get_media_job,
     media_job_worker_claim_next,
@@ -53,7 +53,7 @@ async fn setup_db(test_name: &str) -> anyhow::Result<Option<TestDb>> {
         .max_connections(8)
         .connect(database.connection_string())
         .await?;
-    run_migrations(&pool).await?;
+    verify_database(&pool).await?;
     Ok(Some(TestDb {
         _database: database,
         pool,

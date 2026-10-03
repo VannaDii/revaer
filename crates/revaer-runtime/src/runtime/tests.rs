@@ -25,7 +25,7 @@ async fn test_store() -> anyhow::Result<(TestDatabase, RuntimeStore)> {
         .max_connections(5)
         .connect(postgres.connection_string())
         .await?;
-    let store = RuntimeStore::new(pool).await?;
+    let store = RuntimeStore::new(pool);
     Ok((postgres, store))
 }
 

@@ -1,4 +1,4 @@
-//! Configuration schema migrations and helpers shared across crates.
+//! Configuration stored-procedure helpers shared across crates.
 
 use crate::error::{DataError, Result};
 use chrono::{DateTime, Utc};
@@ -13,19 +13,15 @@ fn map_query_err(operation: &'static str) -> impl FnOnce(sqlx::Error) -> DataErr
     move |source| DataError::QueryFailed { operation, source }
 }
 
-/// Apply all configuration-related migrations (shared with runtime).
+/// Verify the packaged baseline before configuration access.
 ///
 /// # Errors
 ///
-/// Returns an error when migration execution fails.
-pub async fn run_migrations(pool: &PgPool) -> Result<()> {
-    // Migrations cover configuration, tracker normalization, and peer class state.
-    let mut migrator = sqlx::migrate!("./migrations");
-    migrator.set_ignore_missing(true);
-    migrator
-        .run(pool)
+/// Returns an error when the runtime database does not match this artifact.
+pub async fn verify_database(pool: &PgPool) -> Result<()> {
+    crate::baseline::verify_runtime_pool(pool)
         .await
-        .map_err(|source| DataError::MigrationFailed { source })?;
+        .map_err(|source| DataError::BaselineFailed { source })?;
     Ok(())
 }
 

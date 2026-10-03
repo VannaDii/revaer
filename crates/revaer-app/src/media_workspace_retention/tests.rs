@@ -142,6 +142,8 @@ async fn failed_and_cancelled_diagnostics_expire_after_quarantine_window() -> an
 fn persisted_snapshot_requires_positive_consistent_bounds() {
     let rows = vec![MediaWorkspaceRetentionSnapshotRow {
         media_job_public_id: None,
+        attempt_number: None,
+        claim_generation: None,
         workspace_retention_seconds: 0,
         diagnostic_workspace_retention_seconds: 30,
         max_entries_per_tick: 1,

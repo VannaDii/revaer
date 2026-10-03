@@ -5,15 +5,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use revaer_data::media::profiles::MediaProfileRow;
 use thiserror::Error;
 use tracing::warn;
 use uuid::Uuid;
 
-/// One filesystem event associated with a configured media profile.
+/// One filesystem event keyed by its caller-owned registration identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MediaWatchEvent {
-    pub(crate) media_profile_public_id: Uuid,
+    pub(crate) registration_public_id: Uuid,
     pub(crate) path: PathBuf,
 }
 
@@ -48,13 +47,13 @@ impl MediaWatchEventBuffer {
             .state
             .lock()
             .map_err(|error| MediaWatcherError::EventBuffer(error.to_string()))?;
-        let key = (event.media_profile_public_id, event.path.clone());
+        let key = (event.registration_public_id, event.path.clone());
         if state.events.contains_key(&key) || state.events.len() < self.capacity {
             state.events.insert(key, event);
         } else {
             state
                 .overflowed_profiles
-                .insert(event.media_profile_public_id);
+                .insert(event.registration_public_id);
         }
         drop(state);
         Ok(())
@@ -72,9 +71,9 @@ impl MediaWatchEventBuffer {
     }
 }
 
-/// Injectable filesystem watcher boundary.
+/// Injectable filesystem watcher boundary; callers resolve authority and roots.
 pub(crate) trait MediaWatcher: Send + Sync {
-    fn synchronize(&mut self, profiles: &[MediaProfileRow]) -> Vec<MediaWatcherError>;
+    fn synchronize(&mut self, roots: &BTreeMap<Uuid, PathBuf>) -> Vec<MediaWatcherError>;
 }
 
 struct WatchRegistration {
@@ -97,13 +96,12 @@ impl NotifyMediaWatcher {
         }
     }
 
-    fn register(&mut self, profile: &MediaProfileRow) -> Result<(), MediaWatcherError> {
-        let source_root = PathBuf::from(&profile.source_root);
+    fn register(&mut self, profile_id: Uuid, source_root: &Path) -> Result<(), MediaWatcherError> {
+        let source_root = source_root.to_path_buf();
         if !source_root.is_dir() {
             return Err(MediaWatcherError::SourceRootUnavailable(source_root));
         }
 
-        let profile_id = profile.media_profile_public_id;
         let sender = self.events.clone();
         let mut watcher = notify::recommended_watcher(move |result: notify::Result<Event>| {
             forward_watch_result(profile_id, &sender, result);
@@ -138,7 +136,7 @@ fn forward_watch_result(
         Ok(event) if event_can_change_media(event.kind) => {
             for path in event.paths {
                 if let Err(error) = events.record(MediaWatchEvent {
-                    media_profile_public_id: profile_id,
+                    registration_public_id: profile_id,
                     path,
                 }) {
                     warn!(error = %error, "media watcher event buffer failed");
@@ -148,7 +146,7 @@ fn forward_watch_result(
         Ok(_) => {}
         Err(error) => {
             warn!(
-                media_profile_public_id = %profile_id,
+                registration_public_id = %profile_id,
                 error = %error,
                 "media filesystem watcher event failed"
             );
@@ -157,29 +155,17 @@ fn forward_watch_result(
 }
 
 impl MediaWatcher for NotifyMediaWatcher {
-    fn synchronize(&mut self, profiles: &[MediaProfileRow]) -> Vec<MediaWatcherError> {
-        let desired = profiles
-            .iter()
-            .filter(|profile| profile.watcher_enabled)
-            .map(|profile| {
-                (
-                    profile.media_profile_public_id,
-                    PathBuf::from(&profile.source_root),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
+    fn synchronize(&mut self, roots: &BTreeMap<Uuid, PathBuf>) -> Vec<MediaWatcherError> {
         self.registrations.retain(|profile_id, registration| {
-            desired
+            roots
                 .get(profile_id)
                 .is_some_and(|root| root == &registration.source_root)
         });
 
         let mut errors = Vec::new();
-        for profile in profiles.iter().filter(|profile| profile.watcher_enabled) {
-            if !self
-                .registrations
-                .contains_key(&profile.media_profile_public_id)
-                && let Err(error) = self.register(profile)
+        for (profile_id, root) in roots {
+            if !self.registrations.contains_key(profile_id)
+                && let Err(error) = self.register(*profile_id, root)
             {
                 errors.push(error);
             }
@@ -220,11 +206,9 @@ mod tests {
         MediaWatchEvent, MediaWatchEventBuffer, MediaWatcher, NotifyMediaWatcher,
         event_can_change_media, forward_watch_result,
     };
-    use chrono::Utc;
     use notify::event::{CreateKind, ModifyKind, RemoveKind};
     use notify::{Event, EventKind};
-    use revaer_data::media::profiles::MediaProfileRow;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::path::PathBuf;
     use std::sync::Arc;
     use uuid::Uuid;
@@ -242,30 +226,48 @@ mod tests {
     fn native_watcher_registers_recursive_source_root() -> anyhow::Result<()> {
         let root = tempfile::tempdir()?;
         let profile_id = Uuid::new_v4();
-        let profile = MediaProfileRow {
-            media_profile_public_id: profile_id,
-            profile_key: "watch-test".to_string(),
-            source_root: root.path().to_string_lossy().into_owned(),
-            output_root: root.path().join("output").to_string_lossy().into_owned(),
-            dry_run_only: true,
-            retention_days: 30,
-            compatibility_target_key: None,
-            policy_key: "safe_dry_run".to_string(),
-            watcher_enabled: true,
-            schedule_enabled: false,
-            schedule_interval_minutes: None,
-            desired_target_key: None,
-            desired_target_version: None,
-            updated_at: Utc::now(),
-        };
         let events = Arc::new(MediaWatchEventBuffer::new(32));
         let mut watcher = NotifyMediaWatcher::new(events);
-        let errors = watcher.synchronize(&[profile]);
+        let roots = BTreeMap::from([(profile_id, root.path().to_path_buf())]);
+        let errors = watcher.synchronize(&roots);
         if let Some(error) = errors.into_iter().next() {
             return Err(error.into());
         }
         assert!(watcher.registrations.contains_key(&profile_id));
+        assert!(watcher.synchronize(&BTreeMap::new()).is_empty());
+        assert!(watcher.registrations.is_empty());
         Ok(())
+    }
+
+    #[test]
+    fn native_watcher_delivers_nested_file_creation() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let nested = root.path().join("nested");
+        std::fs::create_dir(&nested)?;
+        let id = Uuid::new_v4();
+        let events = Arc::new(MediaWatchEventBuffer::new(32));
+        let mut watcher = NotifyMediaWatcher::new(Arc::clone(&events));
+        let errors = watcher.synchronize(&BTreeMap::from([(id, root.path().to_path_buf())]));
+        if let Some(error) = errors.into_iter().next() {
+            return Err(error.into());
+        }
+        let file = nested.join("native-event.txt");
+        std::fs::write(&file, b"owned event fixture")?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let batch = events.drain()?;
+            if batch.events.iter().any(|event| {
+                event.registration_public_id == id
+                    && event.path.ends_with("nested/native-event.txt")
+            }) {
+                return Ok(());
+            }
+            anyhow::ensure!(
+                std::time::Instant::now() < deadline,
+                "native recursive event was not delivered"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 
     #[test]
@@ -281,7 +283,7 @@ mod tests {
         assert_eq!(
             drained.events,
             vec![MediaWatchEvent {
-                media_profile_public_id: profile_id,
+                registration_public_id: profile_id,
                 path: media_path,
             }]
         );
@@ -294,7 +296,7 @@ mod tests {
         let events = MediaWatchEventBuffer::new(4);
         for index in 0..1_024 {
             events.record(MediaWatchEvent {
-                media_profile_public_id: profile_id,
+                registration_public_id: profile_id,
                 path: PathBuf::from(format!("movie-{}.mkv", index % 8)),
             })?;
         }

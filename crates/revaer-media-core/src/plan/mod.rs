@@ -68,7 +68,7 @@ pub enum CandidateRejectionReason {
     DominatedByLowerCost,
     /// An equal-cost candidate lost the deterministic id tie-break.
     DeterministicTieBreak,
-    /// The active runtime capability set cannot execute an operation in this candidate.
+    /// Runtime capabilities or explicit policy disallow an operation in this candidate.
     UnsupportedOperation,
     /// Candidate operations do not safely reconcile the source and desired graphs.
     UnsafeOrUnverifiable,
@@ -99,6 +99,9 @@ pub struct PlanSelection {
 /// Candidate generation failure.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum PlanGenerationError {
+    /// Explicit policy costs cannot be represented by the planning result.
+    #[error("candidate operation cost exceeds the supported range")]
+    CostOverflow,
     /// The desired graph references outputs that have no available source or external input.
     #[error("desired output stream is missing a source binding")]
     MissingDesiredStream,
@@ -113,7 +116,7 @@ pub enum PlanGenerationError {
 /// Intermediate candidate set after invalid and dominated plans are removed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrunedCandidates {
-    viable: Vec<CandidatePlan>,
+    viable: Vec<(CandidatePlan, u32)>,
     rejected: Vec<RejectedCandidatePlan>,
 }
 
@@ -205,9 +208,64 @@ pub fn prune_invalid_and_dominated_with<F>(
 where
     F: Fn(&CandidatePlan) -> Result<(), CandidateRejectionReason>,
 {
+    prune_with_costs(candidates, validate, |candidate| {
+        Ok(candidate_plan_cost(candidate))
+    })
+}
+
+/// Rank candidates using a complete explicit policy-cost family.
+///
+/// Disabled operations are rejected before ranking, regardless of their weight.
+/// The caller's safety/capability validator remains mandatory.
+///
+/// # Errors
+/// Returns an error for cost overflow or when no candidate can be admitted.
+pub fn prune_with_policy<F>(
+    candidates: Vec<CandidatePlan>,
+    costs: &crate::policy::OperationCosts,
+    validate: F,
+) -> Result<PrunedCandidates, PlanGenerationError>
+where
+    F: Fn(&CandidatePlan) -> Result<(), CandidateRejectionReason>,
+{
+    prune_with_costs(
+        candidates,
+        |candidate| {
+            if candidate
+                .operations
+                .iter()
+                .any(|operation| !costs.get(operation.kind).enabled)
+            {
+                return Err(CandidateRejectionReason::UnsupportedOperation);
+            }
+            validate(candidate)
+        },
+        |candidate| {
+            candidate
+                .operations
+                .iter()
+                .try_fold(0_u32, |total, operation| {
+                    total
+                        .checked_add(costs.get(operation.kind).cost_weight)
+                        .ok_or(PlanGenerationError::CostOverflow)
+                })
+        },
+    )
+}
+
+fn prune_with_costs<F, C>(
+    candidates: Vec<CandidatePlan>,
+    validate: F,
+    cost: C,
+) -> Result<PrunedCandidates, PlanGenerationError>
+where
+    F: Fn(&CandidatePlan) -> Result<(), CandidateRejectionReason>,
+    C: Fn(&CandidatePlan) -> Result<u32, PlanGenerationError>,
+{
     let mut valid = Vec::new();
     let mut rejected = Vec::new();
     for candidate in candidates {
+        let total_cost = cost(&candidate)?;
         let rejection = if candidate_shape_is_valid(&candidate) {
             validate(&candidate).err()
         } else {
@@ -215,26 +273,24 @@ where
         };
         if let Some(reason) = rejection {
             rejected.push(RejectedCandidatePlan {
-                total_cost: candidate_plan_cost(&candidate),
                 candidate,
+                total_cost,
                 reason,
             });
         } else {
-            valid.push(candidate);
+            valid.push((candidate, total_cost));
         }
     }
     valid.sort_by(|left, right| {
-        candidate_plan_cost(left)
-            .cmp(&candidate_plan_cost(right))
-            .then_with(|| left.id.cmp(&right.id))
+        left.1
+            .cmp(&right.1)
+            .then_with(|| left.0.id.cmp(&right.0.id))
     });
-    let Some(selected) = valid.first().cloned() else {
+    let Some((selected, selected_cost)) = valid.first().cloned() else {
         rejected.sort_by(|left, right| left.candidate.id.cmp(&right.candidate.id));
         return Err(PlanGenerationError::NoValidCandidate { rejected });
     };
-    let selected_cost = candidate_plan_cost(&selected);
-    for candidate in valid.into_iter().skip(1) {
-        let total_cost = candidate_plan_cost(&candidate);
+    for (candidate, total_cost) in valid.into_iter().skip(1) {
         rejected.push(RejectedCandidatePlan {
             candidate,
             total_cost,
@@ -246,7 +302,7 @@ where
         });
     }
     Ok(PrunedCandidates {
-        viable: vec![selected],
+        viable: vec![(selected, selected_cost)],
         rejected,
     })
 }
@@ -259,12 +315,11 @@ where
 pub fn select_candidate(
     mut candidates: PrunedCandidates,
 ) -> Result<PlanSelection, PlanGenerationError> {
-    let Some(selected) = candidates.viable.pop() else {
+    let Some((selected, selected_cost)) = candidates.viable.pop() else {
         return Err(PlanGenerationError::NoValidCandidate {
             rejected: candidates.rejected,
         });
     };
-    let selected_cost = candidate_plan_cost(&selected);
     candidates.rejected.sort_by(|left, right| {
         left.total_cost
             .cmp(&right.total_cost)

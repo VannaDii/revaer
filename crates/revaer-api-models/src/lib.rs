@@ -18,7 +18,10 @@
 //! contract deterministic. The conversions live close to the server so the
 //! mapping from domain objects (`TorrentStatus`, `FileSelectionUpdate`, etc.)
 //! remains a single source of truth.
+mod media_output;
 pub mod media_root_contract;
+pub mod media_schedule;
+pub use media_output::{MediaOutputPreservation, MediaPolicyOutput};
 
 use base64::{Engine as _, engine::general_purpose};
 use chrono::{DateTime, Utc};
@@ -484,19 +487,31 @@ pub struct MediaProfileValidationResponse {
     pub issues: Vec<String>,
 }
 
-/// Media profile execution readiness response.
+/// Path-free latest/active profile readiness; not execution authority.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct MediaProfileReadinessResponse {
-    /// Whether this profile can currently queue non-dry-run execution.
-    pub ready: bool,
-    /// Stable readiness reason code when not ready.
+    /// Latest complete version and the parent head references.
+    pub profile: media_root_contract::ProfileVersionResponse,
+    /// Complete active version body, absent only when no active head exists.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-    /// Profile evaluated for readiness.
-    pub profile: MediaProfileResponse,
-    /// Latest capability snapshot when available.
+    pub active_profile: Option<media_root_contract::ProfileVersionRequest>,
+    /// Current readiness of the active version's exact logical bindings.
+    pub active_root_bindings: Vec<media_root_contract::ProfileRootBinding>,
+    /// Current catalog readiness counts by kind, without paths or identities.
+    pub root_readiness: media_root_contract::RootCatalogReadinessResponse,
+    /// Number of current active associations, bounded to 128.
+    pub active_association_count: u16,
+    /// Whether all active version bindings are currently ready.
+    pub binding_ready: bool,
+    /// Stable reason when binding readiness is false.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub snapshot: Option<MediaCapabilitySnapshotResponse>,
+    pub binding_reason: Option<String>,
+    /// Whether those bindings also have destructive readiness evidence.
+    pub destructive_ready: bool,
+    /// Stable reason when destructive readiness is false.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destructive_reason: Option<String>,
 }
 
 /// Compatibility target summary.
@@ -668,17 +683,6 @@ pub struct MediaDesiredTargetListResponse {
     pub targets: Vec<MediaDesiredTargetResponse>,
 }
 
-/// Request payload for pinning or clearing a profile desired target.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct MediaProfileDesiredTargetRequest {
-    /// Desired-target key. Omit to clear the profile target.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_key: Option<String>,
-    /// Exact immutable version. Required when `target_key` is supplied.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<i32>,
-}
-
 /// Boolean selection for one media verification check.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
@@ -707,6 +711,8 @@ impl std::fmt::Display for MediaVerificationToggle {
 /// Media policy summary.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaPolicyResponse {
+    /// Complete output behavior of this exact policy version.
+    pub output: MediaPolicyOutput,
     /// Stable policy key.
     pub policy_key: String,
     /// Version selected from the policy catalog.
@@ -739,6 +745,8 @@ pub struct MediaPolicyListResponse {
 /// Request payload for creating or replacing a media policy version.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaPolicyUpsertRequest {
+    /// Explicit complete output settings, frozen when referenced.
+    pub output: MediaPolicyOutput,
     /// Stable policy key.
     pub policy_key: String,
     /// Version to create or replace.
@@ -796,12 +804,35 @@ pub struct MediaJobRetentionUpdateRequest {
 }
 
 /// Request payload for previewing media planning admission.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct MediaPlanningPreviewRequest {
-    /// Profile association used for planning.
-    pub media_profile_public_id: Uuid,
-    /// Candidate source path.
+    /// Exact active discovery association used for planning admission.
+    pub media_discovery_association_public_id: Uuid,
+    /// Explicit root-relative candidate path, never an absolute path.
     pub source_path: String,
+}
+
+impl<'de> Deserialize<'de> for MediaPlanningPreviewRequest {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            media_discovery_association_public_id: Uuid,
+            source_path: String,
+        }
+        let wire: Wire = media_root_contract::deserialize_root_object(deserializer)?;
+        if wire.source_path.is_empty() {
+            return Err(serde::de::Error::custom(
+                media_root_contract::RootInputError,
+            ));
+        }
+        media_root_contract::validate_root_association_prefix(&wire.source_path)
+            .map_err(serde::de::Error::custom)?;
+        Ok(Self {
+            media_discovery_association_public_id: wire.media_discovery_association_public_id,
+            source_path: wire.source_path,
+        })
+    }
 }
 
 /// Media planning preview response.
@@ -822,12 +853,121 @@ pub struct MediaPlanningPreviewResponse {
 }
 
 /// Request payload for previewing manual media discovery.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct MediaDiscoveryPreviewRequest {
-    /// Profile association used for discovery.
-    pub media_profile_public_id: Uuid,
-    /// Candidate source paths to inspect.
+    /// Exact active discovery association used for scope eligibility.
+    pub media_discovery_association_public_id: Uuid,
+    /// Explicit root-relative candidate paths, never absolute paths.
     pub source_paths: Vec<String>,
+}
+
+impl MediaDiscoveryPreviewRequest {
+    /// Check the complete bounded root-relative candidate list.
+    ///
+    /// # Errors
+    /// Rejects empty/oversized lists and empty, absolute or non-component-safe paths.
+    pub fn validate(&self) -> Result<(), media_root_contract::RootInputError> {
+        if self.source_paths.is_empty() || self.source_paths.len() > 128 {
+            return Err(media_root_contract::RootInputError);
+        }
+        for path in &self.source_paths {
+            if path.is_empty() {
+                return Err(media_root_contract::RootInputError);
+            }
+            media_root_contract::validate_root_association_prefix(path)?;
+        }
+        Ok(())
+    }
+}
+
+impl<'de> Deserialize<'de> for MediaDiscoveryPreviewRequest {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            media_discovery_association_public_id: Uuid,
+            source_paths: Vec<String>,
+        }
+        let wire: Wire = media_root_contract::deserialize_root_object(deserializer)?;
+        let request = Self {
+            media_discovery_association_public_id: wire.media_discovery_association_public_id,
+            source_paths: wire.source_paths,
+        };
+        request.validate().map_err(serde::de::Error::custom)?;
+        Ok(request)
+    }
+}
+
+#[cfg(test)]
+mod discovery_preview_contract_tests {
+    use super::{MediaDiscoveryPreviewRequest, MediaPlanningPreviewRequest};
+
+    #[test]
+    fn planning_preview_requires_named_association_and_relative_path()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let id = uuid::Uuid::from_u128(1);
+        let valid = serde_json::json!({"media_discovery_association_public_id": id, "source_path": "Movies/a.mkv"});
+        let request: MediaPlanningPreviewRequest = serde_json::from_value(valid.clone())?;
+        assert_eq!(request.source_path, "Movies/a.mkv");
+        for path in ["", "/private/a", "../a", "a//b", "a/./b", "a\\b"] {
+            let mut invalid = valid.clone();
+            invalid["source_path"] = serde_json::json!(path);
+            assert!(serde_json::from_value::<MediaPlanningPreviewRequest>(invalid).is_err());
+        }
+        let mut oversized = valid;
+        oversized["source_path"] = serde_json::json!("a".repeat(4097));
+        assert!(serde_json::from_value::<MediaPlanningPreviewRequest>(oversized).is_err());
+        for invalid in [
+            serde_json::json!([id, "a"]),
+            serde_json::json!({"media_profile_public_id": id, "source_path": "a"}),
+            serde_json::json!({"media_discovery_association_public_id": id, "source_path": null}),
+            serde_json::json!({"media_discovery_association_public_id": id}),
+            serde_json::json!({"media_discovery_association_public_id": id, "source_path": "a", "extra": true}),
+        ] {
+            assert!(serde_json::from_value::<MediaPlanningPreviewRequest>(invalid).is_err());
+        }
+        assert!(serde_json::from_str::<MediaPlanningPreviewRequest>(&format!(
+            "{{\"media_discovery_association_public_id\":\"{id}\",\"source_path\":\"a\",\"source_path\":\"b\"}}"
+        )).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn manual_preview_requires_named_association_and_bounded_relative_paths()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let id = uuid::Uuid::from_u128(1);
+        let valid = serde_json::json!({"media_discovery_association_public_id": id, "source_paths": ["Movies/a.mkv"]});
+        let request: MediaDiscoveryPreviewRequest = serde_json::from_value(valid.clone())?;
+        assert_eq!(request.source_paths, ["Movies/a.mkv"]);
+        for path in ["", "/private/a", "../a", "a//b", "a/./b", "a\\b"] {
+            let mut invalid = valid.clone();
+            invalid["source_paths"] = serde_json::json!([path]);
+            assert!(serde_json::from_value::<MediaDiscoveryPreviewRequest>(invalid).is_err());
+        }
+        for paths in [
+            Vec::<String>::new(),
+            vec!["a".into(); 129],
+            vec!["a".repeat(4097)],
+        ] {
+            let mut invalid = valid.clone();
+            invalid["source_paths"] = serde_json::to_value(paths)?;
+            assert!(serde_json::from_value::<MediaDiscoveryPreviewRequest>(invalid).is_err());
+        }
+        assert!(
+            serde_json::from_value::<MediaDiscoveryPreviewRequest>(serde_json::json!([id, ["a"]]))
+                .is_err()
+        );
+        assert!(
+            serde_json::from_value::<MediaDiscoveryPreviewRequest>(
+                serde_json::json!({"media_profile_public_id": id, "source_paths": ["a"]})
+            )
+            .is_err()
+        );
+        assert!(serde_json::from_str::<MediaDiscoveryPreviewRequest>(&format!(
+            "{{\"media_discovery_association_public_id\":\"{id}\",\"source_paths\":[\"a\"],\"source_paths\":[\"b\"]}}"
+        )).is_err());
+        Ok(())
+    }
 }
 
 /// Discovery preview result for one candidate source path.
@@ -854,14 +994,8 @@ pub struct MediaDiscoveryPreviewResponse {
     pub previews: Vec<MediaDiscoveryPreviewItemResponse>,
 }
 
-/// Request payload for running manual media discovery.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct MediaDiscoveryRunRequest {
-    /// Profile association used for discovery.
-    pub media_profile_public_id: Uuid,
-    /// Candidate source paths.
-    pub source_paths: Vec<String>,
-}
+/// Discovery runs use the same exact association-relative body as preview.
+pub use MediaDiscoveryPreviewRequest as MediaDiscoveryRunRequest;
 
 /// Discovery run job queued for one accepted source path.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -895,51 +1029,32 @@ pub struct MediaDiscoveryRunResponse {
     pub skipped: Vec<MediaDiscoverySkippedItemResponse>,
 }
 
-/// Discovery schedule summary.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct MediaDiscoveryScheduleResponse {
-    /// Profile public id.
-    pub media_profile_public_id: Uuid,
-    /// Stable profile key.
-    pub profile_key: String,
-    /// Source root used by the path association.
-    pub source_root: String,
-    /// Whether scheduled discovery is enabled.
-    pub enabled: bool,
-    /// Schedule interval in minutes when configured.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub interval_minutes: Option<i32>,
-    /// Whether jobs from this schedule inherit dry-run mode.
-    pub dry_run: bool,
-}
+/// Schedule configuration is the complete path-free discovery association.
+pub use media_root_contract::DiscoveryAssociationResponse as MediaDiscoveryScheduleResponse;
 
 /// Discovery schedule list response.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MediaDiscoveryScheduleListResponse {
     /// Schedule summaries.
     pub schedules: Vec<MediaDiscoveryScheduleResponse>,
+    /// Association collection continuation, absent on the final page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
-/// Discovery watcher summary.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct MediaDiscoveryWatcherResponse {
-    /// Profile public id.
-    pub media_profile_public_id: Uuid,
-    /// Stable profile key.
-    pub profile_key: String,
-    /// Source root used by the path association.
-    pub source_root: String,
-    /// Whether watcher discovery is enabled.
-    pub enabled: bool,
-    /// Whether jobs from this watcher inherit dry-run mode.
-    pub dry_run: bool,
-}
+/// Watcher configuration is the complete path-free discovery association.
+pub use media_root_contract::DiscoveryAssociationResponse as MediaDiscoveryWatcherResponse;
 
 /// Discovery watcher list response.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MediaDiscoveryWatcherListResponse {
     /// Watcher summaries.
     pub watchers: Vec<MediaDiscoveryWatcherResponse>,
+    /// Association collection continuation, absent on the final page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 /// Media job response row payload.
@@ -947,9 +1062,9 @@ pub struct MediaDiscoveryWatcherListResponse {
 pub struct MediaJobResponse {
     /// Job public id.
     pub media_job_public_id: Uuid,
-    /// Source path.
+    /// Candidate path relative to the job's immutable source root.
     pub source_path: String,
-    /// Output path.
+    /// Output path relative to the job's immutable output root.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_path: Option<String>,
     /// Status text.
@@ -1370,10 +1485,78 @@ pub struct MediaYamlExportResponse {
 
 /// YAML validate/apply request payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct MediaYamlImportRequest {
     /// Serialized YAML payload.
     pub yaml_payload: String,
+    /// Explicit resource authority for apply; absent for read-only validation.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "media_yaml_preconditions"
+    )]
+    pub preconditions: Option<Vec<MediaYamlResourcePrecondition>>,
 }
+
+fn media_yaml_preconditions<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Vec<MediaYamlResourcePrecondition>>, D::Error> {
+    Vec::deserialize(deserializer).map(Some)
+}
+
+/// Portable resource identity; names match the native bundle arrays.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaYamlResourceKind {
+    /// Compatibility catalog family.
+    CompatibilityTargets,
+    /// Desired-target catalog family.
+    Targets,
+    /// Policy catalog family.
+    Policies,
+    /// Complete immutable profiles.
+    Profiles,
+    /// Logical discovery associations.
+    DiscoveryAssociations,
+}
+
+/// Operator-supplied creation intent or exact existing-resource head fence.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "intent", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MediaYamlResourcePrecondition {
+    /// Fail rather than overwrite when the logical key already exists.
+    Create {
+        /// Resource family.
+        kind: MediaYamlResourceKind,
+        /// Exact logical key.
+        key: String,
+    },
+    /// Fail rather than overwrite when the resource head has advanced.
+    Match {
+        /// Resource family.
+        kind: MediaYamlResourceKind,
+        /// Exact logical key.
+        key: String,
+        /// Explicit positive expected head version, never inferred from YAML.
+        expected_version: i32,
+    },
+}
+
+impl MediaYamlResourcePrecondition {
+    /// Exact resource identity whose intent must be checked during atomic apply.
+    #[must_use]
+    pub fn resource(&self) -> (MediaYamlResourceKind, &str) {
+        match self {
+            Self::Create { kind, key } | Self::Match { kind, key, .. } => (*kind, key),
+        }
+    }
+}
+
+/// Maximum number of distinct resource preconditions in one atomic import.
+pub const MEDIA_YAML_PRECONDITIONS_MAX: usize = 128;
+
+/// Maximum UTF-8 byte length of one portable media YAML document (ADR 521).
+pub const MEDIA_YAML_BUNDLE_MAX_BYTES: usize = 4 * 1_024 * 1_024;
 
 /// Pointer-addressable media YAML validation issue.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -553,7 +553,7 @@ mod orchestrator_tests {
         };
         let temp = temp_dir()?;
         let config = ConfigService::new(postgres.connection_string().to_string()).await?;
-        let runtime = RuntimeStore::new(config.pool().clone()).await?;
+        let runtime = RuntimeStore::new(config.pool().clone());
         let events = EventBus::with_capacity(4);
         let metrics = Metrics::new()?;
         let fsops = FsOpsService::new(events.clone(), metrics);
@@ -596,7 +596,7 @@ mod orchestrator_tests {
         };
         let temp = temp_dir()?;
         let config = ConfigService::new(postgres.connection_string().to_string()).await?;
-        let runtime = RuntimeStore::new(config.pool().clone()).await?;
+        let runtime = RuntimeStore::new(config.pool().clone());
         let events = EventBus::with_capacity(4);
         let metrics = Metrics::new()?;
         let fsops = FsOpsService::new(events.clone(), metrics);

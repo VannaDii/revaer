@@ -444,8 +444,8 @@
 -   [509](509-opaque-stream-identity-and-unmatched-precedence.md) – Opaque stream identity and unmatched precedence
 -   [510](510-canonical-exact-hdr10-color-volume.md) – Canonical exact HDR10 color volume
 -   [511](511-exact-video-technical-constraints.md) – Exact video technical constraints
--   [512](512-fenced-resumable-worker-ownership-and-recovery.md) – Fenced resumable worker ownership and recovery
--   [513](513-attempt-scoped-workspace-retention-transaction.md) – Attempt-scoped workspace retention transaction
+-   [512](512-fenced-resumable-worker-ownership-and-recovery.md) – Fenced resumable worker ownership and recovery (Superseded by 594)
+-   [513](513-attempt-scoped-workspace-retention-transaction.md) – Attempt-scoped workspace retention transaction (Superseded by 594)
 -   [514](514-packaged-media-subsystem-lifecycle-and-health-contract.md) – Packaged media subsystem lifecycle and health contract
 -   [515](515-versioned-audio-transformation-and-acceptance-contract.md) – Versioned audio transformation and acceptance contract
 -   [516](516-durable-discovery-scheduling-and-versioned-aggregate-identity.md) – Durable discovery scheduling and versioned aggregate identity
@@ -520,5 +520,10 @@
 -   [585](585-fixed-binary-deletion-review.md) - Fixed binary deletion review (Superseded by accepted 588 ASSET-1)
 -   [586](586-compliance-manifest-failure-boundary.md) - Compliance manifest failure boundary (Accepted; C1/C1-D through 588)
 -   [587](587-evidence-led-delivery-governance.md) - Evidence-led delivery governance (Accepted; runtime holds retained)
--   [588](588-first-release-decision-package.md) - First-release approval proposal (Accepted 2026-09-11; exact designs and separate transfer scope, qualification required)
--   [589](589-hash-helper-registration-deadline.md) - Fingerprint helper registration deadline (Proposed; one field only)
+-   [588](588-first-release-decision-package.md) - First-release approval proposal (Superseded by 593; unrelated approvals retained)
+-   [589](589-hash-helper-registration-deadline.md) - Fingerprint helper registration deadline (Superseded by 593)
+-   [590](590-profile-version-wire-completion.md) - Complete profile version wire format (Accepted 2026-09-15)
+-   [591](591-outside-in-first-release-path.md) - Outside-in first-release execution path (Accepted 2026-09-15; implementation in progress)
+-   [592](592-native-root-writer-assertion.md) - Native root writer assertion (Accepted)
+-   [593](593-simple-checkpoint-recovery.md) - Simple checkpoint recovery (Accepted; supersedes custom supervisor machinery)
+-   [594](594-simple-discovery-worker-cleanup.md) - Self-contained transcoding and bounded recovery (Accepted 2026-10-02)

@@ -2,6 +2,9 @@
 
 pub use revaer_api_models::*;
 
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) mod media_configuration;
+
 #[cfg(target_arch = "wasm32")]
 use web_sys::File;
 

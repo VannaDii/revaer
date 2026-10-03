@@ -129,7 +129,15 @@ impl TrustedLocalRootCatalogSource {
             mode: mode_bits(opened.file_stat.st_mode),
             document_bytes: document.len(),
         };
-        Ok(RootCatalogLoad::loaded(catalog, file_evidence))
+        Ok(RootCatalogLoad::loaded(
+            catalog,
+            file_evidence,
+            RetainedSource {
+                location: self.location.clone(),
+                policy: self.trust_policy,
+                opened,
+            },
+        ))
     }
 
     #[cfg(test)]
@@ -175,8 +183,28 @@ pub(super) enum LoadPhase {
 
 struct OpenedSource {
     file: File,
+    directories: Vec<File>,
     directory_stats: Vec<Stat>,
     file_stat: Stat,
+}
+
+pub(super) struct RetainedSource {
+    location: Box<str>,
+    policy: LocalTrustPolicy,
+    opened: OpenedSource,
+}
+
+impl std::fmt::Debug for RetainedSource {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("RetainedSource")
+    }
+}
+
+impl RetainedSource {
+    pub(super) fn revalidate(&self) -> Result<(), RootCatalogSourceError> {
+        validate_policy_identity(self.policy)?;
+        revalidate_source(&self.location, self.policy, &self.opened)
+    }
 }
 
 fn validate_location_bound(location: &str) -> Result<(), RootCatalogSourceError> {
@@ -232,6 +260,7 @@ fn open_source(
     let mut directory = fs::open("/", directory_flags, Mode::empty())
         .map_err(|source| filesystem("open root directory", source))?;
     let mut directory_stats = Vec::with_capacity(directory_components.len() + 1);
+    let mut directories = Vec::with_capacity(directory_components.len() + 1);
     let root_stat =
         fs::fstat(&directory).map_err(|source| filesystem("inspect root directory", source))?;
     validate_directory(&directory, &root_stat, policy)?;
@@ -247,6 +276,7 @@ fn open_source(
             fs::fstat(&next).map_err(|source| filesystem("inspect source directory", source))?;
         validate_directory(&next, &stat, policy)?;
         directory_stats.push(stat);
+        directories.push(File::from(directory));
         directory = next;
     }
 
@@ -269,9 +299,11 @@ fn open_source(
         return Err(untrusted(RootCatalogTrustViolation::SourceChanged));
     }
     validate_packaged_write_protection(&directory, file_name, policy)?;
+    directories.push(File::from(directory));
 
     Ok(Some(OpenedSource {
         file: File::from(file_descriptor),
+        directories,
         directory_stats,
         file_stat,
     }))
@@ -381,6 +413,14 @@ fn revalidate_source(
     policy: LocalTrustPolicy,
     opened: &OpenedSource,
 ) -> Result<(), RootCatalogSourceError> {
+    for (directory, before) in opened.directories.iter().zip(&opened.directory_stats) {
+        let after = fs::fstat(directory)
+            .map_err(|source| filesystem("reinspect source directory", source))?;
+        validate_directory(directory, &after, policy)?;
+        if !stable_directory_metadata(before, &after) {
+            return Err(untrusted(RootCatalogTrustViolation::SourceChanged));
+        }
+    }
     let current_stat =
         fs::fstat(&opened.file).map_err(|source| filesystem("reinspect source file", source))?;
     validate_file(&current_stat, policy)?;

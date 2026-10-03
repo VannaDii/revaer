@@ -9,15 +9,15 @@ import type { ApiSession, AuthMode } from '../support/session';
 type ApiFixtures = {
   api: ApiClient;
   publicApi: ApiClient;
-  session: ApiSession;
   baseUrl: string;
 };
 
 type CoverageFixture = {
   _apiCoverage: void;
+  session: ApiSession;
 };
 
-function resolveBaseUrl(testInfo: TestInfo): string {
+function resolveBaseUrl(testInfo: Pick<TestInfo, 'project'>): string {
   const baseUrl = testInfo.project.use.baseURL;
   if (typeof baseUrl === 'string') {
     return baseUrl;
@@ -25,7 +25,7 @@ function resolveBaseUrl(testInfo: TestInfo): string {
   return process.env.E2E_API_BASE_URL ?? 'http://localhost:7070';
 }
 
-function projectAuthMode(testInfo: TestInfo): AuthMode {
+function projectAuthMode(testInfo: Pick<TestInfo, 'project'>): AuthMode {
   const metadata = testInfo.project.metadata as { authMode?: AuthMode };
   if (!metadata?.authMode) {
     throw new Error(`Missing authMode metadata for ${testInfo.project.name}.`);
@@ -33,7 +33,7 @@ function projectAuthMode(testInfo: TestInfo): AuthMode {
   return metadata.authMode;
 }
 
-function projectCoveragePath(testInfo: TestInfo): string | undefined {
+function projectCoveragePath(testInfo: Pick<TestInfo, 'project'>): string | undefined {
   const metadata = testInfo.project.metadata as { coverageFile?: string };
   if (!metadata?.coverageFile) {
     return undefined;
@@ -49,7 +49,7 @@ function withWorkerSuffix(filePath: string, workerIndex: number): string {
   return path.join(parsed.dir, `${name}${ext}`);
 }
 
-export const test = base.extend<ApiFixtures & CoverageFixture>({
+export const test = base.extend<ApiFixtures, CoverageFixture>({
   _apiCoverage: [
     async ({}, use, testInfo) => {
       const coveragePath = projectCoveragePath(testInfo);

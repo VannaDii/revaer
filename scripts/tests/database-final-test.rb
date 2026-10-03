@@ -8,6 +8,11 @@ module DatabaseFinalTest
 
   def run
     contract = RevaerDatabaseRebaseline::Contract.new
+    if contract.transition_phase == "feature-development"
+      development_tests(contract)
+      return
+    end
+
     final = File.binread(contract.init_path)
     legacy = final.split(RevaerDatabaseRebaseline::FinalSql::MARKER, 2).first
     candidate = legacy.sub(RevaerDatabaseRebaseline::FinalSql::HEADER, RevaerDatabaseRebaseline::FinalSql::ASSEMBLY_HEADER)
@@ -71,6 +76,38 @@ module DatabaseFinalTest
       end
     end
     puts "database-final-test: #{count} exact-delta assertions passed"
+  end
+
+  def development_tests(contract)
+    contract.freeze!
+    validator = RevaerDatabaseRebaseline::FinalSql.new(contract)
+    source = File.binread(contract.init_path)
+    validator.verify_development!(source)
+    count = 1
+    forbidden = %w[BEGIN COMMIT ROLLBACK END VACUUM].map { |token| "#{token};" }
+    forbidden.concat(["CREATE DATABASE unapproved;", "ALTER SYSTEM SET work_mem = '4MB';", "DISCARD ALL;"])
+    %w[SET RESET].each do |command|
+      (RevaerDatabaseRebaseline::FinalSql::TIMEOUTS + ["ALL"]).each do |name|
+        suffix = command == "SET" && name != "ALL" ? " = 0" : ""
+        ["", "LOCAL ", "SESSION "].each do |scope|
+          forbidden << "#{command} #{scope}#{name}#{suffix};"
+        end
+      end
+    end
+    mutations = forbidden.map { |statement| source + "\n-- negative control\n#{statement}\n" }
+    mutations.concat([source.sub(RevaerDatabaseRebaseline::FinalSql::HEADER, "-- unapproved header\n"),
+                      RevaerDatabaseRebaseline::FinalSql::HEADER,
+                      source + "SELECT 'unterminated;\n"])
+    mutations.each_with_index do |mutated, index|
+      begin
+        validator.verify_development!(mutated)
+      rescue RevaerDatabaseRebaseline::Failure
+        count += 1
+      else
+        raise "invalid feature init mutation #{index} passed"
+      end
+    end
+    puts "database-final-test: #{count} current-init assertions passed; historical pins unchanged"
   end
 
   def ingestion_delta_tests(validator, candidate, final)

@@ -1,12 +1,20 @@
 # Attempt-scoped workspace retention transaction
 
+> Current recovery direction: [ADR 593](593-simple-checkpoint-recovery.md)
+> supersedes ADR 588's custom owner/controller machinery and ADR 589's handshake.
+> Historical implementation checkpoints are not current implementation mandates.
+> Other approved contracts remain binding except where explicitly superseded.
+
 > Current approval: The operator accepted ADR 588's exact applicable choices
 > on 2026-09-11 at reviewed commit `9575c077`. The [resolution](588-first-release-decision-package.md#approval-resolution)
 > releases only those named design holds. Earlier pending/candidate wording
 > below retains its historical context; implementation and qualification are
 > not certified, and all other conditions remain binding.
 
-- Status: Accepted
+- Status: Superseded
+- Superseded by: [ADR 594](594-simple-discovery-worker-cleanup.md), accepted
+  2026-10-02. Preserve workspace identity and needed recovery artifacts, not the
+  historical cleanup ownership protocol or obsolete temporary media retention.
 - Date: 2026-08-16
 - Operator approval: Explicitly approved by the operator on 2026-08-16:
   "I approve the ADRs as they are now and I'm resuming your goal."

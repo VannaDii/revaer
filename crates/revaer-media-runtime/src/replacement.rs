@@ -261,6 +261,18 @@ pub trait ReplacementCommitter {
     /// Returns [`ReplacementError`] when manifests cannot be read or conservative recovery fails.
     fn recover(&self, source_root: &Path) -> Result<Vec<RecoveredReplacement>, ReplacementError>;
 
+    /// Recover only the named journal after the caller validates its job authority.
+    /// An absent journal is an expected idempotent outcome.
+    ///
+    /// # Errors
+    /// Propagates invalid ownership, manifests and recovery failures unchanged.
+    fn recover_job(
+        &self,
+        source_root: &Path,
+        job_key: &str,
+        terminal_committed: bool,
+    ) -> Result<Option<RecoveredReplacement>, ReplacementError>;
+
     /// Recover transactions while preserving replacements with a durable terminal database commit.
     ///
     /// # Errors
@@ -338,6 +350,38 @@ impl ReplacementCommitter for SystemReplacementCommitter {
 
     fn recover(&self, source_root: &Path) -> Result<Vec<RecoveredReplacement>, ReplacementError> {
         self.recover_with_terminal_jobs(source_root, &BTreeSet::new())
+    }
+
+    fn recover_job(
+        &self,
+        source_root: &Path,
+        job_key: &str,
+        terminal_committed: bool,
+    ) -> Result<Option<RecoveredReplacement>, ReplacementError> {
+        validate_job_key(job_key)?;
+        let source_root = open_source_root(source_root)?;
+        let managed = source_root.path.join(MANAGED_ROOT_NAME);
+        let root = replacement_root(&source_root.path);
+        let transaction = root.join(job_key);
+        for path in [&managed, &root, &transaction] {
+            match ensure_service_owned_directory(path, "replacement.recovery_job_owner") {
+                Ok(()) => {}
+                Err(ReplacementError::Io { source, .. })
+                    if source.kind() == io::ErrorKind::NotFound =>
+                {
+                    return Ok(None);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        let terminal = if terminal_committed {
+            BTreeSet::from([job_key.to_owned()])
+        } else {
+            BTreeSet::new()
+        };
+        let recovered = recover_transaction(&source_root, &transaction, &terminal)?;
+        sync_directory(&root, "replacement.recovery_job_sync")?;
+        Ok(Some(recovered))
     }
 
     fn recover_with_terminal_jobs(
@@ -1672,6 +1716,80 @@ mod tests {
         assert_eq!(recovered[0].action, ReplacementRecoveryAction::RolledBack);
         assert_eq!(recovered[0].job_key, "interrupted-job");
         assert_eq!(fs::read(&source)?, b"original");
+        Ok(())
+    }
+
+    #[test]
+    fn targeted_recovery_leaves_sibling_journals_and_media_untouched() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let candidates = tempfile::tempdir()?;
+        let committer = SystemReplacementCommitter;
+        for key in ["first-job", "second-job"] {
+            let source = root.path().join(format!("{key}.mkv"));
+            let candidate = candidates.path().join(format!("{key}.mkv"));
+            fs::write(&source, b"original")?;
+            fs::write(&candidate, b"replacement")?;
+            let prepared = committer.prepare(ReplacementRequest {
+                job_key: key,
+                source_root: root.path(),
+                source_path: &source,
+                candidate_path: &candidate,
+            })?;
+            let _committed = committer.commit(prepared)?;
+        }
+        let sibling = super::replacement_root(root.path()).join("second-job");
+        let sibling_manifest = fs::read(sibling.join(super::MANIFEST_FILE_NAME))?;
+        let recovered = committer.recover_job(root.path(), "first-job", false)?;
+        assert!(recovered.is_some_and(|result| result.job_key == "first-job"
+            && result.action == ReplacementRecoveryAction::RolledBack));
+        assert_eq!(fs::read(root.path().join("first-job.mkv"))?, b"original");
+        assert_eq!(
+            fs::read(root.path().join("second-job.mkv"))?,
+            b"replacement"
+        );
+        assert_eq!(
+            fs::read(sibling.join(super::MANIFEST_FILE_NAME))?,
+            sibling_manifest
+        );
+        assert!(
+            committer
+                .recover_job(root.path(), "first-job", false)?
+                .is_none()
+        );
+        assert!(
+            committer
+                .recover_job(root.path(), "absent-job", false)?
+                .is_none()
+        );
+        let finalized = committer.recover_job(root.path(), "second-job", true)?;
+        assert!(
+            finalized.is_some_and(|result| result.action == ReplacementRecoveryAction::Finalized)
+        );
+        assert_eq!(
+            fs::read(root.path().join("second-job.mkv"))?,
+            b"replacement"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn targeted_recovery_rejects_invalid_keys_and_symlinked_managed_root() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let outside = tempfile::tempdir()?;
+        let committer = SystemReplacementCommitter;
+        assert!(
+            committer
+                .recover_job(root.path(), "../outside", false)
+                .is_err()
+        );
+        std::os::unix::fs::symlink(outside.path(), root.path().join(super::MANAGED_ROOT_NAME))?;
+        fs::write(outside.path().join("marker"), b"unchanged")?;
+        assert!(
+            committer
+                .recover_job(root.path(), "absent-job", false)
+                .is_err()
+        );
+        assert_eq!(fs::read(outside.path().join("marker"))?, b"unchanged");
         Ok(())
     }
 

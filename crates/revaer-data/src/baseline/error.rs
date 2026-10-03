@@ -22,6 +22,12 @@ pub enum BaselineReadReason {
     BaselineReadDenied,
     /// The query failed without a more specific verified classification.
     StatementFailed,
+    /// The runtime pool could not provide a connection within ten seconds.
+    PoolAcquireTimeout,
+    /// The baseline statement exceeded its ten-second budget.
+    StatementTimeout,
+    /// The verification connection could not be closed within its cleanup bound.
+    CleanupFailed,
 }
 
 impl BaselineReadReason {
@@ -37,6 +43,9 @@ impl BaselineReadReason {
             Self::BaselineRuntimeRoleMismatch => "baseline_runtime_role_mismatch",
             Self::BaselineReadDenied => "baseline_read_denied",
             Self::StatementFailed => "statement_failed",
+            Self::PoolAcquireTimeout => "pool_acquire_timeout",
+            Self::StatementTimeout => "statement_timeout",
+            Self::CleanupFailed => "cleanup_failed",
         }
     }
 

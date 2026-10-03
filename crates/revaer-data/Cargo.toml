@@ -18,8 +18,11 @@ uuid.workspace = true
 revaer-torrent-core = { path = "../revaer-torrent-core" }
 revaer-events = { path = "../revaer-events" }
 tracing.workspace = true
+tokio.workspace = true
+
+[build-dependencies]
+sha2.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
-tokio.workspace = true
 revaer-test-support = { path = "../revaer-test-support" }

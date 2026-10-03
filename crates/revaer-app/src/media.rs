@@ -1,6 +1,8 @@
 //! Media service wiring for API facade.
 
 use async_trait::async_trait;
+#[cfg(test)]
+use revaer_api::app::media::MediaYamlProfile;
 use revaer_api::app::media::{
     MediaCapabilityReadinessResponse as AppMediaCapabilityReadinessResponse,
     MediaCapabilityRefreshParams,
@@ -21,7 +23,7 @@ use revaer_api::app::media::{
     MediaProfileUpsertParams, MediaRecentJobPageResponse, MediaRecentJobSummaryResponse,
     MediaServiceError, MediaServiceErrorKind, MediaYamlApplyResult, MediaYamlBundle,
     MediaYamlCompatibilityTarget, MediaYamlDesiredTarget, MediaYamlIssue, MediaYamlMetadata,
-    MediaYamlPolicy, MediaYamlProfile, MediaYamlValidationResult,
+    MediaYamlPolicy, MediaYamlValidationResult,
 };
 use revaer_data::DataError;
 use revaer_data::media::capabilities::{
@@ -37,19 +39,15 @@ use revaer_data::media::configuration::{
     UpdateMediaJobRetentionPolicyInput, UpsertMediaCompatibilityTargetInput,
     UpsertMediaPolicyProfileInput, append_media_desired_target_stream_with_executor,
     create_media_desired_target_with_executor, list_media_desired_target_graph_page,
-    set_media_profile_desired_target, set_media_profile_desired_target_with_executor,
-    upsert_media_compatibility_target_with_executor, upsert_media_policy_profile_with_executor,
+    set_media_profile_desired_target, upsert_media_compatibility_target_with_executor,
+    upsert_media_policy_profile_with_executor,
 };
-use revaer_data::media::imports::{
-    MediaImportTransaction, MediaProfileImportDraftRow, UpsertMediaProfileImportDraftInput,
-    delete_media_profile_import_draft_with_executor, list_media_profile_import_drafts,
-    upsert_media_profile_import_draft_with_executor,
-};
+use revaer_data::media::imports::MediaImportTransaction;
 use revaer_data::media::jobs::EnqueueDiscoveredMediaJobInput;
 use revaer_data::media::profiles::{
     MediaProfileRow, UpdateMediaProfileInput, UpsertMediaProfileInput,
-    upsert_media_profile_with_executor,
 };
+#[cfg(test)]
 use revaer_media_core::compile::{MediaProfile, validate_profiles};
 use revaer_media_core::model::StreamKind;
 use revaer_media_core::normalize::{
@@ -71,6 +69,15 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::media_discovery_fingerprint::{FingerprintError, fingerprint_media_aggregate};
+
+mod associations;
+mod portable_export;
+mod profile_readiness;
+mod profile_versions;
+mod root_catalog;
+mod root_readiness;
+mod schedules;
+pub(crate) mod source;
 
 #[derive(Debug, Clone, Copy)]
 enum DiscoveryRunMode {
@@ -95,6 +102,7 @@ pub(crate) struct MediaService {
     store: MediaStore,
     detector: Arc<dyn CapabilityDetector>,
     telemetry: Metrics,
+    source: Option<Arc<dyn source::AssociationSource>>,
 }
 
 impl MediaService {
@@ -109,7 +117,16 @@ impl MediaService {
             store,
             detector,
             telemetry,
+            source: None,
         }
+    }
+
+    pub(crate) fn with_association_source(
+        mut self,
+        source: Option<Arc<dyn source::AssociationSource>>,
+    ) -> Self {
+        self.source = source;
+        self
     }
 
     async fn run_discovery_for_profile(
@@ -454,6 +471,350 @@ impl MediaService {
 
 #[async_trait]
 impl MediaFacade for MediaService {
+    async fn media_schedule_configuration(
+        &self,
+        id: Uuid,
+    ) -> Result<
+        Option<revaer_api::models::media_schedule::MediaScheduleConfigurationResponse>,
+        MediaServiceError,
+    > {
+        revaer_data::media::schedules::read_schedule_configuration(self.store.pool(), id)
+            .await
+            .map_err(|error| map_data_error(&error))?
+            .as_ref()
+            .map(schedules::response)
+            .transpose()
+    }
+
+    async fn media_schedule_configuration_create(
+        &self,
+        actor: Uuid,
+        id: Uuid,
+        request: &revaer_api::models::media_schedule::MediaScheduleConfigurationRequest,
+    ) -> Result<
+        revaer_api::models::media_schedule::MediaScheduleConfigurationResponse,
+        MediaServiceError,
+    > {
+        request.validate().map_err(|_| {
+            MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_configuration_invalid")
+        })?;
+        let row = revaer_data::media::schedules::create_schedule_configuration(
+            self.store.pool(),
+            actor,
+            id,
+            request.association_version,
+            request.interval_quantity,
+            request.interval_unit.as_str(),
+        )
+        .await
+        .map_err(|error| map_data_error(&error))?;
+        schedules::response(&row)
+    }
+    async fn media_schedule_configuration_replace(
+        &self,
+        actor: Uuid,
+        id: Uuid,
+        request: &revaer_api::models::media_schedule::MediaScheduleConfigurationRequest,
+        expected_revision: i64,
+    ) -> Result<
+        revaer_api::models::media_schedule::MediaScheduleConfigurationResponse,
+        MediaServiceError,
+    > {
+        request.validate().map_err(|_| {
+            MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_configuration_invalid")
+        })?;
+        let updated_at =
+            chrono::DateTime::from_timestamp_micros(expected_revision).ok_or_else(|| {
+                MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                    .with_code("media_configuration_invalid")
+            })?;
+        let input = revaer_data::media::schedules::ScheduleReplacementInput {
+            actor,
+            id,
+            version: request.association_version,
+            quantity: request.interval_quantity,
+            unit: request.interval_unit.as_str(),
+            updated_at,
+        };
+        let row = revaer_data::media::schedules::replace_schedule_configuration(
+            self.store.pool(),
+            &input,
+        )
+        .await
+        .map_err(|error| map_data_error(&error))?;
+        schedules::response(&row)
+    }
+
+    async fn media_association_page(
+        &self,
+        limit: u16,
+        cursor: Option<revaer_api::models::media_root_contract::AssociationCollectionCursor>,
+    ) -> Result<
+        revaer_api::models::media_root_contract::DiscoveryAssociationPageResponse,
+        MediaServiceError,
+    > {
+        use revaer_api::models::media_root_contract::{
+            AssociationCollectionCursor, DiscoveryAssociationPageResponse,
+        };
+        let mut rows = revaer_data::media::associations::read_association_page(
+            self.store.pool(),
+            limit,
+            cursor
+                .as_ref()
+                .map(AssociationCollectionCursor::association_key),
+            cursor.as_ref().map(AssociationCollectionCursor::public_id),
+        )
+        .await
+        .map_err(|error| map_data_error(&error))?;
+        let has_next = rows.len() > usize::from(limit);
+        rows.truncate(usize::from(limit));
+        let responses = rows
+            .into_iter()
+            .map(associations::response)
+            .collect::<Result<Vec<_>, _>>()?;
+        let next = if has_next {
+            responses
+                .last()
+                .map(|response| {
+                    let fields = response.fields();
+                    AssociationCollectionCursor::new(
+                        fields.request.association_key(),
+                        fields.media_discovery_association_public_id,
+                    )?
+                    .encode()
+                })
+                .transpose()
+        } else {
+            Ok(None)
+        }
+        .map_err(|_| MediaServiceError::new(MediaServiceErrorKind::Storage))?;
+        DiscoveryAssociationPageResponse::new(responses, next).map_err(|_| {
+            tracing::error!(
+                operation = "media_association_page",
+                "invalid persisted association page"
+            );
+            MediaServiceError::new(MediaServiceErrorKind::Storage)
+        })
+    }
+
+    async fn media_association_create(
+        &self,
+        actor_public_id: Uuid,
+        request: &revaer_api::models::media_root_contract::DiscoveryAssociationRequest,
+    ) -> Result<
+        revaer_api::models::media_root_contract::DiscoveryAssociationResponse,
+        MediaServiceError,
+    > {
+        let modes = request.modes();
+        let row = revaer_data::media::associations::create_association(
+            self.store.pool(),
+            &revaer_data::media::associations::CreateAssociationInput {
+                actor_public_id,
+                association_key: request.association_key(),
+                media_profile_public_id: request.media_profile_public_id(),
+                profile_version: request.profile_version(),
+                source_root_key: request.source_root_key(),
+                root_relative_path: request.root_relative_path(),
+                manual_enabled: modes.manual_enabled,
+                watcher_enabled: modes.watcher_enabled,
+                schedule_enabled: modes.schedule_enabled,
+            },
+        )
+        .await
+        .map_err(|error| map_data_error(&error))?;
+        associations::response(row)
+    }
+
+    async fn media_association(
+        &self,
+        id: Uuid,
+    ) -> Result<
+        Option<revaer_api::models::media_root_contract::DiscoveryAssociationResponse>,
+        MediaServiceError,
+    > {
+        revaer_data::media::associations::read_association(self.store.pool(), id)
+            .await
+            .map_err(|error| map_data_error(&error))?
+            .map(associations::response)
+            .transpose()
+    }
+
+    async fn media_profile_version_page(
+        &self,
+        limit: u16,
+        cursor: Option<revaer_api::models::media_root_contract::ProfileCollectionCursor>,
+    ) -> Result<
+        revaer_api::models::media_root_contract::ProfileVersionPageResponse,
+        MediaServiceError,
+    > {
+        use revaer_api::models::media_root_contract::ProfileCollectionCursor;
+        let rows = revaer_data::media::profile_versions::read_profile_page(
+            self.store.pool(),
+            limit,
+            cursor.as_ref().map(ProfileCollectionCursor::profile_key),
+            cursor
+                .as_ref()
+                .map(ProfileCollectionCursor::profile_public_id),
+        )
+        .await
+        .map_err(|error| map_data_error(&error))?;
+        profile_versions::page(&rows, limit).map_err(|_| {
+            tracing::error!(
+                operation = "media_profile_version_page",
+                "invalid persisted profile page"
+            );
+            MediaServiceError::new(MediaServiceErrorKind::Storage)
+        })
+    }
+
+    async fn media_profile_version_create(
+        &self,
+        actor_public_id: Uuid,
+        request: &revaer_api::models::media_root_contract::ProfileVersionRequest,
+    ) -> Result<revaer_api::models::media_root_contract::ProfileVersionResponse, MediaServiceError>
+    {
+        let rows = revaer_data::media::profile_versions::create_profile_version(
+            self.store.pool(),
+            &profile_versions::write_input(actor_public_id, request),
+        )
+        .await
+        .map_err(|error| map_data_error(&error))?;
+        profile_versions::response(&rows)
+            .and_then(|profile| {
+                profile.ok_or(revaer_api::models::media_root_contract::RootInputError)
+            })
+            .map_err(|_| {
+                tracing::error!(
+                    operation = "media_profile_version_create",
+                    "invalid persisted profile snapshot"
+                );
+                MediaServiceError::new(MediaServiceErrorKind::Storage)
+            })
+    }
+
+    async fn media_profile_version_replace(
+        &self,
+        actor_public_id: Uuid,
+        id: Uuid,
+        expected_version: i32,
+        request: &revaer_api::models::media_root_contract::ProfileVersionRequest,
+    ) -> Result<revaer_api::models::media_root_contract::ProfileVersionResponse, MediaServiceError>
+    {
+        let rows = revaer_data::media::profile_versions::replace_profile_version(
+            self.store.pool(),
+            &profile_versions::write_input(actor_public_id, request),
+            id,
+            expected_version,
+        )
+        .await
+        .map_err(|error| map_data_error(&error))?;
+        profile_versions::response(&rows)
+            .and_then(|profile| {
+                profile.ok_or(revaer_api::models::media_root_contract::RootInputError)
+            })
+            .map_err(|_| {
+                tracing::error!(
+                    operation = "media_profile_version_replace",
+                    "invalid persisted profile snapshot"
+                );
+                MediaServiceError::new(MediaServiceErrorKind::Storage)
+            })
+    }
+
+    async fn media_profile_version(
+        &self,
+        media_profile_public_id: Uuid,
+    ) -> Result<
+        Option<revaer_api::models::media_root_contract::ProfileVersionResponse>,
+        MediaServiceError,
+    > {
+        let rows = revaer_data::media::profile_versions::read_profile_version(
+            self.store.pool(),
+            media_profile_public_id,
+        )
+        .await
+        .map_err(|_| {
+            tracing::error!(operation = "media_profile_version", "profile read failed");
+            MediaServiceError::new(MediaServiceErrorKind::Storage)
+        })?;
+        profile_versions::response(&rows).map_err(|_| {
+            tracing::error!(
+                operation = "media_profile_version",
+                "invalid persisted profile snapshot"
+            );
+            MediaServiceError::new(MediaServiceErrorKind::Storage)
+        })
+    }
+
+    async fn media_root_catalog_page(
+        &self,
+        limit: u16,
+        cursor: Option<revaer_api::models::media_root_contract::RootCatalogCursor>,
+    ) -> Result<revaer_api::models::media_root_contract::RootCatalogPageResponse, MediaServiceError>
+    {
+        use revaer_api::models::media_root_contract::{
+            RootCatalogCursor, validate_root_catalog_limit,
+        };
+        let limit = validate_root_catalog_limit(Some(limit))
+            .and_then(|value| {
+                i16::try_from(value)
+                    .map_err(|_| revaer_api::models::media_root_contract::RootInputError)
+            })
+            .map_err(|_| {
+                MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                    .with_code("media_configuration_invalid")
+            })?;
+        let rows = revaer_data::media::root_catalog::read_root_catalog_page(
+            self.store.pool(),
+            limit,
+            cursor.as_ref().map(RootCatalogCursor::logical_key),
+            cursor.as_ref().map(RootCatalogCursor::slot_public_id),
+        )
+        .await
+        .map_err(|error| {
+            if error.database_detail() == Some("media_configuration_invalid") {
+                return MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                    .with_code("media_configuration_invalid");
+            }
+            tracing::error!(
+                operation = "media_root_catalog_page",
+                "root catalog read failed"
+            );
+            MediaServiceError::new(MediaServiceErrorKind::Storage)
+        })?;
+        root_catalog::response(rows).map_err(|_| {
+            tracing::error!(
+                operation = "media_root_catalog_page",
+                "invalid root catalog snapshot"
+            );
+            MediaServiceError::new(MediaServiceErrorKind::Storage)
+        })
+    }
+
+    async fn media_root_catalog_readiness(
+        &self,
+    ) -> Result<
+        revaer_api::models::media_root_contract::RootCatalogReadinessResponse,
+        MediaServiceError,
+    > {
+        let rows = self.store.root_catalog_readiness().await.map_err(|_| {
+            tracing::error!(
+                operation = "media_root_catalog_readiness",
+                "root readiness read failed"
+            );
+            MediaServiceError::new(MediaServiceErrorKind::Storage)
+        })?;
+        root_readiness::response(rows).map_err(|_| {
+            tracing::error!(
+                operation = "media_root_catalog_readiness",
+                "invalid root readiness snapshot"
+            );
+            MediaServiceError::new(MediaServiceErrorKind::Storage)
+        })
+    }
+
     async fn media_profile_upsert(
         &self,
         params: MediaProfileUpsertParams<'_>,
@@ -510,29 +871,19 @@ impl MediaFacade for MediaService {
         &self,
         media_profile_public_id: Uuid,
     ) -> Result<Option<AppMediaProfileReadinessResponse>, MediaServiceError> {
-        let Some(profile) = self
-            .store
-            .get_profile(media_profile_public_id)
-            .await
-            .map_err(|err| map_data_error(&err))?
+        let Some(rows) = revaer_data::media::profile_versions::read_profile_readiness(
+            self.store.pool(),
+            media_profile_public_id,
+        )
+        .await
+        .map_err(|err| map_data_error(&err))?
         else {
             return Ok(None);
         };
-        let latest = self
-            .store
-            .latest_capability()
-            .await
-            .map_err(|err| map_data_error(&err))?;
-        let reason = self
-            .profile_execution_readiness_failure_code(&profile, latest.as_ref())
-            .await?;
-
-        Ok(Some(AppMediaProfileReadinessResponse {
-            ready: reason.is_none(),
-            reason,
-            profile: shared_media_profile_response(profile),
-            snapshot: latest.map(media_capability_snapshot_response),
-        }))
+        profile_readiness::response(rows).map(Some).map_err(|_| {
+            MediaServiceError::new(MediaServiceErrorKind::Storage)
+                .with_code("media_root_binding_incomplete")
+        })
     }
 
     async fn media_compatibility_target_list(
@@ -717,6 +1068,7 @@ impl MediaFacade for MediaService {
             .map(|rows| {
                 rows.into_iter()
                     .map(|row| AppMediaPolicyResponse {
+                        output: policy_output_response(&row.output),
                         policy_key: row.policy_key,
                         version: row.version,
                         display_name: row.display_name,
@@ -749,6 +1101,7 @@ impl MediaFacade for MediaService {
     ) -> Result<AppMediaPolicyResponse, MediaServiceError> {
         self.store
             .upsert_policy_profile(UpsertMediaPolicyProfileInput {
+                output: policy_output_row(&params.output),
                 actor_public_id: params.actor_user_public_id,
                 policy_key: params.policy_key,
                 version: params.version,
@@ -767,6 +1120,7 @@ impl MediaFacade for MediaService {
             })
             .await
             .map(|row| AppMediaPolicyResponse {
+                output: policy_output_response(&row.output),
                 policy_key: row.policy_key,
                 version: row.version,
                 display_name: row.display_name,
@@ -828,6 +1182,55 @@ impl MediaFacade for MediaService {
                 failed_diagnostic_limit: row.failed_diagnostic_limit,
             })
             .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_association_preview(
+        &self,
+        request: &revaer_api::models::MediaDiscoveryPreviewRequest,
+    ) -> Result<(Uuid, Vec<MediaDiscoveryPreviewResponse>), MediaServiceError> {
+        request.validate().map_err(|_| {
+            MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_configuration_invalid")
+        })?;
+        let row = revaer_data::media::associations::read_association(
+            self.store.pool(),
+            request.media_discovery_association_public_id,
+        )
+        .await
+        .map_err(|error| map_data_error(&error))?
+        .ok_or_else(|| {
+            MediaServiceError::new(MediaServiceErrorKind::NotFound)
+                .with_code("media_association_not_found")
+        })?;
+        if !row.binding_ready || !row.modes.manual_enabled {
+            return Err(MediaServiceError::new(MediaServiceErrorKind::Unavailable)
+                .with_code("media_root_binding_incomplete"));
+        }
+        let capability = self
+            .store
+            .latest_capability()
+            .await
+            .map_err(|error| map_data_error(&error))?;
+        if let Some(code) = capability_snapshot_readiness_code(capability.as_ref()) {
+            return Err(MediaServiceError::new(MediaServiceErrorKind::Unavailable).with_code(code));
+        }
+        Ok((
+            row.media_profile_public_id,
+            associations::preview_scope(
+                &row.root_relative_path,
+                row.effective_dry_run,
+                &request.source_paths,
+            ),
+        ))
+    }
+
+    async fn media_association_run(
+        &self,
+        actor: Uuid,
+        request: &revaer_api::models::MediaDiscoveryPreviewRequest,
+        trigger: revaer_api::app::media::MediaAssociationRunTrigger,
+    ) -> Result<(Uuid, MediaDiscoveryRunResponse), MediaServiceError> {
+        source::run(self, actor, request, trigger).await
     }
 
     async fn media_discovery_preview(
@@ -896,33 +1299,35 @@ impl MediaFacade for MediaService {
         media_profile_public_id: Uuid,
         status: Option<&str>,
     ) -> Result<Vec<MediaJobResponse>, MediaServiceError> {
-        self.store
-            .list_jobs(media_profile_public_id, status)
-            .await
-            .map(|rows| {
-                rows.into_iter()
-                    .map(|row| MediaJobResponse {
-                        media_job_public_id: row.media_job_public_id,
-                        source_path: row.source_path,
-                        output_path: row.output_path,
-                        status: row.status_text,
-                        dry_run: row.dry_run,
-                        queued_at: row.queued_at,
-                        started_at: row.started_at,
-                        completed_at: row.completed_at,
-                        last_error: row.last_error,
-                    })
-                    .collect()
-            })
-            .map_err(|err| map_data_error(&err))
+        revaer_data::media::jobs::list_operator_media_jobs(
+            self.store.pool(),
+            media_profile_public_id,
+            status,
+        )
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .map(|row| MediaJobResponse {
+                    media_job_public_id: row.media_job_public_id,
+                    source_path: row.source_path,
+                    output_path: row.output_path,
+                    status: row.status_text,
+                    dry_run: row.dry_run,
+                    queued_at: row.queued_at,
+                    started_at: row.started_at,
+                    completed_at: row.completed_at,
+                    last_error: row.last_error,
+                })
+                .collect()
+        })
+        .map_err(|err| map_data_error(&err))
     }
 
     async fn media_job_get(
         &self,
         media_job_public_id: Uuid,
     ) -> Result<Option<MediaJobResponse>, MediaServiceError> {
-        self.store
-            .get_job(media_job_public_id)
+        revaer_data::media::jobs::get_operator_media_job(self.store.pool(), media_job_public_id)
             .await
             .map(|row_opt| {
                 row_opt.map(|row| MediaJobResponse {
@@ -950,11 +1355,14 @@ impl MediaFacade for MediaService {
             return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
                 .with_code("media_job_recent_limit_invalid"));
         }
-        let mut rows = self
-            .store
-            .list_recent_jobs(limit, cursor, media_profile_public_id)
-            .await
-            .map_err(|err| map_data_error(&err))?;
+        let mut rows = revaer_data::media::jobs::list_operator_recent_media_jobs(
+            self.store.pool(),
+            limit,
+            cursor,
+            media_profile_public_id,
+        )
+        .await
+        .map_err(|err| map_data_error(&err))?;
         let page_size = usize::try_from(limit).map_err(|_| {
             MediaServiceError::new(MediaServiceErrorKind::Invalid)
                 .with_code("media_job_recent_limit_invalid")
@@ -1203,216 +1611,101 @@ impl MediaFacade for MediaService {
         &self,
         include_local_paths: bool,
     ) -> Result<String, MediaServiceError> {
-        let payload = build_media_yaml_bundle(self, include_local_paths).await?;
-        serde_yaml::to_string(&payload).map_err(|_| {
-            MediaServiceError::new(MediaServiceErrorKind::Storage)
-                .with_code("media_yaml_serialize_failed")
-        })
+        if !include_local_paths {
+            let snapshot = revaer_data::media::portable::read_snapshot(self.store.pool())
+                .await
+                .map_err(|err| map_data_error(&err))?;
+            return portable_export::serialize(snapshot);
+        }
+        let (snapshot, paths) =
+            revaer_data::media::portable::read_local_snapshot(self.store.pool())
+                .await
+                .map_err(|error| map_data_error(&error))?;
+        portable_export::serialize_local(snapshot, paths)
     }
 
     async fn media_yaml_validate(
         &self,
         yaml_payload: &str,
     ) -> Result<MediaYamlValidationResult, MediaServiceError> {
-        let parsed = parse_yaml_bundle(yaml_payload)?;
         let existing_compatibility_targets = self.media_compatibility_target_list().await?;
         let existing_desired_targets = self.media_desired_target_list().await?;
         let existing_policies = self.media_policy_list().await?;
-        let issues = validate_yaml_bundle(
-            &parsed,
+        portable_export::validate(
+            yaml_payload,
             &existing_compatibility_targets,
             &existing_desired_targets,
             &existing_policies,
-        );
-        Ok(MediaYamlValidationResult {
-            version: parsed.format_version.to_string(),
-            valid: !issues.iter().any(|issue| issue.blocking),
-            issues,
-            bundle: parsed,
-        })
+        )
     }
 
     async fn media_yaml_apply(
         &self,
         actor_user_public_id: Uuid,
         yaml_payload: &str,
+        preconditions: &[revaer_api::models::MediaYamlResourcePrecondition],
     ) -> Result<MediaYamlApplyResult, MediaServiceError> {
         let validation = self.media_yaml_validate(yaml_payload).await?;
         if !validation.valid {
+            let catalog_conflict = |issue: &MediaYamlIssue| {
+                matches!(
+                    issue.code.as_str(),
+                    "media_yaml_compatibility_target_conflict"
+                        | "media_yaml_desired_target_conflict"
+                        | "media_yaml_policy_conflict"
+                )
+            };
+            if validation.issues.iter().any(|issue| issue.blocking)
+                && validation
+                    .issues
+                    .iter()
+                    .all(|issue| !issue.blocking || catalog_conflict(issue))
+            {
+                return Err(MediaServiceError::new(MediaServiceErrorKind::Conflict)
+                    .with_code("media_configuration_version_conflict"));
+            }
             return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
                 .with_code("media_yaml_validation_failed"));
         }
-        let existing_profiles = self.media_profile_list().await?;
-        let existing_compatibility_targets = self.media_compatibility_target_list().await?;
-        let existing_desired_targets = self.media_desired_target_list().await?;
-        let existing_policies = self.media_policy_list().await?;
-        let mut transaction = self.store.pool().begin().await.map_err(|_| {
-            MediaServiceError::new(MediaServiceErrorKind::Storage)
-                .with_code("media_yaml_apply_transaction_start_failed")
-        })?;
-        let bundle = validation.bundle;
-        import_yaml_catalogs(
-            &mut transaction,
-            actor_user_public_id,
-            &bundle,
-            &existing_compatibility_targets,
-            &existing_desired_targets,
-            &existing_policies,
-        )
-        .await?;
-        let result = import_yaml_profiles(
-            &mut transaction,
-            actor_user_public_id,
-            bundle.profiles,
-            &existing_profiles,
-        )
-        .await?;
-        transaction.commit().await.map_err(|_| {
-            MediaServiceError::new(MediaServiceErrorKind::Storage)
-                .with_code("media_yaml_apply_transaction_commit_failed")
-        })?;
-
-        Ok(result)
-    }
-}
-
-async fn build_media_yaml_bundle(
-    service: &MediaService,
-    include_local_paths: bool,
-) -> Result<MediaYamlBundle, MediaServiceError> {
-    let active_profiles = service.media_profile_list().await?;
-    let drafts = list_media_profile_import_drafts(service.store.pool())
-        .await
-        .map_err(|err| map_data_error(&err))?;
-    let compatibility_targets = service
-        .media_compatibility_target_list()
-        .await?
-        .into_iter()
-        .map(media_yaml_compatibility_target)
-        .collect();
-    let targets = service
-        .media_desired_target_list()
-        .await?
-        .into_iter()
-        .map(media_yaml_desired_target)
-        .collect();
-    let policies = service
-        .media_policy_list()
-        .await?
-        .into_iter()
-        .map(media_yaml_policy)
-        .collect();
-    Ok(MediaYamlBundle {
-        format_version: 1,
-        kind: "revaer.media.profile_bundle".to_string(),
-        metadata: MediaYamlMetadata {
-            name: "Revaer media configuration".to_string(),
-            description: Some(
-                "Portable media profiles and their complete referenced catalogs".to_string(),
-            ),
-        },
-        compatibility_targets,
-        targets,
-        policies,
-        profiles: export_yaml_profiles(active_profiles, drafts, include_local_paths),
-    })
-}
-
-fn export_yaml_profiles(
-    active_profiles: Vec<MediaProfileResponse>,
-    drafts: Vec<MediaProfileImportDraftRow>,
-    include_local_paths: bool,
-) -> Vec<MediaYamlProfile> {
-    let mut profiles = active_profiles
-        .into_iter()
-        .map(|profile| media_yaml_active_profile(profile, include_local_paths))
-        .collect::<Vec<_>>();
-    profiles.extend(
-        drafts
-            .into_iter()
-            .map(|draft| media_yaml_draft_profile(draft, include_local_paths)),
-    );
-    profiles.sort_by(|left, right| {
-        left.profile_key
-            .to_ascii_lowercase()
-            .cmp(&right.profile_key.to_ascii_lowercase())
-    });
-    profiles
-}
-
-fn media_yaml_active_profile(
-    profile: MediaProfileResponse,
-    include_local_paths: bool,
-) -> MediaYamlProfile {
-    MediaYamlProfile {
-        source_root: export_root(
-            include_local_paths,
-            &profile.profile_key,
-            "source",
-            &profile.source_root,
-        ),
-        output_root: export_root(
-            include_local_paths,
-            &profile.profile_key,
-            "output",
-            &profile.output_root,
-        ),
-        profile_key: profile.profile_key,
-        dry_run_only: true,
-        retention_days: profile.retention_days,
-        compatibility_target_key: profile.compatibility_target_key,
-        desired_target_key: profile.desired_target_key,
-        desired_target_version: profile.desired_target_version,
-        policy_key: profile.policy_key,
-        watcher_enabled: false,
-        schedule_enabled: false,
-        schedule_interval_minutes: None,
-    }
-}
-
-fn media_yaml_draft_profile(
-    draft: MediaProfileImportDraftRow,
-    include_local_paths: bool,
-) -> MediaYamlProfile {
-    MediaYamlProfile {
-        profile_key: draft.profile_key.clone(),
-        source_root: export_draft_root(
-            include_local_paths,
-            &draft.profile_key,
-            "source",
-            draft.source_root,
-            draft.source_root_resolved,
-        ),
-        output_root: export_draft_root(
-            include_local_paths,
-            &draft.profile_key,
-            "output",
-            draft.output_root,
-            draft.output_root_resolved,
-        ),
-        dry_run_only: true,
-        retention_days: draft.retention_days,
-        compatibility_target_key: draft.compatibility_target_key,
-        desired_target_key: draft.desired_target_key,
-        desired_target_version: draft.desired_target_version,
-        policy_key: draft.policy_key,
-        watcher_enabled: false,
-        schedule_enabled: false,
-        schedule_interval_minutes: None,
-    }
-}
-
-fn export_draft_root(
-    include_local_paths: bool,
-    profile_key: &str,
-    root_kind: &str,
-    root: String,
-    resolved: bool,
-) -> String {
-    if resolved {
-        export_root(include_local_paths, profile_key, root_kind, &root)
-    } else {
-        root
+        portable_export::validate_preconditions(yaml_payload, preconditions)?;
+        let mut transaction =
+            revaer_data::media::configuration::begin_import_transaction(self.store.pool())
+                .await
+                .map_err(|error| map_data_error(&error))?;
+        let result = async {
+            portable_export::prepare_import(
+                &mut transaction,
+                actor_user_public_id,
+                yaml_payload,
+                preconditions,
+            )
+            .await?;
+            portable_export::apply_import(
+                self,
+                &mut transaction,
+                actor_user_public_id,
+                yaml_payload,
+                preconditions,
+            )
+            .await
+        }
+        .await;
+        match result {
+            Ok(result) => {
+                transaction.commit().await.map_err(|_| {
+                    MediaServiceError::new(MediaServiceErrorKind::Storage)
+                        .with_code("media_yaml_apply_transaction_commit_failed")
+                })?;
+                Ok(result)
+            }
+            Err(error) => {
+                transaction.rollback().await.map_err(|_| {
+                    MediaServiceError::new(MediaServiceErrorKind::Storage)
+                        .with_code("media_yaml_apply_transaction_rollback_failed")
+                })?;
+                Err(error)
+            }
+        }
     }
 }
 
@@ -1454,10 +1747,14 @@ async fn import_yaml_compatibility_targets(
     existing: &[AppMediaCompatibilityTargetResponse],
 ) -> Result<(), MediaServiceError> {
     for target in targets {
-        if existing
-            .iter()
-            .any(|item| compatibility_target_matches_yaml(item, target))
-        {
+        if let Some(item) = existing.iter().find(|item| {
+            item.compatibility_target_key == target.compatibility_target_key
+                && item.version == target.version
+        }) {
+            if !compatibility_target_matches_yaml(item, target) {
+                return Err(MediaServiceError::new(MediaServiceErrorKind::Conflict)
+                    .with_code("media_configuration_version_conflict"));
+            }
             continue;
         }
         upsert_media_compatibility_target_with_executor(
@@ -1480,6 +1777,34 @@ async fn import_yaml_compatibility_targets(
     Ok(())
 }
 
+fn policy_output_response(
+    row: &revaer_data::media::configuration::MediaPolicyOutputRow,
+) -> revaer_api::models::MediaPolicyOutput {
+    revaer_api::models::MediaPolicyOutput {
+        dry_run: row.dry_run,
+        replacement_mode: row.replacement_mode.clone(),
+        quarantine_enabled: row.quarantine_enabled,
+        preservation: revaer_api::models::MediaOutputPreservation {
+            preserve_permissions: row.preservation.preserve_permissions,
+            preserve_ownership: row.preservation.preserve_ownership,
+        },
+    }
+}
+
+fn policy_output_row(
+    output: &revaer_api::models::MediaPolicyOutput,
+) -> revaer_data::media::configuration::MediaPolicyOutputRow {
+    revaer_data::media::configuration::MediaPolicyOutputRow {
+        dry_run: output.dry_run,
+        replacement_mode: output.replacement_mode.clone(),
+        quarantine_enabled: output.quarantine_enabled,
+        preservation: revaer_data::media::configuration::MediaOutputPreservationRow {
+            preserve_permissions: output.preservation.preserve_permissions,
+            preserve_ownership: output.preservation.preserve_ownership,
+        },
+    }
+}
+
 async fn import_yaml_policies(
     transaction: &mut MediaImportTransaction<'_>,
     actor_user_public_id: Uuid,
@@ -1487,15 +1812,20 @@ async fn import_yaml_policies(
     existing: &[AppMediaPolicyResponse],
 ) -> Result<(), MediaServiceError> {
     for policy in policies {
-        if existing
+        if let Some(item) = existing
             .iter()
-            .any(|item| policy_matches_yaml(item, policy))
+            .find(|item| item.policy_key == policy.policy_key && item.version == policy.version)
         {
+            if !policy_matches_yaml(item, policy) {
+                return Err(MediaServiceError::new(MediaServiceErrorKind::Conflict)
+                    .with_code("media_configuration_version_conflict"));
+            }
             continue;
         }
         upsert_media_policy_profile_with_executor(
             &mut **transaction,
             UpsertMediaPolicyProfileInput {
+                output: policy_output_row(&policy.output),
                 actor_public_id: actor_user_public_id,
                 policy_key: &policy.policy_key,
                 version: policy.version,
@@ -1526,11 +1856,14 @@ async fn import_yaml_desired_targets(
     existing: &[AppMediaDesiredTargetResponse],
 ) -> Result<(), MediaServiceError> {
     for target in targets {
-        if existing.iter().any(|item| {
-            item.target_key
-                .eq_ignore_ascii_case(target.target_key.trim())
-                && item.version == target.version
-        }) {
+        if let Some(item) = existing
+            .iter()
+            .find(|item| item.target_key == target.target_key && item.version == target.version)
+        {
+            if !desired_target_matches_yaml(item, target) {
+                return Err(MediaServiceError::new(MediaServiceErrorKind::Conflict)
+                    .with_code("media_configuration_version_conflict"));
+            }
             continue;
         }
         let target_id = create_media_desired_target_with_executor(
@@ -1590,197 +1923,6 @@ async fn import_yaml_desired_streams(
         .await
         .map_err(|err| map_data_error(&err))?;
     }
-    Ok(())
-}
-
-#[derive(Debug)]
-struct ResolvedYamlProfile {
-    profile: MediaYamlProfile,
-    source_root: Option<String>,
-    output_root: Option<String>,
-}
-
-async fn import_yaml_profiles(
-    transaction: &mut MediaImportTransaction<'_>,
-    actor_user_public_id: Uuid,
-    profiles: Vec<MediaYamlProfile>,
-    existing_profiles: &[MediaProfileResponse],
-) -> Result<MediaYamlApplyResult, MediaServiceError> {
-    let mut media_profile_public_ids = Vec::with_capacity(profiles.len());
-    let mut media_profile_import_draft_public_ids = Vec::new();
-    for profile in profiles {
-        let resolved = resolve_yaml_profile(profile, existing_profiles);
-        let existing = existing_profiles.iter().find(|item| {
-            item.profile_key
-                .eq_ignore_ascii_case(&resolved.profile.profile_key)
-        });
-        if let Some(existing) = existing {
-            if !existing_profile_matches_yaml(existing, &resolved) {
-                return Err(MediaServiceError::new(MediaServiceErrorKind::Conflict)
-                    .with_code("media_yaml_profile_conflict"));
-            }
-            delete_media_profile_import_draft_with_executor(
-                &mut **transaction,
-                &resolved.profile.profile_key,
-            )
-            .await
-            .map_err(|err| map_data_error(&err))?;
-            media_profile_public_ids.push(existing.media_profile_public_id);
-        } else if resolved.source_root.is_none() || resolved.output_root.is_none() {
-            media_profile_import_draft_public_ids.push(
-                persist_yaml_profile_draft(transaction, actor_user_public_id, &resolved).await?,
-            );
-        } else {
-            media_profile_public_ids
-                .push(persist_yaml_profile(transaction, actor_user_public_id, &resolved).await?);
-        }
-    }
-    Ok(MediaYamlApplyResult {
-        forced_dry_run: true,
-        media_profile_public_ids,
-        media_profile_import_draft_public_ids,
-    })
-}
-
-fn existing_profile_matches_yaml(
-    existing: &MediaProfileResponse,
-    resolved: &ResolvedYamlProfile,
-) -> bool {
-    let profile = &resolved.profile;
-    resolved
-        .source_root
-        .as_deref()
-        .is_some_and(|root| existing.source_root == root)
-        && resolved
-            .output_root
-            .as_deref()
-            .is_some_and(|root| existing.output_root == root)
-        && existing.dry_run_only
-        && profile.dry_run_only
-        && existing.retention_days == profile.retention_days
-        && existing.compatibility_target_key == profile.compatibility_target_key
-        && existing.desired_target_key == profile.desired_target_key
-        && existing.desired_target_version == profile.desired_target_version
-        && existing.policy_key == profile.policy_key
-        && !profile.watcher_enabled
-        && !profile.schedule_enabled
-        && profile.schedule_interval_minutes.is_none()
-}
-
-fn resolve_yaml_profile(
-    profile: MediaYamlProfile,
-    existing_profiles: &[MediaProfileResponse],
-) -> ResolvedYamlProfile {
-    let existing = existing_profiles
-        .iter()
-        .find(|item| item.profile_key.eq_ignore_ascii_case(&profile.profile_key));
-    let source_root =
-        resolve_yaml_root(&profile.source_root, existing.map(|item| &item.source_root));
-    let output_root =
-        resolve_yaml_root(&profile.output_root, existing.map(|item| &item.output_root));
-    ResolvedYamlProfile {
-        profile,
-        source_root,
-        output_root,
-    }
-}
-
-fn resolve_yaml_root(root: &str, existing: Option<&String>) -> Option<String> {
-    if is_unresolved_export_root(root) {
-        existing.cloned()
-    } else {
-        Some(root.to_string())
-    }
-}
-
-async fn persist_yaml_profile_draft(
-    transaction: &mut MediaImportTransaction<'_>,
-    actor_user_public_id: Uuid,
-    resolved: &ResolvedYamlProfile,
-) -> Result<Uuid, MediaServiceError> {
-    let profile = &resolved.profile;
-    upsert_media_profile_import_draft_with_executor(
-        &mut **transaction,
-        UpsertMediaProfileImportDraftInput {
-            actor_public_id: actor_user_public_id,
-            profile_key: &profile.profile_key,
-            source_root: &profile.source_root,
-            output_root: &profile.output_root,
-            source_root_resolved: !is_unresolved_export_root(&profile.source_root),
-            output_root_resolved: !is_unresolved_export_root(&profile.output_root),
-            retention_days: profile.retention_days,
-            compatibility_target_key: profile.compatibility_target_key.as_deref(),
-            desired_target_key: profile.desired_target_key.as_deref(),
-            desired_target_version: profile.desired_target_version,
-            policy_key: &profile.policy_key,
-        },
-    )
-    .await
-    .map_err(|err| map_data_error(&err))
-}
-
-async fn persist_yaml_profile(
-    transaction: &mut MediaImportTransaction<'_>,
-    actor_user_public_id: Uuid,
-    resolved: &ResolvedYamlProfile,
-) -> Result<Uuid, MediaServiceError> {
-    let profile = &resolved.profile;
-    let profile_id = upsert_media_profile_with_executor(
-        &mut **transaction,
-        &UpsertMediaProfileInput {
-            actor_public_id: actor_user_public_id,
-            profile_key: &profile.profile_key,
-            source_root: required_resolved_root(resolved.source_root.as_deref(), "source")?,
-            output_root: required_resolved_root(resolved.output_root.as_deref(), "output")?,
-            dry_run_only: true,
-            retention_days: profile.retention_days,
-            compatibility_target_key: profile.compatibility_target_key.as_deref(),
-            policy_key: &profile.policy_key,
-            watcher_enabled: false,
-            schedule_enabled: false,
-            schedule_interval_minutes: None,
-        },
-    )
-    .await
-    .map_err(|err| map_data_error(&err))?;
-    pin_imported_profile_target(transaction, actor_user_public_id, profile_id, profile).await?;
-    delete_media_profile_import_draft_with_executor(&mut **transaction, &profile.profile_key)
-        .await
-        .map_err(|err| map_data_error(&err))?;
-    Ok(profile_id)
-}
-
-fn required_resolved_root<'a>(
-    root: Option<&'a str>,
-    root_kind: &str,
-) -> Result<&'a str, MediaServiceError> {
-    root.ok_or_else(|| {
-        MediaServiceError::new(MediaServiceErrorKind::Invalid).with_code(if root_kind == "source" {
-            "media_yaml_source_root_unresolved"
-        } else {
-            "media_yaml_output_root_unresolved"
-        })
-    })
-}
-
-async fn pin_imported_profile_target(
-    transaction: &mut MediaImportTransaction<'_>,
-    actor_user_public_id: Uuid,
-    profile_id: Uuid,
-    profile: &MediaYamlProfile,
-) -> Result<(), MediaServiceError> {
-    if profile.desired_target_key.is_none() {
-        return Ok(());
-    }
-    set_media_profile_desired_target_with_executor(
-        &mut **transaction,
-        actor_user_public_id,
-        profile_id,
-        profile.desired_target_key.as_deref(),
-        profile.desired_target_version,
-    )
-    .await
-    .map_err(|err| map_data_error(&err))?;
     Ok(())
 }
 
@@ -1952,6 +2094,7 @@ fn feature_supported(features: &[CapabilityFeatureRow], family: &str, name: &str
     })
 }
 
+#[cfg(test)]
 fn parse_yaml_bundle(yaml_payload: &str) -> Result<MediaYamlBundle, MediaServiceError> {
     let trimmed = yaml_payload.trim();
     if trimmed.is_empty() {
@@ -1964,27 +2107,13 @@ fn parse_yaml_bundle(yaml_payload: &str) -> Result<MediaYamlBundle, MediaService
     })
 }
 
-fn export_root(
-    include_local_paths: bool,
-    profile_key: &str,
-    root_kind: &str,
-    root: &str,
-) -> String {
-    if include_local_paths {
-        root.to_string()
-    } else {
-        format!(
-            "${{revaer.{root_kind}_root:{}}}",
-            profile_key.trim().to_ascii_lowercase()
-        )
-    }
-}
-
+#[cfg(test)]
 fn is_unresolved_export_root(root: &str) -> bool {
     let trimmed = root.trim();
     trimmed.starts_with("${revaer.") && trimmed.ends_with('}')
 }
 
+#[cfg(test)]
 fn validate_yaml_bundle(
     bundle: &MediaYamlBundle,
     existing_compatibility_targets: &[AppMediaCompatibilityTargetResponse],
@@ -2010,6 +2139,7 @@ fn validate_yaml_bundle(
     issues
 }
 
+#[cfg(test)]
 fn validate_yaml_header(issues: &mut Vec<MediaYamlIssue>, bundle: &MediaYamlBundle) {
     if bundle.format_version != 1 {
         push_yaml_issue(
@@ -2032,6 +2162,7 @@ fn validate_yaml_header(issues: &mut Vec<MediaYamlIssue>, bundle: &MediaYamlBund
     }
 }
 
+#[cfg(test)]
 fn validate_yaml_profiles(issues: &mut Vec<MediaYamlIssue>, yaml_profiles: &[MediaYamlProfile]) {
     let mut profiles = Vec::with_capacity(yaml_profiles.len());
     let mut profile_keys = BTreeSet::new();
@@ -2049,6 +2180,7 @@ fn validate_yaml_profiles(issues: &mut Vec<MediaYamlIssue>, yaml_profiles: &[Med
     }
 }
 
+#[cfg(test)]
 fn validate_yaml_profile(
     issues: &mut Vec<MediaYamlIssue>,
     profile_keys: &mut BTreeSet<String>,
@@ -2106,6 +2238,7 @@ fn validate_yaml_profile(
     }
 }
 
+#[cfg(test)]
 const fn yaml_profile_validation_code(
     error: &revaer_media_core::compile::ValidationError,
 ) -> &'static str {
@@ -2143,6 +2276,7 @@ const fn yaml_profile_validation_code(
     }
 }
 
+#[cfg(test)]
 fn validate_yaml_catalogs(
     issues: &mut Vec<MediaYamlIssue>,
     bundle: &MediaYamlBundle,
@@ -2232,6 +2366,7 @@ fn validate_yaml_catalogs(
     }
 }
 
+#[cfg(test)]
 fn validate_yaml_catalog_rows(
     issues: &mut Vec<MediaYamlIssue>,
     bundle: &MediaYamlBundle,
@@ -2334,6 +2469,11 @@ fn validate_yaml_policy_rows(
             && !policy.verification_keyframe_seek.enabled()
             && !policy.verification_playback_probe.enabled();
         if policy.policy_key.trim().is_empty()
+            || !matches!(
+                policy.output.replacement_mode.as_str(),
+                "disabled" | "atomic_replace"
+            )
+            || (!policy.output.dry_run && policy.output.replacement_mode != "atomic_replace")
             || policy.display_name.trim().is_empty()
             || policy.video_intent.trim().is_empty()
             || !matches!(
@@ -2526,46 +2666,6 @@ fn push_yaml_issue(issues: &mut Vec<MediaYamlIssue>, code: &str, pointer: &str, 
     });
 }
 
-fn media_yaml_compatibility_target(
-    target: AppMediaCompatibilityTargetResponse,
-) -> MediaYamlCompatibilityTarget {
-    MediaYamlCompatibilityTarget {
-        compatibility_target_key: target.compatibility_target_key,
-        version: target.version,
-        display_name: target.display_name,
-        video_codec: target.video_codec,
-        audio_codec: target.audio_codec,
-        audio_channels: target.audio_channels,
-        audio_channel_layout: target.audio_channel_layout,
-        subtitle_policy: target.subtitle_policy,
-    }
-}
-
-fn media_yaml_desired_target(target: AppMediaDesiredTargetResponse) -> MediaYamlDesiredTarget {
-    MediaYamlDesiredTarget {
-        target_key: target.target_key,
-        version: target.version,
-        display_name: target.display_name,
-        container_format: target.container_format,
-        streams: target.streams,
-    }
-}
-
-fn media_yaml_policy(policy: AppMediaPolicyResponse) -> MediaYamlPolicy {
-    MediaYamlPolicy {
-        policy_key: policy.policy_key,
-        version: policy.version,
-        display_name: policy.display_name,
-        video_intent: policy.video_intent,
-        verification_strictness: policy.verification_strictness,
-        verification_duration_tolerance_millis: policy.verification_duration_tolerance_millis,
-        verification_mux_validation: policy.verification_mux_validation,
-        verification_decode_all_streams: policy.verification_decode_all_streams,
-        verification_keyframe_seek: policy.verification_keyframe_seek,
-        verification_playback_probe: policy.verification_playback_probe,
-    }
-}
-
 fn desired_target_matches_yaml(
     existing: &AppMediaDesiredTargetResponse,
     imported: &MediaYamlDesiredTarget,
@@ -2596,7 +2696,8 @@ fn compatibility_target_matches_yaml(
 }
 
 fn policy_matches_yaml(existing: &AppMediaPolicyResponse, imported: &MediaYamlPolicy) -> bool {
-    existing.display_name == imported.display_name
+    existing.output == imported.output
+        && existing.display_name == imported.display_name
         && existing
             .video_intent
             .eq_ignore_ascii_case(&imported.video_intent)
@@ -2672,9 +2773,11 @@ async fn fingerprint_source_candidate(
 
 fn map_fingerprint_error(error: &FingerprintError) -> MediaServiceError {
     MediaServiceError::new(MediaServiceErrorKind::Invalid).with_code(match error {
+        FingerprintError::Root(_) => "media_root_attestation_stale",
         FingerprintError::Io { .. } => "media_discovery_fingerprint_io",
         FingerprintError::InvalidPath(_) => "media_discovery_fingerprint_path_invalid",
         FingerprintError::ResourceLimit(_) => "media_discovery_fingerprint_resource_limit",
+        FingerprintError::DirectoryChanged => "media_discovery_source_unstable",
         FingerprintError::ValueTooLarge(_) => "media_discovery_fingerprint_overflow",
     })
 }
@@ -2687,15 +2790,35 @@ fn map_data_error(error: &DataError) -> MediaServiceError {
         Some("app_user_not_found" | "media_profile_not_found" | "media_job_not_found") => {
             MediaServiceErrorKind::NotFound
         }
-        Some("media_job_cancel_invalid_status" | "media_job_retry_invalid_status") => {
-            MediaServiceErrorKind::Conflict
-        }
+        Some(
+            "media_profile_key_conflict"
+            | "media_configuration_create_conflict"
+            | "media_configuration_version_conflict"
+            | "media_association_key_conflict"
+            | "media_configuration_overlap"
+            | "media_configuration_pending_contract"
+            | "media_configuration_reference_missing"
+            | "media_root_attestation_stale"
+            | "media_policy_version_conflict"
+            | "media_job_cancel_invalid_status"
+            | "media_job_retry_invalid_status",
+        ) => MediaServiceErrorKind::Conflict,
         Some(
             "media_profile_roots_overlap"
             | "media_profile_discovery_root_overlap"
             | "media_profile_filesystem_identity_required"
             | "media_compatibility_target_not_found"
             | "media_policy_profile_not_found"
+            | "media_policy_output_invalid"
+            | "media_desired_target_not_found"
+            | "media_configuration_invalid"
+            | "media_configuration_bound_exceeded"
+            | "media_configuration_root_unmapped"
+            | "media_root_kind_forbidden"
+            | "media_root_binding_incomplete"
+            | "media_discovery_manual_disabled"
+            | "media_discovery_schedule_disabled"
+            | "media_discovery_watcher_disabled"
             | "media_desired_target_streams_required"
             | "media_desired_target_stream_limit_exceeded"
             | "media_job_source_fingerprint_required",
@@ -2803,25 +2926,6 @@ fn media_capability_snapshot_response_invalid(
 
 fn media_profile_response(row: MediaProfileRow) -> MediaProfileResponse {
     MediaProfileResponse {
-        media_profile_public_id: row.media_profile_public_id,
-        profile_key: row.profile_key,
-        source_root: row.source_root,
-        output_root: row.output_root,
-        dry_run_only: row.dry_run_only,
-        retention_days: row.retention_days,
-        compatibility_target_key: row.compatibility_target_key,
-        desired_target_key: row.desired_target_key,
-        desired_target_version: row.desired_target_version,
-        policy_key: row.policy_key,
-        watcher_enabled: row.watcher_enabled,
-        schedule_enabled: row.schedule_enabled,
-        schedule_interval_minutes: row.schedule_interval_minutes,
-        updated_at: row.updated_at,
-    }
-}
-
-fn shared_media_profile_response(row: MediaProfileRow) -> revaer_api::models::MediaProfileResponse {
-    revaer_api::models::MediaProfileResponse {
         media_profile_public_id: row.media_profile_public_id,
         profile_key: row.profile_key,
         source_root: row.source_root,
@@ -3708,6 +3812,7 @@ mod tests {
 
     fn policy_profile(policy_key: &str, video_intent: &str) -> MediaPolicyProfileRow {
         MediaPolicyProfileRow {
+            output: revaer_data::media::configuration::MediaPolicyOutputRow::default(),
             policy_key: policy_key.to_string(),
             version: 1,
             display_name: "Policy".to_string(),
@@ -4013,7 +4118,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn media_profile_readiness_reports_missing_capability_snapshot() -> anyhow::Result<()> {
+    async fn execution_readiness_reports_missing_capability_snapshot() -> anyhow::Result<()> {
         let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
         else {
             return Ok(());
@@ -4034,24 +4139,22 @@ mod tests {
             })
             .await?;
 
-        let readiness = service
-            .media_profile_readiness(profile_id)
+        let profile = service
+            .store
+            .get_profile(profile_id)
             .await?
-            .expect("profile readiness should exist");
-
-        assert!(!readiness.ready);
-        assert_eq!(
-            readiness.reason.as_deref(),
-            Some("media_capability_snapshot_missing")
-        );
-        assert_eq!(readiness.profile.media_profile_public_id, profile_id);
-        assert!(readiness.snapshot.is_none());
+            .ok_or_else(|| anyhow::anyhow!("missing execution profile"))?;
+        let latest = service.store.latest_capability().await?;
+        let reason = service
+            .profile_execution_readiness_failure_code(&profile, latest.as_ref())
+            .await?;
+        assert_eq!(reason.as_deref(), Some("media_capability_snapshot_missing"));
+        assert!(latest.is_none());
         Ok(())
     }
 
     #[tokio::test]
-    async fn media_profile_readiness_reports_unsupported_compatibility_target() -> anyhow::Result<()>
-    {
+    async fn execution_readiness_reports_unsupported_compatibility_target() -> anyhow::Result<()> {
         let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
         else {
             return Ok(());
@@ -4086,18 +4189,20 @@ mod tests {
             })
             .await?;
 
-        let readiness = service
-            .media_profile_readiness(profile_id)
+        let profile = service
+            .store
+            .get_profile(profile_id)
             .await?
-            .expect("profile readiness should exist");
-
-        assert!(!readiness.ready);
+            .ok_or_else(|| anyhow::anyhow!("missing execution profile"))?;
+        let latest = service.store.latest_capability().await?;
+        let reason = service
+            .profile_execution_readiness_failure_code(&profile, latest.as_ref())
+            .await?;
         assert_eq!(
-            readiness.reason.as_deref(),
+            reason.as_deref(),
             Some("media_profile_compatibility_target_unsupported")
         );
-        assert_eq!(readiness.profile.media_profile_public_id, profile_id);
-        assert!(readiness.snapshot.is_some());
+        assert!(latest.is_some());
         Ok(())
     }
 
@@ -4449,6 +4554,57 @@ mod tests {
     }
 
     #[test]
+    fn profile_create_validation_errors_preserve_bounded_codes() {
+        for code in [
+            "media_desired_target_not_found",
+            "media_policy_profile_not_found",
+            "media_configuration_invalid",
+            "media_configuration_root_unmapped",
+            "media_root_kind_forbidden",
+            "media_root_binding_incomplete",
+        ] {
+            let error = DataError::JobFailed {
+                operation: "profile create",
+                job_key: "profile create",
+                error_code: Some("P0001".to_string()),
+                error_detail: Some(code.to_string()),
+            };
+            let mapped = map_data_error(&error);
+            assert_eq!(mapped.kind(), MediaServiceErrorKind::Invalid);
+            assert_eq!(mapped.code(), Some(code));
+            assert_eq!(mapped.sqlstate(), Some("P0001"));
+        }
+    }
+
+    #[test]
+    fn duplicate_profile_key_is_a_conflict_not_a_storage_failure() {
+        let error = DataError::JobFailed {
+            operation: "profile create",
+            job_key: "profile create",
+            error_code: Some("P0001".to_string()),
+            error_detail: Some("media_profile_key_conflict".to_string()),
+        };
+        let mapped = map_data_error(&error);
+        assert_eq!(mapped.kind(), MediaServiceErrorKind::Conflict);
+        assert_eq!(mapped.code(), Some("media_profile_key_conflict"));
+        assert_eq!(mapped.sqlstate(), Some("P0001"));
+    }
+
+    #[test]
+    fn duplicate_policy_version_is_a_conflict_not_a_storage_failure() {
+        let error = DataError::JobFailed {
+            operation: "policy create",
+            job_key: "policy create",
+            error_code: Some("P0001".to_string()),
+            error_detail: Some("media_policy_version_conflict".to_string()),
+        };
+        let mapped = map_data_error(&error);
+        assert_eq!(mapped.kind(), MediaServiceErrorKind::Conflict);
+        assert_eq!(mapped.code(), Some("media_policy_version_conflict"));
+        assert_eq!(mapped.sqlstate(), Some("P0001"));
+    }
+
+    #[test]
     fn map_data_error_projects_expected_kind_and_codes() {
         let not_found = DataError::JobFailed {
             operation: "job",
@@ -4590,7 +4746,7 @@ mod tests {
                 .any(|issue| issue.code == "media_yaml_policy_profile_not_found")
         );
         let invalid_apply = service
-            .media_yaml_apply(actor_user_public_id, &invalid_yaml)
+            .media_yaml_apply(actor_user_public_id, &invalid_yaml, &[])
             .await;
         assert_eq!(
             invalid_apply
@@ -4610,7 +4766,7 @@ mod tests {
         }
         let portable_yaml = serde_yaml::to_string(&portable_bundle)?;
         let portable_apply = service
-            .media_yaml_apply(actor_user_public_id, &portable_yaml)
+            .media_yaml_apply(actor_user_public_id, &portable_yaml, &[])
             .await?;
         assert!(portable_apply.forced_dry_run);
         assert!(portable_apply.media_profile_public_ids.is_empty());
@@ -4633,7 +4789,7 @@ mod tests {
         portable_profile.output_root = "/output/portable-copy".to_string();
         let mapped_yaml = serde_yaml::to_string(&portable_bundle)?;
         let mapped = service
-            .media_yaml_apply(actor_user_public_id, &mapped_yaml)
+            .media_yaml_apply(actor_user_public_id, &mapped_yaml, &[])
             .await?;
         assert_eq!(mapped.media_profile_public_ids.len(), 1);
         assert!(mapped.media_profile_import_draft_public_ids.is_empty());
@@ -4647,7 +4803,7 @@ mod tests {
         let local_validation = service.media_yaml_validate(&local_yaml).await?;
         assert!(local_validation.valid);
         let applied = service
-            .media_yaml_apply(actor_user_public_id, &local_yaml)
+            .media_yaml_apply(actor_user_public_id, &local_yaml, &[])
             .await?;
         assert!(applied.forced_dry_run);
         assert_eq!(applied.media_profile_public_ids.len(), 2);
@@ -4693,6 +4849,7 @@ mod tests {
             .await?;
         source
             .media_policy_upsert(MediaPolicyUpsertParams {
+                output: revaer_api::models::MediaPolicyOutput::default(),
                 actor_user_public_id: source_actor,
                 policy_key: "portable-strict",
                 version: 2,
@@ -4765,7 +4922,7 @@ mod tests {
             issue.code == "media_yaml_local_path_mapping_required" && !issue.blocking
         }));
         let drafted = destination
-            .media_yaml_apply(destination_actor, portable_yaml)
+            .media_yaml_apply(destination_actor, portable_yaml, &[])
             .await?;
         assert!(drafted.media_profile_public_ids.is_empty());
         assert_eq!(drafted.media_profile_import_draft_public_ids.len(), 1);
@@ -4780,7 +4937,7 @@ mod tests {
         mapped_profile.output_root = "/mapped/output/portable-library".to_string();
         let mapped_yaml = serde_yaml::to_string(&mapped_bundle)?;
         let applied = destination
-            .media_yaml_apply(destination_actor, &mapped_yaml)
+            .media_yaml_apply(destination_actor, &mapped_yaml, &[])
             .await?;
         assert_eq!(applied.media_profile_public_ids.len(), 1);
         assert!(applied.media_profile_import_draft_public_ids.is_empty());
@@ -5039,6 +5196,7 @@ mod tests {
 
         let policy = service
             .media_policy_upsert(MediaPolicyUpsertParams {
+                output: revaer_api::models::MediaPolicyOutput::default(),
                 actor_user_public_id,
                 policy_key: "living-room",
                 version: 3,

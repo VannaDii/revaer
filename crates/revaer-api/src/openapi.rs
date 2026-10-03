@@ -9,9 +9,7 @@ use tracing::error;
 
 use crate::openapi_assets::OPENAPI_EMBEDDED_JSON;
 
-const MEDIA_DISCOVERY_SOURCE_PATHS_MAX_LEN: usize = 1024;
-const MEDIA_DISCOVERY_SOURCE_PATH_MAX_BYTES: usize = 4096;
-const STALE_MEDIA_SCHEMAS: [&str; 11] = [
+const STALE_MEDIA_SCHEMAS: [&str; 12] = [
     "MediaCapabilityRecordRequest",
     "MediaCapabilityRecordResponse",
     "MediaJobArtifactAppendRequest",
@@ -23,8 +21,12 @@ const STALE_MEDIA_SCHEMAS: [&str; 11] = [
     "MediaJobPlanReasonAppendRequest",
     "MediaJobVerificationCheckAppendRequest",
     "MediaJobViolationAppendRequest",
+    "MediaProfileDesiredTargetRequest",
 ];
-const STALE_MEDIA_PATHS: [&str; 1] = ["/v1/media/desired-targets"];
+const STALE_MEDIA_PATHS: [&str; 2] = [
+    "/v1/media/desired-targets",
+    "/v1/media/profiles/{media_profile_public_id}/desired-target",
+];
 
 type OpenApiPersistFn =
     Arc<dyn Fn(&Path, &Value) -> Result<(), revaer_telemetry::TelemetryError> + Send + Sync>;
@@ -141,7 +143,10 @@ fn sort_openapi_map(map: &mut Map<String, Value>) {
 
 fn media_paths() -> Vec<(&'static str, Value)> {
     let mut paths = Vec::new();
+    paths.push(root_readiness::path());
+    paths.push(root_catalog::path());
     paths.extend(media_profile_paths());
+    paths.extend(media_association_paths());
     paths.extend(media_discovery_paths());
     paths.extend(media_job_paths());
     paths.extend(media_capability_paths());
@@ -170,6 +175,7 @@ struct MediaOperationSpec {
 #[derive(Clone, Copy)]
 enum MediaParameterSet {
     None,
+    CreateProfile,
     PathUuid(&'static str),
     JobListQuery,
     RecentJobQuery,
@@ -180,6 +186,13 @@ impl MediaParameterSet {
     fn values(self) -> Vec<Value> {
         match self {
             Self::None => Vec::new(),
+            Self::CreateProfile => vec![serde_json::json!({
+                "name": "If-None-Match",
+                "in": "header",
+                "required": true,
+                "description": "Required profile creation precondition",
+                "schema": { "type": "string", "enum": ["*"] }
+            })],
             Self::PathUuid(name) => vec![path_uuid_parameter(name)],
             Self::JobListQuery => vec![
                 query_uuid_parameter("media_profile_public_id"),
@@ -221,17 +234,25 @@ fn media_path<const N: usize>(
 ) -> (&'static str, Value) {
     let mut path_item = Map::new();
     for spec in operations {
-        path_item.insert(
-            spec.method.to_string(),
-            media_operation(
-                spec.summary,
-                spec.success_status,
-                spec.success_description,
-                spec.response_schema,
-                spec.request_schema,
-                spec.parameters.values(),
-            ),
+        let mut operation = media_operation(
+            spec.summary,
+            spec.success_status,
+            spec.success_description,
+            spec.response_schema,
+            spec.request_schema,
+            spec.parameters.values(),
         );
+        if matches!(spec.parameters, MediaParameterSet::CreateProfile) {
+            let problem_content = serde_json::json!({ "schema": schema_ref("ProblemDetails") });
+            operation["responses"]["400"]["content"]["application/problem+json"] =
+                problem_content.clone();
+            operation["responses"]["428"] = serde_json::json!({
+                "description": "Profile creation precondition required",
+                "headers": { "Cache-Control": { "schema": { "type": "string", "enum": ["no-store"] } } },
+                "content": { "application/problem+json": problem_content }
+            });
+        }
+        path_item.insert(spec.method.to_string(), operation);
     }
     (path, Value::Object(path_item))
 }
@@ -294,37 +315,8 @@ fn media_single_path(path: &'static str, operation: MediaOperationSpec) -> (&'st
 
 fn media_profile_core_paths() -> Vec<(&'static str, Value)> {
     vec![
-        media_collection_path(
-            "/v1/media/profiles",
-            "List media profiles",
-            "Media profile collection",
-            "MediaProfileListResponse",
-            media_op(
-                "post",
-                "Create or update a media profile",
-                "201",
-                "Media profile saved",
-                Some("MediaProfileResponse"),
-                Some("MediaProfileUpsertRequest"),
-                MediaParameterSet::None,
-            ),
-        ),
-        media_uuid_resource_path(
-            "/v1/media/profiles/{media_profile_public_id}",
-            "media_profile_public_id",
-            "Read a media profile",
-            "Media profile",
-            "MediaProfileResponse",
-            media_op(
-                "patch",
-                "Patch a media profile",
-                "200",
-                "Media profile",
-                Some("MediaProfileResponse"),
-                Some("MediaProfilePatchRequest"),
-                MediaParameterSet::None,
-            ),
-        ),
+        profile_version_collection_path(),
+        profile_version_item_path(),
         media_single_path(
             "/v1/media/profiles/{media_profile_public_id}/readiness",
             media_op(
@@ -338,6 +330,240 @@ fn media_profile_core_paths() -> Vec<(&'static str, Value)> {
             ),
         ),
     ]
+}
+
+fn profile_version_item_path() -> (&'static str, Value) {
+    let (path, mut item) = media_uuid_resource_path(
+        "/v1/media/profiles/{media_profile_public_id}",
+        "media_profile_public_id",
+        "Read a media profile",
+        "Media profile",
+        "ProfileVersionResponse",
+        media_op(
+            "put",
+            "Replace a media profile with an immutable version",
+            "200",
+            "Media profile",
+            Some("ProfileVersionResponse"),
+            Some("ProfileVersionRequest"),
+            MediaParameterSet::None,
+        ),
+    );
+    item["get"]["responses"]["200"]["headers"] = serde_json::json!({
+        "ETag": {"description": "Strong latest-profile-version fence: media-profile:<public-id>:v<latest-version>.",
+            "schema": {"type": "string"}},
+        "Cache-Control": {"schema": {"type": "string", "enum": ["no-store"]}}
+    });
+    item["put"]["parameters"] = serde_json::json!([{
+        "name": "media_profile_public_id", "in": "path", "required": true,
+        "schema": {"type": "string", "format": "uuid"}
+    }, {
+        "name": "If-Match", "in": "header", "required": true,
+        "description": "Current strong latest-profile-version ETag.", "schema": {"type": "string"}
+    }]);
+    item["put"]["responses"]["200"]["headers"] = item["get"]["responses"]["200"]["headers"].clone();
+    for (status, description) in [
+        ("412", "Latest profile version changed"),
+        ("428", "If-Match required"),
+    ] {
+        item["put"]["responses"][status] = serde_json::json!({
+            "description": description,
+            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ProblemDetails"}}}
+        });
+    }
+    (path, item)
+}
+
+fn media_association_paths() -> Vec<(&'static str, Value)> {
+    let mut paths = vec![
+        media_single_path(
+            "/v1/media/discovery-associations",
+            media_op(
+                "post",
+                "Create a discovery association",
+                "201",
+                "Saved association",
+                Some("DiscoveryAssociationResponse"),
+                Some("DiscoveryAssociationRequest"),
+                MediaParameterSet::CreateProfile,
+            ),
+        ),
+        media_single_path(
+            "/v1/media/discovery-associations/{media_discovery_association_public_id}",
+            media_op(
+                "get",
+                "Read a discovery association",
+                "200",
+                "Discovery association",
+                Some("DiscoveryAssociationResponse"),
+                None,
+                MediaParameterSet::PathUuid("media_discovery_association_public_id"),
+            ),
+        ),
+    ];
+    for (path, item) in &mut paths {
+        if path.ends_with("/schedule") {
+            continue;
+        }
+        for (method, status) in [("post", "201"), ("get", "200")] {
+            if item.get(method).is_some() {
+                item[method]["responses"][status]["headers"] = serde_json::json!({
+                    "ETag": {"schema": {"type": "string"}, "description": "Strong latest-association-version fence."},
+                    "Cache-Control": {"schema": {"type": "string", "enum": ["no-store"]}}
+                });
+            }
+        }
+    }
+    paths[0].1["post"]["responses"]["201"]["headers"]["Location"] = serde_json::json!({"schema": {"type": "string"}, "description": "Saved association resource URI."});
+    paths[0].1["get"] = media_single_path(
+        "/v1/media/discovery-associations",
+        media_op(
+            "get",
+            "List immutable discovery associations",
+            "200",
+            "Complete path-free association page",
+            Some("DiscoveryAssociationPageResponse"),
+            None,
+            MediaParameterSet::None,
+        ),
+    )
+    .1["get"]
+        .clone();
+    paths[0].1["get"]["parameters"] = serde_json::json!([
+        {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50}},
+        {"name": "cursor", "in": "query", "schema": {"type": "string"}, "description": "Opaque canonical association-only continuation."}
+    ]);
+    paths[0].1["get"]["responses"]["200"]["headers"] =
+        serde_json::json!({"Cache-Control": {"schema": {"type": "string", "enum": ["no-store"]}}});
+    paths.push(media_schedule_path());
+    paths
+}
+
+fn media_schedule_path() -> (&'static str, Value) {
+    let (path, mut item) = media_path(
+        "/v1/media/discovery-associations/{media_discovery_association_public_id}/schedule",
+        [
+            media_op(
+                "get",
+                "Read saved schedule cadence",
+                "200",
+                "Explicit cadence",
+                Some("MediaScheduleConfigurationResponse"),
+                None,
+                MediaParameterSet::PathUuid("media_discovery_association_public_id"),
+            ),
+            media_op(
+                "post",
+                "Save initial explicit schedule cadence",
+                "201",
+                "Saved cadence; automation unchanged",
+                Some("MediaScheduleConfigurationResponse"),
+                Some("MediaScheduleConfigurationRequest"),
+                MediaParameterSet::PathUuid("media_discovery_association_public_id"),
+            ),
+            media_op(
+                "put",
+                "Replace explicit schedule cadence",
+                "200",
+                "Saved cadence; pending due work preserved",
+                Some("MediaScheduleConfigurationResponse"),
+                Some("MediaScheduleConfigurationRequest"),
+                MediaParameterSet::PathUuid("media_discovery_association_public_id"),
+            ),
+        ],
+    );
+    item["post"]["parameters"] = serde_json::json!([
+        {"name": "media_discovery_association_public_id", "in": "path", "required": true,
+            "schema": {"type": "string", "format": "uuid"}},
+        {"name": "If-None-Match", "in": "header", "required": true,
+            "schema": {"type": "string", "enum": ["*"]}}
+    ]);
+    item["post"]["responses"]["428"] = serde_json::json!({
+        "description": "If-None-Match required",
+        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ProblemDetails"}}}
+    });
+    item["put"]["parameters"] = serde_json::json!([
+        {"name": "media_discovery_association_public_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}},
+        {"name": "If-Match", "in": "header", "required": true, "schema": {"type": "string"}, "description": "Current strong schedule ETag."}
+    ]);
+    for (status, description) in [
+        ("412", "Schedule cadence changed"),
+        ("428", "If-Match required"),
+    ] {
+        item["put"]["responses"][status] = serde_json::json!({"description": description,
+            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ProblemDetails"}}}});
+    }
+    for (method, status) in [("get", "200"), ("post", "201"), ("put", "200")] {
+        item[method]["responses"][status]["headers"] = serde_json::json!({
+            "ETag": {"schema": {"type": "string"}, "description": "Strong identity, association-version and persisted-revision fence."},
+            "Cache-Control": {"schema": {"type": "string", "enum": ["no-store"]}}
+        });
+    }
+    (path, item)
+}
+
+fn schedule_configuration_schema(response: bool) -> Value {
+    let mut schema = serde_json::json!({
+        "type": "object", "additionalProperties": false,
+        "required": ["association_version", "interval_quantity", "interval_unit"],
+        "properties": {
+            "association_version": {"type": "integer", "format": "int32", "minimum": 1},
+            "interval_quantity": {"type": "integer", "format": "int32", "minimum": 1},
+            "interval_unit": {"type": "string", "enum": ["minutes", "hours"]}
+        },
+        "oneOf": [
+            {"properties": {"interval_unit": {"enum": ["minutes"]}, "interval_quantity": {"maximum": 43200}}},
+            {"properties": {"interval_unit": {"enum": ["hours"]}, "interval_quantity": {"maximum": 720}}}
+        ]
+    });
+    if response {
+        schema["required"] = serde_json::json!([
+            "association_version",
+            "interval_quantity",
+            "interval_unit",
+            "media_discovery_association_public_id",
+            "anchor_due_at",
+            "updated_at"
+        ]);
+        schema["properties"]["media_discovery_association_public_id"] =
+            serde_json::json!({"type": "string", "format": "uuid"});
+        schema["properties"]["anchor_due_at"] =
+            serde_json::json!({"type": "string", "format": "date-time"});
+        schema["properties"]["updated_at"] =
+            serde_json::json!({"type": "string", "format": "date-time"});
+    }
+    schema
+}
+
+fn profile_version_collection_path() -> (&'static str, Value) {
+    let (path, mut item) = media_collection_path(
+        "/v1/media/profiles",
+        "List immutable media profiles",
+        "Complete path-free profile page",
+        "ProfileVersionPageResponse",
+        media_op(
+            "post",
+            "Create immutable media profile version 1",
+            "201",
+            "Complete saved profile",
+            Some("ProfileVersionResponse"),
+            Some("ProfileVersionRequest"),
+            MediaParameterSet::CreateProfile,
+        ),
+    );
+    item["get"]["parameters"] = serde_json::json!([
+        {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50}},
+        {"name": "cursor", "in": "query", "schema": {"type": "string"}, "description": "Opaque canonical profile-only continuation; offset pagination is not accepted."}
+    ]);
+    item["get"]["responses"]["200"]["headers"] = serde_json::json!({
+        "Cache-Control": {"schema": {"type": "string", "enum": ["no-store"]}}
+    });
+    item["post"]["responses"]["201"]["headers"] = serde_json::json!({
+        "ETag": {"schema": {"type": "string"}, "description": "Strong latest-version fence."},
+        "Location": {"schema": {"type": "string"}, "description": "Saved profile resource URI."},
+        "Cache-Control": {"schema": {"type": "string", "enum": ["no-store"]}}
+    });
+    (path, item)
 }
 
 fn media_profile_support_paths() -> Vec<(&'static str, Value)> {
@@ -354,18 +580,6 @@ fn media_profile_support_paths() -> Vec<(&'static str, Value)> {
         ),
     )];
     paths.extend(media_configuration_paths());
-    paths.push(media_single_path(
-        "/v1/media/profiles/{media_profile_public_id}/desired-target",
-        media_op(
-            "patch",
-            "Pin or clear a media profile desired target",
-            "204",
-            "Media profile desired target updated",
-            None,
-            Some("MediaProfileDesiredTargetRequest"),
-            MediaParameterSet::PathUuid("media_profile_public_id"),
-        ),
-    ));
     paths.push(media_single_path(
         "/v1/media/planning/preview",
         media_op(
@@ -548,7 +762,18 @@ fn media_discovery_run_path(
     summary: &'static str,
     description: &'static str,
 ) -> (&'static str, Value) {
-    media_single_path(path, media_discovery_run_op(summary, description))
+    media_single_path(
+        path,
+        media_op(
+            "post",
+            summary,
+            "201",
+            description,
+            Some("MediaDiscoveryRunResponse"),
+            Some("MediaDiscoveryPreviewRequest"),
+            MediaParameterSet::None,
+        ),
+    )
 }
 
 fn media_discovery_run_collection_path(
@@ -559,13 +784,18 @@ fn media_discovery_run_collection_path(
     run_summary: &'static str,
     run_description: &'static str,
 ) -> (&'static str, Value) {
-    media_collection_path(
+    let (path, mut item) = media_collection_path(
         path,
         list_summary,
         list_description,
         list_schema,
         media_discovery_run_op(run_summary, run_description),
-    )
+    );
+    item["get"]["parameters"] = serde_json::json!([
+        {"name":"limit","in":"query","schema":{"type":"integer","minimum":1,"maximum":200,"default":50}},
+        {"name":"cursor","in":"query","schema":{"type":"string"}}
+    ]);
+    (path, item)
 }
 
 const fn media_discovery_run_op(
@@ -977,6 +1207,8 @@ fn query_bool_parameter(name: &'static str) -> Value {
 
 fn media_schemas() -> Vec<(&'static str, Value)> {
     let mut schemas = Vec::new();
+    schemas.extend(root_readiness::schemas());
+    schemas.extend(root_catalog::schemas());
     schemas.extend(media_profile_schemas());
     schemas.extend(media_discovery_schemas());
     schemas.extend(media_job_schemas());
@@ -1037,6 +1269,38 @@ fn media_profile_core_schemas() -> Vec<(&'static str, Value)> {
         ),
         ("MediaProfileResponse", media_profile_response_schema()),
         (
+            "MediaScheduleConfigurationRequest",
+            schedule_configuration_schema(false),
+        ),
+        (
+            "MediaScheduleConfigurationResponse",
+            schedule_configuration_schema(true),
+        ),
+        ("ProfileVersionResponse", profile_version_response_schema()),
+        ("ProfileVersionRequest", profile_version_request_schema()),
+        ("ProfileVersionPageResponse", profile_version_page_schema()),
+        (
+            "DiscoveryAssociationPageResponse",
+            object_schema(
+                &["associations"],
+                [
+                    (
+                        "associations",
+                        serde_json::json!({"type": "array", "maxItems": 200, "items": schema_ref("DiscoveryAssociationResponse")}),
+                    ),
+                    ("next_cursor", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "DiscoveryAssociationRequest",
+            discovery_association_schema(false),
+        ),
+        (
+            "DiscoveryAssociationResponse",
+            discovery_association_schema(true),
+        ),
+        (
             "MediaProfileListResponse",
             object_schema(
                 &["profiles"],
@@ -1044,6 +1308,197 @@ fn media_profile_core_schemas() -> Vec<(&'static str, Value)> {
             ),
         ),
     ]
+}
+
+fn discovery_association_schema(response: bool) -> Value {
+    let mut required = vec![
+        "association_key",
+        "media_profile_public_id",
+        "profile_version",
+        "source_root_key",
+        "root_relative_path",
+        "manual_enabled",
+        "watcher_enabled",
+        "schedule_enabled",
+    ];
+    let key = || {
+        serde_json::json!({"type": "string", "minLength": 1, "maxLength": 64,
+        "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"})
+    };
+    let version = || serde_json::json!({"type": "integer", "minimum": 1, "maximum": 2_147_483_647});
+    let mut properties = vec![
+        ("association_key", key()),
+        ("media_profile_public_id", uuid_schema()),
+        ("profile_version", version()),
+        ("source_root_key", key()),
+        (
+            "root_relative_path",
+            serde_json::json!({"type": "string", "maxLength": 4096,
+            "description": "Explicit component-safe root-relative prefix; empty selects the whole root. Absolute paths, empty components, dot components and backslashes are rejected."}),
+        ),
+        ("manual_enabled", bool_schema()),
+        ("watcher_enabled", bool_schema()),
+        ("schedule_enabled", bool_schema()),
+    ];
+    if response {
+        required.extend([
+            "media_discovery_association_public_id",
+            "latest_version",
+            "lifecycle_state",
+            "resolution_state",
+            "binding_ready",
+            "destructive_ready",
+            "created_at",
+        ]);
+        properties.extend([
+            ("media_discovery_association_public_id", uuid_schema()), ("latest_version", version()),
+            ("active_version", version()),
+            ("lifecycle_state", serde_json::json!({"type": "string", "enum": ["active", "draft", "archived"]})),
+            ("resolution_state", serde_json::json!({"type": "string", "enum": ["resolved", "unmapped", "kind_forbidden"]})),
+            ("binding_ready", bool_schema()), ("binding_reason", string_schema()),
+            ("destructive_ready", bool_schema()), ("destructive_reason", string_schema()),
+            ("created_at", serde_json::json!({"type": "string", "format": "date-time"})),
+        ]);
+    }
+    let mut schema = object_schema_from_iter(&required, properties);
+    schema["additionalProperties"] = Value::Bool(false);
+    schema
+}
+
+fn profile_version_response_schema() -> Value {
+    let key = || {
+        serde_json::json!({"type": "string", "minLength": 1, "maxLength": 64,
+        "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"})
+    };
+    let version = || serde_json::json!({"type": "integer", "minimum": 1, "maximum": 2_147_483_647});
+    let mut binding = object_schema(
+        &[
+            "kind",
+            "logical_key",
+            "resolution_state",
+            "binding_ready",
+            "destructive_ready",
+        ],
+        [
+            (
+                "kind",
+                serde_json::json!({"type": "string", "enum": ["output", "workspace", "backup", "quarantine"]}),
+            ),
+            ("logical_key", key()),
+            (
+                "resolution_state",
+                serde_json::json!({"type": "string", "enum": ["resolved", "unmapped", "kind_forbidden"]}),
+            ),
+            ("binding_ready", bool_schema()),
+            ("binding_reason", string_schema()),
+            ("destructive_ready", bool_schema()),
+            ("destructive_reason", string_schema()),
+        ],
+    );
+    binding["additionalProperties"] = Value::Bool(false);
+    let mut schema = object_schema(
+        &[
+            "media_profile_public_id",
+            "profile_key",
+            "display_name",
+            "description",
+            "enabled",
+            "dry_run_only",
+            "desired_target_key",
+            "desired_target_version",
+            "policy_key",
+            "policy_version",
+            "output_root_key",
+            "workspace_root_key",
+            "latest_version",
+            "lifecycle_state",
+            "root_bindings",
+            "created_at",
+            "updated_at",
+        ],
+        [
+            (
+                "media_profile_public_id",
+                serde_json::json!({"type": "string", "format": "uuid"}),
+            ),
+            ("profile_key", key()),
+            (
+                "display_name",
+                serde_json::json!({"type": "string", "description": "Exact submitted value; 1-128 UTF-8 bytes."}),
+            ),
+            (
+                "description",
+                serde_json::json!({"type": "string", "description": "Exact submitted value; at most 1024 UTF-8 bytes."}),
+            ),
+            ("enabled", bool_schema()),
+            ("dry_run_only", bool_schema()),
+            ("desired_target_key", key()),
+            ("desired_target_version", version()),
+            ("policy_key", key()),
+            ("policy_version", version()),
+            ("output_root_key", key()),
+            ("workspace_root_key", key()),
+            ("backup_root_key", key()),
+            ("quarantine_root_key", key()),
+            ("latest_version", version()),
+            ("active_version", version()),
+            (
+                "lifecycle_state",
+                serde_json::json!({"type": "string", "enum": ["draft", "active", "archived"]}),
+            ),
+            (
+                "root_bindings",
+                serde_json::json!({"type": "array", "minItems": 2, "maxItems": 4, "items": binding}),
+            ),
+            (
+                "created_at",
+                serde_json::json!({"type": "string", "format": "date-time"}),
+            ),
+            (
+                "updated_at",
+                serde_json::json!({"type": "string", "format": "date-time"}),
+            ),
+        ],
+    );
+    schema["additionalProperties"] = Value::Bool(false);
+    schema
+}
+
+fn profile_version_request_schema() -> Value {
+    let mut schema = profile_version_response_schema();
+    let response_fields = [
+        "media_profile_public_id",
+        "latest_version",
+        "active_version",
+        "lifecycle_state",
+        "root_bindings",
+        "created_at",
+        "updated_at",
+    ];
+    if let Some(properties) = schema["properties"].as_object_mut() {
+        for field in response_fields {
+            properties.remove(field);
+        }
+    }
+    if let Some(required) = schema["required"].as_array_mut() {
+        required.retain(|field| {
+            !field
+                .as_str()
+                .is_some_and(|field| response_fields.contains(&field))
+        });
+    }
+    schema
+}
+
+fn profile_version_page_schema() -> Value {
+    let mut profiles = array_ref_schema("ProfileVersionResponse");
+    profiles["maxItems"] = Value::from(200);
+    let mut schema = object_schema(
+        &["profiles"],
+        [("profiles", profiles), ("next_cursor", string_schema())],
+    );
+    schema["additionalProperties"] = Value::Bool(false);
+    schema
 }
 
 fn media_profile_support_schemas() -> Vec<(&'static str, Value)> {
@@ -1054,29 +1509,48 @@ fn media_profile_support_schemas() -> Vec<(&'static str, Value)> {
             [("valid", bool_schema()), ("issues", array_string_schema())],
         ),
     )];
-    schemas.push((
-        "MediaProfileReadinessResponse",
-        object_schema(
-            &["ready", "profile"],
-            [
-                ("ready", bool_schema()),
-                ("reason", string_schema()),
-                ("profile", schema_ref("MediaProfileResponse")),
-                ("snapshot", schema_ref("MediaCapabilitySnapshotResponse")),
-            ],
-        ),
-    ));
+    let mut active_bindings =
+        profile_version_response_schema()["properties"]["root_bindings"].clone();
+    active_bindings["minItems"] = Value::from(0);
+    let mut readiness = object_schema(
+        &[
+            "profile",
+            "active_root_bindings",
+            "root_readiness",
+            "active_association_count",
+            "binding_ready",
+            "destructive_ready",
+        ],
+        [
+            ("profile", schema_ref("ProfileVersionResponse")),
+            ("active_profile", schema_ref("ProfileVersionRequest")),
+            ("active_root_bindings", active_bindings),
+            ("root_readiness", schema_ref("RootCatalogReadinessResponse")),
+            (
+                "active_association_count",
+                serde_json::json!({"type":"integer","minimum":0,"maximum":128}),
+            ),
+            ("binding_ready", bool_schema()),
+            ("binding_reason", string_schema()),
+            ("destructive_ready", bool_schema()),
+            ("destructive_reason", string_schema()),
+        ],
+    );
+    readiness["additionalProperties"] = Value::Bool(false);
+    schemas.push(("MediaProfileReadinessResponse", readiness));
     schemas.extend(media_configuration_schemas());
     schemas.extend([
         (
             "MediaPlanningPreviewRequest",
-            object_schema(
-                &["media_profile_public_id", "source_path"],
-                [
-                    ("media_profile_public_id", uuid_schema()),
-                    ("source_path", string_schema()),
-                ],
-            ),
+            serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["media_discovery_association_public_id", "source_path"],
+                "properties": {
+                    "media_discovery_association_public_id": uuid_schema(),
+                    "source_path": {"type": "string", "minLength": 1, "maxLength": 4096}
+                }
+            }),
         ),
         (
             "MediaPlanningPreviewResponse",
@@ -1192,16 +1666,6 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
                 [("targets", array_ref_schema("MediaDesiredTargetResponse"))],
             ),
         ),
-        (
-            "MediaProfileDesiredTargetRequest",
-            object_schema(
-                &[],
-                [
-                    ("target_key", string_schema()),
-                    ("version", integer_schema()),
-                ],
-            ),
-        ),
     ]
 }
 
@@ -1272,6 +1736,7 @@ fn media_policy_object_schema() -> Value {
             "version",
             "display_name",
             "video_intent",
+            "output",
             "verification_strictness",
             "verification_duration_tolerance_millis",
             "verification_mux_validation",
@@ -1284,6 +1749,28 @@ fn media_policy_object_schema() -> Value {
             ("version", integer_schema()),
             ("display_name", string_schema()),
             ("video_intent", string_schema()),
+            (
+                "output",
+                object_schema(
+                    &[
+                        "dry_run",
+                        "replacement_mode",
+                        "quarantine_enabled",
+                        "preserve_permissions",
+                        "preserve_ownership",
+                    ],
+                    [
+                        ("dry_run", bool_schema()),
+                        (
+                            "replacement_mode",
+                            serde_json::json!({"type":"string", "enum":["disabled", "atomic_replace"]}),
+                        ),
+                        ("quarantine_enabled", bool_schema()),
+                        ("preserve_permissions", bool_schema()),
+                        ("preserve_ownership", bool_schema()),
+                    ],
+                ),
+            ),
             ("verification_strictness", verification_strictness_schema()),
             (
                 "verification_duration_tolerance_millis",
@@ -1365,16 +1852,22 @@ fn media_discovery_schemas() -> Vec<(&'static str, Value)> {
 
 fn media_discovery_preview_schemas() -> Vec<(&'static str, Value)> {
     vec![
-        (
-            "MediaDiscoveryPreviewRequest",
-            object_schema(
-                &["media_profile_public_id", "source_paths"],
+        ("MediaDiscoveryPreviewRequest", {
+            let mut schema = object_schema(
+                &["media_discovery_association_public_id", "source_paths"],
                 [
-                    ("media_profile_public_id", uuid_schema()),
-                    ("source_paths", media_discovery_source_paths_schema()),
+                    ("media_discovery_association_public_id", uuid_schema()),
+                    (
+                        "source_paths",
+                        serde_json::json!({"type": "array", "minItems": 1, "maxItems": 128,
+                        "items": {"type": "string", "minLength": 1, "maxLength": 4096},
+                        "description": "Explicit component-safe paths relative to the association's attested source root; absolute paths are rejected."}),
+                    ),
                 ],
-            ),
-        ),
+            );
+            schema["additionalProperties"] = Value::Bool(false);
+            schema
+        }),
         (
             "MediaDiscoveryPreviewItemResponse",
             object_schema(
@@ -1405,13 +1898,7 @@ fn media_discovery_run_schemas() -> Vec<(&'static str, Value)> {
     vec![
         (
             "MediaDiscoveryRunRequest",
-            object_schema(
-                &["media_profile_public_id", "source_paths"],
-                [
-                    ("media_profile_public_id", uuid_schema()),
-                    ("source_paths", media_discovery_source_paths_schema()),
-                ],
-            ),
+            schema_ref("MediaDiscoveryPreviewRequest"),
         ),
         (
             "MediaDiscoveryQueuedJobResponse",
@@ -1463,32 +1950,19 @@ fn media_discovery_schedule_schemas() -> Vec<(&'static str, Value)> {
     vec![
         (
             "MediaDiscoveryScheduleResponse",
-            object_schema(
-                &[
-                    "media_profile_public_id",
-                    "profile_key",
-                    "source_root",
-                    "enabled",
-                    "dry_run",
-                ],
-                [
-                    ("media_profile_public_id", uuid_schema()),
-                    ("profile_key", string_schema()),
-                    ("source_root", string_schema()),
-                    ("enabled", bool_schema()),
-                    ("interval_minutes", integer_schema()),
-                    ("dry_run", bool_schema()),
-                ],
-            ),
+            schema_ref("DiscoveryAssociationResponse"),
         ),
         (
             "MediaDiscoveryScheduleListResponse",
             object_schema(
                 &["schedules"],
-                [(
-                    "schedules",
-                    array_ref_schema("MediaDiscoveryScheduleResponse"),
-                )],
+                [
+                    (
+                        "schedules",
+                        array_ref_schema("MediaDiscoveryScheduleResponse"),
+                    ),
+                    ("next_cursor", string_schema()),
+                ],
             ),
         ),
     ]
@@ -1498,31 +1972,19 @@ fn media_discovery_watcher_schemas() -> Vec<(&'static str, Value)> {
     vec![
         (
             "MediaDiscoveryWatcherResponse",
-            object_schema(
-                &[
-                    "media_profile_public_id",
-                    "profile_key",
-                    "source_root",
-                    "enabled",
-                    "dry_run",
-                ],
-                [
-                    ("media_profile_public_id", uuid_schema()),
-                    ("profile_key", string_schema()),
-                    ("source_root", string_schema()),
-                    ("enabled", bool_schema()),
-                    ("dry_run", bool_schema()),
-                ],
-            ),
+            schema_ref("DiscoveryAssociationResponse"),
         ),
         (
             "MediaDiscoveryWatcherListResponse",
             object_schema(
                 &["watchers"],
-                [(
-                    "watchers",
-                    array_ref_schema("MediaDiscoveryWatcherResponse"),
-                )],
+                [
+                    (
+                        "watchers",
+                        array_ref_schema("MediaDiscoveryWatcherResponse"),
+                    ),
+                    ("next_cursor", string_schema()),
+                ],
             ),
         ),
     ]
@@ -1933,7 +2395,39 @@ fn media_yaml_schemas() -> Vec<(&'static str, Value)> {
         ),
         (
             "MediaYamlImportRequest",
-            object_schema(&["yaml_payload"], [("yaml_payload", string_schema())]),
+            serde_json::json!({
+                "type": "object", "additionalProperties": false,
+                "required": ["yaml_payload"],
+                "properties": {"yaml_payload": {
+                    "type": "string", "maxLength": crate::models::MEDIA_YAML_BUNDLE_MAX_BYTES,
+                    "description": "One UTF-8 YAML document, at most 4194304 bytes; JSON escaping does not enlarge that document limit."
+                }, "preconditions": {
+                    "type": "array", "maxItems": crate::models::MEDIA_YAML_PRECONDITIONS_MAX,
+                    "items": {"$ref": "#/components/schemas/MediaYamlResourcePrecondition"},
+                    "description": "Required for apply, optional for read-only validation. Explicit operator intent for every distinct kind/key; versions in YAML are not write fences."
+                }}
+            }),
+        ),
+        (
+            "MediaYamlResourcePrecondition",
+            serde_json::json!({"oneOf": [
+                {"type": "object", "additionalProperties": false,
+                    "required": ["intent", "kind", "key"], "properties": {
+                        "intent": {"type": "string", "enum": ["create"]},
+                        "kind": {"$ref": "#/components/schemas/MediaYamlResourceKind"},
+                        "key": {"type": "string", "minLength": 1, "maxLength": 128}}},
+                {"type": "object", "additionalProperties": false,
+                    "required": ["intent", "kind", "key", "expected_version"], "properties": {
+                        "intent": {"type": "string", "enum": ["match"]},
+                        "kind": {"$ref": "#/components/schemas/MediaYamlResourceKind"},
+                        "key": {"type": "string", "minLength": 1, "maxLength": 128},
+                        "expected_version": {"type": "integer", "minimum": 1, "maximum": i32::MAX}}}
+            ]}),
+        ),
+        (
+            "MediaYamlResourceKind",
+            serde_json::json!({"type": "string", "enum": ["compatibility_targets", "targets",
+                "policies", "profiles", "discovery_associations"]}),
         ),
         (
             "MediaYamlIssueResponse",
@@ -2187,17 +2681,6 @@ fn array_string_schema() -> Value {
     serde_json::json!({ "type": "array", "items": string_schema() })
 }
 
-fn media_discovery_source_paths_schema() -> Value {
-    serde_json::json!({
-        "type": "array",
-        "maxItems": MEDIA_DISCOVERY_SOURCE_PATHS_MAX_LEN,
-        "items": {
-            "type": "string",
-            "maxLength": MEDIA_DISCOVERY_SOURCE_PATH_MAX_BYTES
-        }
-    })
-}
-
 fn array_uuid_schema() -> Value {
     serde_json::json!({ "type": "array", "items": uuid_schema() })
 }
@@ -2244,6 +2727,9 @@ pub fn openapi_output_path() -> PathBuf {
     crate::openapi_assets::openapi_output_path()
 }
 
+mod root_catalog;
+mod root_readiness;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2253,6 +2739,69 @@ mod tests {
     use std::io;
     use std::{fs, path::PathBuf};
     use uuid::Uuid;
+
+    #[test]
+    fn schedule_documentation_preserves_association_collection_and_explicit_cadence() {
+        let paths = media_association_paths();
+        let collection = paths
+            .iter()
+            .find(|(path, _)| *path == "/v1/media/discovery-associations");
+        assert!(
+            collection.is_some_and(|(_, item)| item["get"]["parameters"][0]["name"] == "limit")
+        );
+        let (_, schedule) = media_schedule_path();
+        assert_eq!(schedule["get"]["parameters"][0]["in"], "path");
+        assert_eq!(schedule["post"]["parameters"][1]["name"], "If-None-Match");
+        assert!(schedule["post"]["responses"]["201"]["headers"]["ETag"].is_object());
+        assert_eq!(schedule["put"]["parameters"][1]["name"], "If-Match");
+        assert!(schedule["put"]["responses"]["412"].is_object());
+        assert!(schedule["post"]["responses"]["428"].is_object());
+        let schema = schedule_configuration_schema(false);
+        assert_eq!(schema["additionalProperties"], false);
+        assert_eq!(
+            schema["oneOf"][0]["properties"]["interval_quantity"]["maximum"],
+            43200
+        );
+        assert_eq!(
+            schema["oneOf"][1]["properties"]["interval_quantity"]["maximum"],
+            720
+        );
+        assert!(schema["properties"]["interval_quantity"]["default"].is_null());
+        assert!(schema["properties"]["interval_unit"]["default"].is_null());
+    }
+
+    #[test]
+    fn media_profile_get_documents_path_free_version_and_headers() {
+        let (_, item) = profile_version_item_path();
+        assert_eq!(
+            item["get"]["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ProfileVersionResponse"
+        );
+        assert!(item["get"]["responses"]["200"]["headers"]["ETag"].is_object());
+        assert_eq!(
+            item["get"]["responses"]["200"]["headers"]["Cache-Control"]["schema"]["enum"],
+            json!(["no-store"])
+        );
+        let schema = profile_version_response_schema();
+        assert_eq!(schema["additionalProperties"], false);
+        for key in [
+            "output_root_key",
+            "workspace_root_key",
+            "latest_version",
+            "active_version",
+            "enabled",
+        ] {
+            assert!(schema["properties"][key].is_object());
+        }
+        for key in [
+            "source_root",
+            "output_root",
+            "canonical_path",
+            "filesystem_inode",
+        ] {
+            assert!(schema["properties"].get(key).is_none());
+        }
+    }
 
     fn repo_root() -> PathBuf {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -2294,7 +2843,6 @@ mod tests {
             "/v1/media/profiles/validate",
             "/v1/media/compatibility-targets",
             "/v1/media/targets",
-            "/v1/media/profiles/{media_profile_public_id}/desired-target",
             "/v1/media/policies",
             "/v1/media/job-retention",
             "/v1/media/planning/preview",
@@ -2325,7 +2873,9 @@ mod tests {
                 "missing media OpenAPI route {route}"
             );
         }
-        assert!(!paths.contains_key("/v1/media/desired-targets"));
+        for retired in STALE_MEDIA_PATHS {
+            assert!(!paths.contains_key(retired));
+        }
         assert!(
             paths
                 .get("/v1/media/discovery/schedules")
@@ -2343,10 +2893,6 @@ mod tests {
         for (route, method) in [
             ("/v1/media/compatibility-targets", "post"),
             ("/v1/media/targets", "post"),
-            (
-                "/v1/media/profiles/{media_profile_public_id}/desired-target",
-                "patch",
-            ),
             ("/v1/media/policies", "post"),
             ("/v1/media/job-retention", "patch"),
         ] {
@@ -2383,7 +2929,6 @@ mod tests {
         "MediaDesiredTargetCreateRequest",
         "MediaDesiredTargetResponse",
         "MediaDesiredTargetListResponse",
-        "MediaProfileDesiredTargetRequest",
         "MediaPolicyResponse",
         "MediaPolicyListResponse",
         "MediaPolicyUpsertRequest",

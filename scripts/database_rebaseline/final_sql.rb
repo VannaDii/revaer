@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module RevaerDatabaseRebaseline
-  # Transition-only byte proof. Lifecycle SQL lives exclusively in init.sql.
+  # Historical byte proof and current-v0 envelope checks. Lifecycle SQL lives in init.sql.
   class FinalSql
     HEADER = "-- Revaer pre-v1 packaged database baseline.\n"
     ASSEMBLY_HEADER = "-- Revaer pre-v1 init candidate. Assembly-only until ADR 522 cutover.\n"
@@ -115,8 +115,16 @@ module RevaerDatabaseRebaseline
       unless Digest::SHA256.hexdigest(source) == @contract.final_sha256
         raise Failure, "final init SHA-256 does not match reviewed finalization bytes"
       end
-      # Matching exact bytes is the authority; this check also makes unexpected
-      # top-level timeout or transaction-control changes independently visible.
+      verify_development!(source)
+    rescue Errno::ENOENT
+      raise Failure, "final init or frozen candidate evidence is missing"
+    end
+
+    # ADR 591 permits current v0 feature SQL, not transaction or timeout bypasses.
+    # The installed baseline verifier separately checks the current packaged digest.
+    def verify_development!(source = File.binread(@contract.init_path))
+      raise Failure, "packaged init header is missing" unless source.start_with?(HEADER)
+
       offset = 0
       SqlStatements.new(source).boundaries.each do |boundary|
         statement = source.byteslice(offset, boundary.byte_count - offset)
@@ -129,7 +137,7 @@ module RevaerDatabaseRebaseline
       end
       source
     rescue Errno::ENOENT
-      raise Failure, "final init or frozen candidate evidence is missing"
+      raise Failure, "packaged init is missing"
     end
 
     def generate!

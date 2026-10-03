@@ -1,24 +1,19 @@
 use crate::app::api::ApiCtx;
 use crate::features::media::api::{
-    apply_yaml, create_profile, export_yaml, fetch_compatibility_targets, fetch_compliance,
-    fetch_job_diagnostics, fetch_latest_capability, fetch_policies, fetch_profiles,
-    fetch_readiness, fetch_recent_jobs, patch_profile, preview_discovery, refresh_capability,
-    upsert_compatibility_target, upsert_policy, validate_yaml,
+    apply_yaml, export_yaml, fetch_compatibility_targets, fetch_compliance, fetch_job_diagnostics,
+    fetch_latest_capability, fetch_policies, fetch_readiness, fetch_recent_jobs,
+    refresh_capability, upsert_compatibility_target, upsert_policy, validate_yaml,
 };
-use crate::features::media::logic::{
-    parse_retention_days_input, parse_schedule_interval_input, summarize_media_job_diagnostics,
-};
+use crate::features::media::logic::summarize_media_job_diagnostics;
 use crate::features::media::state::{
     MediaJobDiagnosticsMap, MediaJobDiagnosticsState, MediaViewState,
     is_current_diagnostics_request,
 };
 use crate::models::{
     MediaCompatibilityTargetResponse, MediaCompatibilityTargetUpsertRequest,
-    MediaDiscoveryPreviewItemResponse, MediaDiscoveryPreviewRequest, MediaJobArtifactResponse,
-    MediaJobCompactAuditResponse, MediaJobOperationResponse, MediaJobPlanReasonResponse,
-    MediaJobVerificationCheckResponse, MediaJobViolationResponse, MediaPolicyResponse,
-    MediaPolicyUpsertRequest, MediaProfilePatchRequest, MediaProfileResponse,
-    MediaProfileUpsertRequest,
+    MediaJobArtifactResponse, MediaJobCompactAuditResponse, MediaJobOperationResponse,
+    MediaJobPlanReasonResponse, MediaJobVerificationCheckResponse, MediaJobViolationResponse,
+    MediaPolicyResponse, MediaPolicyUpsertRequest,
 };
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -57,6 +52,7 @@ struct TargetCatalogFormHandles {
 
 #[derive(Clone)]
 struct PolicyCatalogFormHandles {
+    output: UseStateHandle<super::policy_output_view::PolicyOutputDraft>,
     key: UseStateHandle<String>,
     version: UseStateHandle<String>,
     display_name: UseStateHandle<String>,
@@ -67,28 +63,6 @@ struct PolicyCatalogFormHandles {
     verification_decode_all_streams: UseStateHandle<bool>,
     verification_keyframe_seek: UseStateHandle<bool>,
     verification_playback_probe: UseStateHandle<bool>,
-}
-
-#[derive(Clone)]
-struct ProfileFormHandles {
-    profile_key: UseStateHandle<String>,
-    source_root: UseStateHandle<String>,
-    output_root: UseStateHandle<String>,
-    retention_days: UseStateHandle<String>,
-    dry_run_only: UseStateHandle<bool>,
-    compatibility_target_key: UseStateHandle<String>,
-    policy_key: UseStateHandle<String>,
-    watcher_enabled: UseStateHandle<bool>,
-    schedule_enabled: UseStateHandle<bool>,
-    schedule_interval_minutes: UseStateHandle<String>,
-    discovery_source_path: UseStateHandle<String>,
-}
-
-#[derive(Clone, Copy)]
-enum ProfileToggleKind {
-    DryRun,
-    Watcher,
-    Schedule,
 }
 
 #[function_component(MediaPage)]
@@ -103,13 +77,6 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
     let busy = use_state(|| false);
     let yaml_input = use_state(String::new);
     let validation_status = use_state(|| None::<String>);
-    let profile_key = use_state(String::new);
-    let source_root = use_state(String::new);
-    let output_root = use_state(String::new);
-    let retention_days = use_state(|| "30".to_string());
-    let dry_run_only = use_state(|| true);
-    let compatibility_target_key = use_state(String::new);
-    let policy_key = use_state(|| "safe_dry_run".to_string());
     let target_catalog_key = use_state(String::new);
     let target_catalog_version = use_state(|| "1".to_string());
     let target_catalog_display_name = use_state(String::new);
@@ -119,6 +86,7 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
     let target_catalog_audio_channel_layout = use_state(String::new);
     let target_catalog_subtitle_policy = use_state(|| "selected".to_string());
     let policy_catalog_key = use_state(String::new);
+    let policy_output = use_state(super::policy_output_view::PolicyOutputDraft::default);
     let policy_catalog_version = use_state(|| "1".to_string());
     let policy_catalog_display_name = use_state(String::new);
     let policy_catalog_video_intent = use_state(|| "general".to_string());
@@ -128,11 +96,6 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
     let policy_verification_decode_all_streams = use_state(|| true);
     let policy_verification_keyframe_seek = use_state(|| true);
     let policy_verification_playback_probe = use_state(|| true);
-    let watcher_enabled = use_state(|| false);
-    let schedule_enabled = use_state(|| false);
-    let schedule_interval_minutes = use_state(String::new);
-    let discovery_source_path = use_state(String::new);
-
     let toasts = ToastCallbacks {
         success: props.on_success_toast.clone(),
         error: props.on_error_toast.clone(),
@@ -148,6 +111,7 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
         subtitle_policy: target_catalog_subtitle_policy.clone(),
     };
     let policy_form = PolicyCatalogFormHandles {
+        output: policy_output.clone(),
         key: policy_catalog_key.clone(),
         version: policy_catalog_version.clone(),
         display_name: policy_catalog_display_name.clone(),
@@ -159,19 +123,6 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
         verification_decode_all_streams: policy_verification_decode_all_streams.clone(),
         verification_keyframe_seek: policy_verification_keyframe_seek.clone(),
         verification_playback_probe: policy_verification_playback_probe.clone(),
-    };
-    let profile_form = ProfileFormHandles {
-        profile_key: profile_key.clone(),
-        source_root: source_root.clone(),
-        output_root: output_root.clone(),
-        retention_days: retention_days.clone(),
-        dry_run_only: dry_run_only.clone(),
-        compatibility_target_key: compatibility_target_key.clone(),
-        policy_key: policy_key.clone(),
-        watcher_enabled: watcher_enabled.clone(),
-        schedule_enabled: schedule_enabled.clone(),
-        schedule_interval_minutes: schedule_interval_minutes.clone(),
-        discovery_source_path: discovery_source_path.clone(),
     };
     let on_refresh = build_refresh_callback(
         api.clone(),
@@ -232,76 +183,6 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
         toasts.clone(),
         on_refresh.clone(),
     );
-    let on_profile_key_input = {
-        let profile_key = profile_key.clone();
-        Callback::from(move |event: InputEvent| {
-            profile_key.set(
-                event
-                    .target_unchecked_into::<web_sys::HtmlInputElement>()
-                    .value(),
-            );
-        })
-    };
-    let on_source_root_input = {
-        let source_root = source_root.clone();
-        Callback::from(move |event: InputEvent| {
-            source_root.set(
-                event
-                    .target_unchecked_into::<web_sys::HtmlInputElement>()
-                    .value(),
-            );
-        })
-    };
-    let on_output_root_input = {
-        let output_root = output_root.clone();
-        Callback::from(move |event: InputEvent| {
-            output_root.set(
-                event
-                    .target_unchecked_into::<web_sys::HtmlInputElement>()
-                    .value(),
-            );
-        })
-    };
-    let on_retention_days_input = {
-        let retention_days = retention_days.clone();
-        Callback::from(move |event: InputEvent| {
-            retention_days.set(
-                event
-                    .target_unchecked_into::<web_sys::HtmlInputElement>()
-                    .value(),
-            );
-        })
-    };
-    let on_dry_run_change = {
-        let dry_run_only = dry_run_only.clone();
-        Callback::from(move |event: Event| {
-            dry_run_only.set(
-                event
-                    .target_unchecked_into::<web_sys::HtmlInputElement>()
-                    .checked(),
-            );
-        })
-    };
-    let on_compatibility_target_input = {
-        let compatibility_target_key = compatibility_target_key.clone();
-        Callback::from(move |event: Event| {
-            compatibility_target_key.set(
-                event
-                    .target_unchecked_into::<web_sys::HtmlSelectElement>()
-                    .value(),
-            );
-        })
-    };
-    let on_policy_key_input = {
-        let policy_key = policy_key.clone();
-        Callback::from(move |event: Event| {
-            policy_key.set(
-                event
-                    .target_unchecked_into::<web_sys::HtmlSelectElement>()
-                    .value(),
-            );
-        })
-    };
     let on_target_catalog_key_input = {
         let target_catalog_key = target_catalog_key.clone();
         Callback::from(move |event: InputEvent| {
@@ -450,53 +331,11 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
         bool_input_callback(policy_verification_keyframe_seek.clone());
     let on_policy_playback_probe_change =
         bool_input_callback(policy_verification_playback_probe.clone());
-    let on_watcher_change = {
-        let watcher_enabled = watcher_enabled.clone();
-        Callback::from(move |event: Event| {
-            watcher_enabled.set(
-                event
-                    .target_unchecked_into::<web_sys::HtmlInputElement>()
-                    .checked(),
-            );
-        })
-    };
-    let on_schedule_change = {
-        let schedule_enabled = schedule_enabled.clone();
-        Callback::from(move |event: Event| {
-            schedule_enabled.set(
-                event
-                    .target_unchecked_into::<web_sys::HtmlInputElement>()
-                    .checked(),
-            );
-        })
-    };
-    let on_schedule_interval_input = {
-        let schedule_interval_minutes = schedule_interval_minutes.clone();
-        Callback::from(move |event: InputEvent| {
-            schedule_interval_minutes.set(
-                event
-                    .target_unchecked_into::<web_sys::HtmlInputElement>()
-                    .value(),
-            );
-        })
-    };
-    let on_discovery_source_path_input = {
-        let discovery_source_path = discovery_source_path.clone();
-        Callback::from(move |event: InputEvent| {
-            discovery_source_path.set(
-                event
-                    .target_unchecked_into::<web_sys::HtmlInputElement>()
-                    .value(),
-            );
-        })
-    };
-
     let on_save_target = build_save_target_callback(
         api.clone(),
         state.clone(),
         busy.clone(),
         target_form.clone(),
-        profile_form.compatibility_target_key.clone(),
         toasts.clone(),
     );
     let on_save_policy = build_save_policy_callback(
@@ -504,40 +343,8 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
         state.clone(),
         busy.clone(),
         policy_form.clone(),
-        profile_form.policy_key.clone(),
         toasts.clone(),
     );
-    let on_create_profile = build_create_profile_callback(
-        api.clone(),
-        profile_form.clone(),
-        toasts.clone(),
-        on_refresh.clone(),
-    );
-    let on_toggle_profile_dry_run = build_profile_toggle_callback(
-        api.clone(),
-        ProfileToggleKind::DryRun,
-        toasts.clone(),
-        on_refresh.clone(),
-    );
-    let on_toggle_profile_watcher = build_profile_toggle_callback(
-        api.clone(),
-        ProfileToggleKind::Watcher,
-        toasts.clone(),
-        on_refresh.clone(),
-    );
-    let on_toggle_profile_schedule = build_profile_toggle_callback(
-        api.clone(),
-        ProfileToggleKind::Schedule,
-        toasts.clone(),
-        on_refresh.clone(),
-    );
-    let on_preview_discovery = build_preview_discovery_callback(
-        api.clone(),
-        state.clone(),
-        profile_form.discovery_source_path.clone(),
-        toasts.clone(),
-    );
-
     let readiness = display_readiness(&state);
     let capability_codecs = display_capability_codecs(&state);
 
@@ -550,8 +357,10 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                 <button class="btn btn-sm" onclick={on_export}>{"Export YAML"}</button>
             </div>
 
-            <div class="grid gap-3 md:grid-cols-4">
-                <div class="card bg-base-100 shadow"><div class="card-body"><div class="text-xs uppercase opacity-60">{"Profiles"}</div><div class="text-xl">{state.profiles.len()}</div></div></div>
+            <super::root_readiness_view::RootReadiness />
+            <super::root_catalog_view::RootConfiguration />
+
+            <div class="grid gap-3 md:grid-cols-3">
                 <div class="card bg-base-100 shadow"><div class="card-body"><div class="text-xs uppercase opacity-60">{"Jobs"}</div><div class="text-xl">{state.jobs.len()}</div></div></div>
                 <div class="card bg-base-100 shadow"><div class="card-body"><div class="text-xs uppercase opacity-60">{"Readiness"}</div><div class="text-xl">{readiness}</div></div></div>
                 <div class="card bg-base-100 shadow"><div class="card-body"><div class="text-xs uppercase opacity-60">{"Capability codecs"}</div><div class="text-xl">{capability_codecs}</div></div></div>
@@ -617,11 +426,18 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                             {for state.policies.iter().map(|policy| html! {
                                 <li class="flex flex-wrap gap-2">
                                     <span class="font-medium">{policy.policy_key.clone()}</span>
+                                    <span>{format!("{} | Replacement: {} | Quarantine: {} | Permissions: {} | Ownership: {}",
+                                        if policy.output.dry_run { "Dry-run" } else { "Execution" },
+                                        policy.output.replacement_mode,
+                                        policy.output.quarantine_enabled,
+                                        policy.output.preservation.preserve_permissions,
+                                        policy.output.preservation.preserve_ownership)}</span>
                                     <span class="opacity-70">{format!("v{} {} intent={} verification={} tolerance={}ms mux={} decode={} seek={} playback={}", policy.version, policy.display_name, policy.video_intent, policy.verification_strictness, policy.verification_duration_tolerance_millis, policy.verification_mux_validation, policy.verification_decode_all_streams, policy.verification_keyframe_seek, policy.verification_playback_probe)}</span>
                                 </li>
                             })}
                         </ul>
                         <div class="grid gap-2 md:grid-cols-2" data-testid="media-policy-form">
+                            {super::policy_output_view::fields(&policy_output)}
                             <input class="input input-bordered input-sm" placeholder="policy_catalog_key" value={(*policy_catalog_key).clone()} oninput={on_policy_catalog_key_input} />
                             <input class="input input-bordered input-sm" placeholder="policy_version" value={(*policy_catalog_version).clone()} oninput={on_policy_catalog_version_input} />
                             <input class="input input-bordered input-sm" placeholder="policy_display_name" value={(*policy_catalog_display_name).clone()} oninput={on_policy_catalog_display_name_input} />
@@ -661,113 +477,6 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
             <div class="grid gap-3 lg:grid-cols-2">
                 <div class="card bg-base-100 shadow">
                     <div class="card-body gap-2">
-                        <h2 class="text-lg font-semibold">{"Profiles"}</h2>
-                        <div class="grid gap-2 md:grid-cols-2" data-testid="media-profile-form">
-                            <input class="input input-bordered input-sm" placeholder="profile_key" value={(*profile_key).clone()} oninput={on_profile_key_input} />
-                            <input class="input input-bordered input-sm" placeholder="source_root" value={(*source_root).clone()} oninput={on_source_root_input} />
-                            <input class="input input-bordered input-sm" placeholder="output_root" value={(*output_root).clone()} oninput={on_output_root_input} />
-                            <input class="input input-bordered input-sm" placeholder="retention_days" value={(*retention_days).clone()} oninput={on_retention_days_input} />
-                            <select class="select select-bordered select-sm" aria-label="compatibility_target_key" value={(*compatibility_target_key).clone()} onchange={on_compatibility_target_input}>
-                                <option value="">{"Default target"}</option>
-                                {for state.compatibility_targets.iter().map(|target| html! {
-                                    <option value={target.compatibility_target_key.clone()}>
-                                        {format!("{} ({}/{})", target.display_name, target.video_codec, target.audio_codec)}
-                                    </option>
-                                })}
-                            </select>
-                            <select class="select select-bordered select-sm" aria-label="policy_key" value={(*policy_key).clone()} onchange={on_policy_key_input}>
-                                {if state.policies.is_empty() {
-                                    html! { <option value="safe_dry_run">{"Safe dry run"}</option> }
-                                } else {
-                                    html! {}
-                                }}
-                                {for state.policies.iter().map(|policy| html! {
-                                    <option value={policy.policy_key.clone()}>
-                                        {format!("{} ({})", policy.display_name, policy.video_intent)}
-                                    </option>
-                                })}
-                            </select>
-                            <input class="input input-bordered input-sm" placeholder="schedule_interval_minutes" value={(*schedule_interval_minutes).clone()} oninput={on_schedule_interval_input} />
-                            <input class="input input-bordered input-sm" placeholder="discovery_source_path" value={(*discovery_source_path).clone()} oninput={on_discovery_source_path_input} />
-                            <label class="label cursor-pointer gap-2 justify-start">
-                                <input type="checkbox" class="checkbox checkbox-sm" checked={*dry_run_only} onchange={on_dry_run_change} />
-                                <span class="label-text">{"Dry run only"}</span>
-                            </label>
-                            <label class="label cursor-pointer gap-2 justify-start">
-                                <input type="checkbox" class="checkbox checkbox-sm" checked={*watcher_enabled} onchange={on_watcher_change} />
-                                <span class="label-text">{"Enable watcher"}</span>
-                            </label>
-                            <label class="label cursor-pointer gap-2 justify-start">
-                                <input type="checkbox" class="checkbox checkbox-sm" checked={*schedule_enabled} onchange={on_schedule_change} />
-                                <span class="label-text">{"Enable schedule"}</span>
-                            </label>
-                            <button class="btn btn-sm btn-primary" onclick={on_create_profile}>{"Create profile"}</button>
-                        </div>
-                        <ul class="text-sm space-y-1">
-                            {for state.profiles.iter().map(|row| {
-                                let on_toggle_profile_dry_run = on_toggle_profile_dry_run.clone();
-                                let on_toggle_profile_watcher = on_toggle_profile_watcher.clone();
-                                let on_toggle_profile_schedule = on_toggle_profile_schedule.clone();
-                                let on_preview_discovery = on_preview_discovery.clone();
-                                let media_profile_public_id = row.media_profile_public_id;
-                                let preview_source_root = row.source_root.clone();
-                                let next_dry_run_only = !row.dry_run_only;
-                                let next_watcher_enabled = !row.watcher_enabled;
-                                let next_schedule_enabled = !row.schedule_enabled;
-                                let schedule_toggle_disabled = !row.schedule_enabled && row.schedule_interval_minutes.is_none();
-                                html! {
-                                    <li class="flex flex-wrap items-center gap-2">
-                                        <span>{format!("{} ({})", row.profile_key, if row.dry_run_only {"dry-run"} else {"replace"})}</span>
-                                        <span class="opacity-70">{format!("src={} out={} retention={}d target={} policy={} watcher={} schedule={}",
-                                            row.source_root,
-                                            row.output_root,
-                                            row.retention_days,
-                                            row.compatibility_target_key.clone().unwrap_or_else(|| "none".to_string()),
-                                            row.policy_key,
-                                            if row.watcher_enabled {"on"} else {"off"},
-                                            describe_schedule(row.schedule_enabled, row.schedule_interval_minutes))}</span>
-                                        <button
-                                            class="btn btn-xs"
-                                            onclick={Callback::from(move |_| on_toggle_profile_dry_run.emit((media_profile_public_id, next_dry_run_only)))}
-                                        >
-                                            {if row.dry_run_only {"Enable replace"} else {"Set dry-run"}}
-                                        </button>
-                                        <button
-                                            class="btn btn-xs"
-                                            onclick={Callback::from(move |_| on_toggle_profile_watcher.emit((media_profile_public_id, next_watcher_enabled)))}
-                                        >
-                                            {if row.watcher_enabled {"Disable watcher"} else {"Enable watcher"}}
-                                        </button>
-                                        <button
-                                            class="btn btn-xs"
-                                            disabled={schedule_toggle_disabled}
-                                            onclick={Callback::from(move |_| on_toggle_profile_schedule.emit((media_profile_public_id, next_schedule_enabled)))}
-                                        >
-                                            {if row.schedule_enabled {"Disable schedule"} else {"Enable schedule"}}
-                                        </button>
-                                        <button
-                                            class="btn btn-xs"
-                                            onclick={Callback::from(move |_| on_preview_discovery.emit((media_profile_public_id, preview_source_root.clone())))}
-                                        >
-                                            {"Preview discovery"}
-                                        </button>
-                                    </li>
-                                }
-                            })}
-                        </ul>
-                        {if state.discovery_preview.is_empty() {
-                            html! {}
-                        } else {
-                            html! {
-                                <ul class="text-sm space-y-1" data-testid="media-discovery-preview">
-                                    {for state.discovery_preview.iter().map(render_discovery_preview)}
-                                </ul>
-                            }
-                        }}
-                    </div>
-                </div>
-                <div class="card bg-base-100 shadow">
-                    <div class="card-body gap-2">
                         <h2 class="text-lg font-semibold">{"Recent jobs"}</h2>
                         <ul class="text-sm space-y-1">
                             {for state.jobs.iter().take(10).map(|row| {
@@ -780,11 +489,13 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                                     on_toggle_job_diagnostics.emit(media_job_public_id);
                                 });
                                 html! {
-                                    <li>
+                                    <li key={media_job_public_id.to_string()} data-job-id={media_job_public_id.to_string()}>
                                         <details class="collapse collapse-arrow bg-base-200" open={is_open} data-testid="media-job-diagnostics">
                                             <summary class="collapse-title text-sm font-medium" onclick={on_toggle}>
                                                 {format!("{} - {}", row.status, row.source_path)}
                                             </summary>
+                                            <super::job_action_view::MediaJobAction job_id={media_job_public_id}
+                                                status={row.status.clone()} on_changed={on_refresh.clone()} />
                                             {render_job_diagnostics_content(diagnostics)}
                                         </details>
                                     </li>
@@ -823,15 +534,6 @@ fn empty_string_to_none(value: &str) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
-}
-
-fn describe_schedule(enabled: bool, interval: Option<i32>) -> String {
-    if !enabled {
-        return "off".to_string();
-    }
-    interval
-        .map(|minutes| format!("{minutes}m"))
-        .unwrap_or_else(|| "enabled".to_string())
 }
 
 fn parse_catalog_version(value: &str, label: &str) -> Result<i32, String> {
@@ -960,7 +662,6 @@ fn build_refresh_callback(
         let busy = busy.clone();
         let on_error_toast = on_error_toast.clone();
         spawn_local(async move {
-            let profiles = fetch_profiles(&api.client).await;
             let jobs = fetch_recent_jobs(&api.client, RECENT_MEDIA_JOBS_LIMIT, None, None).await;
             let readiness = fetch_readiness(&api.client).await;
             let latest = fetch_latest_capability(&api.client).await;
@@ -968,7 +669,6 @@ fn build_refresh_callback(
             let compatibility_targets = fetch_compatibility_targets(&api.client).await;
             let policies = fetch_policies(&api.client).await;
             match (
-                profiles,
                 jobs,
                 readiness,
                 latest,
@@ -977,7 +677,6 @@ fn build_refresh_callback(
                 policies,
             ) {
                 (
-                    Ok(profiles),
                     Ok(jobs),
                     Ok(readiness),
                     Ok(latest),
@@ -1007,7 +706,6 @@ fn build_refresh_callback(
                     };
                     opened_job_diagnostics.set(next_opened_job_diagnostics);
                     state.set(MediaViewState {
-                        profiles: profiles.profiles,
                         jobs: jobs.jobs.into_iter().map(|summary| summary.job).collect(),
                         readiness: Some(readiness),
                         latest_capability: latest.snapshot,
@@ -1015,7 +713,6 @@ fn build_refresh_callback(
                         compatibility_targets: compatibility_targets.targets,
                         policies: policies.policies,
                         yaml_export: current.yaml_export,
-                        discovery_preview: current.discovery_preview,
                     });
                 }
                 _ => on_error_toast.emit("Failed to refresh media snapshot".to_string()),
@@ -1148,7 +845,6 @@ fn build_save_target_callback(
     state: UseStateHandle<MediaViewState>,
     busy: UseStateHandle<bool>,
     form: TargetCatalogFormHandles,
-    selected_target: UseStateHandle<String>,
     toasts: ToastCallbacks,
 ) -> Callback<MouseEvent> {
     Callback::from(move |_| {
@@ -1177,7 +873,6 @@ fn build_save_target_callback(
             audio_channel_layout: empty_string_to_none((*form.audio_channel_layout).as_str()),
             subtitle_policy: (*form.subtitle_policy).clone(),
         };
-        let selected_target = selected_target.clone();
         let state = state.clone();
         let busy = busy.clone();
         let toasts = toasts.clone();
@@ -1200,7 +895,6 @@ fn build_save_target_callback(
                     }
                     upsert_target_state(&mut next.compatibility_targets, target);
                     state.set(next);
-                    selected_target.set(target_key.clone());
                     toasts.success.emit(format!("Saved target {target_key}"));
                 }
                 Err(error) => toasts.error.emit(error),
@@ -1215,7 +909,6 @@ fn build_save_policy_callback(
     state: UseStateHandle<MediaViewState>,
     busy: UseStateHandle<bool>,
     form: PolicyCatalogFormHandles,
-    selected_policy: UseStateHandle<String>,
     toasts: ToastCallbacks,
 ) -> Callback<MouseEvent> {
     Callback::from(move |_| {
@@ -1239,6 +932,7 @@ fn build_save_policy_callback(
             return;
         };
         let request = MediaPolicyUpsertRequest {
+            output: form.output.request(),
             policy_key: (*form.key).clone(),
             version,
             display_name: (*form.display_name).clone(),
@@ -1250,7 +944,6 @@ fn build_save_policy_callback(
             verification_keyframe_seek: (*form.verification_keyframe_seek).into(),
             verification_playback_probe: (*form.verification_playback_probe).into(),
         };
-        let selected_policy = selected_policy.clone();
         let state = state.clone();
         let busy = busy.clone();
         let toasts = toasts.clone();
@@ -1273,7 +966,6 @@ fn build_save_policy_callback(
                     }
                     upsert_policy_state(&mut next.policies, policy);
                     state.set(next);
-                    selected_policy.set(policy_key.clone());
                     toasts.success.emit(format!("Saved policy {policy_key}"));
                 }
                 Err(error) => toasts.error.emit(error),
@@ -1311,189 +1003,6 @@ fn upsert_policy_state(policies: &mut Vec<MediaPolicyResponse>, policy: MediaPol
         policies.push(policy);
     }
     policies.sort_by(|left, right| left.policy_key.cmp(&right.policy_key));
-}
-
-fn build_create_profile_callback(
-    api: Option<ApiCtx>,
-    form: ProfileFormHandles,
-    toasts: ToastCallbacks,
-    on_refresh: Callback<()>,
-) -> Callback<MouseEvent> {
-    Callback::from(move |_| {
-        let Some(api) = api_context(api.clone(), &toasts.error) else {
-            return;
-        };
-        let Some(retention_days) = emit_parse_error(
-            parse_retention_days_input(&form.retention_days),
-            &toasts.error,
-        ) else {
-            return;
-        };
-        let Some(schedule_interval) =
-            parse_schedule_interval(&form.schedule_interval_minutes, &toasts.error)
-        else {
-            return;
-        };
-        let request = MediaProfileUpsertRequest {
-            profile_key: (*form.profile_key).clone(),
-            source_root: (*form.source_root).clone(),
-            output_root: (*form.output_root).clone(),
-            dry_run_only: *form.dry_run_only,
-            retention_days,
-            compatibility_target_key: empty_string_to_none(
-                (*form.compatibility_target_key).as_str(),
-            ),
-            policy_key: (*form.policy_key).clone(),
-            watcher_enabled: *form.watcher_enabled,
-            schedule_enabled: *form.schedule_enabled,
-            schedule_interval_minutes: schedule_interval,
-        };
-        let toasts = toasts.clone();
-        let on_refresh = on_refresh.clone();
-        spawn_local(async move {
-            match create_profile(&api.client, &request).await {
-                Ok(profile) => {
-                    toasts
-                        .success
-                        .emit(format!("Created profile {}", profile.profile_key));
-                    on_refresh.emit(());
-                }
-                Err(error) => toasts.error.emit(error),
-            }
-        });
-    })
-}
-
-fn parse_schedule_interval(
-    schedule_interval_minutes: &UseStateHandle<String>,
-    on_error: &Callback<String>,
-) -> Option<Option<i32>> {
-    if schedule_interval_minutes.trim().is_empty() {
-        Some(None)
-    } else {
-        emit_parse_error(
-            parse_schedule_interval_input(schedule_interval_minutes),
-            on_error,
-        )
-        .map(Some)
-    }
-}
-
-fn build_profile_toggle_callback(
-    api: Option<ApiCtx>,
-    toggle: ProfileToggleKind,
-    toasts: ToastCallbacks,
-    on_refresh: Callback<()>,
-) -> Callback<(uuid::Uuid, bool)> {
-    Callback::from(move |(media_profile_public_id, enabled)| {
-        let Some(api) = api_context(api.clone(), &toasts.error) else {
-            return;
-        };
-        let request = profile_toggle_request(toggle, enabled);
-        let toasts = toasts.clone();
-        let on_refresh = on_refresh.clone();
-        spawn_local(async move {
-            match patch_profile(&api.client, media_profile_public_id, &request).await {
-                Ok(profile) => {
-                    toasts
-                        .success
-                        .emit(profile_toggle_message(toggle, &profile));
-                    on_refresh.emit(());
-                }
-                Err(error) => toasts.error.emit(error),
-            }
-        });
-    })
-}
-
-fn profile_toggle_request(toggle: ProfileToggleKind, enabled: bool) -> MediaProfilePatchRequest {
-    MediaProfilePatchRequest {
-        source_root: None,
-        output_root: None,
-        dry_run_only: matches!(toggle, ProfileToggleKind::DryRun).then_some(enabled),
-        retention_days: None,
-        compatibility_target_key: None,
-        policy_key: None,
-        watcher_enabled: matches!(toggle, ProfileToggleKind::Watcher).then_some(enabled),
-        schedule_enabled: matches!(toggle, ProfileToggleKind::Schedule).then_some(enabled),
-        schedule_interval_minutes: None,
-    }
-}
-
-fn profile_toggle_message(toggle: ProfileToggleKind, profile: &MediaProfileResponse) -> String {
-    match toggle {
-        ProfileToggleKind::DryRun => {
-            let mode = if profile.dry_run_only {
-                "dry-run"
-            } else {
-                "replace-enabled"
-            };
-            format!("Profile {} set to {}", profile.profile_key, mode)
-        }
-        ProfileToggleKind::Watcher => {
-            let mode = if profile.watcher_enabled { "on" } else { "off" };
-            format!("Profile {} watcher {}", profile.profile_key, mode)
-        }
-        ProfileToggleKind::Schedule => {
-            let mode = if profile.schedule_enabled {
-                "on"
-            } else {
-                "off"
-            };
-            format!("Profile {} schedule {}", profile.profile_key, mode)
-        }
-    }
-}
-
-fn build_preview_discovery_callback(
-    api: Option<ApiCtx>,
-    state: UseStateHandle<MediaViewState>,
-    discovery_source_path: UseStateHandle<String>,
-    toasts: ToastCallbacks,
-) -> Callback<(uuid::Uuid, String)> {
-    Callback::from(
-        move |(media_profile_public_id, default_source_path): (uuid::Uuid, String)| {
-            let Some(api) = api_context(api.clone(), &toasts.error) else {
-                return;
-            };
-            let requested_source_path = if discovery_source_path.trim().is_empty() {
-                default_source_path
-            } else {
-                (*discovery_source_path).clone()
-            };
-            if requested_source_path.trim().is_empty() {
-                toasts
-                    .error
-                    .emit("Discovery source path is required".to_string());
-                return;
-            }
-            let request = MediaDiscoveryPreviewRequest {
-                media_profile_public_id,
-                source_paths: vec![requested_source_path],
-            };
-            let state = state.clone();
-            let toasts = toasts.clone();
-            spawn_local(async move {
-                match preview_discovery(&api.client, &request).await {
-                    Ok(response) => {
-                        let accepted = response
-                            .previews
-                            .iter()
-                            .filter(|preview| preview.accepted)
-                            .count();
-                        let total = response.previews.len();
-                        let mut next = (*state).clone();
-                        next.discovery_preview = response.previews;
-                        state.set(next);
-                        toasts
-                            .success
-                            .emit(format!("Discovery preview accepted {accepted}/{total}"));
-                    }
-                    Err(error) => toasts.error.emit(error),
-                }
-            });
-        },
-    )
 }
 
 fn build_job_diagnostics_toggle_callback(
@@ -1637,22 +1146,6 @@ fn render_job_diagnostics_content(load_state: Option<&MediaJobDiagnosticsState>)
             </div>
         },
         None => html! {},
-    }
-}
-
-fn render_discovery_preview(row: &MediaDiscoveryPreviewItemResponse) -> Html {
-    let outcome = if row.accepted {
-        row.output_path
-            .as_ref()
-            .map(|path| format!("accepted -> {path}"))
-            .unwrap_or_else(|| "accepted".to_string())
-    } else {
-        row.reason.clone().unwrap_or_else(|| "rejected".to_string())
-    };
-    html! {
-        <li class="break-all">
-            {format!("{} dry_run={} {}", row.source_path, row.dry_run, outcome)}
-        </li>
     }
 }
 

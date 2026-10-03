@@ -25,7 +25,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use urlencoding::encode;
 use uuid::Uuid;
-use web_sys::{RequestMode, window};
+use web_sys::{RequestCache, RequestMode, window};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ApiError {
@@ -293,6 +293,16 @@ impl ApiClient {
         self.send_json(req).await
     }
 
+    pub(crate) async fn get_api_private<T: for<'de> Deserialize<'de>>(
+        &self,
+        path: &str,
+    ) -> Result<T, ApiError> {
+        let request =
+            Request::get(&format!("{}{}", self.base_url, path)).cache(RequestCache::NoStore);
+        let request = Self::build_request(self.apply_auth(request)?)?;
+        self.send_json(request).await
+    }
+
     pub(crate) async fn post_api_empty<B: Serialize>(
         &self,
         path: &str,
@@ -304,6 +314,92 @@ impl ApiClient {
             .json(body)
             .map_err(|err| ApiError::client(format!("encode request payload: {err}")))?;
         self.send_empty(req).await
+    }
+
+    pub(crate) async fn get_api_versioned<T: for<'de> Deserialize<'de>>(
+        &self,
+        path: &str,
+    ) -> Result<(T, String), ApiError> {
+        let request = Request::get(&format!("{}{}", self.base_url.trim_end_matches('/'), path))
+            .cache(RequestCache::NoStore);
+        let response = self
+            .apply_auth(request)?
+            .send()
+            .await
+            .map_err(|_| ApiError::client("versioned resource could not be loaded"))?;
+        Self::versioned_response(response).await
+    }
+
+    pub(crate) async fn replace_api<B: Serialize, T: for<'de> Deserialize<'de>>(
+        &self,
+        path: &str,
+        etag: &str,
+        body: &B,
+    ) -> Result<(T, String), ApiError> {
+        let request = Request::put(&format!("{}{}", self.base_url.trim_end_matches('/'), path));
+        let response = self
+            .apply_auth(request)?
+            .header("If-Match", etag)
+            .json(body)
+            .map_err(|_| ApiError::client("encode complete replacement payload"))?
+            .send()
+            .await
+            .map_err(|_| ApiError::client("replacement could not be confirmed"))?;
+        Self::versioned_response(response).await
+    }
+
+    async fn versioned_response<T: for<'de> Deserialize<'de>>(
+        response: Response,
+    ) -> Result<(T, String), ApiError> {
+        if !response.ok() {
+            return Err(api_error_from_response(response).await);
+        }
+        if response.status() != 200 {
+            return Err(ApiError::client(
+                "versioned resource returned an unexpected status",
+            ));
+        }
+        let etag = response
+            .headers()
+            .get("ETag")
+            .ok_or_else(|| ApiError::client("versioned resource omitted ETag"))?;
+        let body = response
+            .json::<T>()
+            .await
+            .map_err(|_| ApiError::client("invalid versioned resource response"))?;
+        Ok((body, etag))
+    }
+
+    pub(crate) async fn create_api<B: Serialize, T: for<'de> Deserialize<'de>>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<(T, String), ApiError> {
+        let req = Request::post(&format!("{}{}", self.base_url.trim_end_matches('/'), path));
+        let req = self.apply_auth(req)?.header("If-None-Match", "*");
+        let response = req
+            .json(body)
+            .map_err(|_| ApiError::client("encode conditional create payload"))?
+            .send()
+            .await
+            .map_err(|_| ApiError::client("conditional create could not be confirmed"))?;
+        if !response.ok() {
+            return Err(api_error_from_response(response).await);
+        }
+        if response.status() != 201 {
+            return Err(ApiError::client(
+                "conditional create returned an unexpected status",
+            ));
+        }
+        let etag = response
+            .headers()
+            .get("ETag")
+            .ok_or_else(|| ApiError::client("conditional create response omitted ETag"))?;
+        let body = response
+            .json::<T>()
+            .await
+            .map_err(|_| ApiError::client("invalid conditional create response"))?;
+        Ok((body, etag))
     }
 
     pub(crate) async fn patch_api<B: Serialize, T: for<'de> Deserialize<'de>>(

@@ -25,16 +25,18 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::app::media::{
-    MediaCapabilityRefreshParams, MediaDesiredTargetCreateParams,
+    MediaAssociationRunTrigger, MediaCapabilityRefreshParams, MediaDesiredTargetCreateParams,
     MediaDesiredTargetResponse as AppMediaDesiredTargetResponse, MediaDesiredTargetStreamParams,
-    MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryRunParams,
-    MediaDiscoveryRunResponse as AppMediaDiscoveryRunResponse, MediaProfileDesiredTargetParams,
-    MediaProfilePatchParams, MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
+    MediaDiscoveryRunResponse as AppMediaDiscoveryRunResponse, MediaServiceError,
+    MediaServiceErrorKind,
 };
 use crate::app::state::ApiState;
 use crate::http::constants::MEDIA_SOURCE_COMPLIANCE_BUNDLE_PATH;
 use crate::http::errors::ApiError;
 use crate::http::handlers::indexers::SYSTEM_ACTOR_PUBLIC_ID;
+use crate::http::handlers::media_preconditions::{
+    CreateProfilePrecondition, ReplaceProfilePrecondition,
+};
 use crate::models::{
     MediaCapabilityLatestResponse, MediaCapabilityReadinessResponse,
     MediaCapabilityRefreshResponse, MediaCompatibilityTargetListResponse,
@@ -43,20 +45,18 @@ use crate::models::{
     MediaDesiredTargetResponse, MediaDesiredTargetStream, MediaDiscoveryPreviewItemResponse,
     MediaDiscoveryPreviewRequest, MediaDiscoveryPreviewResponse, MediaDiscoveryQueuedJobResponse,
     MediaDiscoveryRunRequest, MediaDiscoveryRunResponse, MediaDiscoveryScheduleListResponse,
-    MediaDiscoveryScheduleResponse, MediaDiscoverySkippedItemResponse,
-    MediaDiscoveryWatcherListResponse, MediaDiscoveryWatcherResponse, MediaJobArtifactListResponse,
-    MediaJobCompactAuditListResponse, MediaJobDiagnosticCounts, MediaJobDiagnosticsResponse,
-    MediaJobListResponse, MediaJobOperationListResponse, MediaJobPhaseListResponse,
-    MediaJobPlanReasonListResponse, MediaJobResponse, MediaJobRetentionResponse,
-    MediaJobRetentionUpdateRequest, MediaJobVerificationCheckListResponse,
-    MediaJobViolationListResponse, MediaPlanningPreviewRequest, MediaPlanningPreviewResponse,
-    MediaPolicyListResponse, MediaPolicyResponse, MediaPolicyUpsertRequest,
-    MediaProfileDesiredTargetRequest, MediaProfileListResponse, MediaProfilePatchRequest,
-    MediaProfileReadinessResponse, MediaProfileResponse, MediaProfileUpsertRequest,
-    MediaProfileValidationResponse, MediaRecentJobPageResponse, MediaRecentJobSummaryResponse,
-    MediaTextValidationError, MediaYamlApplyResponse, MediaYamlExportResponse,
-    MediaYamlImportRequest, MediaYamlIssueResponse, MediaYamlValidationResponse,
-    validate_media_display, validate_media_key,
+    MediaDiscoverySkippedItemResponse, MediaDiscoveryWatcherListResponse,
+    MediaJobArtifactListResponse, MediaJobCompactAuditListResponse, MediaJobDiagnosticCounts,
+    MediaJobDiagnosticsResponse, MediaJobListResponse, MediaJobOperationListResponse,
+    MediaJobPhaseListResponse, MediaJobPlanReasonListResponse, MediaJobResponse,
+    MediaJobRetentionResponse, MediaJobRetentionUpdateRequest,
+    MediaJobVerificationCheckListResponse, MediaJobViolationListResponse,
+    MediaPlanningPreviewRequest, MediaPlanningPreviewResponse, MediaPolicyListResponse,
+    MediaPolicyResponse, MediaPolicyUpsertRequest, MediaProfileReadinessResponse,
+    MediaProfileUpsertRequest, MediaProfileValidationResponse, MediaRecentJobPageResponse,
+    MediaRecentJobSummaryResponse, MediaTextValidationError, MediaYamlApplyResponse,
+    MediaYamlExportResponse, MediaYamlImportRequest, MediaYamlIssueResponse,
+    MediaYamlValidationResponse, validate_media_display, validate_media_key,
 };
 
 const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
@@ -66,9 +66,7 @@ const MEDIA_PROFILE_NOT_FOUND: &str = "media profile not found";
 const MEDIA_DISCOVERY_PREVIEW_FAILED: &str = "failed to preview media discovery";
 const MEDIA_DISCOVERY_RUN_FAILED: &str = "failed to run media discovery";
 const MEDIA_DISCOVERY_SCHEDULE_RUN_FAILED: &str = "failed to run scheduled media discovery";
-const MEDIA_DISCOVERY_SCHEDULE_LIST_FAILED: &str = "failed to list media discovery schedules";
 const MEDIA_DISCOVERY_WATCHER_RUN_FAILED: &str = "failed to run watcher media discovery";
-const MEDIA_DISCOVERY_WATCHER_LIST_FAILED: &str = "failed to list media discovery watchers";
 const MEDIA_JOB_LIST_FAILED: &str = "failed to list media jobs";
 const MEDIA_JOB_GET_FAILED: &str = "failed to load media job";
 const MEDIA_JOB_RECENT_FAILED: &str = "failed to list recent media jobs";
@@ -90,19 +88,18 @@ const MEDIA_CAPABILITY_REFRESH_FAILED: &str = "failed to refresh media capabilit
 const MEDIA_YAML_EXPORT_FAILED: &str = "failed to export media yaml";
 const MEDIA_YAML_VALIDATE_FAILED: &str = "failed to validate media yaml";
 const MEDIA_YAML_APPLY_FAILED: &str = "failed to apply media yaml";
-const SOURCE_ROOT_REQUIRED: &str = "source_root is required";
-const OUTPUT_ROOT_REQUIRED: &str = "output_root is required";
+// JSON can escape every YAML byte as six bytes; the inner document stays 4 MiB.
+pub(crate) const MEDIA_YAML_REQUEST_BODY_LIMIT: usize = crate::models::MEDIA_YAML_BUNDLE_MAX_BYTES
+    * 6
+    + crate::models::MEDIA_YAML_PRECONDITIONS_MAX * 1_024
+    + 64;
 const SOURCE_PATH_REQUIRED: &str = "source_path is required";
 const CONTAINER_FORMAT_REQUIRED: &str = "container_format is required";
 const DESIRED_TARGET_STREAMS_REQUIRED: &str = "streams must contain at least one stream";
 const VIDEO_CODEC_REQUIRED: &str = "video_codec is required";
 const AUDIO_CODEC_REQUIRED: &str = "audio_codec is required";
 const VIDEO_INTENT_REQUIRED: &str = "video_intent is required";
-const DISCOVERY_SOURCE_PATHS_REQUIRED: &str = "source_paths must contain at least one path";
-const DISCOVERY_SOURCE_PATHS_TOO_LARGE: &str = "source_paths exceeds maximum size";
-const DISCOVERY_SOURCE_PATH_TOO_LARGE: &str = "source_path exceeds maximum size";
 const YAML_PAYLOAD_REQUIRED: &str = "yaml_payload is required";
-const RETENTION_DAYS_INVALID: &str = "retention_days must be between 1 and 3650";
 const RETENTION_LIMIT_INVALID: &str = "retention limit must be between 1 and 3650";
 const RETENTION_MODE_INVALID: &str = "retention mode must be one of: age, count";
 const VERSION_INVALID: &str = "version must be greater than zero";
@@ -115,9 +112,6 @@ const VERIFICATION_STRICTNESS_INVALID: &str =
     "verification_strictness must be one of: strict, balanced, fast";
 const VERIFICATION_DURATION_TOLERANCE_INVALID: &str =
     "verification_duration_tolerance_millis must be between 0 and 60000";
-const SCHEDULE_INTERVAL_INVALID: &str = "schedule_interval_minutes must be between 1 and 525600";
-const SCHEDULE_INTERVAL_REQUIRED: &str =
-    "schedule_interval_minutes is required when schedule is enabled";
 const MEDIA_STATUS_INVALID: &str =
     "status must be one of: queued, running, verifying, completed, failed, cancelled";
 const MEDIA_LICENSE_MODE: &str = "redistributable-gplv3-runtime";
@@ -129,8 +123,6 @@ const MEDIA_SBOM_PATH: &str = "/app/compliance/media-runtime-inventory.spdx.json
 const MEDIA_SBOM_URL: &str = "/app/compliance/media-runtime-inventory.spdx.json";
 const MEDIA_INVENTORY_PATH: &str = "/app/compliance/media-runtime-inventory.spdx.json";
 const MEDIA_EXIFTOOL_EXCEPTION_PATH: &str = "/app/compliance/exiftool-exception.md";
-const DISCOVERY_SOURCE_PATHS_MAX_LEN: usize = 1024;
-const DISCOVERY_SOURCE_PATH_MAX_BYTES: usize = 4096;
 const MEDIA_LICENSE_EXCLUDED_CAPABILITIES: [&str; 5] = [
     "--enable-nonfree",
     "libfdk_aac",
@@ -159,148 +151,137 @@ pub(crate) struct MediaYamlExportQuery {
 
 pub(crate) async fn upsert_media_profile(
     State(state): State<Arc<ApiState>>,
-    Json(request): Json<MediaProfileUpsertRequest>,
-) -> Result<(StatusCode, Json<MediaProfileResponse>), ApiError> {
-    let profile_key = normalize_media_key(&request.profile_key, "profile_key")?;
-    let source_root = normalize_required_str_field(&request.source_root, SOURCE_ROOT_REQUIRED)?;
-    let output_root = normalize_required_str_field(&request.output_root, OUTPUT_ROOT_REQUIRED)?;
-    validate_retention_days(request.retention_days)?;
-    validate_schedule(request.schedule_enabled, request.schedule_interval_minutes)?;
-
-    let profile_id = state
+    _precondition: CreateProfilePrecondition,
+    request: Result<
+        Json<crate::models::media_root_contract::ProfileVersionRequest>,
+        axum::extract::rejection::JsonRejection,
+    >,
+) -> Result<axum::response::Response, ApiError> {
+    let Json(request) = request.map_err(|error| {
+        if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
+            ApiError::media_profile_body_too_large()
+        } else {
+            ApiError::bad_request("invalid complete profile body")
+                .with_context_field("error_code", "media_configuration_invalid")
+        }
+    })?;
+    let profile = state
         .media
-        .media_profile_upsert(MediaProfileUpsertParams {
-            actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
-            profile_key,
-            source_root,
-            output_root,
-            dry_run_only: true,
-            retention_days: request.retention_days,
-            compatibility_target_key: normalize_optional_media_key(
-                request.compatibility_target_key.as_deref(),
-                "compatibility_target_key",
-            )?,
-            policy_key: normalize_media_key(&request.policy_key, "policy_key")?,
-            watcher_enabled: request.watcher_enabled,
-            schedule_enabled: request.schedule_enabled,
-            schedule_interval_minutes: request.schedule_interval_minutes,
-        })
+        .media_profile_version_create(SYSTEM_ACTOR_PUBLIC_ID, &request)
         .await
         .map_err(|err| {
             map_media_error("media_profile_upsert", MEDIA_PROFILE_UPSERT_FAILED, &err)
         })?;
 
-    let profile = state
-        .media
-        .media_profile_list()
-        .await
-        .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
-        .into_iter()
-        .find(|item| item.media_profile_public_id == profile_id)
-        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_UPSERT_FAILED))?;
-
-    let response = map_profile(profile);
+    let fields = profile.fields();
     state.publish_event(CoreEvent::MediaProfileChanged {
-        media_profile_public_id: response.media_profile_public_id,
-        profile_key: response.profile_key.clone(),
+        media_profile_public_id: fields.media_profile_public_id,
+        profile_key: fields.profile.fields().profile_key.clone(),
     });
-
-    Ok((StatusCode::CREATED, Json(response)))
+    super::media_profile_representation::created(profile)
 }
 
-pub(crate) async fn patch_media_profile(
+pub(crate) async fn replace_media_profile(
     State(state): State<Arc<ApiState>>,
     Path(media_profile_public_id): Path<Uuid>,
-    Json(request): Json<MediaProfilePatchRequest>,
-) -> Result<Json<MediaProfileResponse>, ApiError> {
-    if let Some(retention_days) = request.retention_days {
-        validate_retention_days(retention_days)?;
+    precondition: ReplaceProfilePrecondition,
+    request: Result<
+        Json<crate::models::media_root_contract::ProfileVersionRequest>,
+        axum::extract::rejection::JsonRejection,
+    >,
+) -> Result<axum::response::Response, ApiError> {
+    if precondition.id != media_profile_public_id {
+        return Err(ApiError::media_profile_version_conflict());
     }
-    if let Some(interval) = request.schedule_interval_minutes {
-        validate_schedule_interval(interval)?;
-    }
-    if request.schedule_enabled == Some(true) && request.schedule_interval_minutes.is_none() {
-        let current = state
-            .media
-            .media_profile_list()
-            .await
-            .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
-            .into_iter()
-            .find(|item| item.media_profile_public_id == media_profile_public_id)
-            .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
-        if current.schedule_interval_minutes.is_none() {
-            return Err(ApiError::bad_request(SCHEDULE_INTERVAL_REQUIRED));
+    let Json(request) = request.map_err(|error| {
+        if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
+            ApiError::media_profile_body_too_large()
+        } else {
+            ApiError::bad_request("invalid complete profile body")
+                .with_context_field("error_code", "media_configuration_invalid")
         }
-    }
-
-    state
-        .media
-        .media_profile_patch(MediaProfilePatchParams {
-            actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
-            media_profile_public_id,
-            source_root: trim_and_filter_empty(request.source_root.as_deref()),
-            output_root: trim_and_filter_empty(request.output_root.as_deref()),
-            dry_run_only: request.dry_run_only,
-            retention_days: request.retention_days,
-            compatibility_target_key: normalize_clearable_media_key(
-                request.compatibility_target_key.as_deref(),
-                "compatibility_target_key",
-            )?,
-            policy_key: normalize_optional_media_key(request.policy_key.as_deref(), "policy_key")?,
-            watcher_enabled: request.watcher_enabled,
-            schedule_enabled: request.schedule_enabled,
-            schedule_interval_minutes: request.schedule_interval_minutes,
-        })
-        .await
-        .map_err(|err| map_media_error("media_profile_patch", MEDIA_PROFILE_UPSERT_FAILED, &err))?;
-
+    })?;
     let profile = state
         .media
-        .media_profile_list()
+        .media_profile_version_replace(
+            SYSTEM_ACTOR_PUBLIC_ID,
+            media_profile_public_id,
+            precondition.version,
+            &request,
+        )
         .await
-        .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
-        .into_iter()
-        .find(|item| item.media_profile_public_id == media_profile_public_id)
-        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
-
-    let response = map_profile(profile);
+        .map_err(|err| {
+            if err.code() == Some("media_configuration_version_conflict") {
+                ApiError::media_profile_version_conflict()
+            } else {
+                map_media_error(
+                    "media_profile_version_replace",
+                    MEDIA_PROFILE_UPSERT_FAILED,
+                    &err,
+                )
+            }
+        })?;
+    let fields = profile.fields();
     state.publish_event(CoreEvent::MediaProfileChanged {
-        media_profile_public_id: response.media_profile_public_id,
-        profile_key: response.profile_key.clone(),
+        media_profile_public_id: fields.media_profile_public_id,
+        profile_key: fields.profile.fields().profile_key.clone(),
     });
+    super::media_profile_representation::response(profile)
+}
 
-    Ok(Json(response))
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MediaProfilesQuery {
+    limit: Option<u16>,
+    cursor: Option<String>,
 }
 
 pub(crate) async fn list_media_profiles(
     State(state): State<Arc<ApiState>>,
-) -> Result<Json<MediaProfileListResponse>, ApiError> {
+    query: Result<Query<MediaProfilesQuery>, axum::extract::rejection::QueryRejection>,
+) -> Result<Json<crate::models::media_root_contract::ProfileVersionPageResponse>, ApiError> {
+    use crate::models::media_root_contract::{
+        ProfileCollectionCursor, validate_root_catalog_limit,
+    };
+    let invalid = || {
+        ApiError::bad_request("invalid profile collection query")
+            .with_context_field("error_code", "media_configuration_invalid")
+    };
+    let Query(query) = query.map_err(|_| invalid())?;
+    let limit = validate_root_catalog_limit(query.limit).map_err(|_| invalid())?;
+    let cursor = query
+        .cursor
+        .as_deref()
+        .map(ProfileCollectionCursor::decode)
+        .transpose()
+        .map_err(|_| invalid())?;
     let profiles = state
         .media
-        .media_profile_list()
+        .media_profile_version_page(limit, cursor)
         .await
-        .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
-        .into_iter()
-        .map(map_profile)
-        .collect();
+        .map_err(|err| {
+            map_media_error(
+                "media_profile_version_page",
+                MEDIA_PROFILE_LIST_FAILED,
+                &err,
+            )
+        })?;
 
-    Ok(Json(MediaProfileListResponse { profiles }))
+    Ok(Json(profiles))
 }
 
 pub(crate) async fn get_media_profile(
     State(state): State<Arc<ApiState>>,
     Path(media_profile_public_id): Path<Uuid>,
-) -> Result<Json<MediaProfileResponse>, ApiError> {
+) -> Result<axum::response::Response, ApiError> {
     let profile = state
         .media
-        .media_profile_list()
+        .media_profile_version(media_profile_public_id)
         .await
-        .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
-        .into_iter()
-        .find(|item| item.media_profile_public_id == media_profile_public_id)
+        .map_err(|err| map_media_error("media_profile_version", MEDIA_PROFILE_LIST_FAILED, &err))?
         .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
 
-    Ok(Json(map_profile(profile)))
+    super::media_profile_representation::response(profile)
 }
 
 pub(crate) async fn get_media_profile_readiness(
@@ -487,41 +468,6 @@ pub(crate) async fn create_media_desired_target(
     ))
 }
 
-pub(crate) async fn set_media_profile_desired_target(
-    State(state): State<Arc<ApiState>>,
-    Path(media_profile_public_id): Path<Uuid>,
-    Json(request): Json<MediaProfileDesiredTargetRequest>,
-) -> Result<StatusCode, ApiError> {
-    let target_key = normalize_optional_media_key(request.target_key.as_deref(), "target_key")?
-        .map(str::to_string);
-    match (&target_key, request.version) {
-        (Some(_), Some(version)) => validate_positive_version(version)?,
-        (None, None) => {}
-        _ => {
-            return Err(ApiError::bad_request(
-                "target_key and version must be supplied together",
-            ));
-        }
-    }
-    state
-        .media
-        .media_profile_desired_target_set(MediaProfileDesiredTargetParams {
-            actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
-            media_profile_public_id,
-            target_key,
-            version: request.version,
-        })
-        .await
-        .map_err(|err| {
-            map_media_error(
-                "media_profile_desired_target_set",
-                "failed to set media profile desired target",
-                &err,
-            )
-        })?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
 pub(crate) async fn list_media_policies(
     State(state): State<Arc<ApiState>>,
 ) -> Result<Json<MediaPolicyListResponse>, ApiError> {
@@ -532,6 +478,7 @@ pub(crate) async fn list_media_policies(
         .map_err(|err| map_media_error("media_policy_list", "failed to list media policies", &err))?
         .into_iter()
         .map(|policy| MediaPolicyResponse {
+            output: policy.output,
             policy_key: policy.policy_key,
             version: policy.version,
             display_name: policy.display_name,
@@ -551,6 +498,14 @@ pub(crate) async fn upsert_media_policy(
     State(state): State<Arc<ApiState>>,
     Json(request): Json<MediaPolicyUpsertRequest>,
 ) -> Result<(StatusCode, Json<MediaPolicyResponse>), ApiError> {
+    if !matches!(
+        request.output.replacement_mode.as_str(),
+        "disabled" | "atomic_replace"
+    ) || (!request.output.dry_run && request.output.replacement_mode != "atomic_replace")
+    {
+        return Err(ApiError::bad_request("invalid output policy")
+            .with_context_field("error_code", "media_policy_output_invalid"));
+    }
     validate_positive_version(request.version)?;
     let policy_key = normalize_media_key(&request.policy_key, "policy_key")?;
     let display_name = normalize_media_display(&request.display_name, "display_name")?;
@@ -568,6 +523,7 @@ pub(crate) async fn upsert_media_policy(
     let policy = state
         .media
         .media_policy_upsert(crate::app::media::MediaPolicyUpsertParams {
+            output: request.output,
             actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
             policy_key,
             version: request.version,
@@ -588,6 +544,7 @@ pub(crate) async fn upsert_media_policy(
     Ok((
         StatusCode::CREATED,
         Json(MediaPolicyResponse {
+            output: policy.output,
             policy_key: policy.policy_key,
             version: policy.version,
             display_name: policy.display_name,
@@ -679,16 +636,25 @@ fn validate_retention_limit(value: i32) -> Result<(), ApiError> {
 
 pub(crate) async fn preview_media_planning(
     State(state): State<Arc<ApiState>>,
-    Json(request): Json<MediaPlanningPreviewRequest>,
+    request: Result<Json<MediaPlanningPreviewRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<MediaPlanningPreviewResponse>, ApiError> {
-    let source_path = normalize_required_str_field(&request.source_path, SOURCE_PATH_REQUIRED)?;
-    let source_paths = vec![source_path.to_string()];
-    let preview = state
+    let Json(request) = request.map_err(|error| {
+        if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
+            ApiError::media_profile_body_too_large()
+        } else {
+            ApiError::bad_request("invalid root-relative planning candidate")
+        }
+    })?;
+    let candidates = MediaDiscoveryPreviewRequest {
+        media_discovery_association_public_id: request.media_discovery_association_public_id,
+        source_paths: vec![request.source_path],
+    };
+    candidates
+        .validate()
+        .map_err(|_| ApiError::bad_request("invalid root-relative planning candidate"))?;
+    let (_, previews) = state
         .media
-        .media_discovery_preview(MediaDiscoveryPreviewParams {
-            media_profile_public_id: request.media_profile_public_id,
-            source_paths: &source_paths,
-        })
+        .media_association_preview(&candidates)
         .await
         .map_err(|err| {
             map_media_error(
@@ -696,7 +662,8 @@ pub(crate) async fn preview_media_planning(
                 MEDIA_DISCOVERY_PREVIEW_FAILED,
                 &err,
             )
-        })?
+        })?;
+    let preview = previews
         .into_iter()
         .next()
         .ok_or_else(|| ApiError::bad_request(SOURCE_PATH_REQUIRED))?;
@@ -712,16 +679,21 @@ pub(crate) async fn preview_media_planning(
 
 pub(crate) async fn preview_media_discovery(
     State(state): State<Arc<ApiState>>,
-    Json(request): Json<MediaDiscoveryPreviewRequest>,
+    request: Result<Json<MediaDiscoveryPreviewRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<MediaDiscoveryPreviewResponse>, ApiError> {
-    let source_paths = normalize_discovery_source_paths(&request.source_paths)?;
-
-    let previews = state
+    let Json(request) = request.map_err(|error| {
+        if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
+            ApiError::media_profile_body_too_large()
+        } else {
+            ApiError::bad_request("invalid root-relative discovery candidates")
+        }
+    })?;
+    request
+        .validate()
+        .map_err(|_| ApiError::bad_request("invalid root-relative discovery candidates"))?;
+    let (media_profile_public_id, previews) = state
         .media
-        .media_discovery_preview(MediaDiscoveryPreviewParams {
-            media_profile_public_id: request.media_profile_public_id,
-            source_paths: &source_paths,
-        })
+        .media_association_preview(&request)
         .await
         .map_err(|err| {
             map_media_error(
@@ -732,7 +704,7 @@ pub(crate) async fn preview_media_discovery(
         })?;
     let accepted_count = previews.iter().filter(|item| item.accepted).count();
     state.publish_event(CoreEvent::MediaDiscoveryPreviewed {
-        media_profile_public_id: request.media_profile_public_id,
+        media_profile_public_id,
         candidate_count: usize_to_u64_saturating(previews.len()),
         accepted_count: usize_to_u64_saturating(accepted_count),
     });
@@ -752,118 +724,98 @@ pub(crate) async fn preview_media_discovery(
 
 pub(crate) async fn run_media_discovery(
     State(state): State<Arc<ApiState>>,
-    Json(request): Json<MediaDiscoveryRunRequest>,
+    request: Result<Json<MediaDiscoveryPreviewRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<(StatusCode, Json<MediaDiscoveryRunResponse>), ApiError> {
-    run_media_discovery_for_trigger(state, request, MediaDiscoveryRunTrigger::Manual).await
-}
-
-pub(crate) async fn run_media_discovery_schedule(
-    State(state): State<Arc<ApiState>>,
-    Json(request): Json<MediaDiscoveryRunRequest>,
-) -> Result<(StatusCode, Json<MediaDiscoveryRunResponse>), ApiError> {
-    run_media_discovery_for_trigger(state, request, MediaDiscoveryRunTrigger::Schedule).await
-}
-
-pub(crate) async fn run_media_discovery_watcher(
-    State(state): State<Arc<ApiState>>,
-    Json(request): Json<MediaDiscoveryRunRequest>,
-) -> Result<(StatusCode, Json<MediaDiscoveryRunResponse>), ApiError> {
-    run_media_discovery_for_trigger(state, request, MediaDiscoveryRunTrigger::Watcher).await
-}
-
-#[derive(Debug, Clone, Copy)]
-enum MediaDiscoveryRunTrigger {
-    Manual,
-    Schedule,
-    Watcher,
-}
-
-async fn run_media_discovery_for_trigger(
-    state: Arc<ApiState>,
-    request: MediaDiscoveryRunRequest,
-    trigger: MediaDiscoveryRunTrigger,
-) -> Result<(StatusCode, Json<MediaDiscoveryRunResponse>), ApiError> {
-    let source_paths = normalize_discovery_source_paths(&request.source_paths)?;
-    let response = match trigger {
-        MediaDiscoveryRunTrigger::Manual => state
-            .media
-            .media_discovery_run(MediaDiscoveryRunParams {
-                actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
-                media_profile_public_id: request.media_profile_public_id,
-                source_paths: &source_paths,
-            })
-            .await
-            .map_err(|err| {
-                map_media_error("media_discovery_run", MEDIA_DISCOVERY_RUN_FAILED, &err)
-            })?,
-        MediaDiscoveryRunTrigger::Schedule => state
-            .media
-            .media_discovery_schedule_run(MediaDiscoveryAutomationRunParams {
-                actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
-                media_profile_public_id: request.media_profile_public_id,
-                source_paths: &source_paths,
-            })
-            .await
-            .map_err(|err| {
-                map_media_error(
-                    "media_discovery_schedule_run",
-                    MEDIA_DISCOVERY_SCHEDULE_RUN_FAILED,
-                    &err,
-                )
-            })?,
-        MediaDiscoveryRunTrigger::Watcher => state
-            .media
-            .media_discovery_watcher_run(MediaDiscoveryAutomationRunParams {
-                actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
-                media_profile_public_id: request.media_profile_public_id,
-                source_paths: &source_paths,
-            })
-            .await
-            .map_err(|err| {
-                map_media_error(
-                    "media_discovery_watcher_run",
-                    MEDIA_DISCOVERY_WATCHER_RUN_FAILED,
-                    &err,
-                )
-            })?,
-    };
+    let Json(request) = request.map_err(|error| {
+        if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
+            ApiError::media_profile_body_too_large()
+        } else {
+            ApiError::bad_request("invalid root-relative discovery candidates")
+        }
+    })?;
+    request
+        .validate()
+        .map_err(|_| ApiError::bad_request("invalid root-relative discovery candidates"))?;
+    let (media_profile_public_id, response) = state
+        .media
+        .media_association_run(
+            SYSTEM_ACTOR_PUBLIC_ID,
+            &request,
+            MediaAssociationRunTrigger::Manual,
+        )
+        .await
+        .map_err(|error| {
+            map_media_error("media_discovery_run", MEDIA_DISCOVERY_RUN_FAILED, &error)
+        })?;
     for job in &response.queued_jobs {
         state.publish_event(CoreEvent::MediaJobQueued {
             media_job_public_id: job.media_job_public_id,
-            media_profile_public_id: request.media_profile_public_id,
+            media_profile_public_id,
             dry_run: job.dry_run,
         });
     }
-
     Ok((
         StatusCode::CREATED,
         Json(map_discovery_run_response(response)),
     ))
 }
 
-fn normalize_discovery_source_paths(source_paths: &[String]) -> Result<Vec<String>, ApiError> {
-    if source_paths.is_empty() {
-        return Err(ApiError::bad_request(DISCOVERY_SOURCE_PATHS_REQUIRED));
-    }
+pub(crate) async fn run_media_discovery_schedule(
+    State(state): State<Arc<ApiState>>,
+    request: Result<Json<MediaDiscoveryRunRequest>, axum::extract::rejection::JsonRejection>,
+) -> Result<(StatusCode, Json<MediaDiscoveryRunResponse>), ApiError> {
+    run_media_discovery_for_trigger(state, request, MediaAssociationRunTrigger::Schedule).await
+}
 
-    if source_paths.len() > DISCOVERY_SOURCE_PATHS_MAX_LEN {
-        let mut error = ApiError::bad_request(DISCOVERY_SOURCE_PATHS_TOO_LARGE);
-        error = error.with_context_field("max_len", DISCOVERY_SOURCE_PATHS_MAX_LEN.to_string());
-        return Err(error);
-    }
+pub(crate) async fn run_media_discovery_watcher(
+    State(state): State<Arc<ApiState>>,
+    request: Result<Json<MediaDiscoveryRunRequest>, axum::extract::rejection::JsonRejection>,
+) -> Result<(StatusCode, Json<MediaDiscoveryRunResponse>), ApiError> {
+    run_media_discovery_for_trigger(state, request, MediaAssociationRunTrigger::Watcher).await
+}
 
-    let mut normalized = Vec::new();
-    for source_path in source_paths {
-        let normalized_path = normalize_required_str_field(source_path, SOURCE_PATH_REQUIRED)?;
-        if normalized_path.len() > DISCOVERY_SOURCE_PATH_MAX_BYTES {
-            let mut error = ApiError::bad_request(DISCOVERY_SOURCE_PATH_TOO_LARGE);
-            error =
-                error.with_context_field("max_len", DISCOVERY_SOURCE_PATH_MAX_BYTES.to_string());
-            return Err(error);
+async fn run_media_discovery_for_trigger(
+    state: Arc<ApiState>,
+    request: Result<Json<MediaDiscoveryRunRequest>, axum::extract::rejection::JsonRejection>,
+    trigger: MediaAssociationRunTrigger,
+) -> Result<(StatusCode, Json<MediaDiscoveryRunResponse>), ApiError> {
+    let Json(request) = request.map_err(|error| {
+        if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
+            ApiError::media_profile_body_too_large()
+        } else {
+            ApiError::bad_request("invalid root-relative discovery candidates")
         }
-        normalized.push(normalized_path.to_string());
+    })?;
+    request
+        .validate()
+        .map_err(|_| ApiError::bad_request("invalid root-relative discovery candidates"))?;
+    let (operation, detail) = match trigger {
+        MediaAssociationRunTrigger::Schedule => (
+            "media_discovery_schedule_run",
+            MEDIA_DISCOVERY_SCHEDULE_RUN_FAILED,
+        ),
+        MediaAssociationRunTrigger::Watcher => (
+            "media_discovery_watcher_run",
+            MEDIA_DISCOVERY_WATCHER_RUN_FAILED,
+        ),
+        MediaAssociationRunTrigger::Manual => ("media_discovery_run", MEDIA_DISCOVERY_RUN_FAILED),
+    };
+    let (media_profile_public_id, response) = state
+        .media
+        .media_association_run(SYSTEM_ACTOR_PUBLIC_ID, &request, trigger)
+        .await
+        .map_err(|error| map_media_error(operation, detail, &error))?;
+    for job in &response.queued_jobs {
+        state.publish_event(CoreEvent::MediaJobQueued {
+            media_job_public_id: job.media_job_public_id,
+            media_profile_public_id,
+            dry_run: job.dry_run,
+        });
     }
-    Ok(normalized)
+    Ok((
+        StatusCode::CREATED,
+        Json(map_discovery_run_response(response)),
+    ))
 }
 
 fn map_discovery_run_response(response: AppMediaDiscoveryRunResponse) -> MediaDiscoveryRunResponse {
@@ -891,57 +843,34 @@ fn map_discovery_run_response(response: AppMediaDiscoveryRunResponse) -> MediaDi
 
 pub(crate) async fn list_media_discovery_schedules(
     State(state): State<Arc<ApiState>>,
-) -> Result<Json<MediaDiscoveryScheduleListResponse>, ApiError> {
-    let schedules = state
-        .media
-        .media_profile_list()
-        .await
-        .map_err(|err| {
-            map_media_error(
-                "media_discovery_schedule_list",
-                MEDIA_DISCOVERY_SCHEDULE_LIST_FAILED,
-                &err,
-            )
-        })?
-        .into_iter()
-        .map(|profile| MediaDiscoveryScheduleResponse {
-            media_profile_public_id: profile.media_profile_public_id,
-            profile_key: profile.profile_key,
-            source_root: profile.source_root,
-            enabled: profile.schedule_enabled,
-            interval_minutes: profile.schedule_interval_minutes,
-            dry_run: profile.dry_run_only,
-        })
-        .collect();
-
-    Ok(Json(MediaDiscoveryScheduleListResponse { schedules }))
+    query: Result<
+        Query<super::media_associations::AssociationPageQuery>,
+        axum::extract::rejection::QueryRejection,
+    >,
+) -> Result<Json<MediaDiscoveryScheduleListResponse>, axum::response::Response> {
+    let (schedules, next_cursor) = super::media_associations::page(&state, query)
+        .await?
+        .into_parts();
+    Ok(Json(MediaDiscoveryScheduleListResponse {
+        schedules,
+        next_cursor,
+    }))
 }
 
 pub(crate) async fn list_media_discovery_watchers(
     State(state): State<Arc<ApiState>>,
-) -> Result<Json<MediaDiscoveryWatcherListResponse>, ApiError> {
-    let watchers = state
-        .media
-        .media_profile_list()
-        .await
-        .map_err(|err| {
-            map_media_error(
-                "media_discovery_watcher_list",
-                MEDIA_DISCOVERY_WATCHER_LIST_FAILED,
-                &err,
-            )
-        })?
-        .into_iter()
-        .map(|profile| MediaDiscoveryWatcherResponse {
-            media_profile_public_id: profile.media_profile_public_id,
-            profile_key: profile.profile_key,
-            source_root: profile.source_root,
-            enabled: profile.watcher_enabled,
-            dry_run: profile.dry_run_only,
-        })
-        .collect();
-
-    Ok(Json(MediaDiscoveryWatcherListResponse { watchers }))
+    query: Result<
+        Query<super::media_associations::AssociationPageQuery>,
+        axum::extract::rejection::QueryRejection,
+    >,
+) -> Result<Json<MediaDiscoveryWatcherListResponse>, axum::response::Response> {
+    let (watchers, next_cursor) = super::media_associations::page(&state, query)
+        .await?
+        .into_parts();
+    Ok(Json(MediaDiscoveryWatcherListResponse {
+        watchers,
+        next_cursor,
+    }))
 }
 
 pub(crate) async fn list_media_jobs(
@@ -1412,8 +1341,9 @@ pub(crate) async fn export_media_yaml(
 
 pub(crate) async fn validate_media_yaml(
     State(state): State<Arc<ApiState>>,
-    Json(request): Json<MediaYamlImportRequest>,
+    request: Result<Json<MediaYamlImportRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<MediaYamlValidationResponse>, ApiError> {
+    let request = media_yaml_request(request)?;
     let yaml_payload = normalize_required_str_field(&request.yaml_payload, YAML_PAYLOAD_REQUIRED)?;
     let result = state
         .media
@@ -1432,20 +1362,31 @@ pub(crate) async fn validate_media_yaml(
                 blocking: issue.blocking,
             })
             .collect(),
-        profile_count: result.bundle.profiles.len(),
+        profile_count: result.profile_count,
     }))
 }
 
 pub(crate) async fn apply_media_yaml(
     State(state): State<Arc<ApiState>>,
-    Json(request): Json<MediaYamlImportRequest>,
+    request: Result<Json<MediaYamlImportRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<(StatusCode, Json<MediaYamlApplyResponse>), ApiError> {
+    let request = media_yaml_request(request)?;
     let yaml_payload = normalize_required_str_field(&request.yaml_payload, YAML_PAYLOAD_REQUIRED)?;
+    let preconditions = request
+        .preconditions
+        .as_deref()
+        .ok_or_else(ApiError::media_yaml_precondition_required)?;
     let result = state
         .media
-        .media_yaml_apply(SYSTEM_ACTOR_PUBLIC_ID, yaml_payload)
+        .media_yaml_apply(SYSTEM_ACTOR_PUBLIC_ID, yaml_payload, preconditions)
         .await
-        .map_err(|err| map_media_error("media_yaml_apply", MEDIA_YAML_APPLY_FAILED, &err))?;
+        .map_err(|err| {
+            if err.code() == Some("media_configuration_precondition_required") {
+                ApiError::media_yaml_precondition_required()
+            } else {
+                map_media_error("media_yaml_apply", MEDIA_YAML_APPLY_FAILED, &err)
+            }
+        })?;
     Ok((
         StatusCode::CREATED,
         Json(MediaYamlApplyResponse {
@@ -1454,6 +1395,30 @@ pub(crate) async fn apply_media_yaml(
             media_profile_import_draft_public_ids: result.media_profile_import_draft_public_ids,
         }),
     ))
+}
+
+fn media_yaml_request(
+    request: Result<Json<MediaYamlImportRequest>, axum::extract::rejection::JsonRejection>,
+) -> Result<MediaYamlImportRequest, ApiError> {
+    let Json(request) = request.map_err(|error| {
+        if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
+            ApiError::media_yaml_body_too_large()
+        } else {
+            ApiError::bad_request("invalid configuration bundle body")
+                .with_context_field("error_code", "media_configuration_invalid")
+        }
+    })?;
+    if request.yaml_payload.len() > crate::models::MEDIA_YAML_BUNDLE_MAX_BYTES {
+        return Err(ApiError::media_yaml_body_too_large());
+    }
+    if request
+        .preconditions
+        .as_ref()
+        .is_some_and(|rows| rows.len() > crate::models::MEDIA_YAML_PRECONDITIONS_MAX)
+    {
+        return Err(ApiError::media_yaml_body_too_large());
+    }
+    Ok(request)
 }
 
 fn map_desired_target_stream_params(
@@ -1512,25 +1477,6 @@ fn map_desired_target_response(
     }
 }
 
-fn map_profile(profile: crate::app::media::MediaProfileResponse) -> MediaProfileResponse {
-    MediaProfileResponse {
-        media_profile_public_id: profile.media_profile_public_id,
-        profile_key: profile.profile_key,
-        source_root: profile.source_root,
-        output_root: profile.output_root,
-        dry_run_only: profile.dry_run_only,
-        retention_days: profile.retention_days,
-        compatibility_target_key: profile.compatibility_target_key,
-        desired_target_key: profile.desired_target_key,
-        desired_target_version: profile.desired_target_version,
-        policy_key: profile.policy_key,
-        watcher_enabled: profile.watcher_enabled,
-        schedule_enabled: profile.schedule_enabled,
-        schedule_interval_minutes: profile.schedule_interval_minutes,
-        updated_at: profile.updated_at,
-    }
-}
-
 fn map_job(job: crate::app::media::MediaJobResponse) -> MediaJobResponse {
     MediaJobResponse {
         media_job_public_id: job.media_job_public_id,
@@ -1579,30 +1525,6 @@ fn normalize_media_key<'a>(value: &'a str, field: &str) -> Result<&'a str, ApiEr
     validate_media_key(value).map_err(|error| media_text_validation_error(field, error))
 }
 
-fn normalize_optional_media_key<'a>(
-    value: Option<&'a str>,
-    field: &str,
-) -> Result<Option<&'a str>, ApiError> {
-    let Some(value) = trim_and_filter_empty(value) else {
-        return Ok(None);
-    };
-    normalize_media_key(value, field).map(Some)
-}
-
-fn normalize_clearable_media_key<'a>(
-    value: Option<&'a str>,
-    field: &str,
-) -> Result<Option<&'a str>, ApiError> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Ok(Some(""));
-    }
-    normalize_media_key(trimmed, field).map(Some)
-}
-
 fn normalize_media_display<'a>(value: &'a str, field: &str) -> Result<&'a str, ApiError> {
     validate_media_display(value).map_err(|error| media_text_validation_error(field, error))
 }
@@ -1620,14 +1542,6 @@ fn trim_and_filter_empty(value: Option<&str>) -> Option<&str> {
             Some(trimmed)
         }
     })
-}
-
-fn validate_retention_days(value: i32) -> Result<(), ApiError> {
-    if (1..=3650).contains(&value) {
-        Ok(())
-    } else {
-        Err(ApiError::bad_request(RETENTION_DAYS_INVALID))
-    }
 }
 
 fn validate_positive_version(value: i32) -> Result<(), ApiError> {
@@ -2099,24 +2013,6 @@ async fn append_profile_catalog_issues(
     Ok(())
 }
 
-fn validate_schedule(schedule_enabled: bool, interval: Option<i32>) -> Result<(), ApiError> {
-    if schedule_enabled && interval.is_none() {
-        return Err(ApiError::bad_request(SCHEDULE_INTERVAL_REQUIRED));
-    }
-    if let Some(interval) = interval {
-        validate_schedule_interval(interval)?;
-    }
-    Ok(())
-}
-
-fn validate_schedule_interval(interval: i32) -> Result<(), ApiError> {
-    if (1..=525_600).contains(&interval) {
-        Ok(())
-    } else {
-        Err(ApiError::bad_request(SCHEDULE_INTERVAL_INVALID))
-    }
-}
-
 fn parse_media_status_required(value: &str, detail: &'static str) -> Result<String, ApiError> {
     let normalized = value.trim().to_ascii_lowercase();
     if is_supported_media_status(&normalized) {
@@ -2158,9 +2054,15 @@ mod tests {
     #[tokio::test]
     async fn list_media_profiles_reports_unavailable_default_facade() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
-        let error = list_media_profiles(State(state))
-            .await
-            .expect_err("default media facade must fail closed");
+        let error = list_media_profiles(
+            State(state),
+            Ok(Query(MediaProfilesQuery {
+                limit: None,
+                cursor: None,
+            })),
+        )
+        .await
+        .expect_err("default media facade must fail closed");
         assert_eq!(
             error.into_response().status(),
             StatusCode::SERVICE_UNAVAILABLE
@@ -2179,6 +2081,40 @@ mod tests {
         assert_eq!(decode_recent_job_cursor(&encoded)?, (queued_at, id));
         assert!(decode_recent_job_cursor("not-base64!").is_err());
         assert!(decode_recent_job_cursor(&URL_SAFE_NO_PAD.encode("incomplete")).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn profile_collection_http_rejects_invalid_pagination_before_service()
+    -> anyhow::Result<()> {
+        use axum::{Router, body::Body, http::Request, routing::get};
+        use tower::ServiceExt;
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let router = Router::new()
+            .route("/profiles", get(list_media_profiles))
+            .with_state(state);
+        for query in [
+            "limit=0",
+            "limit=201",
+            "limit=-1",
+            "limit=1.5",
+            "offset=0",
+            "cursor=bogus",
+            "limit=1&limit=2",
+        ] {
+            let response = router
+                .clone()
+                .oneshot(Request::get(format!("/profiles?{query}")).body(Body::empty())?)
+                .await?;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{query}");
+        }
+        for query in ["", "?limit=1", "?limit=200"] {
+            let response = router
+                .clone()
+                .oneshot(Request::get(format!("/profiles{query}")).body(Body::empty())?)
+                .await?;
+            assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        }
         Ok(())
     }
 
@@ -2268,6 +2204,7 @@ mod tests {
         );
 
         let policy_request = MediaPolicyUpsertRequest {
+            output: crate::models::MediaPolicyOutput::default(),
             policy_key: "living-room".to_string(),
             version: 1,
             display_name: "Living room".to_string(),
@@ -2288,6 +2225,7 @@ mod tests {
         );
 
         let relaxed_strict_policy = MediaPolicyUpsertRequest {
+            output: crate::models::MediaPolicyOutput::default(),
             policy_key: "relaxed-strict".to_string(),
             version: 1,
             display_name: "Relaxed strict".to_string(),
@@ -2326,7 +2264,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn desired_target_writes_validate_complete_graph_and_profile_pin() -> anyhow::Result<()> {
+    async fn desired_target_writes_validate_complete_graph() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let valid_stream = desired_target_valid_video_stream();
         let invalid = create_media_desired_target(
@@ -2343,7 +2281,7 @@ mod tests {
         assert!(invalid.is_err());
 
         let unavailable = create_media_desired_target(
-            State(state.clone()),
+            State(state),
             Json(MediaDesiredTargetCreateRequest {
                 target_key: " target ".to_string(),
                 version: 1,
@@ -2355,26 +2293,6 @@ mod tests {
         .await;
         assert!(unavailable.is_err());
 
-        let invalid_pin = set_media_profile_desired_target(
-            State(state.clone()),
-            Path(Uuid::new_v4()),
-            Json(MediaProfileDesiredTargetRequest {
-                target_key: Some("target".to_string()),
-                version: None,
-            }),
-        )
-        .await;
-        assert!(invalid_pin.is_err());
-        let unavailable_pin = set_media_profile_desired_target(
-            State(state),
-            Path(Uuid::new_v4()),
-            Json(MediaProfileDesiredTargetRequest {
-                target_key: Some("target".to_string()),
-                version: Some(1),
-            }),
-        )
-        .await;
-        assert!(unavailable_pin.is_err());
         assert_desired_target_audio_validation_rejects_invalid_shapes(&valid_stream);
         assert_desired_target_video_validation_rejects_invalid_shapes(&valid_stream);
         assert_desired_target_subtitle_validation_rejects_invalid_shapes(valid_stream);
@@ -2668,6 +2586,7 @@ mod tests {
         );
 
         let policy_request = MediaPolicyUpsertRequest {
+            output: crate::models::MediaPolicyOutput::default(),
             policy_key: "  living-room  ".to_string(),
             version: 1,
             display_name: "  Living room  ".to_string(),
@@ -2775,11 +2694,11 @@ mod tests {
     async fn preview_media_discovery_rejects_empty_source_paths() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let request = crate::models::MediaDiscoveryPreviewRequest {
-            media_profile_public_id: Uuid::new_v4(),
+            media_discovery_association_public_id: Uuid::new_v4(),
             source_paths: Vec::new(),
         };
 
-        let err = preview_media_discovery(State(state), Json(request))
+        let err = preview_media_discovery(State(state), Ok(Json(request)))
             .await
             .expect_err("empty discovery source paths should fail validation");
         let response = err.into_response();
@@ -2791,11 +2710,11 @@ mod tests {
     async fn preview_media_discovery_rejects_too_many_source_paths() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let request = crate::models::MediaDiscoveryPreviewRequest {
-            media_profile_public_id: Uuid::new_v4(),
-            source_paths: vec!["/input/demo.mkv".to_string(); DISCOVERY_SOURCE_PATHS_MAX_LEN + 1],
+            media_discovery_association_public_id: Uuid::new_v4(),
+            source_paths: vec!["input/demo.mkv".to_string(); 129],
         };
 
-        let err = preview_media_discovery(State(state), Json(request))
+        let err = preview_media_discovery(State(state), Ok(Json(request)))
             .await
             .expect_err("oversized discovery source path list should fail validation");
         let response = err.into_response();
@@ -2805,24 +2724,20 @@ mod tests {
         let problem: ProblemDetails = serde_json::from_slice(&body)?;
         assert_eq!(
             problem.detail.as_deref(),
-            Some(DISCOVERY_SOURCE_PATHS_TOO_LARGE)
+            Some("invalid root-relative discovery candidates")
         );
-        let context = problem.context.unwrap_or_default();
-        assert!(context.iter().any(|item| {
-            item.name == "max_len" && item.value == DISCOVERY_SOURCE_PATHS_MAX_LEN.to_string()
-        }));
         Ok(())
     }
 
     #[tokio::test]
     async fn run_media_discovery_rejects_empty_source_paths() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
-        let request = crate::models::MediaDiscoveryRunRequest {
-            media_profile_public_id: Uuid::new_v4(),
+        let request = crate::models::MediaDiscoveryPreviewRequest {
+            media_discovery_association_public_id: Uuid::new_v4(),
             source_paths: Vec::new(),
         };
 
-        let err = run_media_discovery(State(state), Json(request))
+        let err = run_media_discovery(State(state), Ok(Json(request)))
             .await
             .expect_err("empty discovery source paths should fail validation");
         let response = err.into_response();
@@ -2833,13 +2748,13 @@ mod tests {
     #[tokio::test]
     async fn run_media_discovery_rejects_too_long_source_path() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
-        let oversized_path = format!("/{}", "a".repeat(DISCOVERY_SOURCE_PATH_MAX_BYTES));
-        let request = crate::models::MediaDiscoveryRunRequest {
-            media_profile_public_id: Uuid::new_v4(),
+        let oversized_path = format!("/{}", "a".repeat(4096));
+        let request = crate::models::MediaDiscoveryPreviewRequest {
+            media_discovery_association_public_id: Uuid::new_v4(),
             source_paths: vec![oversized_path],
         };
 
-        let err = run_media_discovery(State(state), Json(request))
+        let err = run_media_discovery(State(state), Ok(Json(request)))
             .await
             .expect_err("oversized discovery source path should fail validation");
         let response = err.into_response();
@@ -2849,12 +2764,8 @@ mod tests {
         let problem: ProblemDetails = serde_json::from_slice(&body)?;
         assert_eq!(
             problem.detail.as_deref(),
-            Some(DISCOVERY_SOURCE_PATH_TOO_LARGE)
+            Some("invalid root-relative discovery candidates")
         );
-        let context = problem.context.unwrap_or_default();
-        assert!(context.iter().any(|item| {
-            item.name == "max_len" && item.value == DISCOVERY_SOURCE_PATH_MAX_BYTES.to_string()
-        }));
         Ok(())
     }
 
@@ -2862,11 +2773,11 @@ mod tests {
     async fn run_media_discovery_schedule_rejects_empty_source_paths() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let request = crate::models::MediaDiscoveryRunRequest {
-            media_profile_public_id: Uuid::new_v4(),
+            media_discovery_association_public_id: Uuid::new_v4(),
             source_paths: Vec::new(),
         };
 
-        let err = run_media_discovery_schedule(State(state), Json(request))
+        let err = run_media_discovery_schedule(State(state), Ok(Json(request)))
             .await
             .expect_err("empty scheduled discovery source paths should fail validation");
         let response = err.into_response();
@@ -2878,11 +2789,11 @@ mod tests {
     async fn run_media_discovery_watcher_rejects_empty_source_paths() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let request = crate::models::MediaDiscoveryRunRequest {
-            media_profile_public_id: Uuid::new_v4(),
+            media_discovery_association_public_id: Uuid::new_v4(),
             source_paths: Vec::new(),
         };
 
-        let err = run_media_discovery_watcher(State(state), Json(request))
+        let err = run_media_discovery_watcher(State(state), Ok(Json(request)))
             .await
             .expect_err("empty watcher discovery source paths should fail validation");
         let response = err.into_response();
@@ -2894,9 +2805,16 @@ mod tests {
     async fn list_media_discovery_schedules_reports_unavailable_default_facade()
     -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
-        let error = list_media_discovery_schedules(State(state))
-            .await
-            .expect_err("default media facade must fail closed");
+        let Err(error) = list_media_discovery_schedules(
+            State(state),
+            Ok(Query(
+                crate::http::handlers::media_associations::AssociationPageQuery::default(),
+            )),
+        )
+        .await
+        else {
+            anyhow::bail!("default media facade must fail closed");
+        };
         assert_eq!(
             error.into_response().status(),
             StatusCode::SERVICE_UNAVAILABLE
@@ -2908,9 +2826,16 @@ mod tests {
     async fn list_media_discovery_watchers_reports_unavailable_default_facade() -> anyhow::Result<()>
     {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
-        let error = list_media_discovery_watchers(State(state))
-            .await
-            .expect_err("default media facade must fail closed");
+        let Err(error) = list_media_discovery_watchers(
+            State(state),
+            Ok(Query(
+                crate::http::handlers::media_associations::AssociationPageQuery::default(),
+            )),
+        )
+        .await
+        else {
+            anyhow::bail!("default media facade must fail closed");
+        };
         assert_eq!(
             error.into_response().status(),
             StatusCode::SERVICE_UNAVAILABLE
@@ -2934,50 +2859,88 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn upsert_media_profile_rejects_retention_days_below_minimum() -> anyhow::Result<()> {
+    async fn create_media_profile_reports_unavailable_without_legacy_fallback() -> anyhow::Result<()>
+    {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
-        let request = MediaProfileUpsertRequest {
-            profile_key: "tv".to_string(),
-            source_root: "/input/tv".to_string(),
-            output_root: "/output/tv".to_string(),
-            dry_run_only: true,
-            retention_days: 0,
-            compatibility_target_key: None,
-            policy_key: "safe_dry_run".to_string(),
-            watcher_enabled: false,
-            schedule_enabled: false,
-            schedule_interval_minutes: None,
-        };
-
-        let err = upsert_media_profile(State(state), Json(request))
+        let request = serde_json::from_value(serde_json::json!({
+            "profile_key": "tv", "display_name": "TV", "description": "",
+            "enabled": false, "dry_run_only": true,
+            "desired_target_key": "target", "desired_target_version": 1,
+            "policy_key": "safe-dry-run", "policy_version": 1,
+            "output_root_key": "output", "workspace_root_key": "workspace"
+        }))?;
+        let err = upsert_media_profile(State(state), CreateProfilePrecondition, Ok(Json(request)))
             .await
-            .expect_err("invalid retention should fail validation");
-        let response = err.into_response();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            .expect_err("unavailable service must fail closed");
+        assert_eq!(
+            err.into_response().status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
         Ok(())
     }
 
-    #[tokio::test]
-    async fn upsert_media_profile_rejects_retention_days_above_maximum() -> anyhow::Result<()> {
-        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
-        let request = MediaProfileUpsertRequest {
-            profile_key: "tv".to_string(),
-            source_root: "/input/tv".to_string(),
-            output_root: "/output/tv".to_string(),
-            dry_run_only: true,
-            retention_days: 3651,
-            compatibility_target_key: None,
-            policy_key: "safe_dry_run".to_string(),
-            watcher_enabled: false,
-            schedule_enabled: false,
-            schedule_interval_minutes: None,
-        };
+    #[test]
+    fn create_media_profile_rejects_legacy_path_and_retention_body() {
+        let request = serde_json::json!({
+            "profile_key": "tv", "source_root": "/input/tv", "output_root": "/output/tv",
+            "dry_run_only": true, "retention_days": 3651, "policy_key": "safe_dry_run",
+            "watcher_enabled": false, "schedule_enabled": false
+        });
+        assert!(
+            serde_json::from_value::<crate::models::media_root_contract::ProfileVersionRequest>(
+                request
+            )
+            .is_err()
+        );
+    }
 
-        let err = upsert_media_profile(State(state), Json(request))
-            .await
-            .expect_err("invalid retention should fail validation");
-        let response = err.into_response();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    #[tokio::test]
+    async fn complete_profile_http_rejects_malformed_or_oversized_body() -> anyhow::Result<()> {
+        use axum::{Router, body::Body, extract::DefaultBodyLimit, http::Request, routing::post};
+        use tower::ServiceExt;
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let router = Router::new()
+            .route(
+                "/profiles",
+                post(upsert_media_profile).layer(DefaultBodyLimit::max(
+                    super::super::media_preconditions::PROFILE_BODY_LIMIT,
+                )),
+            )
+            .with_state(state);
+        for (body, status, code) in [
+            (
+                "{}".to_string(),
+                StatusCode::BAD_REQUEST,
+                "media_configuration_invalid",
+            ),
+            (
+                "not json".to_string(),
+                StatusCode::BAD_REQUEST,
+                "media_configuration_invalid",
+            ),
+            (
+                format!(
+                    "\"{}\"",
+                    "x".repeat(super::super::media_preconditions::PROFILE_BODY_LIMIT)
+                ),
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "media_configuration_bound_exceeded",
+            ),
+        ] {
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::post("/profiles")
+                        .header("if-none-match", "*")
+                        .header("content-type", "application/json")
+                        .body(Body::from(body))?,
+                )
+                .await?;
+            assert_eq!(response.status(), status);
+            let body = to_bytes(response.into_body(), 8192).await?;
+            let problem: serde_json::Value = serde_json::from_slice(&body)?;
+            assert_eq!(problem["context"][0]["value"], code);
+        }
         Ok(())
     }
 
@@ -3260,6 +3223,24 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_profile_key_maps_to_http_conflict() {
+        let error = MediaServiceError::new(MediaServiceErrorKind::Conflict)
+            .with_code("media_profile_key_conflict");
+        let response = map_media_error("media_profile_upsert", MEDIA_PROFILE_UPSERT_FAILED, &error)
+            .into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn duplicate_policy_version_maps_to_http_conflict() {
+        let error = MediaServiceError::new(MediaServiceErrorKind::Conflict)
+            .with_code("media_policy_version_conflict");
+        let response = map_media_error("media_policy_upsert", "policy creation failed", &error)
+            .into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+    }
+
+    #[test]
     fn map_media_error_maps_unavailable_service() {
         let error = MediaServiceError::new(MediaServiceErrorKind::Unavailable)
             .with_code("media_unavailable");
@@ -3341,18 +3322,6 @@ mod tests {
     }
 
     #[test]
-    fn validate_retention_days_rejects_out_of_bounds_values() {
-        assert!(validate_retention_days(0).is_err());
-        assert!(validate_retention_days(3651).is_err());
-    }
-
-    #[test]
-    fn validate_retention_days_accepts_in_bounds_values() {
-        assert!(validate_retention_days(1).is_ok());
-        assert!(validate_retention_days(3650).is_ok());
-    }
-
-    #[test]
     fn validate_retention_policy_modes_and_limits() {
         assert_eq!(validate_retention_mode(" AGE ").ok(), Some("age"));
         assert_eq!(validate_retention_mode("Count").ok(), Some("count"));
@@ -3374,29 +3343,7 @@ mod tests {
         let oversized = format!("a{}z", "b".repeat(127));
         assert!(normalize_media_key(&oversized, "profile_key").is_err());
         assert!(normalize_media_key("Profile Key", "profile_key").is_err());
-        assert_eq!(
-            normalize_optional_media_key(Some("  "), "policy_key").ok(),
-            Some(None)
-        );
-        assert_eq!(
-            normalize_clearable_media_key(None, "compatibility_target_key").ok(),
-            Some(None)
-        );
-        assert_eq!(
-            normalize_clearable_media_key(Some("  "), "compatibility_target_key").ok(),
-            Some(Some(""))
-        );
-        assert_eq!(
-            normalize_clearable_media_key(
-                Some("  plex-living-room  "),
-                "compatibility_target_key",
-            )
-            .ok(),
-            Some(Some("plex-living-room"))
-        );
-        assert!(
-            normalize_clearable_media_key(Some("Plex Target"), "compatibility_target_key").is_err()
-        );
+        assert!(normalize_media_key("  ", "policy_key").is_err());
     }
 
     #[test]

@@ -192,7 +192,28 @@ fn snapshot_from_rows(
     Ok(WorkspaceRetentionSnapshot {
         active_job_keys: rows
             .into_iter()
-            .filter_map(|row| row.media_job_public_id.map(|id| id.to_string()))
+            .map(|row| {
+                match (
+                    row.media_job_public_id,
+                    row.attempt_number,
+                    row.claim_generation,
+                ) {
+                    (None, None, None) => Ok(None),
+                    (Some(id), Some(attempt), Some(generation))
+                        if attempt > 0 && generation >= 0 =>
+                    {
+                        Ok(Some(crate::media_workspace_identity::workspace_key(
+                            id, attempt, generation,
+                        )))
+                    }
+                    _ => Err(WorkspaceRetentionError::InvalidPolicy(
+                        "workspace_attempt_identity",
+                    )),
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
             .collect(),
         policy: WorkspaceRetentionPolicy {
             workspace_max_age: Duration::from_secs(workspace_seconds),
@@ -216,6 +237,77 @@ pub(crate) enum WorkspaceRetentionError {
     Join(String),
     #[error("workspace retention filesystem cleanup failed")]
     Filesystem(#[from] ManagedWorkspaceError),
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::{MediaWorkspaceRetentionSnapshotRow, WorkspaceRetentionError, snapshot_from_rows};
+
+    fn row(attempt: Option<i32>, generation: Option<i64>) -> MediaWorkspaceRetentionSnapshotRow {
+        MediaWorkspaceRetentionSnapshotRow {
+            media_job_public_id: Some(uuid::Uuid::from_u128(1)),
+            attempt_number: attempt,
+            claim_generation: generation,
+            workspace_retention_seconds: 86_400,
+            diagnostic_workspace_retention_seconds: 2_592_000,
+            max_entries_per_tick: 128,
+        }
+    }
+
+    #[test]
+    fn retention_protects_exact_attempts_and_rejects_partial_identity() -> anyhow::Result<()> {
+        let snapshot = snapshot_from_rows(vec![row(Some(1), Some(1)), row(Some(2), Some(2))])?;
+        assert_eq!(
+            snapshot.active_job_keys,
+            vec![
+                crate::media_workspace_identity::workspace_key(uuid::Uuid::from_u128(1), 1, 1),
+                crate::media_workspace_identity::workspace_key(uuid::Uuid::from_u128(1), 2, 2),
+            ]
+        );
+        for invalid in [
+            row(None, Some(1)),
+            row(Some(1), None),
+            row(Some(0), Some(1)),
+            row(Some(1), Some(-1)),
+        ] {
+            assert!(matches!(
+                snapshot_from_rows(vec![invalid]),
+                Err(WorkspaceRetentionError::InvalidPolicy(
+                    "workspace_attempt_identity"
+                ))
+            ));
+        }
+        let mut empty = row(None, None);
+        empty.media_job_public_id = None;
+        assert!(snapshot_from_rows(vec![empty])?.active_job_keys.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn attempt_workspaces_are_protected_past_the_cleanup_age() -> anyhow::Result<()> {
+        let snapshot = snapshot_from_rows(vec![row(Some(1), Some(1)), row(Some(2), Some(2))])?;
+        let temp = tempfile::tempdir()?;
+        let root = temp.path().join("workspace");
+        for key in &snapshot.active_job_keys {
+            revaer_media_runtime::workspace::create_managed_workspace(&root, key)?;
+        }
+        let expired = revaer_media_runtime::workspace::create_managed_workspace(
+            &root,
+            &crate::media_workspace_identity::workspace_key(uuid::Uuid::from_u128(2), 1, 3),
+        )?;
+        let report = revaer_media_runtime::workspace::cleanup_stale_workspaces_bounded(
+            &root,
+            &snapshot.active_job_keys,
+            std::time::SystemTime::now() + std::time::Duration::from_mins(50_000),
+            snapshot.policy,
+        )?;
+        assert_eq!(report.removed, vec![expired.job_path.clone()]);
+        assert!(!expired.job_path.exists());
+        for key in snapshot.active_job_keys {
+            assert!(root.join(key).exists());
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

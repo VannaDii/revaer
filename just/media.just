@@ -46,6 +46,9 @@ update-test-fixture-probes:
 clean-test-fixtures:
     bash scripts/test-fixtures/clean-test-fixtures.sh
 
+test-media-operator-workflow:
+    bash scripts/test-media-operator-workflow.sh
+
 clean-test-media:
     find "${TMPDIR:-/tmp}" -maxdepth 1 -type d -name 'revaer-media-conversion.*' \
         -exec rm -rf {} +

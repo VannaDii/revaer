@@ -9,7 +9,8 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { cleanupE2EState } from './support/e2e-cleanup';
-import { writeState } from './support/e2e-state';
+import { mergeState, writeState } from './support/e2e-state';
+import { testDatabase, verifyTestDatabaseEndpoint } from './support/e2e-database';
 import { repoRoot } from './support/paths';
 
 type UrlParts = {
@@ -29,7 +30,6 @@ type HttpWaitConfig = {
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', 'host.docker.internal']);
 
-const LOCAL_TEST_DB_USER = 'revaer';
 export const E2E_SERVING_ENTRY = 'bootstrap::runtime_tests::e2e_serving_entry';
 
 const CARGO_BIN_DIR = process.env.CARGO_HOME
@@ -37,6 +37,11 @@ const CARGO_BIN_DIR = process.env.CARGO_HOME
   : path.join(os.homedir(), '.cargo', 'bin');
 
 const COMMAND_CANDIDATES = new Map<string, string[]>([
+  [
+    'docker',
+    ['/usr/local/bin/docker', '/opt/homebrew/bin/docker', '/usr/bin/docker',
+      '/Applications/Docker.app/Contents/Resources/bin/docker'],
+  ],
   [
     'just',
     [path.join(CARGO_BIN_DIR, 'just'), '/usr/local/bin/just', '/opt/homebrew/bin/just', '/usr/bin/just'],
@@ -62,10 +67,6 @@ const COMMAND_CANDIDATES = new Map<string, string[]>([
     ],
   ],
   [
-    'sqlx',
-    [path.join(CARGO_BIN_DIR, 'sqlx'), '/usr/local/bin/sqlx', '/opt/homebrew/bin/sqlx', '/usr/bin/sqlx'],
-  ],
-  [
     'trunk',
     [
       path.join(CARGO_BIN_DIR, 'trunk'),
@@ -88,18 +89,16 @@ export default async function globalSetup(): Promise<void> {
     const apiBaseUrl = process.env.E2E_API_BASE_URL ?? 'http://localhost:7070';
     const baseUrl = process.env.E2E_BASE_URL ?? 'http://localhost:8080';
     const uiPort = httpPortFromUrl(baseUrl);
-    const dbAdminUrl =
-      process.env.E2E_DB_ADMIN_URL ??
-      process.env.REVAER_TEST_DATABASE_URL ??
-      defaultLocalDbAdminUrl();
-    const dbPrefix = process.env.E2E_DB_PREFIX ?? 'revaer_e2e';
+    const dbAdminUrl = process.env.E2E_DB_ADMIN_URL ?? process.env.REVAER_TEST_DATABASE_URL;
+    if (!dbAdminUrl || !process.env.PG_CONTAINER) {
+      throw new Error('E2E requires an explicit test database URL and PG_CONTAINER.');
+    }
     const fsRoot = process.env.E2E_FS_ROOT ?? root;
     const resolvedFsRoot = path.isAbsolute(fsRoot) ? fsRoot : path.resolve(root, fsRoot);
 
     process.env.E2E_API_BASE_URL = apiBaseUrl;
     process.env.E2E_BASE_URL = baseUrl;
     process.env.E2E_DB_ADMIN_URL = dbAdminUrl;
-    process.env.E2E_DB_PREFIX = dbPrefix;
     process.env.E2E_FS_ROOT = fsRoot;
 
     await requirePortFree(7070);
@@ -107,17 +106,16 @@ export default async function globalSetup(): Promise<void> {
     fs.mkdirSync(resolvedFsRoot, { recursive: true });
 
     const adminUrl = await resolveAdminUrl(dbAdminUrl);
-    const adminHost = urlParts(adminUrl).host;
-    if (LOCAL_HOSTS.has(adminHost) && !isTruthy(process.env.E2E_SKIP_DB_START)) {
-      const dbStartUrl = withPath(adminUrl, '/revaer');
-      runCommandWithEnv(
-        'just',
-        ['db-start'],
-        { DATABASE_URL: dbStartUrl, REVAER_DB_MANAGED: '1' },
-        { cwd: root },
-      );
+    const containerId = execFileSync(requireCommand('docker'), [
+      'inspect', '--format', '{{.Id}}', process.env.PG_CONTAINER,
+    ], { encoding: 'utf-8' }).trim();
+    if (!/^[0-9a-f]{64}$/.test(containerId)) {
+      throw new Error('Cannot establish the selected test container identity.');
     }
-    runCommand('just', ['sqlx-install'], { cwd: root });
+    const binding = execFileSync(requireCommand('docker'), [
+      'port', containerId, '5432/tcp',
+    ], { encoding: 'utf-8' });
+    verifyTestDatabaseEndpoint(adminUrl, binding);
 
     const buildOutput = execFileSync(requireCommand('just'), ['ui-e2e-app-build'], {
       cwd: root,
@@ -133,7 +131,7 @@ export default async function globalSetup(): Promise<void> {
     const logDir = path.join(testsDir, 'logs');
     fs.mkdirSync(logDir, { recursive: true });
 
-    const activeDbUrl = await createTempDb(adminUrl, dbPrefix, root);
+    const activeDbUrl = createTempDb(adminUrl, containerId, root);
     const apiProcess = spawnLoggedWithEnv(
       apiCommand.executable,
       apiCommand.args,
@@ -145,7 +143,7 @@ export default async function globalSetup(): Promise<void> {
       },
       { cwd: root },
     );
-    writeState({
+    mergeState({
       apiPid: apiProcess.pid,
       dbUrl: activeDbUrl,
     });
@@ -164,7 +162,7 @@ export default async function globalSetup(): Promise<void> {
 
     const uiProcess = spawnLogged(
       trunkCommand,
-      ['serve', '--dist', 'dist-serve', '--port', String(uiPort)],
+      ['serve', '--no-autoreload=true', '--dist', 'dist-serve', '--port', String(uiPort)],
       path.join(logDir, 'ui.log'),
       {
         cwd: path.join(root, 'crates', 'revaer-ui'),
@@ -177,7 +175,7 @@ export default async function globalSetup(): Promise<void> {
       },
     );
 
-    writeState({
+    mergeState({
       apiPid: apiProcess.pid,
       dbUrl: activeDbUrl,
       uiPid: uiProcess.pid,
@@ -187,13 +185,6 @@ export default async function globalSetup(): Promise<void> {
     await cleanupE2EState();
     throw error;
   }
-}
-
-function isTruthy(value: string | undefined): boolean {
-  if (!value) {
-    return false;
-  }
-  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 }
 
 function runCommand(
@@ -339,19 +330,6 @@ function httpPortFromUrl(input: string): number {
     return 443;
   }
   return 80;
-}
-
-function withPath(input: string, pathname: string): string {
-  const parsed = new URL(input);
-  parsed.pathname = pathname.startsWith('/') ? pathname : `/${pathname}`;
-  return parsed.toString();
-}
-
-function defaultLocalDbAdminUrl(): string {
-  const parsed = new URL('postgres://localhost:5432/postgres');
-  parsed.username = LOCAL_TEST_DB_USER;
-  parsed.password = LOCAL_TEST_DB_USER;
-  return parsed.toString();
 }
 
 async function resolveAdminUrl(initial: string): Promise<string> {
@@ -506,23 +484,33 @@ function isPidAlive(pid: number): boolean {
   }
 }
 
-async function createTempDb(adminUrl: string, prefix: string, root: string): Promise<string> {
-  const runId = `${Date.now()}_${randomBytes(4).toString('hex')}`;
-  const dbName = `${prefix}_${runId}`;
-  const dbUrl = withPath(adminUrl, dbName);
-  runCommand(
-    'sqlx',
-    ['database', 'create', '--database-url', dbUrl],
-    { cwd: root },
-  );
-  writeState({ dbUrl });
+function createTempDb(adminUrl: string, containerId: string, root: string): string {
+  const password = randomBytes(32).toString('hex');
+  const name = `revaer_test_${Date.now()}_${randomBytes(4).readUInt32BE()}`;
+  const database = testDatabase(adminUrl, name, password);
   runCommandWithEnv(
-    'sqlx',
-    ['migrate', 'run', '--database-url', dbUrl, '--source', 'crates/revaer-data/migrations'],
-    { DATABASE_URL: dbUrl },
+    'just',
+    ['db-test-init', database.name],
+    { REVAER_TEST_RUNTIME_PASSWORD: password, PG_CONTAINER: containerId },
     { cwd: root },
   );
-  return dbUrl;
+  try {
+    writeState({
+      dbUrl: database.runtimeUrl,
+      testDatabaseName: database.name,
+      testDatabaseContainer: containerId,
+    });
+  } catch (stateError) {
+    try {
+      runCommandWithEnv('just', ['db-test-drop', database.name],
+        { PG_CONTAINER: containerId }, { cwd: root });
+    } catch (cleanupError) {
+      throw new AggregateError([stateError, cleanupError],
+        'Test database state persistence and cleanup failed.');
+    }
+    throw stateError;
+  }
+  return database.runtimeUrl;
 }
 
 function assertApiDb(pid: number, expected: string): void {
@@ -538,7 +526,7 @@ function assertApiDb(pid: number, expected: string): void {
   }
   const actual = entry.replace('DATABASE_URL=', '');
   if (actual && actual !== expected) {
-    throw new Error(`API process started with unexpected DATABASE_URL: ${actual}`);
+    throw new Error('API process started with unexpected database credentials.');
   }
 }
 

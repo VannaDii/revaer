@@ -6,8 +6,8 @@ use crate::models::MediaJobDiagnosticsResponse;
 #[cfg(target_arch = "wasm32")]
 use crate::models::{
     MediaCapabilityReadinessResponse, MediaCapabilitySnapshotResponse,
-    MediaCompatibilityTargetResponse, MediaComplianceResponse, MediaDiscoveryPreviewItemResponse,
-    MediaJobResponse, MediaPolicyResponse, MediaProfileResponse,
+    MediaCompatibilityTargetResponse, MediaComplianceResponse, MediaJobResponse,
+    MediaPolicyResponse,
 };
 use uuid::Uuid;
 
@@ -35,7 +35,6 @@ pub(crate) fn is_current_diagnostics_request(
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone, PartialEq, Eq, Default)]
 pub(crate) struct MediaViewState {
-    pub profiles: Vec<MediaProfileResponse>,
     pub jobs: Vec<MediaJobResponse>,
     pub readiness: Option<MediaCapabilityReadinessResponse>,
     pub latest_capability: Option<MediaCapabilitySnapshotResponse>,
@@ -43,7 +42,6 @@ pub(crate) struct MediaViewState {
     pub compatibility_targets: Vec<MediaCompatibilityTargetResponse>,
     pub policies: Vec<MediaPolicyResponse>,
     pub yaml_export: Option<String>,
-    pub discovery_preview: Vec<MediaDiscoveryPreviewItemResponse>,
 }
 
 #[cfg(test)]

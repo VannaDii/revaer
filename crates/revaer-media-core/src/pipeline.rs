@@ -83,9 +83,61 @@ pub fn compile_and_plan(
     unmatched_policy: UnmatchedStreamPolicy,
     constraints: &PlanningConstraints,
 ) -> Result<PlanningOutcome, PlanningPipelineError> {
+    compile_and_plan_using(
+        source,
+        output_path,
+        target,
+        unmatched_policy,
+        constraints,
+        |candidates, validate| prune_invalid_and_dominated_with(candidates, validate),
+    )
+}
+
+/// Compile and select a plan using the job's complete captured operation policy.
+///
+/// No current-policy or hard-coded cost fallback is used by this entry point.
+///
+/// # Errors
+/// Rejects invalid targets, unsupported or disabled operations, unsafe candidates,
+/// and overflowing costs.
+pub fn compile_and_plan_with_policy(
+    source: &MediaGraph,
+    output_path: &str,
+    target: &DesiredTarget,
+    unmatched_policy: UnmatchedStreamPolicy,
+    constraints: &PlanningConstraints,
+    costs: &crate::policy::OperationCosts,
+) -> Result<PlanningOutcome, PlanningPipelineError> {
+    compile_and_plan_using(
+        source,
+        output_path,
+        target,
+        unmatched_policy,
+        constraints,
+        |candidates, validate| crate::plan::prune_with_policy(candidates, costs, validate),
+    )
+}
+
+type CandidateValidator<'a> =
+    dyn Fn(&crate::plan::CandidatePlan) -> Result<(), CandidateRejectionReason> + 'a;
+
+fn compile_and_plan_using<F>(
+    source: &MediaGraph,
+    output_path: &str,
+    target: &DesiredTarget,
+    unmatched_policy: UnmatchedStreamPolicy,
+    constraints: &PlanningConstraints,
+    prune: F,
+) -> Result<PlanningOutcome, PlanningPipelineError>
+where
+    F: FnOnce(
+        Vec<crate::plan::CandidatePlan>,
+        &CandidateValidator<'_>,
+    ) -> Result<crate::plan::PrunedCandidates, PlanGenerationError>,
+{
     let desired_graph = compile_desired_target(source, output_path, target, unmatched_policy)?;
     let generated = generate_candidates(&diff_graphs(source, &desired_graph))?;
-    let pruned = prune_invalid_and_dominated_with(generated, |candidate| {
+    let validate = |candidate: &crate::plan::CandidatePlan| {
         if candidate
             .operations
             .iter()
@@ -95,7 +147,8 @@ pub fn compile_and_plan(
         }
         crate::verify::verify_plan_against_graphs(source, &desired_graph, &candidate.operations)
             .map_err(|_| CandidateRejectionReason::UnsafeOrUnverifiable)
-    })?;
+    };
+    let pruned = prune(generated, &validate)?;
     let selection = select_candidate(pruned)?;
     let explanation = explain_plan_selection(&selection);
     Ok(PlanningOutcome {
@@ -183,6 +236,27 @@ mod tests {
         let persisted = serde_yaml::to_string(&outcome)?;
         assert!(persisted.contains("dominated_by_lower_cost"));
         assert!(persisted.contains("output_stream_id: 0"));
+        let rows: Vec<_> = PlanningConstraints::all_supported()
+            .supported_operations
+            .into_iter()
+            .map(|kind| crate::policy::OperationCost {
+                kind,
+                cost_weight: crate::plan::operation_cost(kind) * 3,
+                enabled: true,
+            })
+            .collect();
+        let costs = crate::policy::OperationCosts::new(&rows)?;
+        let explicit = super::compile_and_plan_with_policy(
+            &source,
+            "/workspace/movie.mkv",
+            &target,
+            UnmatchedStreamPolicy::Reject,
+            &PlanningConstraints::all_supported(),
+            &costs,
+        )?;
+        assert_eq!(explicit.selection.selected, outcome.selection.selected);
+        assert_eq!(explicit.selection.selected_cost, 15);
+        assert_eq!(explicit.explanation.selected_plan.total_cost, 15);
         Ok(())
     }
 

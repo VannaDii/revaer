@@ -30,7 +30,7 @@ const MEDIA_JOB_MARK_COMPLETED_V1: &str =
     "SELECT media_job_mark_completed_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_RETENTION_RUN_V1: &str = "SELECT completed_jobs_deleted, failed_jobs_pruned, failed_detail_rows_deleted FROM media_job_retention_run_v1(as_of_input => $1)";
 const MEDIA_JOB_WORKER_CLAIM_NEXT_V4: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, source_identity, source_size_bytes, source_modified_ns, source_changed_ns, source_sha256, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, attempt_number, claim_generation, cancel_generation FROM media_job_worker_claim_next_v4()";
-const MEDIA_WORKSPACE_RETENTION_SNAPSHOT_V1: &str = "SELECT media_job_public_id, workspace_retention_seconds, diagnostic_workspace_retention_seconds, max_entries_per_tick FROM media_workspace_retention_snapshot_v1()";
+const MEDIA_WORKSPACE_RETENTION_SNAPSHOT_V1: &str = "SELECT media_job_public_id, attempt_number, claim_generation, workspace_retention_seconds, diagnostic_workspace_retention_seconds, max_entries_per_tick FROM media_workspace_retention_snapshot_v1()";
 const MEDIA_JOB_WORKER_HEARTBEAT_V1: &str = "SELECT media_job_worker_heartbeat_v1(media_job_public_id_input => $1, claim_generation_input => $2)";
 const MEDIA_JOB_WORKER_MARK_STATUS_V1: &str = "SELECT media_job_worker_mark_status_v1(media_job_public_id_input => $1, claim_generation_input => $2, status_input => $3::media_job_status, last_error_input => $4)";
 const MEDIA_JOB_WORKER_RECOVER_STALE_V1: &str = "SELECT media_job_public_id, status::text AS status_text, last_error FROM media_job_worker_recover_stale_v1(stale_after_seconds_input => $1)";
@@ -241,6 +241,10 @@ pub struct MediaRecentJobRow {
 pub struct MediaWorkspaceRetentionSnapshotRow {
     /// Active job public id, absent only when the active set is empty.
     pub media_job_public_id: Option<Uuid>,
+    /// Protected workspace attempt, absent only with the job identity.
+    pub attempt_number: Option<i32>,
+    /// Protected workspace claim generation, absent only with the job identity.
+    pub claim_generation: Option<i64>,
     /// Full-workspace retention duration in seconds.
     pub workspace_retention_seconds: i64,
     /// Diagnostics-only workspace retention duration in seconds.
@@ -943,6 +947,49 @@ pub async fn get_media_job(
         .fetch_optional(pool)
         .await
         .map_err(try_op("media job get"))
+}
+
+/// Read one operator job with root-relative paths, not worker filesystem paths.
+///
+/// # Errors
+/// Propagates privilege, snapshot, procedure and decoding failures.
+pub async fn get_operator_media_job(pool: &PgPool, id: Uuid) -> Result<Option<MediaJobRow>> {
+    sqlx::query_as("SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_operator_get_v1($1)")
+        .bind(id).fetch_optional(pool).await.map_err(try_op("operator media job get"))
+}
+
+/// List operator jobs without exposing worker filesystem paths.
+///
+/// # Errors
+/// Propagates privilege, snapshot, procedure and decoding failures.
+pub async fn list_operator_media_jobs(
+    pool: &PgPool,
+    profile: Uuid,
+    status: Option<&str>,
+) -> Result<Vec<MediaJobRow>> {
+    sqlx::query_as("SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_operator_list_v1($1, $2::media_job_status)")
+        .bind(profile).bind(status).fetch_all(pool).await.map_err(try_op("operator media job list"))
+}
+
+/// Read the canonical recent page with root-relative operator paths.
+///
+/// # Errors
+/// Propagates cursor, privilege, snapshot, procedure and decoding failures.
+pub async fn list_operator_recent_media_jobs(
+    pool: &PgPool,
+    limit: i32,
+    cursor: Option<(chrono::DateTime<chrono::Utc>, Uuid)>,
+    profile: Option<Uuid>,
+) -> Result<Vec<MediaRecentJobRow>> {
+    let (queued_at, id) = cursor.unzip();
+    sqlx::query_as("SELECT * FROM media_job_operator_recent_page_v1($1, $2, $3, $4)")
+        .bind(limit)
+        .bind(queued_at)
+        .bind(id)
+        .bind(profile)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("operator media recent job page"))
 }
 
 /// Cancel one queued/running/verifying media job.
@@ -2470,6 +2517,7 @@ mod tests {
         upsert_media_policy_profile(
             pool,
             UpsertMediaPolicyProfileInput {
+                output: crate::media::configuration::MediaPolicyOutputRow::default(),
                 actor_public_id,
                 policy_key: "snapshot-policy",
                 version: 1,
@@ -2494,6 +2542,7 @@ mod tests {
         upsert_media_policy_profile(
             pool,
             UpsertMediaPolicyProfileInput {
+                output: crate::media::configuration::MediaPolicyOutputRow::default(),
                 actor_public_id,
                 policy_key: "snapshot-policy",
                 version: 2,

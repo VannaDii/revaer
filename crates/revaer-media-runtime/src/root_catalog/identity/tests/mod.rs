@@ -23,7 +23,7 @@ const SOURCE: &str = r#"{"format_version":1,"slots":[
 // Synthetic source metadata is confined to unit fixtures. No descriptor proof
 // or package validation is asserted by constructing a loaded test source.
 fn loaded(catalog: RootCatalog) -> RootCatalogLoad {
-    RootCatalogLoad::loaded(
+    RootCatalogLoad::loaded_for_encoding_test(
         catalog,
         RootCatalogFileEvidence {
             trust: RootCatalogSourceTrust::NativeOverride,

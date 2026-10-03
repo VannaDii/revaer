@@ -253,7 +253,7 @@ module WorkflowGuardrails
 
     def load_source_inventory
       stdout, stderr, status = Open3.capture3(
-        "git", "-C", @root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"
+        "git", "-C", @root, "ls-files", "--cached", "-z"
       )
       unless status.success?
         @diagnostics.add("unable to enumerate authored Sonar sources: #{stderr.strip}")

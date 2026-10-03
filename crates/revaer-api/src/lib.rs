@@ -1269,6 +1269,110 @@ mod tests {
             persisted.load(Ordering::SeqCst),
             "OpenAPI persistence should be invoked"
         );
+        for method in ["POST", "PUT"] {
+            let request = Request::builder()
+                .method("OPTIONS")
+                .uri("/v1/media/profiles")
+                .header("origin", "http://127.0.0.1:8080")
+                .header("access-control-request-method", method)
+                .header(
+                    "access-control-request-headers",
+                    "content-type,x-revaer-api-key,if-match,if-none-match",
+                )
+                .body(Body::empty())?;
+            let response = server.router().clone().oneshot(request).await?;
+            assert!(response.status().is_success());
+            assert_eq!(
+                response.headers()["access-control-allow-origin"],
+                "http://127.0.0.1:8080"
+            );
+            let headers = response.headers()["access-control-allow-headers"].to_str()?;
+            for required in [
+                "content-type",
+                "x-revaer-api-key",
+                "if-match",
+                "if-none-match",
+            ] {
+                assert!(headers.split(',').any(|header| header.trim() == required));
+            }
+            assert!(!headers.split(',').any(|header| header.trim() == "*"));
+            assert!(
+                response.headers()["access-control-allow-methods"]
+                    .to_str()?
+                    .split(',')
+                    .any(|allowed| allowed.trim() == method)
+            );
+        }
+        let response = server
+            .router()
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .header("origin", "http://127.0.0.1:8080")
+                    .body(Body::empty())?,
+            )
+            .await?;
+        let exposed = response.headers()["access-control-expose-headers"].to_str()?;
+        for required in ["etag", "location"] {
+            assert!(exposed.split(',').any(|header| header.trim() == required));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn association_preview_route_enforces_auth_shape_body_bound_and_no_store() -> Result<()> {
+        let config = MockConfig::new()?;
+        config.set_app_mode(AppMode::Active).await;
+        config.insert_api_key("operator", "secret").await;
+        let events = EventBus::with_capacity(8);
+        let telemetry = Metrics::new().map_err(|_| anyhow!("metrics init"))?;
+        let openapi = OpenApiDependencies::new(
+            Arc::new(json!({"openapi": "stub"})),
+            server_root()?.join("preview-route.json"),
+            Arc::new(|_, _| Ok(())),
+        );
+        let server = ApiServer::with_config_at_with_media(
+            config.shared(),
+            test_indexers(),
+            noop_media(),
+            events,
+            None,
+            telemetry,
+            &openapi,
+        )?;
+        for (route, valid, retired, positional) in [
+            ("/v1/media/discovery/runs",
+             json!({"media_discovery_association_public_id": Uuid::from_u128(1), "source_paths": ["Movies/a.mkv"]}).to_string(),
+             json!({"media_profile_public_id": Uuid::from_u128(1), "source_paths": ["/private/a"]}).to_string(),
+             format!("[\"{}\",[\"a\"]]", Uuid::from_u128(1))),
+            ("/v1/media/discovery/preview",
+             json!({"media_discovery_association_public_id": Uuid::from_u128(1), "source_paths": ["Movies/a.mkv"]}).to_string(),
+             json!({"media_profile_public_id": Uuid::from_u128(1), "source_paths": ["/private/a"]}).to_string(),
+             format!("[\"{}\",[\"a\"]]", Uuid::from_u128(1))),
+            ("/v1/media/planning/preview",
+             json!({"media_discovery_association_public_id": Uuid::from_u128(1), "source_path": "Movies/a.mkv"}).to_string(),
+             json!({"media_profile_public_id": Uuid::from_u128(1), "source_path": "/private/a"}).to_string(),
+             format!("[\"{}\",\"a\"]", Uuid::from_u128(1))),
+        ] {
+        for (body, authenticated, expected) in [
+            ("not-json".to_owned(), false, StatusCode::UNAUTHORIZED),
+            ("not-json".to_owned(), true, StatusCode::BAD_REQUEST),
+            (retired, true, StatusCode::BAD_REQUEST),
+            (positional, true, StatusCode::BAD_REQUEST),
+            ("x".repeat(1024 * 1024 + 1), true, StatusCode::PAYLOAD_TOO_LARGE),
+            (valid, true, StatusCode::SERVICE_UNAVAILABLE),
+        ] {
+            let mut request = Request::post(route).header("content-type", "application/json")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 3000))));
+            if authenticated {
+                request = request.header("x-revaer-api-key", "operator:secret");
+            }
+            let response = server.router().clone().oneshot(request.body(Body::from(body))?).await?;
+            assert_eq!(response.status(), expected);
+            assert_eq!(response.headers()["cache-control"], "no-store");
+        }
+        }
         Ok(())
     }
 

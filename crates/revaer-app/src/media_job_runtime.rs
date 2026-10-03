@@ -27,7 +27,9 @@ use revaer_media_core::model::{
     DesiredGraph, DesiredStreamBinding, MediaGraph, MediaStream, StreamKind,
 };
 use revaer_media_core::normalize::{normalize_audio_channel_layout, normalize_container_format};
-use revaer_media_core::pipeline::{PlanningConstraints, PlanningOutcome, compile_and_plan};
+use revaer_media_core::pipeline::{
+    PlanningConstraints, PlanningOutcome, compile_and_plan_with_policy,
+};
 use revaer_media_core::plan::{CandidateRejectionReason, OperationKind, PlannedOperation};
 use revaer_media_core::target::{
     CompiledDesiredTarget, DesiredSidecarOutput, DesiredTarget, ImageSubtitleAction, LanguageToken,
@@ -140,10 +142,12 @@ struct PreflightReadyContext<'a> {
     shutdown: Option<&'a RuntimeShutdownReceiver>,
 }
 
+mod policy;
+
 struct RuntimePreflightBuildInput {
     source_path: String,
     output_path: String,
-    workspace_output_path: PathBuf,
+    workspace_root_path: PathBuf,
     diagnostics_root: String,
     inspection: MediaInspection,
     desired_target: Option<DesiredTargetSnapshot>,
@@ -151,6 +155,7 @@ struct RuntimePreflightBuildInput {
     capabilities: CapabilitySnapshot,
     workspace_policy: WorkspacePolicy,
     capacity_probe: Arc<RuntimeCapacityProbe>,
+    operation_costs: revaer_media_core::policy::OperationCosts,
 }
 
 struct DesiredVerificationContext<'a> {
@@ -516,55 +521,61 @@ impl MediaJobRuntime {
 
     async fn recover_interrupted_replacements(&self) -> Result<(), MediaJobRuntimeError> {
         let terminal_events = self.store.list_unpublished_terminal_events().await?;
-        let terminal_job_keys = terminal_events
-            .iter()
-            .map(|event| replacement_job_key(event.media_job_public_id, event.claim_generation))
-            .collect::<BTreeSet<_>>();
-        let source_roots = self
-            .store
-            .list_profiles()
-            .await?
-            .into_iter()
-            .map(|profile| PathBuf::from(profile.source_root))
-            .collect::<BTreeSet<_>>();
-        for source_root in source_roots {
-            let replacement_backend = Arc::clone(&self.replacement_committer);
-            let terminal_job_keys = terminal_job_keys.clone();
-            let recovered = tokio::task::spawn_blocking(move || {
-                replacement_backend.recover_with_terminal_jobs(&source_root, &terminal_job_keys)
-            })
-            .await
-            .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
-            for transaction in recovered {
-                if transaction.action == ReplacementRecoveryAction::Finalized {
-                    info!(
-                        media_job_public_id = transaction.job_key,
-                        source_path = %transaction.source_path.display(),
-                        "media job replacement recovery finalized verified transaction"
-                    );
-                    continue;
-                }
-                let (media_job_public_id, claim_generation) =
-                    parse_replacement_job_key(&transaction.job_key)?;
-                let detail = "media_job_recovered_interrupted_replacement";
-                self.store
-                    .mark_job_status(
-                        media_job_public_id,
-                        claim_generation,
-                        "failed",
-                        Some(detail),
+        let mut cursor = 0;
+        loop {
+            let candidates = self
+                .store
+                .list_replacement_recovery_candidates(cursor)
+                .await?;
+            if candidates.is_empty() {
+                break;
+            }
+            for candidate in candidates {
+                cursor = candidate.attempt_id;
+                let source_root = PathBuf::from(candidate.source_root);
+                let replacement_backend = Arc::clone(&self.replacement_committer);
+                let job_key =
+                    replacement_job_key(candidate.media_job_public_id, candidate.claim_generation);
+                let recovered = tokio::task::spawn_blocking(move || {
+                    replacement_backend.recover_job(
+                        &source_root,
+                        &job_key,
+                        candidate.terminal_committed,
                     )
-                    .await?;
-                self.publish_event(Event::MediaJobFailed {
-                    media_job_public_id,
-                    error_code: detail.to_string(),
-                });
-                warn!(
-                    %media_job_public_id,
-                    source_path = %transaction.source_path.display(),
-                    recovery_action = ?transaction.action,
-                    "media job replacement recovery marked interrupted job failed"
-                );
+                })
+                .await
+                .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
+                if let Some(transaction) = recovered {
+                    if transaction.action == ReplacementRecoveryAction::Finalized {
+                        info!(
+                            media_job_public_id = transaction.job_key,
+                            source_path = %transaction.source_path.display(),
+                            "media job replacement recovery finalized verified transaction"
+                        );
+                        continue;
+                    }
+                    let (media_job_public_id, claim_generation) =
+                        parse_replacement_job_key(&transaction.job_key)?;
+                    let detail = "media_job_recovered_interrupted_replacement";
+                    self.store
+                        .mark_job_status(
+                            media_job_public_id,
+                            claim_generation,
+                            "failed",
+                            Some(detail),
+                        )
+                        .await?;
+                    self.publish_event(Event::MediaJobFailed {
+                        media_job_public_id,
+                        error_code: detail.to_string(),
+                    });
+                    warn!(
+                        %media_job_public_id,
+                        source_path = %transaction.source_path.display(),
+                        recovery_action = ?transaction.action,
+                        "media job replacement recovery marked interrupted job failed"
+                    );
+                }
             }
         }
         for event in terminal_events {
@@ -641,17 +652,57 @@ impl MediaJobRuntime {
         Ok(())
     }
 
+    async fn validate_claimed_roots(
+        &self,
+        job: &ClaimedMediaJobRow,
+    ) -> Result<(), MediaJobRuntimeError> {
+        let rows = revaer_data::media::job_roots::read_job_roots(
+            self.store.pool(),
+            job.media_job_public_id,
+            job.attempt_number,
+            job.claim_generation,
+        )
+        .await?;
+        let expected = [
+            Path::new(&job.source_root),
+            Path::new(&job.output_root),
+            self.workspace_root.as_path(),
+        ];
+        for (row, path) in rows.iter().take(3).zip(expected) {
+            if row.binding_state != "bound"
+                || row.canonical_path.as_deref().map(Path::new) != Some(path)
+            {
+                return Err(MediaJobRuntimeError::InvalidPath(
+                    "media_root_identity_mismatch",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     async fn process_job(
         &self,
         job: ClaimedMediaJobRow,
         shutdown: Option<RuntimeShutdownReceiver>,
     ) {
         let started_at = Instant::now();
+        if let Err(error) = self.validate_claimed_roots(&job).await {
+            warn!(media_job_public_id = %job.media_job_public_id, error = %error, "media job immutable root admission failed");
+            self.telemetry.inc_media_job_failure(error.category());
+            self.telemetry.inc_media_job_outcome("failed", job.dry_run);
+            self.persist_failure(&job, error).await;
+            return;
+        }
+        let workspace_key = crate::media_workspace_identity::workspace_key(
+            job.media_job_public_id,
+            job.attempt_number,
+            job.claim_generation,
+        );
         let workspace = if job.dry_run {
-            project_managed_workspace(&self.workspace_root, &job.media_job_public_id.to_string())
+            project_managed_workspace(&self.workspace_root, &workspace_key)
                 .map(|paths| (paths, None))
         } else {
-            create_managed_workspace(&self.workspace_root, &job.media_job_public_id.to_string())
+            create_managed_workspace(&self.workspace_root, &workspace_key)
                 .map(|workspace| (workspace.paths.clone(), Some(workspace)))
         };
         let (workspace_paths, managed_workspace) = match workspace {
@@ -937,8 +988,7 @@ impl MediaJobRuntime {
                     .await
                     .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
             if rollback.is_err() {
-                self.recover_replacement_root(PathBuf::from(&job.source_root))
-                    .await?;
+                self.recover_replacement_job(job).await?;
             }
             rollback.map_err(MediaJobRuntimeError::ReplacementRollback)?;
             return Ok(TerminalWorkspaceState::Cancelled);
@@ -1088,9 +1138,14 @@ impl MediaJobRuntime {
             .list_job_desired_target_streams(job.media_job_public_id)
             .await?;
         let desired_target = desired_target_from_job(job, desired_target_streams)?;
+        let operation_costs = policy::compile_costs(
+            self.store
+                .list_job_operation_costs(job.media_job_public_id)
+                .await?,
+        )?;
         let base_video_policy =
             video_policy_from_policy_intent(job.policy_video_intent.as_deref())?;
-        let workspace_output_path = workspace.output_path.clone();
+        let workspace_root_path = workspace.root_path.clone();
         let diagnostics_root = path_to_string(&workspace.diagnostics_path, "diagnostics_path")?;
         let inspection = self
             .inspect_media(job, source_path.clone(), shutdown)
@@ -1099,7 +1154,7 @@ impl MediaJobRuntime {
             compile_runtime_preflight(RuntimePreflightBuildInput {
                 source_path,
                 output_path,
-                workspace_output_path,
+                workspace_root_path,
                 diagnostics_root,
                 inspection,
                 desired_target,
@@ -1107,6 +1162,7 @@ impl MediaJobRuntime {
                 capabilities,
                 workspace_policy,
                 capacity_probe,
+                operation_costs,
             })
         })
         .await
@@ -1243,8 +1299,7 @@ impl MediaJobRuntime {
                     .await
                     .map_err(|join_error| MediaJobRuntimeError::Join(join_error.to_string()))?;
             if rollback.is_err() {
-                self.recover_replacement_root(PathBuf::from(&job.source_root))
-                    .await?;
+                self.recover_replacement_job(job).await?;
             }
             rollback.map_err(MediaJobRuntimeError::ReplacementRollback)?;
             return Err(error);
@@ -1437,22 +1492,33 @@ impl MediaJobRuntime {
         match commit {
             Ok(value) => Ok(value),
             Err(error) => {
-                self.recover_replacement_root(PathBuf::from(&job.source_root))
-                    .await?;
+                self.recover_replacement_job(job).await?;
                 Err(MediaJobRuntimeError::Replacement(error))
             }
         }
     }
 
-    async fn recover_replacement_root(
+    async fn recover_replacement_job(
         &self,
-        source_root: PathBuf,
+        job: &ClaimedMediaJobRow,
     ) -> Result<(), MediaJobRuntimeError> {
+        let source_root = PathBuf::from(&job.source_root);
+        let job_key = replacement_job_key(job.media_job_public_id, job.claim_generation);
+        let terminal_committed = self
+            .store
+            .list_unpublished_terminal_events()
+            .await?
+            .iter()
+            .any(|event| {
+                event.media_job_public_id == job.media_job_public_id
+                    && event.claim_generation == job.claim_generation
+            });
         let replacement_backend = Arc::clone(&self.replacement_committer);
-        let recovery =
-            tokio::task::spawn_blocking(move || replacement_backend.recover(&source_root))
-                .await
-                .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
+        let recovery = tokio::task::spawn_blocking(move || {
+            replacement_backend.recover_job(&source_root, &job_key, terminal_committed)
+        })
+        .await
+        .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
         match recovery {
             Ok(recovered) => {
                 drop(recovered);
@@ -3452,12 +3518,13 @@ fn compile_runtime_preflight(
         .as_ref()
         .filter(|snapshot| target_uses_embedded_outputs_only(&snapshot.target))
         .map(|snapshot| {
-            compile_and_plan(
+            compile_and_plan_with_policy(
                 source_graph,
                 &input.output_path,
                 &snapshot.target,
                 snapshot.unmatched_stream_policy,
                 &PlanningConstraints::all_supported(),
+                &input.operation_costs,
             )
             .map_err(|_| {
                 MediaJobRuntimeError::InvalidDesiredGraph(
@@ -3497,7 +3564,7 @@ fn compile_runtime_preflight(
     )?;
     let free_bytes = input
         .capacity_probe
-        .available_bytes(&input.workspace_output_path)
+        .available_bytes(&input.workspace_root_path)
         .map_err(MediaJobRuntimeError::Capacity)?;
     let preflight_input = build_preflight_input(
         PreflightBuildTemplate {
@@ -3532,6 +3599,7 @@ fn compile_runtime_preflight(
             )
         },
     );
+    policy::ensure_preflight_allowed(&input.operation_costs, &evaluation)?;
     Ok(RuntimePreflightEvaluation {
         evaluation,
         desired: compiled.graph,
@@ -5574,6 +5642,16 @@ mod tests {
             self.inner.recover(source_root)
         }
 
+        fn recover_job(
+            &self,
+            source_root: &Path,
+            job_key: &str,
+            terminal_committed: bool,
+        ) -> Result<Option<RecoveredReplacement>, ReplacementError> {
+            self.inner
+                .recover_job(source_root, job_key, terminal_committed)
+        }
+
         fn recover_with_terminal_jobs(
             &self,
             source_root: &Path,
@@ -5592,6 +5670,15 @@ mod tests {
     }
 
     impl ReplacementCommitter for PreCommitSourceMutationCommitter {
+        fn recover_job(
+            &self,
+            source_root: &Path,
+            job_key: &str,
+            terminal_committed: bool,
+        ) -> Result<Option<RecoveredReplacement>, ReplacementError> {
+            self.inner
+                .recover_job(source_root, job_key, terminal_committed)
+        }
         fn prepare(
             &self,
             request: ReplacementRequest<'_>,
@@ -5651,6 +5738,14 @@ mod tests {
     }
 
     impl ReplacementCommitter for FinalizedRecoveryCommitter {
+        fn recover_job(
+            &self,
+            _source_root: &Path,
+            job_key: &str,
+            _terminal_committed: bool,
+        ) -> Result<Option<RecoveredReplacement>, ReplacementError> {
+            Ok((self.recovered.job_key == job_key).then(|| self.recovered.clone()))
+        }
         fn prepare(
             &self,
             request: ReplacementRequest<'_>,
@@ -5701,6 +5796,15 @@ mod tests {
     }
 
     impl ReplacementCommitter for PostFinalizeCancellationCommitter {
+        fn recover_job(
+            &self,
+            source_root: &Path,
+            job_key: &str,
+            terminal_committed: bool,
+        ) -> Result<Option<RecoveredReplacement>, ReplacementError> {
+            self.inner
+                .recover_job(source_root, job_key, terminal_committed)
+        }
         fn prepare(
             &self,
             request: ReplacementRequest<'_>,
@@ -5950,17 +6054,24 @@ mod tests {
         dry_run: bool,
         record_capability: bool,
         job_target: RuntimeJobTarget,
-    ) -> anyhow::Result<Option<RuntimeFixture>> {
-        let Ok(postgres) = start_postgres() else {
-            return Ok(None);
-        };
+    ) -> anyhow::Result<RuntimeFixture> {
+        setup_runtime_with_costs(dry_run, record_capability, job_target, true).await
+    }
+
+    async fn setup_runtime_with_costs(
+        dry_run: bool,
+        record_capability: bool,
+        job_target: RuntimeJobTarget,
+        include_costs: bool,
+    ) -> anyhow::Result<RuntimeFixture> {
+        let postgres = start_postgres()?;
+        postgres
+            .apply_init(include_str!("../../revaer-data/init.sql"))
+            .await?;
         let pool = PgPoolOptions::new()
             .max_connections(5)
             .connect(postgres.connection_string())
             .await?;
-        let mut migrator = sqlx::migrate!("../revaer-data/migrations");
-        migrator.set_ignore_missing(true);
-        migrator.run(&pool).await?;
         let store = MediaStore::new(pool);
 
         let temp = tempfile::tempdir()?;
@@ -5979,6 +6090,9 @@ mod tests {
         let email = format!("media-worker-{}@example.invalid", Uuid::new_v4());
         let actor = app_user_create(store.pool(), &email, "Media Worker").await?;
         app_user_verify_email(store.pool(), actor).await?;
+        if include_costs {
+            seed_explicit_runtime_costs(&store, actor).await?;
+        }
         let desired_target = create_runtime_target(&store, actor, job_target).await?;
         let profile_id = store
             .upsert_profile(&UpsertMediaProfileInput {
@@ -6037,7 +6151,7 @@ mod tests {
             telemetry.clone(),
             workspace_root,
         );
-        Ok(Some(RuntimeFixture {
+        Ok(RuntimeFixture {
             _postgres: postgres,
             temp,
             runtime,
@@ -6046,7 +6160,43 @@ mod tests {
             events,
             telemetry,
             command_runner,
-        }))
+        })
+    }
+
+    async fn seed_explicit_runtime_costs(store: &MediaStore, actor: Uuid) -> anyhow::Result<()> {
+        for (order, kind) in [
+            "no_op",
+            "remux",
+            "metadata_rewrite",
+            "disposition_rewrite",
+            "label_rewrite",
+            "stream_reorder",
+            "embed_subtitle",
+            "extract_subtitle",
+            "copy_sidecar_subtitle",
+            "remove_sidecar_subtitle",
+            "subtitle_transcode",
+            "audio_transcode",
+            "video_transcode",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            revaer_data::media::configuration::append_media_policy_operation_cost(
+                store.pool(),
+                actor,
+                "safe_dry_run",
+                1,
+                &revaer_data::media::policy_snapshot::OperationCostSnapshotRow {
+                    operation_kind: kind.to_string(),
+                    cost_weight: 7,
+                    sort_order: i32::try_from(order)?,
+                    enabled: true,
+                },
+            )
+            .await?;
+        }
+        Ok(())
     }
 
     async fn enqueue_runtime_test_job(
@@ -6235,10 +6385,25 @@ mod tests {
 
     #[tokio::test]
     async fn media_job_runtime_completes_dry_run_without_command_execution() -> anyhow::Result<()> {
-        let Some(fixture) = setup_runtime(true, true, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(true, true, RuntimeJobTarget::SourceGraph).await?;
         let before = recursive_tree_snapshot(fixture.temp.path())?;
+        let captured = fixture
+            .store
+            .list_job_operation_costs(fixture.job_id)
+            .await?;
+        assert_eq!(captured.len(), 13);
+        assert!(
+            captured
+                .iter()
+                .all(|row| row.cost_weight == 7 && row.enabled)
+        );
+        assert!(
+            fixture
+                .store
+                .list_job_operation_costs(Uuid::new_v4())
+                .await?
+                .is_empty()
+        );
 
         fixture.runtime.run_tick().await?;
         assert_eq!(recursive_tree_snapshot(fixture.temp.path())?, before);
@@ -6348,6 +6513,36 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn media_job_runtime_rejects_missing_costs_without_source_changes() -> anyhow::Result<()>
+    {
+        let fixture =
+            setup_runtime_with_costs(true, true, RuntimeJobTarget::SourceGraph, false).await?;
+        let before = recursive_tree_snapshot(fixture.temp.path())?;
+        fixture.runtime.run_tick().await?;
+        assert_eq!(recursive_tree_snapshot(fixture.temp.path())?, before);
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("job missing"))?;
+        assert_eq!(job.status_text, "failed");
+        assert!(
+            job.last_error
+                .as_deref()
+                .is_some_and(|error| error.contains("media_job_operation_cost_snapshot_invalid"))
+        );
+        assert!(
+            fixture
+                .command_runner
+                .commands
+                .lock()
+                .map_err(|error| anyhow::anyhow!("command lock poisoned: {error}"))?
+                .is_empty()
+        );
+        Ok(())
+    }
+
     async fn assert_runtime_cancelled(
         store: &MediaStore,
         job_id: Uuid,
@@ -6415,9 +6610,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_job_runtime_executes_non_dry_run_with_injected_runner() -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
@@ -6475,9 +6668,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_job_runtime_rejects_candidate_video_constraint_mismatch() -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(VideoConstraintMismatchInspector) as Arc<RuntimeInspector>;
         let source_path = PathBuf::from(
@@ -6523,9 +6714,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_job_runtime_rejects_candidate_hdr10_missing_side_data() -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(HdrSideDataMismatchInspector) as Arc<RuntimeInspector>;
         let source_path = PathBuf::from(
             fixture
@@ -6570,10 +6759,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_job_runtime_rejects_candidate_audio_constraint_mismatch() -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::HevcAudio).await?
-        else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::HevcAudio).await?;
         fixture.runtime.inspector =
             Arc::new(AudioConstraintMismatchInspector) as Arc<RuntimeInspector>;
         let source_path = PathBuf::from(
@@ -6640,10 +6826,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_job_runtime_rejects_candidate_audio_loudness_mismatch() -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::HevcAudio).await?
-        else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::HevcAudio).await?;
         fixture.runtime.inspector = Arc::new(AudioPolicyInspector) as Arc<RuntimeInspector>;
         fixture.runtime.audio_analyzer = Arc::new(StaticAudioAnalyzer {
             measurement: Ok(AudioMeasurement {
@@ -6889,9 +7072,7 @@ Integrated loudness:
 
     #[tokio::test]
     async fn media_job_runtime_spawn_exits_when_shutdown_already_requested() -> anyhow::Result<()> {
-        let Some(fixture) = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await?;
         let (shutdown_tx, shutdown_rx) = runtime_shutdown::channel();
         assert!(runtime_shutdown::request(&shutdown_tx));
         let runtime_task = fixture.runtime.spawn(shutdown_rx);
@@ -6911,9 +7092,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_shutdown_after_claim_cancels_without_workspace() -> anyhow::Result<()>
     {
-        let Some(fixture) = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await?;
         let claimed = fixture
             .store
             .claim_next_job()
@@ -6924,7 +7103,11 @@ Integrated loudness:
         let workspace_output = fixture
             .runtime
             .workspace_root
-            .join(fixture.job_id.to_string())
+            .join(crate::media_workspace_identity::workspace_key(
+                fixture.job_id,
+                1,
+                1,
+            ))
             .join("output");
         let (shutdown_tx, shutdown_rx) = runtime_shutdown::channel();
 
@@ -6948,9 +7131,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_cancels_active_transcode_and_removes_candidate() -> anyhow::Result<()>
     {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let runner = Arc::new(CancellationAwareCommandRunner::default());
         fixture.runtime.command_runner = Arc::clone(&runner) as Arc<RuntimeCommandRunner>;
@@ -6965,7 +7146,11 @@ Integrated loudness:
         let workspace_output = fixture
             .runtime
             .workspace_root
-            .join(fixture.job_id.to_string())
+            .join(crate::media_workspace_identity::workspace_key(
+                fixture.job_id,
+                1,
+                1,
+            ))
             .join("output");
         let store = fixture.store.clone();
         let job_id = fixture.job_id;
@@ -6985,9 +7170,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_shutdown_cancels_active_transcode_and_removes_candidate()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let runner = Arc::new(CancellationAwareCommandRunner::default());
         fixture.runtime.command_runner = Arc::clone(&runner) as Arc<RuntimeCommandRunner>;
@@ -7002,7 +7185,11 @@ Integrated loudness:
         let workspace_output = fixture
             .runtime
             .workspace_root
-            .join(fixture.job_id.to_string())
+            .join(crate::media_workspace_identity::workspace_key(
+                fixture.job_id,
+                1,
+                1,
+            ))
             .join("output");
         let store = fixture.store.clone();
         let job_id = fixture.job_id;
@@ -7021,9 +7208,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_cancels_active_verification_before_replacement() -> anyhow::Result<()>
     {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let verifier = Arc::new(CancellationAwareVerificationExecutor::default());
         fixture.runtime.verification_executor =
@@ -7039,7 +7224,11 @@ Integrated loudness:
         let workspace_output = fixture
             .runtime
             .workspace_root
-            .join(fixture.job_id.to_string())
+            .join(crate::media_workspace_identity::workspace_key(
+                fixture.job_id,
+                1,
+                1,
+            ))
             .join("output");
         let store = fixture.store.clone();
         let job_id = fixture.job_id;
@@ -7059,9 +7248,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_shutdown_cancels_active_verification_before_replacement()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let verifier = Arc::new(CancellationAwareVerificationExecutor::default());
         fixture.runtime.verification_executor =
@@ -7077,7 +7264,11 @@ Integrated loudness:
         let workspace_output = fixture
             .runtime
             .workspace_root
-            .join(fixture.job_id.to_string())
+            .join(crate::media_workspace_identity::workspace_key(
+                fixture.job_id,
+                1,
+                1,
+            ))
             .join("output");
         let store = fixture.store.clone();
         let job_id = fixture.job_id;
@@ -7096,9 +7287,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_discards_prepared_replacement_when_cancelled_before_commit()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let committer = Arc::new(PreCommitCancellationCommitter::default());
         fixture.runtime.replacement_committer =
@@ -7114,7 +7303,11 @@ Integrated loudness:
         let workspace_output = fixture
             .runtime
             .workspace_root
-            .join(fixture.job_id.to_string())
+            .join(crate::media_workspace_identity::workspace_key(
+                fixture.job_id,
+                1,
+                1,
+            ))
             .join("output");
         let store = fixture.store.clone();
         let job_id = fixture.job_id;
@@ -7136,9 +7329,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_discards_prepared_replacement_when_source_changes_before_commit()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let committer = Arc::new(PreCommitSourceMutationCommitter::default());
         fixture.runtime.replacement_committer =
@@ -7183,9 +7374,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rejects_cancel_after_terminal_replacement_commit()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let committer = Arc::new(PostFinalizeCancellationCommitter::default());
         fixture.runtime.replacement_committer =
@@ -7238,9 +7427,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_completes_non_dry_run_noop_without_command_execution()
     -> anyhow::Result<()> {
-        let Some(fixture) = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await?;
 
         fixture.runtime.run_tick().await?;
 
@@ -7277,9 +7464,7 @@ Integrated loudness:
 
     #[tokio::test]
     async fn media_job_runtime_publishes_non_dry_run_lifecycle_events() -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let mut stream = fixture.events.subscribe(None);
 
@@ -7327,9 +7512,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rejects_low_workspace_capacity_before_execution()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.capacity_probe =
             Arc::new(StaticCapacityProbe { available_bytes: 0 }) as Arc<RuntimeCapacityProbe>;
 
@@ -7360,9 +7543,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_quarantines_mismatched_candidate_before_replacement()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(CandidateMismatchInspector) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
@@ -7394,9 +7575,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rejects_candidate_that_drops_source_chapters() -> anyhow::Result<()>
     {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(CandidateDropsChaptersInspector) as Arc<RuntimeInspector>;
 
@@ -7427,9 +7606,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rejects_candidate_that_drops_source_container_metadata()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(CandidateDropsContainerMetadataInspector) as Arc<RuntimeInspector>;
 
@@ -7460,9 +7637,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rejects_probeable_truncated_candidate_before_replacement()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         fixture.runtime.verification_executor =
             Arc::new(FailingDecodeVerificationExecutor) as Arc<RuntimeVerificationExecutor>;
@@ -7493,9 +7668,7 @@ Integrated loudness:
 
     #[tokio::test]
     async fn media_job_runtime_rolls_back_mismatched_committed_replacement() -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(PostCommitMismatchInspector) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
@@ -7531,9 +7704,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rolls_back_committed_replacement_that_drops_chapters()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(PostCommitDropsChaptersInspector) as Arc<RuntimeInspector>;
 
@@ -7566,9 +7737,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rolls_back_committed_replacement_that_drops_container_metadata()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(PostCommitDropsContainerMetadataInspector) as Arc<RuntimeInspector>;
 
@@ -7601,9 +7770,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_preserves_finalized_replacement_before_stale_recovery()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         let claimed = fixture
             .store
             .claim_next_job()
@@ -7646,9 +7813,7 @@ Integrated loudness:
 
     #[tokio::test]
     async fn media_job_runtime_publishes_stale_worker_failure_event() -> anyhow::Result<()> {
-        let Some(fixture) = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await?;
         let claimed = fixture
             .store
             .claim_next_job()
@@ -7686,9 +7851,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_recovers_stale_cancelled_job_without_failure_event()
     -> anyhow::Result<()> {
-        let Some(fixture) = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await?;
         let claimed = fixture
             .store
             .claim_next_job()
@@ -7714,9 +7877,7 @@ Integrated loudness:
 
     #[tokio::test]
     async fn media_job_runtime_marks_missing_capability_failed() -> anyhow::Result<()> {
-        let Some(fixture) = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await?;
         let before = recursive_tree_snapshot(fixture.temp.path())?;
 
         fixture.runtime.run_tick().await?;
@@ -8618,9 +8779,7 @@ Integrated loudness:
 
     #[tokio::test]
     async fn persist_ready_plan_records_filesystem_fallback_operations() -> anyhow::Result<()> {
-        let Some(fixture) = setup_runtime(true, true, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(true, true, RuntimeJobTarget::SourceGraph).await?;
         let report = filesystem_fallback_report();
 
         let Some(claimed) = fixture.store.claim_next_job().await? else {

@@ -26,5 +26,6 @@ pub mod model;
 pub mod normalize;
 pub mod pipeline;
 pub mod plan;
+pub mod policy;
 pub mod target;
 pub mod verify;

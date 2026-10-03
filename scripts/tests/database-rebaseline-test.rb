@@ -324,6 +324,34 @@ module DatabaseRebaselineTest
     end
   end
 
+  def test_feature_development_guards(assertions)
+    with_fixture do |fixture|
+      fixture.write_config(phase: "feature-development")
+      assertions.failure(/required during the feature-development/, "feature init must exist") do
+        fixture.contract.freeze!
+      end
+      File.write(fixture.init_path, "SELECT 1;\n")
+      assertions.equal(1, fixture.contract.freeze!.file_count, "approved feature init accepted")
+      File.write(fixture.init_path, "SELECT 2;\n")
+      assertions.equal(1, fixture.contract.freeze!.file_count, "feature changes do not require parity")
+      File.write(fixture.init_path, "-- no statements\n")
+      assertions.failure(/no complete statements/, "empty feature init rejected") do
+        fixture.contract.freeze!
+      end
+      FileUtils.rm_f(fixture.init_path)
+      File.symlink(fixture.migration_path("0001_initial.sql"), fixture.init_path)
+      assertions.failure(/required during the feature-development/, "feature init symlink rejected") do
+        fixture.contract.freeze!
+      end
+      FileUtils.rm_f(fixture.init_path)
+      File.write(fixture.init_path, "SELECT 1;\n")
+      File.write(fixture.migration_path("0002_new.sql"), "SELECT 1;\n")
+      assertions.failure(/frozen migration corpus drifted/, "feature work cannot add migrations") do
+        fixture.contract.freeze!
+      end
+    end
+  end
+
   def test_tool_contract_guards(assertions)
     with_fixture do |fixture|
       fixture.write_build_inputs(image: "postgres:16-alpine")
@@ -552,6 +580,7 @@ module DatabaseRebaselineTest
   def run
     assertions = Assertions.new
     test_freeze_guards(assertions)
+    test_feature_development_guards(assertions)
     test_tool_contract_guards(assertions)
     test_statement_and_prefix_guards(assertions)
     test_candidate_builder_guards(assertions)

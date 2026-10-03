@@ -1,8 +1,7 @@
-import { execFileSync, spawnSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 import { clearState, readState } from './e2e-state';
-
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', 'host.docker.internal']);
+import { repoRoot } from './paths';
 
 export async function cleanupE2EState(): Promise<void> {
   const state = readState();
@@ -13,11 +12,14 @@ export async function cleanupE2EState(): Promise<void> {
   await terminateProcess(state.uiPid);
   await terminateProcess(state.apiPid);
   if (state.dbUrl) {
-    try {
-      dropTempDb(state.dbUrl);
-    } catch (error) {
-      console.warn('Failed to drop temp database:', error);
+    if (!state.testDatabaseName || !state.testDatabaseContainer) {
+      throw new Error('Cannot clean up the test database without ownership metadata.');
     }
+    execFileSync('just', ['db-test-drop', state.testDatabaseName], {
+      cwd: repoRoot(),
+      env: { ...process.env, PG_CONTAINER: state.testDatabaseContainer },
+      stdio: 'inherit',
+    });
   }
   clearState();
 }
@@ -59,29 +61,6 @@ function isAlive(pid: number): boolean {
   } catch {
     return false;
   }
-}
-
-function dropTempDb(dbUrl: string): void {
-  const parsed = new URL(dbUrl);
-  if (!LOCAL_HOSTS.has(parsed.hostname)) {
-    console.warn(`Refusing to drop non-local database (${parsed.hostname}).`);
-    return;
-  }
-  if (!commandExists('sqlx')) {
-    console.warn('sqlx not available; skipping database cleanup.');
-    return;
-  }
-  execFileSync('sqlx', ['database', 'drop', '--database-url', dbUrl, '-y'], {
-    env: { ...process.env, DATABASE_URL: dbUrl },
-    stdio: 'ignore',
-  });
-}
-
-function commandExists(command: string): boolean {
-  const result = spawnSync('sh', ['-c', `command -v ${command}`], {
-    stdio: 'ignore',
-  });
-  return result.status === 0;
 }
 
 function delay(ms: number): Promise<void> {

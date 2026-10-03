@@ -18,6 +18,20 @@ const TEST_DATABASE_URL_IS_REQUIRED: &str = "test database url is required";
 pub struct TestDatabase { connection_string: String, admin_url: String, database: String }
 
 impl TestDatabase {
+    /// Apply an initialization script atomically to this owned disposable database.
+    ///
+    /// # Errors
+    /// Propagates connection, script and commit failures; no external database
+    /// can be selected independently of this fixture handle.
+    pub async fn apply_init(&self, script: &'static str) -> Result<()> {
+        let mut connection = PgConnection::connect(&self.connection_string).await?;
+        let mut transaction = connection.begin().await?;
+        sqlx::raw_sql(script).execute(&mut *transaction).await?;
+        transaction.commit().await?;
+        connection.close().await?;
+        Ok(())
+    }
+
     #[doc = "Connection string that can be passed to `sqlx` or other Postgres clients."]
     #[must_use]
     #[rustfmt::skip]

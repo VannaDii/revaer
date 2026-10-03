@@ -6,9 +6,10 @@ use std::time::Duration;
 
 use axum::{
     Router,
+    extract::DefaultBodyLimit,
     http::{
         HeaderName, Method, Request,
-        header::{AUTHORIZATION, CONTENT_TYPE},
+        header::{AUTHORIZATION, CONTENT_TYPE, ETAG, IF_MATCH, IF_NONE_MATCH, LOCATION},
     },
     middleware,
     routing::{delete, get, patch, post, put},
@@ -48,6 +49,9 @@ use crate::http::setup::{setup_complete, setup_start};
 use crate::http::sse::stream_events;
 use crate::http::telemetry::HttpMetricsLayer;
 use crate::http::tokens::refresh_api_key;
+
+#[cfg(test)]
+mod media_root_tests;
 use crate::http::torrents::handlers::{
     action_torrent, create_torrent, create_torrent_authoring, delete_torrent, get_torrent,
     list_torrent_categories, list_torrent_peers, list_torrent_tags, list_torrent_trackers,
@@ -200,6 +204,7 @@ impl ApiServer {
             .allow_methods([
                 Method::GET,
                 Method::POST,
+                Method::PUT,
                 Method::PATCH,
                 Method::DELETE,
                 Method::OPTIONS,
@@ -207,11 +212,14 @@ impl ApiServer {
             .allow_headers([
                 AUTHORIZATION,
                 CONTENT_TYPE,
+                IF_MATCH,
+                IF_NONE_MATCH,
                 HeaderName::from_static(HEADER_API_KEY),
                 HeaderName::from_static(HEADER_API_KEY_LEGACY),
                 HeaderName::from_static(HEADER_SETUP_TOKEN),
                 HeaderName::from_static(HEADER_LAST_EVENT_ID),
-            ]);
+            ])
+            .expose_headers([ETAG, LOCATION]);
         let trace_layer = TraceLayer::new_for_http()
             .make_span_with(|request: &Request<_>| {
                 let method = request.method().clone();
@@ -439,21 +447,46 @@ impl ApiServer {
 
     fn v1_media_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
         Self::v1_media_profile_job_routes(state)
+            .merge(Self::v1_media_association_routes(state))
+            .merge(Self::v1_media_root_routes(state))
             .merge(Self::v1_media_recent_job_routes(state))
             .merge(Self::v1_media_job_record_routes(state))
             .merge(Self::v1_media_capability_yaml_routes(state))
     }
 
-    fn v1_media_profile_job_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
+    fn v1_media_association_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
         let require_api = middleware::from_fn_with_state(state.clone(), require_api_key);
-
+        let no_store = middleware::from_fn(crate::http::handlers::media_roots::no_store);
         Router::new()
             .route(
-                "/v1/media/profiles",
-                get(media_handlers::list_media_profiles)
-                    .post(media_handlers::upsert_media_profile)
-                    .route_layer(require_api.clone()),
+                "/v1/media/discovery-associations",
+                get(crate::http::handlers::media_associations::list)
+                    .post(crate::http::handlers::media_associations::create),
             )
+            .route(
+                "/v1/media/discovery-associations/{public_id}",
+                get(crate::http::handlers::media_associations::get),
+            )
+            .route(
+                "/v1/media/discovery-associations/{public_id}/schedule",
+                get(crate::http::handlers::media_schedules::get)
+                    .post(crate::http::handlers::media_schedules::create)
+                    .put(crate::http::handlers::media_schedules::replace),
+            )
+            .layer(DefaultBodyLimit::max(
+                crate::http::handlers::media_preconditions::PROFILE_BODY_LIMIT,
+            ))
+            .route_layer(require_api)
+            .layer(no_store)
+    }
+
+    fn v1_media_profile_job_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
+        let require_api = middleware::from_fn_with_state(state.clone(), require_api_key);
+        let no_store = middleware::from_fn(crate::http::handlers::media_roots::no_store);
+
+        Router::new()
+            .merge(Self::v1_media_profile_collection_route(state))
+            .merge(Self::v1_media_preview_routes(state))
             .route(
                 "/v1/media/profiles/validate",
                 post(media_handlers::validate_media_profile).route_layer(require_api.clone()),
@@ -461,8 +494,13 @@ impl ApiServer {
             .route(
                 "/v1/media/profiles/{media_profile_public_id}",
                 get(media_handlers::get_media_profile)
-                    .patch(media_handlers::patch_media_profile)
-                    .route_layer(require_api.clone()),
+                    .put(media_handlers::replace_media_profile)
+                    .fallback(super::handlers::media_preconditions::profile_item_method_not_allowed)
+                    .route_layer(require_api.clone())
+                    .layer(axum::extract::DefaultBodyLimit::max(
+                        super::handlers::media_preconditions::PROFILE_BODY_LIMIT,
+                    ))
+                    .layer(no_store),
             )
             .route(
                 "/v1/media/profiles/{media_profile_public_id}/readiness",
@@ -481,11 +519,6 @@ impl ApiServer {
                     .route_layer(require_api.clone()),
             )
             .route(
-                "/v1/media/profiles/{media_profile_public_id}/desired-target",
-                patch(media_handlers::set_media_profile_desired_target)
-                    .route_layer(require_api.clone()),
-            )
-            .route(
                 "/v1/media/policies",
                 get(media_handlers::list_media_policies)
                     .post(media_handlers::upsert_media_policy)
@@ -496,10 +529,6 @@ impl ApiServer {
                 get(media_handlers::media_job_retention)
                     .patch(media_handlers::update_media_job_retention)
                     .route_layer(require_api.clone()),
-            )
-            .route(
-                "/v1/media/planning/preview",
-                post(media_handlers::preview_media_planning).route_layer(require_api.clone()),
             )
             .route(
                 "/v1/media/jobs",
@@ -522,12 +551,15 @@ impl ApiServer {
                 get(media_handlers::list_media_job_phases).route_layer(require_api.clone()),
             )
             .route(
-                "/v1/media/discovery/preview",
-                post(media_handlers::preview_media_discovery).route_layer(require_api.clone()),
-            )
-            .route(
                 "/v1/media/discovery/runs",
-                post(media_handlers::run_media_discovery).route_layer(require_api.clone()),
+                post(media_handlers::run_media_discovery)
+                    .layer(DefaultBodyLimit::max(
+                        super::handlers::media_preconditions::PROFILE_BODY_LIMIT,
+                    ))
+                    .route_layer(require_api.clone())
+                    .layer(middleware::from_fn(
+                        crate::http::handlers::media_roots::no_store,
+                    )),
             )
             .route(
                 "/v1/media/discovery/schedules",
@@ -541,6 +573,65 @@ impl ApiServer {
                     .post(media_handlers::run_media_discovery_watcher)
                     .route_layer(require_api),
             )
+    }
+
+    fn v1_media_preview_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
+        Router::new()
+            .route(
+                "/v1/media/planning/preview",
+                post(media_handlers::preview_media_planning),
+            )
+            .route(
+                "/v1/media/discovery/preview",
+                post(media_handlers::preview_media_discovery),
+            )
+            .layer(DefaultBodyLimit::max(
+                super::handlers::media_preconditions::PROFILE_BODY_LIMIT,
+            ))
+            .route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                require_api_key,
+            ))
+            .layer(middleware::from_fn(
+                crate::http::handlers::media_roots::no_store,
+            ))
+    }
+
+    fn v1_media_root_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
+        let require_api = middleware::from_fn_with_state(state.clone(), require_api_key);
+        Router::new()
+            .route(
+                "/v1/media/root-catalog",
+                get(crate::http::handlers::media_roots::catalog)
+                    .fallback(crate::http::handlers::media_roots::method_not_allowed),
+            )
+            .route(
+                "/v1/media/root-catalog/readiness",
+                get(crate::http::handlers::media_roots::readiness)
+                    .fallback(crate::http::handlers::media_roots::method_not_allowed),
+            )
+            .route_layer(require_api)
+            .layer(middleware::from_fn(
+                crate::http::handlers::media_roots::no_store,
+            ))
+    }
+
+    fn v1_media_profile_collection_route(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
+        Router::new().route(
+            "/v1/media/profiles",
+            get(media_handlers::list_media_profiles)
+                .post(media_handlers::upsert_media_profile)
+                .layer(DefaultBodyLimit::max(
+                    crate::http::handlers::media_preconditions::PROFILE_BODY_LIMIT,
+                ))
+                .route_layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    require_api_key,
+                ))
+                .layer(middleware::from_fn(
+                    crate::http::handlers::media_roots::no_store,
+                )),
+        )
     }
 
     fn v1_media_recent_job_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
@@ -613,11 +704,19 @@ impl ApiServer {
             )
             .route(
                 "/v1/media/imports/validate",
-                post(media_handlers::validate_media_yaml).route_layer(require_api.clone()),
+                post(media_handlers::validate_media_yaml)
+                    .route_layer(require_api.clone())
+                    .layer(DefaultBodyLimit::max(
+                        media_handlers::MEDIA_YAML_REQUEST_BODY_LIMIT,
+                    )),
             )
             .route(
                 "/v1/media/imports/apply",
-                post(media_handlers::apply_media_yaml).route_layer(require_api),
+                post(media_handlers::apply_media_yaml)
+                    .route_layer(require_api)
+                    .layer(DefaultBodyLimit::max(
+                        media_handlers::MEDIA_YAML_REQUEST_BODY_LIMIT,
+                    )),
             )
     }
 

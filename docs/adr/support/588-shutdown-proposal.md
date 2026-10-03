@@ -1,5 +1,10 @@
 # S2 Bounded Shutdown Investigation: Revision 3 Final
 
+> Supersession: [ADR 593](../593-simple-checkpoint-recovery.md) replaces the
+> custom supervisor/recovery machinery in this historical record. Unrelated
+> approved decisions and transfer permissions remain in force; this appendix
+> must not reintroduce the superseded implementation as a prerequisite.
+
 > Current approval: The operator accepted ADR 588's exact applicable choices
 > on 2026-09-11 at reviewed commit `9575c077`. The [resolution](../588-first-release-decision-package.md#approval-resolution)
 > releases only those named design holds. Earlier pending/candidate wording

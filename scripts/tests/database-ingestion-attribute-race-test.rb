@@ -221,7 +221,7 @@ module RevaerDatabaseRebaseline
         event = { "schema" => "public", "relation" => "canonical_torrent_source_attr", "operation" => "UPDATE", "backend" => "103", "session" => role,
           "current" => variant == "reference" ? "postgres" : @owner, "setting" => variant == "reference" ? "use_column" : "error", "clock" => "2026-09-12T00:00:03+00:00", "old" => row, "new" => row }
         "NOTICE:  00000: ingestion-attribute-update:#{JSON.generate(event)}\nCONTEXT:  PL/pgSQL function ingestion_observation.trace_attribute_update() line 3 at RAISE\n" \
-          "SQL statement \"#{statement}\"\nPL/pgSQL function search_result_ingest_v1(uuid) line #{line + (variant == 'final' ? 1 : 0)} at SQL statement\n#{race_test_wrapper}LOCATION:  exec_stmt_raise, pl_exec.c:3897\n"
+          "SQL statement \"#{statement}\"\nPL/pgSQL function search_result_ingest_v1(uuid) line #{line} at SQL statement\n#{race_test_wrapper}LOCATION:  exec_stmt_raise, pl_exec.c:3897\n"
       end.join
     end
 
@@ -342,6 +342,15 @@ module RevaerDatabaseRebaseline
         end
         changed = copy(original)
         changed.fetch("a")["stderr"] = records.each_with_index.map { |item, offset| offset == index ? item.sub("at SQL statement", "at PERFORM") : item }.join
+        rejected("exact stack") { validate.call(changed) }
+        changed = copy(original)
+        changed.fetch("a")["stderr"] = records.each_with_index.map do |item, offset|
+          next item unless offset == index
+
+          item.sub(/(search_result_ingest_v1\(uuid\) line )(\d+)/) do
+            "#{Regexp.last_match(1)}#{Integer(Regexp.last_match(2), 10) + 1}"
+          end
+        end.join
         rejected("exact stack") { validate.call(changed) }
       end
       %w[controller writer_identity seed_clock database].each do |key|

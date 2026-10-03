@@ -181,6 +181,85 @@
 
 ## Task Record
 
+### Operation-Cost Family, 2026-09-21 (Incomplete Aggregate)
+
+- Added the pure typed operation-cost family in `revaer-media-core::policy`
+  for the configuration-save dependency. It requires exactly the thirteen
+  approved operations, rejects duplicate/missing rows, retains explicit enabled
+  flags, validates the existing persisted weight bound, and canonicalizes order.
+  No default, I/O, database change or new dependency was introduced.
+- Four focused validation tests passed; the complete media-core suite passed
+  (104 unit tests and one integration test). Strict Clippy initially identified
+  a test field-order issue, which was corrected. This is domain-model evidence,
+  not real service, persistence, complete compiler or release qualification.
+- Remaining: other complete policy families, aggregate validation and immutable
+  save integration. Runtime integration evidence is recorded below; this type
+  alone is not a complete effective policy or operation authority.
+- Added core `prune_with_policy`: explicit weights drive ranking and recorded
+  totals, disabled operations are rejected, and the injected safety validator
+  remains mandatory. Selected costs are retained instead of recomputed from
+  defaults. Checked addition rejects overflow. Full core tests passed (107 unit
+  tests plus one integration test), including reversed cost ranking, disabled
+  zero-cost operation rejection and independent safety rejection. Strict core
+  Clippy passed. Service/pipeline injection and populated-snapshot tests remain
+  incomplete; no real job or complete policy-save qualification is claimed.
+- Service connection: the injected MediaStore reads job-captured cost rows
+  before inspection. The app rejects missing/extra kinds, unknown kinds,
+  duplicate/negative ordering and invalid weights without a live-policy fallback.
+  Embedded-output planning calls the explicit-policy pipeline. Every ready
+  preflight, including the separate sidecar path, rejects disabled operations.
+  Sidecar alternative ranking is not qualified by this change.
+- Three scoped app tests passed for row validation, disabled zero-cost values
+  and sidecar permission rejection. The core suite passed with a pipeline test
+  proving authored costs reach selection and explanation totals. Strict scoped
+  app/runtime/core Clippy passed after completing an exhaustive overflow-error
+  match and extracting the permission guard to satisfy the function-length rule.
+  Populated database-to-job evidence remains pending; existing incomplete policy
+  fixtures now need explicit rows, not bypasses or inferred defaults. No complete
+  service workflow, full CI/UI, Sonar quality or package qualification claimed.
+- Reviewed AGENTS.md, Rust guidance and approved ADRs 518/521. No criteria or
+  architectural scope changed. No observability changes. Rollback is removal
+  of the unshipped module/export; no stored state is affected.
+
+### Snapshot Reader, 2026-09-21 (Integration Incomplete)
+
+- Added a stored-procedure reader and typed Rust adapter for the existing
+  immutable job operation-cost snapshot. It reads no live policy, retains
+  disabled rows and returns at most fourteen rows so overflow beyond thirteen
+  remains detectable. The single init's runtime grant list includes only this
+  read procedure; no direct table grant or migration was added.
+- The repository sealed-init fixture passed on an owned disposable PostgreSQL
+  16.14 container using the pinned image and generated, unpublished credentials.
+  It proves restricted-runtime execution and the absent-job result, not populated
+  snapshot correctness or planner use. The first attempt failed for a missing
+  test database URL; the provisioned rerun passed. Container cleanup completed.
+- Strict data Clippy passed. Existing scanner authorization excludes the external
+  temporary harness; its upload was rejected and no contents were read or used.
+  Repository-owned fixture support was used instead. Secrets checks passed on
+  changed repository files. Full release gates remain outstanding.
+- Runtime fixture validation: replaced this fixture's migration bootstrap with
+  atomic application of the committed single init to an owned test database.
+  It now authors all thirteen costs explicitly through the existing append
+  procedure's typed adapter and fails on missing database configuration instead
+  of returning an optional fixture and silently skipping tests.
+- Both targeted database-backed cases passed: captured rows survive into a
+  completed dry-run, while absent costs fail with the bounded policy error.
+  Both preserve the filesystem snapshot and execute no commands. The complete
+  runtime test module then passed: 66 passed, zero failed/ignored, sequentially
+  on disposable PostgreSQL 16.14. This includes existing cancellation,
+  verification and rollback tests. Inspectors/runners are injected; this is not
+  real-media, UI, restricted-runtime-role or packaged-service qualification.
+- Strict scoped app/data/test-support Clippy, formatting and secrets checks
+  passed. An initial compile failure required the fixture SQL input to have a
+  static lifetime; fixed before the successful runs. Owned containers were
+  removed. No dependency or production migration path was introduced.
+- Next: complete immutable configuration-save integration; explicit-cost
+  snapshot overflow/isolation coverage and full release qualification remain.
+  Root/data/Rust
+  guidance reviewed; no new architecture, dependency or observability behavior.
+  Rollback removes the unshipped reader, grant and adapter, leaving snapshots
+  intact. This does not complete immutable configuration save.
+
 - Motivation:
   - Complete the semantic and versioning decision deferred by accepted ADR 451.
 - Design notes:

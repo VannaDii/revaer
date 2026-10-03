@@ -1,4 +1,5 @@
 use std::io;
+use std::sync::Arc;
 
 use thiserror::Error;
 
@@ -84,11 +85,12 @@ impl RootCatalogFileEvidence {
 }
 
 /// One startup catalog result, including missing-source remediation state.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct RootCatalogLoad {
     state: RootCatalogSourceState,
     catalog: RootCatalog,
     file_evidence: Option<RootCatalogFileEvidence>,
+    retained_source: Option<Arc<super::local_file::RetainedSource>>,
 }
 
 impl RootCatalogLoad {
@@ -97,10 +99,44 @@ impl RootCatalogLoad {
             state: RootCatalogSourceState::Missing,
             catalog: RootCatalog::empty(),
             file_evidence: None,
+            retained_source: None,
         }
     }
 
-    pub(super) const fn loaded(
+    pub(super) fn loaded(
+        catalog: RootCatalog,
+        file_evidence: RootCatalogFileEvidence,
+        retained_source: super::local_file::RetainedSource,
+    ) -> Self {
+        Self {
+            state: RootCatalogSourceState::Loaded,
+            catalog,
+            file_evidence: Some(file_evidence),
+            retained_source: Some(Arc::new(retained_source)),
+        }
+    }
+
+    /// Revalidate the retained source and its protected directory chain.
+    /// Clones share the same descriptors, not a newly loaded document.
+    /// A missing-source result has no descriptor to revalidate and remains
+    /// missing; this method never grants root readiness.
+    ///
+    /// # Errors
+    /// Rejects changed identity, metadata, ancestry, or source trust.
+    pub fn revalidate(&self) -> Result<(), RootCatalogSourceError> {
+        match (&self.retained_source, self.state) {
+            (Some(source), _) => source.revalidate(),
+            (None, RootCatalogSourceState::Missing) => Ok(()),
+            (None, RootCatalogSourceState::Loaded) => {
+                Err(RootCatalogSourceError::SourceUntrusted {
+                    violation: RootCatalogTrustViolation::SourceChanged,
+                })
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) const fn loaded_for_encoding_test(
         catalog: RootCatalog,
         file_evidence: RootCatalogFileEvidence,
     ) -> Self {
@@ -108,6 +144,7 @@ impl RootCatalogLoad {
             state: RootCatalogSourceState::Loaded,
             catalog,
             file_evidence: Some(file_evidence),
+            retained_source: None,
         }
     }
 

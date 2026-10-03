@@ -78,6 +78,72 @@ fn trusted_native_file_loads_once_with_bounded_evidence() -> Result<(), Box<dyn 
 }
 
 #[test]
+fn retained_source_survives_loader_drop_and_rejects_replacement() -> anyhow::Result<()> {
+    let directory = trusted_tempdir();
+    let path = directory.path().join("catalog.json");
+    write_valid(&path);
+    let loaded = source(&path).load_host()?;
+    loaded.revalidate()?;
+    let retained = loaded.clone();
+    drop(loaded);
+    retained.revalidate()?;
+    fs::rename(&path, directory.path().join("old.json"))?;
+    write_valid(&path);
+    assert!(matches!(
+        retained.revalidate(),
+        Err(RootCatalogSourceError::SourceUntrusted {
+            violation: RootCatalogTrustViolation::SourceChanged,
+        })
+    ));
+    assert_eq!(fs::read(&path)?, valid_document().as_bytes());
+    drop(retained);
+    directory.close()?;
+    Ok(())
+}
+
+#[test]
+fn retained_source_rejects_content_or_ancestor_changes() -> anyhow::Result<()> {
+    for replace_parent in [false, true] {
+        let directory = trusted_tempdir();
+        let parent = directory.path().join("source");
+        fs::create_dir(&parent)?;
+        let path = parent.join("catalog.json");
+        write_valid(&path);
+        let loaded = source(&path).load_host()?;
+        if replace_parent {
+            fs::rename(&parent, directory.path().join("moved"))?;
+            fs::create_dir(&parent)?;
+            write_valid(&path);
+        } else {
+            fs::write(&path, br#"{"format_version":1,"slots":[]}"#)?;
+        }
+        assert!(matches!(
+            loaded.revalidate(),
+            Err(RootCatalogSourceError::SourceUntrusted {
+                violation: RootCatalogTrustViolation::SourceChanged,
+            })
+        ));
+        drop(loaded);
+        directory.close()?;
+    }
+    Ok(())
+}
+
+#[test]
+fn missing_snapshot_does_not_load_a_later_source_during_revalidation() -> anyhow::Result<()> {
+    let directory = trusted_tempdir();
+    let path = directory.path().join("catalog.json");
+    let missing = source(&path).load_host()?;
+    write_valid(&path);
+    missing.revalidate()?;
+    assert_eq!(missing.state(), RootCatalogSourceState::Missing);
+    assert!(missing.catalog().is_empty());
+    assert!(missing.file_evidence().is_none());
+    directory.close()?;
+    Ok(())
+}
+
+#[test]
 fn public_local_source_support_is_exactly_linux_amd64_and_arm64() {
     let directory = trusted_tempdir();
     let path = directory.path().join("catalog.json");

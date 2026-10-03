@@ -32,7 +32,47 @@ applyTo:
 
 `AGENTS.md` is the root contract. This file specializes workflows, release automation, container build files, and Sonar config.
 
+- `db-test-init` and `db-test-drop` own only explicitly named disposable test
+  databases in the selected pinned PostgreSQL container. Apply the complete init
+  and seal in one transaction as its restricted owner, disable owner login,
+  and give the application only its runtime login. Use environment transport
+  for temporary credentials, never command arguments or diagnostics. Refuse
+  deletion when the expected database owner cannot be proved; propagate cleanup
+  failures. These fixtures do not authorize resets of caller-owned databases.
+
 # Workflow And Release Rules
+
+- `just validate`/`just ci` require an explicitly initialized database and call
+  `just db-baseline-verify`, not migration-backed `db-start`. Verify the exact
+  packaged init digest, PostgreSQL identity and runtime login using the same
+  read-only verifier as application startup; missing, mismatched or owner-login
+  databases fail closed. Do not raise runtime privileges, auto-initialize a
+  caller-owned database or bypass this check to make CI pass. Owned CI fixtures
+  use `db-test-init`/`db-test-drop`; managed development initialization remains
+  a separate bootstrap operation, not part of the quality gate.
+- ADR 591 was approved on 2026-09-15. Its single-init development and
+  qualification boundary supersedes this file's pre-cutover feature-schema,
+  candidate-test and legacy-equivalence prerequisites. Historical transition
+  recipes and proof instructions below are not a mandate to resume migration or
+  compatibility work for the unreleased v0. Preserve existing work; exclude
+  unqualified D3 substitutions from the selected candidate. Replace only the
+  parity-specific acceptance with ADR 591's fresh-install, security, transaction
+  and complete application/workflow qualification as the implementation lands.
+  Required-check names, triggers, rulesets, Sonar criteria, native package gates
+  and user-data protections remain unchanged. Do not report this instruction
+  update as implementation or a passing replacement gate.
+- The `feature-development` transition phase implements only ADR 591's removal
+  of frozen-finalization byte equality from ordinary CI. Retain archived corpus
+  immutability, init regular-file/statement validation and PR-size guards. Fresh
+  initialization, sealed runtime digest checks, denied-operation and real
+  workflow qualification remain release requirements; this static phase alone
+  does not qualify cutover.
+- The ordinary init-policy test selects current-init validation in that phase:
+  require the packaged header and complete SQL statements, and reject top-level
+  transaction, system, database and timeout-control commands. Keep mutation
+  controls exercised. Historical exact-delta validation remains separate and
+  its pins unchanged; never reconstruct a frozen candidate from current feature
+  SQL or treat static validation as fresh-install/runtime/workflow evidence.
 
 - ADR 588 ASSET-1 is the only approved binary changed-line exception. Its exact
   213 path/mode/blob/SHA-256/byte deletions belong solely to repository node
@@ -346,7 +386,7 @@ applyTo:
 - Focused ADR 550 root-catalog parser and trusted-file validation runs through `just test-media-root-catalog`; keep that recipe scoped to `revaer-media-runtime` with all features and warnings denied.
 - Focused RVB1 byte-codec validation runs through `just test-media-broker-codec` with all runtime features and warnings denied. It must retain independent known-answer vectors, exact field bounds, and rejection cases. A codec pass proves no broker lifecycle, execution closure, environment approval, or production containment.
 - Focused ADR 557 root-input validation runs through `just test-media-root-contract` with all model features and warnings denied. Preserve canonical cursor bytes, exact key/path grammars, and page bounds without treating syntactic acceptance as active-catalog membership, filesystem confinement, mounted HTTP routes, or completion of the coordinated database cutover.
-- Focused ADR 577 S1 shutdown-event validation runs through `just test-runtime-shutdown` and `just lint-runtime-shutdown` in both all-feature and minimal-feature app configurations, with warnings denied and real Tokio joins, scoped event capture, and cleanup assertions. Preserve warnings for panics, unexpected cancellation and grace expiry; INFO requires a cancelled join after this stop operation requested abort. ADR 588 choice 3 approved the exact S2/LIFE-1 supervisor and recovery contract on 2026-09-11; implement and qualify that contract, not the earlier unbounded watcher-join prototype. Approval is not evidence that the current shutdown path is contained. These focused gates do not replace integrated `just ci`, `just ui-e2e`, Sonar or required GitHub checks.
+- Focused ADR 577 S1 shutdown-event validation runs through `just test-runtime-shutdown` and `just lint-runtime-shutdown` in both all-feature and minimal-feature app configurations, with warnings denied and real Tokio joins, scoped event capture, and cleanup assertions. Preserve warnings for panics, unexpected cancellation and grace expiry; INFO requires a cancelled join after this stop operation requested abort. Accepted ADRs 593/594 supersede the custom S2/LIFE-1 supervisor and distributed recovery contracts; qualify ordinary cancellation/shutdown and real local checkpoint/replacement recovery without reintroducing the removed protocol. Approval is not evidence that the current shutdown path is contained. These focused gates do not replace integrated `just ci`, `just ui-e2e`, Sonar or required GitHub checks.
 - Generated Playwright API schema output must remain ignored and untracked. Regenerate it from the committed OpenAPI document at test time through `just api-test-client`, using `npm ci --ignore-scripts` so `tests/package-lock.json` is the complete dependency-resolution source of truth; keep the generated-source guardrail and its fixture tests in `just policy`.
 - Asset verification must run through `just check-assets`, which invokes the canonical synchronizer, compares `crates/revaer-ui/static/nexus/**` from the repository root, and fails unless repository-root `revaer-logo.svg` is byte-identical to `crates/revaer-ui/static/revaer-logo.svg`; a cwd-relative comparison that misses served assets is forbidden. Release validation must also confirm that referenced `/static/...` icon, logo, and DataTables URLs exist in the Trunk release output.
 - `pr.yml` is the sole pull-request validation workflow. Its `pull_request` trigger must not narrow branches, paths, or activity types. Keep formatting, lint, test, audit, deny, coverage, E2E, media conversion, supply-chain aggregation, image, Helm, and release verification there so every same-repository stack pull request can emit all 21 contexts in `config/required-pr-checks.txt`.
@@ -390,6 +430,16 @@ applyTo:
 - Every workflow job that invokes `just` must install it first through `./.github/actions/setup-revaer`; do not assume any hosted or self-hosted runner image already provides it. This includes each architecture job in the reusable image workflow before the Trivy verifier runs.
 - PR UI E2E jobs must use the runner-provided Chrome channel, shard the `ui-chromium` project without dependency projects, and install Playwright system dependencies without downloading redundant browser bundles. Run API route coverage in a separate API E2E job, construct that job's database URLs from the exact run-scoped Postgres service credentials, upload its route-coverage artifacts, and include them in the aggregate E2E coverage gate. Keep CI video capture disabled unless Playwright's bundled ffmpeg is intentionally installed.
 - `just lint` runs `scripts/workflow-guardrails.sh`, which rejects unpinned external action refs, direct `${{ inputs.* }}` interpolation inside `run:` blocks, direct workflow release/security gates, and nonempty Sonar coverage exclusions.
+- Sonar's top-level inventory guard enumerates tracked Git entries, as required
+  by `AGENTS.md`, not untracked diagnostic directories. Adding a tracked
+  top-level source without updating `sonar.sources` must fail. This inventory
+  check does not exclude untracked content within configured source entries
+  from scanning or authorize any scanner filter or criteria change.
+- `scripts/with-media-test-service.sh` owns the disposable Linux catalog fixture
+  shared by operator/API test consumers. Consumers must use the supplied owned
+  container, bounded readiness and explicit authentication; never substitute a
+  caller database or synthetic catalog attestation. Closing the consumer must
+  run the wrapper teardown for its database, containers, network and media volume.
 - Workflow guardrails must parse YAML structure rather than search whole files for policy strings. Validate real jobs, steps, conditions, permissions, action references, and `just` invocations, and retain adversarial fixtures proving comments, environment values, descriptions, and unrelated keys cannot satisfy or trigger a rule.
 - Sonar property guardrails must parse Java-properties logical keys before applying the exact allowlist. Leading-whitespace forms, escaped keys, continuations, duplicate logical keys, and unknown properties are fail-closed errors; do not return to line-oriented `awk` or `grep` parsing.
 - Treat `sonar-project.properties` as the versioned source of truth for Sonar analysis scope. Coverage exclusions must remain explicitly empty so Sonar imports the Rust LCOV, native LLVM coverage, JavaScript LCOV, and generic authored shell/Ruby coverage generated by the canonical coverage recipes instead of publishing zero coverage.
@@ -517,6 +567,15 @@ applyTo:
 - Setup-action package-list inputs may accept general shell whitespace, including CRLF-pasted multiline input, when that improves YAML readability, but the resulting tokens must still be normalized into a validated array before invocation.
 
 # Credentials And Test Infrastructure
+
+- `just test-media-operator-workflow` requires an explicit current Linux app test
+  executable and immutable tools image. It owns disposable database, container,
+  network and media-volume resources and must remove them on success or failure.
+  Record the real browser driver's JavaScript LCOV through the existing c8 runtime
+  under `coverage/js/media-operator`; require actual positive line records. This
+  report joins the existing JS merge without narrowing Sonar source scope.
+  Its real browser/service restart, cancellation and retry proof is diagnostic
+  regression evidence, not full UI coverage or shipping-package qualification.
 
 - CI-only credentials may be ephemeral only when they are clearly scoped to isolated test infrastructure, such as throwaway Postgres service containers. Derive those credentials from the isolated workflow run context; do not commit credential-shaped literal passwords even for disposable services.
 - Every workflow job that declares a Postgres service must construct `REVAER_TEST_DATABASE_URL`, `DATABASE_URL`, and any E2E admin URL from that service's exact run-derived user, password, and database. Repository variables must not override or drift from an in-job service credential.

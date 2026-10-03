@@ -7,7 +7,7 @@ use serde::{
 
 // Derived struct decoders also accept positional sequences. Retain their field
 // and duplicate checks, but require the map shape selected by the HTTP contract.
-pub(super) fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+pub(crate) fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,

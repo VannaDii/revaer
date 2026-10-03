@@ -19,7 +19,7 @@ fn input_order_and_source_metadata_do_not_change_identity() -> TestResult {
     );
     assert_eq!(expected.slots()[0].logical_key(), "a");
     assert_eq!(expected.slots()[1].logical_key(), "z9");
-    let alternate_metadata = RootCatalogLoad::loaded(
+    let alternate_metadata = RootCatalogLoad::loaded_for_encoding_test(
         source.catalog().clone(),
         RootCatalogFileEvidence {
             trust: RootCatalogSourceTrust::Packaged,
@@ -32,6 +32,14 @@ fn input_order_and_source_metadata_do_not_change_identity() -> TestResult {
         encode_root_catalog_identity_v1(&alternate_metadata, &claims)?,
         expected
     );
+    assert!(matches!(
+        alternate_metadata.revalidate(),
+        Err(
+            crate::root_catalog::RootCatalogSourceError::SourceUntrusted {
+                violation: crate::root_catalog::RootCatalogTrustViolation::SourceChanged,
+            }
+        )
+    ));
     // No timestamp, DB id, activation state, or generation occurrence is an
     // encoder input. Re-encoding after any such occurrence yields the same bytes.
     assert_eq!(encode_root_catalog_identity_v1(&source, &claims)?, expected);

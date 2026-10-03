@@ -1,5 +1,10 @@
 # ADR 588: Decision Details And Evidence
 
+> Supersession: [ADR 593](../593-simple-checkpoint-recovery.md) replaces the
+> custom supervisor/recovery machinery in this historical record. Unrelated
+> approved decisions and transfer permissions remain in force; this appendix
+> must not reintroduce the superseded implementation as a prerequisite.
+
 Start with the [approval proposal](../588-first-release-decision-package.md).
 This appendix preserves the exact contracts, alternatives, evidence, acceptance
 conditions and task record. The operator accepted its exact scope on 2026-09-11
