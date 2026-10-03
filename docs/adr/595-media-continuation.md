@@ -17,7 +17,7 @@
   - One committed continuation supplies a shared source base and an explicit disposition for every open media/validation PR and unfinished checkout.
   - Later container policy/technical-constraint work and discovery/recovery implementation still require adaptation to the current contracts. Legacy comparison material remains until its safeguards and tests have a validated replacement.
 - Follow-up:
-  - Reconcile the failing Rust media fixture setup and operation-cost rows with the single-init baseline, then port Python profile fixtures to complete immutable requests and logical root bindings. Preserve negative admission and source/replacement assertions; rerun both required gates.
+  - Port remaining worker/discovery fixtures to guarded native association admission, then port Python profile fixtures to complete immutable requests and logical root bindings. Preserve negative admission and source/replacement assertions; rerun both required gates.
   - Finish the required CI gates and the remaining unique behavior/test transplants recorded in the accounting. Do not delete recovery refs or abandon dirty checkouts before that work is complete.
 
 ## Task Record
@@ -63,3 +63,6 @@
 - No tests, advisory policy, coverage criteria or scanner settings were weakened. [Gate manifest](support/595-continuation-gates.json) records result summaries and local log checksums. Failed qualification is not a design-change decision or release approval.
 
 - Subsequent E2E diagnosis found that the checkpoint's embedded base schema omitted current main's indexer routes and used stale foundation responses. Retain main's non-media path and schema inventory alongside the generated current media contracts; an API generator run cannot recreate omitted embedded foundation routes by itself. Required API validation remains enabled.
+
+- Follow-up CI on the sealed-fixture correction (`a6898202`) passed formatting, both Clippy passes, the preceding validation steps and 356 application tests, but failed 35 application tests. Thirty-one now fail on denied access to the deliberately private legacy `media_discovery_job_enqueue_v3` writer; four service/portable-import tests still need adaptation. This is evidence that canonical costs are no longer the immediate setup failure, not evidence that the worker regressions ran successfully. Do not broaden runtime grants.
+- Both the embedded `docs/api/openapi.json` and the crate's generated copy need main's foundation inventory. The first schema correction updated only the latter; the next E2E run therefore retained the same 25 failures/four fixture errors. Correct the embedded source and export through the existing canonical task before revalidation.
