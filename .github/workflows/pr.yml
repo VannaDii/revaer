@@ -12,13 +12,13 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  NODE_VERSION: "24.14.1"
   IMAGE_NAME: revaer
 
 jobs:
   instruction-drift:
     name: Check Instruction Drift
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -26,196 +26,202 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
+          profile: "python"
+          cargo-cache: "false"
 
       - name: Instruction drift
         env:
           REVAER_INSTRUCTION_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
           REVAER_INSTRUCTION_DIFF_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: just instruction-drift
+        run: uv run --locked -- rv instruction-drift
 
   # Quick formatting check that can run in parallel
   fmt:
     name: Check Formatting
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
-        with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-          components: rustfmt
+        timeout-minutes: 20
 
       - name: Format
-        run: just fmt
+        run: uv run --locked -- rv fmt
 
   lint:
     name: Check Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-          components: clippy
-          apt-profile: base
+          apt-profile: "base"
 
       - name: Lint
-        run: just lint
+        run: uv run --locked -- rv lint
 
   check:
     name: Run Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-          apt-profile: base
+          apt-profile: "base"
 
       - name: Check
-        run: just check
+        run: uv run --locked -- rv check
 
   helm-lint:
     name: Helm Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-          apt-profile: base
-
-      - name: Set up Helm
-        uses: Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
-        with:
-          version: v3.19.0
+          profile: python
+          cargo-cache: 'false'
+          helm: 'true'
 
       - name: Helm lint
-        run: just helm-lint
+        run: uv run --locked -- rv helm-lint
 
   coverage:
     name: Check Coverage
     runs-on: ubuntu-latest
-    needs: [fmt, lint, check, helm-lint, udeps, deny, audit, load-matrix, instruction-drift]
+    timeout-minutes: 180
+    needs:
+      - fmt
+      - lint
+      - check
+      - helm-lint
+      - udeps
+      - deny
+      - audit
+      - load-matrix
+      - instruction-drift
     permissions:
       contents: read
       pull-requests: read
     env:
-      REVAER_TEST_DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
-      DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
+      REVAER_TEST_DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)
+        }}@localhost:5432/revaer
+      DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer
       SONAR_AUTH_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
+      REVAER_REQUIRE_NATIVE_COVERAGE: '1'
     services:
       postgres:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: revaer
-          POSTGRES_PASSWORD: "${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}"
+          POSTGRES_PASSWORD: ${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}
           POSTGRES_DB: revaer
-        options: >-
-          --shm-size=1g
-          --health-cmd="pg_isready -U revaer -d revaer"
-          --health-interval=10s
-          --health-timeout=5s
+        options: --shm-size=1g --health-cmd="pg_isready -U revaer -d revaer" --health-interval=10s --health-timeout=5s
           --health-retries=5
         ports:
           - 5432:5432
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          fetch-depth: 0
+          fetch-depth: '0'
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
           apt-profile: coverage
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Prepare Sonar SCM context
-        run: |
-          set -euo pipefail
-
-          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
-            git fetch --no-tags --prune --unshallow origin
-          fi
-          git fetch --no-tags --prune origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
-          test "$(git rev-parse --is-shallow-repository)" = "false"
-          git show-ref --verify --quiet "refs/remotes/origin/${GITHUB_BASE_REF}"
-
+          sonar-scanner: 'true'
+          cargo-tools: cargo-llvm-cov,sqlx-cli,trunk
+          browsers: chromium,firefox,webkit
       - name: Run migrations
         env:
           DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}
-        run: just db-migrate
-
+        run: uv run --locked -- rv db-migrate
       - name: Coverage
-        run: just cov
-
-      - name: Run Playwright with JavaScript coverage
+        run: uv run --locked -- rv cov
+      - name: Python tooling coverage
+        run: uv run --locked -- rv tooling-cov
+      - name: Bootstrap execution coverage
+        run: uv run --locked -- rv script-coverage
+      - name: Run Playwright with browser coverage
         env:
           E2E_API_BASE_URL: http://localhost:7070
           E2E_BASE_URL: http://localhost:8080
-          E2E_DB_ADMIN_URL: "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/postgres"
-          E2E_SKIP_DB_START: "1"
-        run: just ui-e2e
-
-      - name: Release JavaScript coverage
-        run: just js-release-coverage
-
-      - name: Merge JavaScript coverage inputs
-        run: just js-coverage-merge
-
+          E2E_DB_ADMIN_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)
+            }}@localhost:5432/postgres
+          E2E_SKIP_DB_START: '1'
+          E2E_BROWSER_COVERAGE: '1'
+        run: uv run --locked -- rv ui-e2e
+      - name: Merge Python coverage inputs
+        run: uv run --locked -- rv python-coverage-merge
+      - name: Merge browser coverage inputs
+        run: uv run --locked -- rv js-coverage-merge
       - name: Build native compile database
-        run: just sonar-compile-db
-
+        run: uv run --locked -- rv sonar-compile-db
       - name: Verify Sonar analysis inputs
-        run: just sonar-verify-inputs
-
+        run: uv run --locked -- rv sonar-verify-inputs
+      - name: Prepare Sonar source inputs
+        run: uv run --locked -- rv sonar-prepare-sources
+      - name: Prepare exact Sonar SCM context
+        env:
+          SONAR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SONAR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          SONAR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: uv run --locked -- rv sonar-prepare-scm
+      - name: SonarQube scan
+        env:
+          SONAR_TOKEN: ${{ env.SONAR_AUTH_TOKEN }}
+        run: uv run --locked -- rv sonar-scan
+      - name: Package Sonar analysis evidence
+        run: uv run --locked -- rv sonar-package-report
+        if: always()
+      - name: Verify Sonar published result
+        env:
+          SONAR_PROJECT_KEY: VannaDii_Revaer
+          SONAR_PULL_REQUEST: ${{ github.event.pull_request.number }}
+        run: uv run --locked -- rv sonar-verify-result
       - name: Upload coverage artifact
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: sonar-coverage
           path: |
             coverage/lcov.info
+            coverage/llvm-cov.txt
             coverage/js-lcov.info
             coverage/script-coverage.xml
             coverage/compile_commands.json
             coverage/cxxbridge/include/rust/cxx.h
             coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h
+
+            coverage/python.xml
           if-no-files-found: error
-
-      - name: Remove untracked dependency installs before analysis
-        run: just sonar-prepare-sources
-
-      - name: SonarQube scan
-        if: github.event.pull_request.head.repo.fork == false && env.SONAR_AUTH_TOKEN != ''
-        uses: SonarSource/sonarqube-scan-action@299e4b793aaa83bf2aba7c9c14bedbb485688ec4 # v7.1.0
-        env:
-          SONAR_TOKEN: ${{ env.SONAR_AUTH_TOKEN }}
-
-      - name: Verify Sonar published result
-        if: github.event.pull_request.head.repo.fork == false && env.SONAR_AUTH_TOKEN != ''
-        env:
-          SONAR_PROJECT_KEY: VannaDii_Revaer
-        run: just sonar-verify-result
-
-      - name: Package Sonar analysis evidence
-        if: always() && github.event.pull_request.head.repo.fork == false && env.SONAR_AUTH_TOKEN != ''
-        run: just sonar-package-report
-
       - name: Upload Sonar analysis evidence
-        if: always() && github.event.pull_request.head.repo.fork == false && env.SONAR_AUTH_TOKEN != ''
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: sonar-analysis-evidence
           path: |
+            artifacts/sonar/scanner.log
+            artifacts/sonar/scm-evidence.txt
             .scannerwork/report-task.txt
             .scannerwork/scanner-report.tar.xz
+            artifacts/sonar/api/*.json
+            coverage/llvm-cov.txt
           if-no-files-found: error
 
   native-it:
     name: Native Integration Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     needs: [fmt, lint, check, helm-lint, udeps, deny, audit, load-matrix, instruction-drift]
     env:
       REVAER_NATIVE_IT: "1"
@@ -223,26 +229,24 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
           apt-profile: base
 
       - name: Native integration tests
-        run: just test-native
+        run: uv run --locked -- rv test-native
 
   media-conversion:
     name: Media Conversion Fixtures
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     needs: [fmt, lint, check, helm-lint, udeps, deny, audit, load-matrix, instruction-drift]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          apt-packages: >-
-            coreutils
-            curl
-            ffmpeg
-            jq
+          apt-profile: media
 
       - id: media-tools
         name: Media tool cache key
@@ -259,10 +263,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-media-fixtures-${{ steps.media-tools.outputs.tool_version }}-
 
-      - name: Prepare media fixtures
-        run: |
-          uv run --locked -- rv download-test-fixtures
-          uv run --locked -- rv generate-test-fixtures
+      - name: Download media fixtures
+        run: uv run --locked -- rv download-test-fixtures
+
+      - name: Generate media fixtures
+        run: uv run --locked -- rv generate-test-fixtures
 
       - name: Media conversion integration tests
         run: uv run --locked -- rv test-media-conversion
@@ -286,10 +291,11 @@ jobs:
   feature-matrix:
     name: Feature Matrix
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     needs: [fmt, lint, check, helm-lint, udeps, deny, audit, load-matrix, instruction-drift]
     env:
-      REVAER_TEST_DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
-      DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
+      REVAER_TEST_DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer
+      DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer
     services:
       postgres:
         image: postgres:16-alpine
@@ -308,103 +314,225 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
           apt-profile: db
+          cargo-tools: sqlx-cli
 
       - name: Run migrations
         env:
           DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}
-        run: just db-migrate
+        run: uv run --locked -- rv db-migrate
 
       - name: Feature matrix tests (no default features)
-        run: just test-features-min
+        run: uv run --locked -- rv test-features-min
 
-  ui-e2e:
-    name: UI E2E (shard ${{ matrix.shard }}/3)
+  api-e2e:
+    name: API E2E Coverage
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3]
-    needs: [fmt, lint, check, helm-lint, udeps, deny, audit, load-matrix, instruction-drift]
+    timeout-minutes: 120
+    needs:
+      - fmt
+      - lint
+      - check
+      - helm-lint
+      - udeps
+      - deny
+      - audit
+      - load-matrix
+      - instruction-drift
     env:
       E2E_API_BASE_URL: http://localhost:7070
       E2E_BASE_URL: http://localhost:8080
-      E2E_DB_ADMIN_URL: "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/postgres"
-      E2E_SKIP_DB_START: "1"
-      REVAER_TEST_DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
-      DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
-      PLAYWRIGHT_SHARD_INDEX: ${{ matrix.shard }}
-      PLAYWRIGHT_SHARD_TOTAL: 3
+      E2E_COVERAGE_REQUIRE_UI: '0'
+      E2E_PLAYWRIGHT_PROJECTS: api-api-key
+      E2E_SKIP_DB_START: '1'
+      E2E_VIDEO: 'off'
+      REVAER_TEST_DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)
+        }}@localhost:5432/revaer
+      DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer
+      E2E_DB_ADMIN_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)
+        }}@localhost:5432/postgres
     services:
       postgres:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: revaer
-          POSTGRES_PASSWORD: "${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}"
+          POSTGRES_PASSWORD: ${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}
           POSTGRES_DB: revaer
-        options: >-
+        options: --health-cmd="pg_isready -U revaer -d revaer" --health-interval=10s --health-timeout=5s --health-retries=5
           --shm-size=1g
-          --health-cmd="pg_isready -U revaer -d revaer"
-          --health-interval=10s
-          --health-timeout=5s
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
+        with:
+          apt-profile: db
+          cargo-tools: sqlx-cli,trunk
+          browsers: ''
+      - name: API E2E coverage
+        run: uv run --locked -- rv ui-e2e
+      - name: Upload API E2E coverage
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: api-e2e-coverage
+          path: tests/test-results/api-coverage-*.json
+          if-no-files-found: error
+
+  ui-e2e:
+    name: UI E2E (shard ${{ matrix.shard }}/3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - 1
+          - 2
+          - 3
+    needs:
+      - fmt
+      - lint
+      - check
+      - helm-lint
+      - udeps
+      - deny
+      - audit
+      - load-matrix
+      - instruction-drift
+    env:
+      E2E_API_BASE_URL: http://localhost:7070
+      E2E_BASE_URL: http://localhost:8080
+      E2E_BROWSER_CHANNEL: chrome
+      E2E_COVERAGE_REQUIRE_API: '0'
+      E2E_DB_ADMIN_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)
+        }}@localhost:5432/postgres
+      E2E_PLAYWRIGHT_NO_DEPS: '1'
+      E2E_PLAYWRIGHT_PROJECTS: ui-chromium
+      E2E_SKIP_DB_START: '1'
+      REVAER_TEST_DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)
+        }}@localhost:5432/revaer
+      DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer
+      E2E_VIDEO: 'off'
+      PLAYWRIGHT_SHARD_INDEX: ${{ matrix.shard }}
+      PLAYWRIGHT_SHARD_TOTAL: '3'
+      E2E_BROWSER_COVERAGE: '1'
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: revaer
+          POSTGRES_PASSWORD: ${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}
+          POSTGRES_DB: revaer
+        options: --shm-size=1g --health-cmd="pg_isready -U revaer -d revaer" --health-interval=10s --health-timeout=5s
           --health-retries=5
         ports:
           - 5432:5432
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-          node-version: ${{ env.NODE_VERSION }}
           apt-profile: db
-
+          cargo-tools: sqlx-cli,trunk
+          browsers: chrome
       - name: UI E2E
-        run: just ui-e2e
-
+        run: uv run --locked -- rv ui-e2e
       - name: Upload E2E coverage
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: ui-e2e-coverage-shard-${{ matrix.shard }}
           path: |
             tests/test-results/api-coverage-*.json
             tests/test-results/ui-coverage-*.json
-          if-no-files-found: warn
-
+          if-no-files-found: error
       - name: Upload E2E line coverage
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: ui-e2e-line-coverage-shard-${{ matrix.shard }}
-          path: coverage/js/playwright-shard-${{ matrix.shard }}/lcov.info
+          path: |
+            tests/test-results/javascript-baseline-*.json
+            tests/test-results/ui-chromium/*/javascript-page-*.json
+          if-no-files-found: error
+      - name: Upload E2E shard completion
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: ui-e2e-completion-shard-${{ matrix.shard }}
+          path: |
+            tests/test-results/python-e2e-summary-shard-*.json
+            tests/test-results/selection-*-shard-*.json
           if-no-files-found: error
 
   ui-e2e-coverage:
     name: UI E2E Coverage
     runs-on: ubuntu-latest
-    needs: [ui-e2e, feature-matrix, native-it, coverage]
+    timeout-minutes: 30
+    needs:
+      - api-e2e
+      - ui-e2e
+      - feature-matrix
+      - native-it
+      - coverage
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Download E2E coverage
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+          profile: python
+          cargo-cache: 'false'
+      - name: Download API E2E coverage
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          pattern: ui-e2e-coverage-shard-*
+          name: api-e2e-coverage
           path: tests/test-results
-          merge-multiple: true
-
+      - name: Download E2E coverage shard 1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ui-e2e-coverage-shard-1
+          path: tests/test-results
+      - name: Download E2E coverage shard 2
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ui-e2e-coverage-shard-2
+          path: tests/test-results
+      - name: Download E2E coverage shard 3
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ui-e2e-coverage-shard-3
+          path: tests/test-results
+      - name: Download E2E completion shard 1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ui-e2e-completion-shard-1
+          path: tests/test-results
+      - name: Download E2E completion shard 2
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ui-e2e-completion-shard-2
+          path: tests/test-results
+      - name: Download E2E completion shard 3
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ui-e2e-completion-shard-3
+          path: tests/test-results
+      - name: Verify all UI E2E shard coverage inputs
+        run: uv run --locked -- rv ui-e2e-shard-coverage
+        env:
+          E2E_PLAYWRIGHT_PROJECTS: ui-chromium
+          E2E_PLAYWRIGHT_NO_DEPS: '1'
       - name: UI E2E coverage
-        run: just ui-e2e-coverage
+        run: uv run --locked -- rv ui-e2e-coverage
 
   load-matrix:
     name: Load Matrix
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       matrix: ${{ steps.out.outputs.matrix }}
       short_sha: ${{ steps.sha.outputs.short_sha }}
@@ -413,26 +541,21 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
+        with:
+          profile: python
+          cargo-cache: 'false'
+
       - id: sha
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        run: uv run --locked -- rv workflow-metadata
 
       - id: out
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          {
-            echo "matrix<<EOF"
-            cat .github/matrices/build-images.json
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+        run: uv run --locked -- rv workflow-matrix
 
   build-pr-images:
     name: Images
-    needs: [ui-e2e, feature-matrix, native-it, media-conversion, coverage, load-matrix]
+    needs: [ui-e2e, feature-matrix, native-it, media-conversion, coverage, supply-chain, load-matrix]
     if: github.event.pull_request.head.repo.fork == false
     uses: ./.github/workflows/build-images.yml
     permissions:
@@ -456,39 +579,45 @@ jobs:
   audit:
     name: Run Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
+          cargo-tools: "cargo-audit"
 
       - name: Audit
-        run: just audit
+        run: uv run --locked -- rv audit
 
   deny:
     name: Check Deny
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
+          cargo-tools: "cargo-deny"
 
       - name: Deny
-        run: just deny
+        run: uv run --locked -- rv deny
 
   udeps:
     name: Check Unused Deps
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     env:
       REVAER_UDEPS_VERSION: "0.1.57"
       REVAER_UDEPS_TOOLCHAIN: "nightly-2026-06-13"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-          apt-profile: base
+          cargo-tools: "cargo-udeps"
+          apt-profile: "base"
 
       - name: Restore exact cargo-udeps binary
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
@@ -497,7 +626,7 @@ jobs:
           key: ${{ runner.os }}-cargo-udeps-${{ env.REVAER_UDEPS_VERSION }}-${{ env.REVAER_UDEPS_TOOLCHAIN }}
 
       - name: Unused Deps
-        run: just udeps
+        run: uv run --locked -- rv udeps
 
       - name: Upload cargo-udeps toolchain evidence
         if: always()
@@ -511,30 +640,34 @@ jobs:
     name: Supply Chain Checks
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [audit, deny, udeps]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
+          profile: "python"
+          cargo-cache: "false"
 
       - name: Verify supply chain results
         env:
           AUDIT_RESULT: ${{ needs.audit.result }}
           DENY_RESULT: ${{ needs.deny.result }}
           UDEPS_RESULT: ${{ needs.udeps.result }}
-        run: just verify-supply-chain-results
+        run: uv run --locked -- rv verify-supply-chain-results
 
   build-release:
     name: Build Release
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     needs: [ui-e2e, feature-matrix, native-it, media-conversion, coverage]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-          apt-profile: base
+          apt-profile: "base"
 
       - name: Build release
-        run: just build-release
+        run: uv run --locked -- rv build-release

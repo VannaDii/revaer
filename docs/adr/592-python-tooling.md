@@ -1898,3 +1898,46 @@ Evidence: `artifacts/integration-gates/media-coverage-passed.log` and
 and no-default-feature strict Clippy checks passed for the affected crates.
 This is a passing disposable integration coverage milestone, not complete CI,
 E2E, Sonar, clean-release or final-image compliance acceptance.
+
+### Tooling merge and full media restack (2026-10-02)
+
+The operator authorized merging this foundation, then rebasing the full media
+PR stack and pushed operator checkpoint `71596802`. The paused shared checkout
+contains unrelated conflicts and remains untouched. Recovery snapshots preserve
+all four worktrees, their indexes and changed/untracked files. The dependency
+plan records all 104 open media PRs and their original remote heads; eight
+prerequisite heads are already included in this foundation. PR 98 has a base
+that is not an ancestor of its head and needs an explicit merge-base comparison.
+
+The PR and main Sonar workflows now invoke the locked Python executor. Native
+coverage and scanning share one checkout; Python and bootstrap coverage have
+explicit producers. UI aggregation retains completed shard selections and raw
+browser evidence. Required context names and gate conditions remain intact.
+The existing media required-check snapshot is now present in the foundation.
+Sonar inventories include the added tooling and fixtures without exclusions.
+
+Validation so far: 135 focused workflow/setup/contract tests passed and `rv
+policy` passed. Full tooling checks and `rv ci` are running; merge, restack,
+complete E2E and hosted scanner acceptance are not yet claimed. No dependencies
+or quality-gate exceptions were added. Workflow logs and the branch plan are
+retained under `artifacts/rebase-20261002/`.
+
+Stale-policy review: reviewed root policy, DevOps and Sonar instructions. Updated
+Sonar execution/coverage guidance to Python and the retained root bootstrap, and
+removed the obsolete recommendation to rely on decoration instead of scanner
+waiting. Recovery refs and worktree snapshots support rollback before any
+remote branch update; remote rewrites must use their recorded expected heads.
+
+The first current `rv ci` run reached the dependency audit after formatting,
+lint, Helm, drift, assets and unused-dependency checks passed. The audit found
+three advisories in urllib3 2.7.0. A targeted uv lock update to 2.8.0 changed no
+other package; Rust and Python audits then passed with no known vulnerabilities.
+Full CI was restarted against the corrected lockfile. Root and developer
+instructions now identify `rv` as the approved canonical executor; the root
+README documents its actual setup and formatting behavior.
+
+The full tooling check passed 1,736 tests and failed its real container build
+fixture because Alpine replaced the pinned OpenSSL 3.5.8-r0 packages. Verified
+the repository package indexes inside both pinned base images and updated only
+the builder/runtime OpenSSL pins to 3.5.9-r0. The fixture is being rerun unchanged;
+no package requirement, checksum or image boundary was relaxed.

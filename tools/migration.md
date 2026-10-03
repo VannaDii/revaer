@@ -2,7 +2,9 @@
 
 Initial foundation: `54641c63`. Shared prerequisite baseline: `ec8adc14`.
 Current disposable media integration starts from `f4b80bf7` plus its recorded dirty-tree snapshot (2026-09-21).
-The media checkout is actively changing; this inventory is a snapshot, not a frozen integration result.
+The operator paused media work and authorized merge/restack on 2026-10-02. The
+pushed operator checkpoint is `71596802`; the older disposable validation
+snapshot above remains historical evidence, not current acceptance.
 
 ## Status and acceptance
 
@@ -13,6 +15,16 @@ entry points remain until their replacements have passed the required comparison
 A fixture result proves the stated wrapper or behavior; it does not claim that
 the application CI or browser suite has passed. Final acceptance still requires
 `rv ci` and `rv ui-e2e` on this foundation and a disposable media integration.
+
+### Current merge preparation (2026-10-02)
+
+All PR and Sonar workflow gates now invoke the shared uv-managed CLI. The full
+policy check and GitHub Actions syntax checks pass. The required-check snapshot
+is preserved from the media stack. A targeted urllib3 2.8.0 update passed the
+current advisory audit. Container qualification exposed replaced Alpine OpenSSL
+packages; their exact pins were updated to the available 3.5.9-r0 release. Full
+CI, E2E and hosted analysis remain required before merge. Recovery refs and a
+dependency-ordered plan preserve all 104 media PR heads plus the operator tip.
 
 ## Integration dependencies
 

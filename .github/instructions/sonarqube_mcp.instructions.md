@@ -31,11 +31,11 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 - Revaer versions its complete strict Sonar scope in `sonar-project.properties`. Keep every authored tracked top-level entry in main-code scope, use only the committed empty `.sonar-test-scope` sentinel for `sonar.tests`, and keep source, test, coverage, duplication, JavaScript, SCA, and issue-scope filters explicitly empty.
 - PostgreSQL migrations must remain visible to generic text, secrets, and main-code analysis. Do not assign `.sql`, `.pgsql`, or `.plpgsql` to the PL/SQL analyzer; reserve `sonar.plsql.file.suffixes=.plsql` for actual PL/SQL.
 - Sonar property policy is enforced after Java-properties parsing. Escaped keys, leading-whitespace forms, continuations, duplicate logical keys, workflow overrides, and properties outside the exact reviewed allowlist are forbidden.
-- `sonar.coverageReportPaths` must consume the generic report emitted by `just script-coverage`. That report must come from the exact archive-hash-verified `kcov` revision installed by the canonical setup action and Ruby line/branch execution data, retain uncovered executable lines, include both covered and uncovered records, and fail closed when either language is absent.
+- `sonar.coverageReportPaths` must consume the generic report emitted by `rv script-coverage`. That report must come from the exact archive-hash-verified `kcov` revision installed by the canonical setup action for the retained root `setup.sh`, retain uncovered executable lines, and enforce the approved bootstrap allowance above.
 - Follow the repo-wide external action versioning rule in `.github/instructions/devops.instructions.md` when editing `.github/workflows/sonar.yml`. Do not restate a conflicting Sonar-only pinning rule here.
-- Revaer uses Sonar as a strict merge-control signal on pull requests. Prefer PR quality-gate status and decoration over scanner-side waiting in PR workflows.
+- Revaer uses Sonar as a strict merge-control signal on pull requests. Require scanner-side waiting, retained task/report evidence, and API verification of that same analysis.
 - Treat zero published coverage, a missing Rust LCOV report, a missing native LLVM coverage report, or unavailable SCM baseline data as a failed analysis even when Sonar reports a green quality gate.
-- Pull-request and main-branch scans must receive the same complete Rust, native, JavaScript, Bash, and Ruby coverage inputs and must retain the scanner report as uploaded evidence after post-scan verification.
+- Pull-request and main-branch scans must receive the same complete Rust, native, browser JavaScript, Python, and root Bash bootstrap coverage inputs and must retain the scanner report as uploaded evidence after post-scan verification.
 - Use pull-request-specific quality-gate checks when the user asks whether a PR is blocked.
 - New Security Hotspots on touched code must be reviewed before merge. Backlog hotspots outside touched code are tracked separately and do not automatically block unrelated work.
 
@@ -55,3 +55,12 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 
 - SonarQube requires a user token for MCP access. If you see `Not authorized`, verify token type and server permissions.
 - If project discovery fails, use `search_my_sonarqube_projects` before assuming a configuration bug.
+
+## Python workflow execution
+
+PR and main coverage and scanning run in the same checkout so native absolute
+source paths remain valid. Use full history at the exact event SHA, the shared
+coverage setup profile, and one `rv sonar-scan` invocation. Produce bootstrap
+and Python coverage explicitly, merge completed E2E coverage, and retain both
+coverage and complete scanner evidence even when a gate fails. Update the
+complete source and YAML inventories when files change; do not narrow scope.
