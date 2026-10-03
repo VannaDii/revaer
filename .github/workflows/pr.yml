@@ -119,6 +119,7 @@ jobs:
       DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer
       SONAR_AUTH_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
       REVAER_REQUIRE_NATIVE_COVERAGE: '1'
+      E2E_BROWSERS: chromium,firefox,webkit
     services:
       postgres:
         image: postgres:16-alpine
@@ -163,7 +164,6 @@ jobs:
             }}@localhost:5432/postgres
           E2E_SKIP_DB_START: '1'
           E2E_BROWSER_COVERAGE: '1'
-          E2E_BROWSERS: chromium,firefox,webkit
         run: uv run --locked -- rv ui-e2e
       - name: Merge Python coverage inputs
         run: uv run --locked -- rv python-coverage-merge

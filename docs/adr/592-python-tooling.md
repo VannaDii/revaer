@@ -1967,3 +1967,8 @@ The explicit five-phase E2E run completed successfully: 35 anonymous API cases,
 35 authenticated API cases and 13 UI cases on each of Chromium, Firefox and
 WebKit (109 executions). The successful summary and phase logs are retained in
 `artifacts/rebase-20261002/`; Chromium produced real browser coverage captures.
+
+The initializer success test passed in the full workspace run. Scanner browser
+selection now lives at job scope, ensuring execution and both coverage merges
+expect the same five phases. Two workflow regressions load the actual settings
+for execution and merge contexts; all 79 workflow-contract tests pass.

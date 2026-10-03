@@ -364,3 +364,6 @@ The native integration job supplies its own disposable PostgreSQL service to the
 explicit test-database contract. Workflow report paths are positional CLI
 arguments. Scanner E2E selects Chromium, Firefox and WebKit explicitly; installed
 browsers alone do not select execution phases.
+
+Keep scanner E2E phase selection at job scope so execution and both coverage
+merge tasks validate the same completed phase set.

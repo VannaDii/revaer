@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 from revaer_tooling.cli import parser
+from revaer_tooling.e2e.settings import load_e2e_settings
 from revaer_tooling.json_data import JsonObject, array_value, decode, object_value, string_value
 from revaer_tooling.policy.contracts import runs
 from revaer_tooling.policy.formats import Document, Value, yaml_document
@@ -64,6 +65,22 @@ def test_committed_image_workflow_preserves_the_media_contract(fixture: Fixture)
     path = ".github/workflows/build-images.yml"
     fixture.documents[path] = yaml_document((root / path).read_text(), path)
     assert not image_workflow_findings(fixture.documents, fixture.matrix)
+
+
+@pytest.mark.parametrize(("workflow", "job_name"), (("pr", "coverage"), ("sonar", "sonar")))
+def test_scanner_execution_and_merges_select_the_same_browser_phases(
+    workflow: str, job_name: str
+) -> None:
+    root = Path(__file__).parents[2]
+    path = f".github/workflows/{workflow}.yml"
+    document = yaml_document((root / path).read_text(), path)
+    job = mapping(mapping(document["jobs"])[job_name])
+    shared = {key: str(value) for key, value in mapping(job["env"]).items()}
+    execution = mapping(named_steps(job)["Run Playwright with browser coverage"]["env"])
+    selected = {**shared, **{key: str(value) for key, value in execution.items()}}
+    expected = ("api-none", "api-api-key", "ui-chromium", "ui-firefox", "ui-webkit")
+    assert load_e2e_settings(selected).phases() == expected
+    assert load_e2e_settings(shared).phases() == expected
 
 
 def test_committed_media_job_preserves_required_conversion_contract(fixture: Fixture) -> None:
