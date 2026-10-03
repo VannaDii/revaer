@@ -14,6 +14,7 @@ concurrency:
 jobs:
   build-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: write
     env:
@@ -21,59 +22,41 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+      - name: Set up documentation tools
+        uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-
-      - name: Install Just
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
-
-      - name: Install Doc Tools
-        run: just docs-install
+          cargo-tools: mdbook,mdbook-mermaid,lychee
 
       - name: Build Docs
-        run: just docs-build
+        run: uv run --locked -- rv docs-build
 
       - name: Generate LLM manifests
-        run: just docs-index
+        run: uv run --locked -- rv docs-index
 
       - name: Guardrails
-        run: |
-          ! grep -R --include='*.md' -E '(AKIA[0-9A-Z]{16}|SECRET_KEY|token=|password=|x-api-key)' docs || (echo "Secret-like pattern found" && exit 1)
-          ! git ls-files docs | grep -E '\.(py|ipynb|html)$' && echo "OK" || (echo "Forbidden file type present" && exit 1)
+        run: uv run --locked -- rv docs-guard
 
       - name: Link check
-        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-        run: just docs-link-check
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: uv run --locked -- rv docs-link-check
 
       - name: Prepare Deployment
-        run: |
-          mkdir -p deploy
-          rsync -a docs/book/ deploy/
-          mkdir -p deploy/llm
-          rsync -a docs/llm/ deploy/llm/
-          if [ -f docs/CNAME ]; then cp docs/CNAME deploy/CNAME; fi
-          echo "Generated on: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" > deploy/.deployment-info
-          echo "Source commit: ${GITHUB_SHA}" >> deploy/.deployment-info
-          echo "Workflow run: ${GITHUB_RUN_ID}" >> deploy/.deployment-info
-          echo "Trigger: ${GITHUB_EVENT_NAME}" >> deploy/.deployment-info
+        id: deployment
+        run: uv run --locked -- rv docs-prepare
 
+      # Transport the already prepared payload; project behavior lives in rv.
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
           publish_dir: ./deploy
           enable_jekyll: false
           commit_message: |
             docs: deploy documentation
 
-            Source commit: ${{ github.sha }}
+            Source commit: ${{ steps.deployment.outputs.sha }}
             Workflow run: ${{ github.run_id }}
-            Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+            Generated: ${{ steps.deployment.outputs.generated_at }}
             Trigger: ${{ github.event_name }}
-
-            This deployment contains:
-            - Static documentation site (from mdbook build)
-            - LLM integration manifests (from docs-index)
-            - Deployment metadata

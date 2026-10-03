@@ -1,0 +1,20 @@
+name: Semantic decoys
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  policy:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      UNPINNED_ACTION_DECOY: actions/checkout@main
+      INPUT_INTERPOLATION_DECOY: ${{ inputs.untrusted }}
+      UNKNOWN_RECIPE_DECOY: just nonexistent
+    steps:
+      - name: Text outside uses and run must not affect validation
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          description: actions/example@main and just nonexistent
+      - name: Policy
+        run: just policy

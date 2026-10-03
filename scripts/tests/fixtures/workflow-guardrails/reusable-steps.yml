@@ -1,0 +1,5 @@
+jobs:
+  reuse:
+    uses: ./reusable.yml
+    steps:
+      - run: just ci

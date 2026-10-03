@@ -7,12 +7,12 @@
 use argon2::Argon2;
 use argon2::password_hash::{
     Error as PasswordHashError, PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
-    rand_core::OsRng,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, Utc, Weekday};
 use rand::Rng;
 use rand::distr::Alphanumeric;
+use rand_core::OsRng;
 use revaer_data::config::{
     self as data_config, AppProfileRow, EngineProfileRow, FsArrayField, FsBooleanField,
     FsOptionalStringField, FsPolicyRow, FsStringField, LabelPolicyRow, NewSetupToken,

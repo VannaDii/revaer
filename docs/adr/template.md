@@ -1,7 +1,8 @@
 # {ADR Title}
 
-- Status: {Proposed|Accepted|Superseded}
+- Status: {Proposed|Accepted|Recorded|Superseded}
 - Date: {YYYY-MM-DD}
+- Operator approval: {Pending|approval evidence and date|Not applicable: nonarchitectural task record}
 - Context:
   - What problem are we solving?
   - What constraints or forces shape the decision?

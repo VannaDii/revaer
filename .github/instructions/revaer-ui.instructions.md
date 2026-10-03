@@ -37,4 +37,49 @@ applyTo:
 
 - Keep selectors and test affordances stable. Update E2E fixtures deliberately when UI structure changes.
 - Treat generated API clients and synchronized assets as generated artifacts; regenerate them intentionally and keep authored wrappers separate.
+- `asset_sync` must fail closed unless every required runtime SVG exists, runtime text is UTF-8, SVG files have a complete namespaced root envelope, and `crates/revaer-ui/static` contains no raster-extension assets.
+- `static/revaer-logo.svg` and `static/icons/app-icon.svg` must preserve the approved purple stylized-R composition and the `revaer-purple-gradient` and `revaer-r-silhouette` identifiers; do not substitute a wordmark, palette, or symbol during asset synchronization.
+- Keep emitted icon, logo, dashboard, and DataTables references rooted under `/static`; verify their targets in a Trunk release build rather than inferring paths from source layout.
+- `just check-assets` must compare `crates/revaer-ui/static/nexus` from the repository root after regeneration.
+- Keep legacy vendor-reference canonicalization in `asset_sync`, validate the UTF-8 served image set there, and make `just check-assets` compare the complete repository-root `crates/revaer-ui/static/nexus/**` output.
+- CI E2E should use an explicit browser channel such as `E2E_BROWSER_CHANNEL=chrome` when the runner already provides that browser, so shards install Playwright dependencies without downloading redundant browser bundles. Keep CI video capture off for that path unless the Playwright ffmpeg bundle is installed.
 - When UI structure, selectors, or synced assets change, update the relevant docs, tests, and instructions in the same change.
+- The accepted Python migration uses the selected checkout's OpenAPI document
+  directly for response validation. Keep typed request inputs separate from raw
+  transport data and preserve every existing API/UI assertion when porting tests.
+- Keep anonymous API, authenticated API, and browser phases ordered. The default
+  API executable is configured in `tests/e2e.toml`; media's library-test serving
+  entry must be selected explicitly during integration and resolved from Cargo's
+  actual artifact output. Never guess an executable in another target directory.
+- Use native Playwright storage state and locator operations where available.
+  Record failures and retries without replacing browser storage methods with
+  authored JavaScript. Do not claim browser parity from runner fixture tests.
+- OpenAPI response validation must fail with an operation-specific diagnostic
+  for missing paths, methods or statuses. Correct the contract against existing
+  handlers and Serde models when drift is found; do not bypass validation to
+  reproduce the old generated client's unchecked runtime behavior.
+- Browser scenarios must report local HTTP 500 responses as failures. Keep
+  credentials out of diagnostics. Shard aggregation must prove completed phases
+  and exact scenario assignments; route files alone do not prove successful tests.
+
+## Single-init E2E ownership
+
+- In the approved `feature-development` phase, Python E2E uses the complete
+  initializer and sealed restricted runtime role. Require explicit test-service
+  selection and verify its exact loopback binding before provisioning.
+- Keep generated credentials private, bind init/drop to the resolved container
+  ID, refuse malformed phase configuration, and stop every owned service before
+  dropping the test database. Lifecycle/ordering fixtures are not full media
+  application or browser acceptance.
+
+- The media phase adds Python media API scenarios to both authentication phases;
+  it must not replace or omit foundation scenarios. Keep the original library
+  test-serving entry as the media default and preserve explicit runner overrides.
+  Do not bypass production compliance startup checks to run a test suite.
+
+- In the single-init feature phase, the Python E2E adapter adds `tests/specs/media/ui` alongside the foundation UI suite. Route-controlled media presentation tests must remain explicitly distinguished from filesystem or persistence evidence.
+
+- `rv ui-e2e-app-test` preserves the media launch-guard and compliance library
+  filters with one test thread, then the `bootstrap` integration binary, under
+  default features. Require an explicit disposable test endpoint and positive
+  passing execution in every group; do not count empty filter matches as coverage.

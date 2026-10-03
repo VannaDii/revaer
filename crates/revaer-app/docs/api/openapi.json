@@ -12,6 +12,42 @@
         ],
         "type": "object"
       },
+      "CardigannDefinitionImportRequest": {
+        "properties": {
+          "is_deprecated": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "yaml_payload": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "yaml_payload"
+        ],
+        "type": "object"
+      },
+      "CardigannDefinitionImportResponse": {
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/IndexerDefinitionResponse"
+          },
+          "field_count": {
+            "type": "integer"
+          },
+          "option_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "definition",
+          "field_count",
+          "option_count"
+        ],
+        "type": "object"
+      },
       "ConfigSnapshot": {
         "properties": {
           "app_profile": {
@@ -420,6 +456,84 @@
         ],
         "type": "object"
       },
+      "IndexerCfStateResetRequest": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "IndexerCfStateResponse": {
+        "properties": {
+          "backoff_seconds": {
+            "type": "integer"
+          },
+          "cf_session_expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "consecutive_failures": {
+            "type": "integer"
+          },
+          "cooldown_until": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "last_changed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "last_error_class": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "last_changed_at",
+          "consecutive_failures"
+        ],
+        "type": "object"
+      },
+      "IndexerConnectivityProfileResponse": {
+        "properties": {
+          "error_class": {
+            "type": "string"
+          },
+          "last_checked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "latency_p50_ms": {
+            "type": "integer"
+          },
+          "latency_p95_ms": {
+            "type": "integer"
+          },
+          "profile_exists": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "success_rate_1h": {
+            "type": "number"
+          },
+          "success_rate_24h": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "profile_exists"
+        ],
+        "type": "object"
+      },
       "IndexerDefinitionListResponse": {
         "properties": {
           "definitions": {
@@ -484,6 +598,186 @@
         ],
         "type": "object"
       },
+      "IndexerHealthEventListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IndexerHealthEventResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "IndexerHealthEventResponse": {
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "error_class": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "http_status": {
+            "type": "integer"
+          },
+          "latency_ms": {
+            "type": "integer"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "occurred_at",
+          "event_type"
+        ],
+        "type": "object"
+      },
+      "IndexerHealthNotificationHookCreateRequest": {
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status_threshold": {
+            "type": "string"
+          },
+          "webhook_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "channel",
+          "display_name",
+          "status_threshold"
+        ],
+        "type": "object"
+      },
+      "IndexerHealthNotificationHookDeleteRequest": {
+        "properties": {
+          "indexer_health_notification_hook_public_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "indexer_health_notification_hook_public_id"
+        ],
+        "type": "object"
+      },
+      "IndexerHealthNotificationHookListResponse": {
+        "properties": {
+          "hooks": {
+            "items": {
+              "$ref": "#/components/schemas/IndexerHealthNotificationHookResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "hooks"
+        ],
+        "type": "object"
+      },
+      "IndexerHealthNotificationHookResponse": {
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "indexer_health_notification_hook_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_enabled": {
+            "type": "boolean"
+          },
+          "status_threshold": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "webhook_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "indexer_health_notification_hook_public_id",
+          "channel",
+          "display_name",
+          "status_threshold",
+          "is_enabled",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "IndexerHealthNotificationHookUpdateRequest": {
+        "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "indexer_health_notification_hook_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "status_threshold": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "webhook_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "indexer_health_notification_hook_public_id"
+        ],
+        "type": "object"
+      },
       "IndexerInstanceCreateRequest": {
         "properties": {
           "display_name": {
@@ -508,6 +802,37 @@
         "required": [
           "indexer_definition_id",
           "display_name"
+        ],
+        "type": "object"
+      },
+      "IndexerInstanceFieldInventoryResponse": {
+        "properties": {
+          "field_name": {
+            "type": "string"
+          },
+          "field_type": {
+            "type": "string"
+          },
+          "secret_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "value_bool": {
+            "type": "boolean"
+          },
+          "value_decimal": {
+            "type": "string"
+          },
+          "value_int": {
+            "type": "integer"
+          },
+          "value_plain": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field_name",
+          "field_type"
         ],
         "type": "object"
       },
@@ -548,6 +873,116 @@
         },
         "required": [
           "field_name"
+        ],
+        "type": "object"
+      },
+      "IndexerInstanceListItemResponse": {
+        "properties": {
+          "automatic_search_status": {
+            "type": "string"
+          },
+          "connect_timeout_ms": {
+            "type": "integer"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/IndexerInstanceFieldInventoryResponse"
+            },
+            "type": "array"
+          },
+          "indexer_instance_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "instance_status": {
+            "type": "string"
+          },
+          "interactive_search_status": {
+            "type": "string"
+          },
+          "max_parallel_requests": {
+            "type": "integer"
+          },
+          "media_domain_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "rate_limit_display_name": {
+            "type": "string"
+          },
+          "rate_limit_policy_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "read_timeout_ms": {
+            "type": "integer"
+          },
+          "routing_policy_display_name": {
+            "type": "string"
+          },
+          "routing_policy_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rss_interval_seconds": {
+            "type": "integer"
+          },
+          "rss_status": {
+            "type": "string"
+          },
+          "rss_subscription_enabled": {
+            "type": "boolean"
+          },
+          "tag_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "trust_tier_key": {
+            "type": "string"
+          },
+          "upstream_slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "indexer_instance_public_id",
+          "upstream_slug",
+          "display_name",
+          "instance_status",
+          "rss_status",
+          "automatic_search_status",
+          "interactive_search_status",
+          "priority",
+          "connect_timeout_ms",
+          "read_timeout_ms",
+          "max_parallel_requests",
+          "media_domain_keys",
+          "tag_keys",
+          "fields"
+        ],
+        "type": "object"
+      },
+      "IndexerInstanceListResponse": {
+        "properties": {
+          "indexer_instances": {
+            "items": {
+              "$ref": "#/components/schemas/IndexerInstanceListItemResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "indexer_instances"
         ],
         "type": "object"
       },
@@ -624,6 +1059,219 @@
         },
         "required": [
           "indexer_instance_public_id"
+        ],
+        "type": "object"
+      },
+      "IndexerRssSeenItemResponse": {
+        "properties": {
+          "first_seen_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "infohash_v1": {
+            "type": "string"
+          },
+          "infohash_v2": {
+            "type": "string"
+          },
+          "item_guid": {
+            "type": "string"
+          },
+          "magnet_hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "first_seen_at"
+        ],
+        "type": "object"
+      },
+      "IndexerRssSeenItemsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IndexerRssSeenItemResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "IndexerRssSeenMarkRequest": {
+        "properties": {
+          "infohash_v1": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "infohash_v2": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "item_guid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "magnet_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "IndexerRssSeenMarkResponse": {
+        "properties": {
+          "inserted": {
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/IndexerRssSeenItemResponse"
+          }
+        },
+        "required": [
+          "item",
+          "inserted"
+        ],
+        "type": "object"
+      },
+      "IndexerRssSubscriptionResponse": {
+        "properties": {
+          "backoff_seconds": {
+            "type": "integer"
+          },
+          "indexer_instance_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "instance_status": {
+            "type": "string"
+          },
+          "interval_seconds": {
+            "type": "integer"
+          },
+          "last_error_class": {
+            "type": "string"
+          },
+          "last_polled_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "next_poll_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "rss_setting_status": {
+            "type": "string"
+          },
+          "subscription_status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "indexer_instance_public_id",
+          "instance_status",
+          "rss_setting_status",
+          "subscription_status",
+          "interval_seconds"
+        ],
+        "type": "object"
+      },
+      "IndexerRssSubscriptionUpdateRequest": {
+        "properties": {
+          "interval_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "is_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_enabled"
+        ],
+        "type": "object"
+      },
+      "IndexerSourceReputationListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IndexerSourceReputationResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "IndexerSourceReputationResponse": {
+        "properties": {
+          "acquisition_count": {
+            "type": "integer"
+          },
+          "acquisition_success_count": {
+            "type": "integer"
+          },
+          "acquisition_success_rate": {
+            "type": "number"
+          },
+          "computed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dmca_rate": {
+            "type": "number"
+          },
+          "fake_rate": {
+            "type": "number"
+          },
+          "min_samples": {
+            "type": "integer"
+          },
+          "request_count": {
+            "type": "integer"
+          },
+          "request_success_count": {
+            "type": "integer"
+          },
+          "request_success_rate": {
+            "type": "number"
+          },
+          "window_key": {
+            "type": "string"
+          },
+          "window_start": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window_key",
+          "window_start",
+          "request_success_rate",
+          "acquisition_success_rate",
+          "fake_rate",
+          "dmca_rate",
+          "request_count",
+          "request_success_count",
+          "acquisition_count",
+          "acquisition_success_count",
+          "min_samples",
+          "computed_at"
         ],
         "type": "object"
       },
@@ -751,6 +1399,67 @@
         ],
         "type": "object"
       },
+      "PolicyRuleListItemResponse": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "is_case_insensitive": {
+            "type": "boolean"
+          },
+          "is_disabled": {
+            "type": "boolean"
+          },
+          "match_field": {
+            "type": "string"
+          },
+          "match_operator": {
+            "type": "string"
+          },
+          "match_value_int": {
+            "type": "integer"
+          },
+          "match_value_text": {
+            "type": "string"
+          },
+          "match_value_uuid": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "policy_rule_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "rule_type": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "policy_rule_public_id",
+          "rule_type",
+          "match_field",
+          "match_operator",
+          "sort_order",
+          "action",
+          "severity",
+          "is_case_insensitive",
+          "is_disabled"
+        ],
+        "type": "object"
+      },
       "PolicyRuleReorderRequest": {
         "properties": {
           "ordered_policy_rule_public_ids": {
@@ -813,6 +1522,55 @@
         "required": [
           "display_name",
           "scope"
+        ],
+        "type": "object"
+      },
+      "PolicySetListItemResponse": {
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "is_enabled": {
+            "type": "boolean"
+          },
+          "policy_set_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyRuleListItemResponse"
+            },
+            "type": "array"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "user_public_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "policy_set_public_id",
+          "display_name",
+          "scope",
+          "is_enabled",
+          "rules"
+        ],
+        "type": "object"
+      },
+      "PolicySetListResponse": {
+        "properties": {
+          "policy_sets": {
+            "items": {
+              "$ref": "#/components/schemas/PolicySetListItemResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "policy_sets"
         ],
         "type": "object"
       },
@@ -908,6 +1666,52 @@
         ],
         "type": "object"
       },
+      "RateLimitPolicyListItemResponse": {
+        "properties": {
+          "burst": {
+            "type": "integer"
+          },
+          "concurrent_requests": {
+            "type": "integer"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "is_system": {
+            "type": "boolean"
+          },
+          "rate_limit_policy_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "requests_per_minute": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rate_limit_policy_public_id",
+          "display_name",
+          "requests_per_minute",
+          "burst",
+          "concurrent_requests",
+          "is_system"
+        ],
+        "type": "object"
+      },
+      "RateLimitPolicyListResponse": {
+        "properties": {
+          "rate_limit_policies": {
+            "items": {
+              "$ref": "#/components/schemas/RateLimitPolicyListItemResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "rate_limit_policies"
+        ],
+        "type": "object"
+      },
       "RateLimitPolicyResponse": {
         "properties": {
           "rate_limit_policy_public_id": {
@@ -952,6 +1756,55 @@
         "required": [
           "display_name",
           "mode"
+        ],
+        "type": "object"
+      },
+      "RoutingPolicyListItemResponse": {
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "parameter_count": {
+            "type": "integer"
+          },
+          "rate_limit_display_name": {
+            "type": "string"
+          },
+          "rate_limit_policy_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "routing_policy_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "secret_binding_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "routing_policy_public_id",
+          "display_name",
+          "mode",
+          "parameter_count",
+          "secret_binding_count"
+        ],
+        "type": "object"
+      },
+      "RoutingPolicyListResponse": {
+        "properties": {
+          "routing_policies": {
+            "items": {
+              "$ref": "#/components/schemas/RoutingPolicyListItemResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "routing_policies"
         ],
         "type": "object"
       },
@@ -1223,6 +2076,105 @@
         ],
         "type": "object"
       },
+      "SearchProfileListItemResponse": {
+        "properties": {
+          "allow_indexer_public_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "allow_tag_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "block_indexer_public_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "block_tag_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "default_media_domain_key": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "is_default": {
+            "type": "boolean"
+          },
+          "media_domain_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "page_size": {
+            "type": "integer"
+          },
+          "policy_set_display_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "policy_set_public_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "prefer_tag_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "search_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "search_profile_public_id",
+          "display_name",
+          "is_default",
+          "media_domain_keys",
+          "policy_set_display_names",
+          "allow_tag_keys",
+          "block_tag_keys",
+          "prefer_tag_keys",
+          "policy_set_public_ids",
+          "allow_indexer_public_ids",
+          "block_indexer_public_ids"
+        ],
+        "type": "object"
+      },
+      "SearchProfileListResponse": {
+        "properties": {
+          "search_profiles": {
+            "items": {
+              "$ref": "#/components/schemas/SearchProfileListItemResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "search_profiles"
+        ],
+        "type": "object"
+      },
       "SearchProfilePolicySetRequest": {
         "properties": {
           "policy_set_public_id": {
@@ -1366,6 +2318,53 @@
         "required": [
           "secret_type",
           "secret_value"
+        ],
+        "type": "object"
+      },
+      "SecretMetadataListResponse": {
+        "properties": {
+          "secrets": {
+            "items": {
+              "$ref": "#/components/schemas/SecretMetadataResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "secrets"
+        ],
+        "type": "object"
+      },
+      "SecretMetadataResponse": {
+        "properties": {
+          "binding_count": {
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "is_revoked": {
+            "type": "boolean"
+          },
+          "rotated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "secret_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "secret_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret_public_id",
+          "secret_type",
+          "is_revoked",
+          "created_at",
+          "binding_count"
         ],
         "type": "object"
       },
@@ -1522,6 +2521,45 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "TagListItemResponse": {
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "tag_key": {
+            "type": "string"
+          },
+          "tag_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag_public_id",
+          "tag_key",
+          "display_name",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "TagListResponse": {
+        "properties": {
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/TagListItemResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tags"
+        ],
         "type": "object"
       },
       "TagResponse": {
@@ -1978,6 +3016,11 @@
         "type": "object"
       },
       "TorrentDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TorrentSummary"
+          }
+        ],
         "properties": {
           "files": {
             "items": {
@@ -1997,14 +3040,8 @@
                 "type": "null"
               }
             ]
-          },
-          "summary": {
-            "$ref": "#/components/schemas/TorrentSummary"
           }
         },
-        "required": [
-          "summary"
-        ],
         "type": "object"
       },
       "TorrentFileView": {
@@ -2755,6 +3792,49 @@
         ],
         "type": "object"
       },
+      "TorznabInstanceListItemResponse": {
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "is_enabled": {
+            "type": "boolean"
+          },
+          "search_profile_display_name": {
+            "type": "string"
+          },
+          "search_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "torznab_instance_public_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "torznab_instance_public_id",
+          "display_name",
+          "is_enabled",
+          "search_profile_public_id",
+          "search_profile_display_name"
+        ],
+        "type": "object"
+      },
+      "TorznabInstanceListResponse": {
+        "properties": {
+          "torznab_instances": {
+            "items": {
+              "$ref": "#/components/schemas/TorznabInstanceListItemResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "torznab_instances"
+        ],
+        "type": "object"
+      },
       "TorznabInstanceResponse": {
         "properties": {
           "api_key_plaintext": {
@@ -3031,6 +4111,16 @@
               }
             },
             "description": "Invalid setup token"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
           }
         },
         "security": [
@@ -4760,6 +5850,408 @@
         "summary": "List indexer definitions"
       }
     },
+    "/v1/indexers/definitions/import/cardigann": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CardigannDefinitionImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardigannDefinitionImportResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Import a Cardigann definition",
+        "tags": [
+          "indexers"
+        ]
+      }
+    },
+    "/v1/indexers/health-notifications": {
+      "delete": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexerHealthNotificationHookDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Completed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Manage a health notification hook",
+        "tags": [
+          "indexers"
+        ]
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexerHealthNotificationHookListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List health-notifications",
+        "tags": [
+          "indexers"
+        ]
+      },
+      "patch": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexerHealthNotificationHookUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexerHealthNotificationHookResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Manage a health notification hook",
+        "tags": [
+          "indexers"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexerHealthNotificationHookCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexerHealthNotificationHookResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Manage a health notification hook",
+        "tags": [
+          "indexers"
+        ]
+      }
+    },
     "/v1/indexers/import-jobs": {
       "post": {
         "requestBody": {
@@ -5231,6 +6723,59 @@
       }
     },
     "/v1/indexers/instances": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexerInstanceListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List instances",
+        "tags": [
+          "indexers"
+        ]
+      },
       "post": {
         "operationId": "createIndexerInstance",
         "requestBody": {
@@ -5253,6 +6798,66 @@
               }
             },
             "description": "Instance created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Referenced resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
           }
         },
         "summary": "Create indexer instance"
@@ -5292,9 +6897,360 @@
               }
             },
             "description": "Instance updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Referenced resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
           }
         },
         "summary": "Update indexer instance"
+      }
+    },
+    "/v1/indexers/instances/{indexer_instance_public_id}/cf-state": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "indexer_instance_public_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexerCfStateResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Manage indexer cf-state",
+        "tags": [
+          "indexers"
+        ]
+      }
+    },
+    "/v1/indexers/instances/{indexer_instance_public_id}/cf-state/reset": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "indexer_instance_public_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexerCfStateResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Completed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Manage indexer cf-state/reset",
+        "tags": [
+          "indexers"
+        ]
+      }
+    },
+    "/v1/indexers/instances/{indexer_instance_public_id}/connectivity-profile": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "indexer_instance_public_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexerConnectivityProfileResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Manage indexer connectivity-profile",
+        "tags": [
+          "indexers"
+        ]
       }
     },
     "/v1/indexers/instances/{indexer_instance_public_id}/fields/secret": {
@@ -5324,6 +7280,66 @@
         "responses": {
           "204": {
             "description": "Updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Referenced resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
           }
         },
         "summary": "Bind indexer field secret"
@@ -5356,9 +7372,174 @@
         "responses": {
           "204": {
             "description": "Updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Referenced resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
           }
         },
         "summary": "Set indexer field value"
+      }
+    },
+    "/v1/indexers/instances/{indexer_instance_public_id}/health-events": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "indexer_instance_public_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexerHealthEventListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Manage indexer health-events",
+        "tags": [
+          "indexers"
+        ]
       }
     },
     "/v1/indexers/instances/{indexer_instance_public_id}/media-domains": {
@@ -5388,6 +7569,66 @@
         "responses": {
           "204": {
             "description": "Updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Referenced resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
           }
         },
         "summary": "Set indexer media domains"
@@ -5419,9 +7660,591 @@
         "responses": {
           "204": {
             "description": "Indexer instance rate limit updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Referenced resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
           }
         },
         "summary": "Set indexer instance rate limit"
+      }
+    },
+    "/v1/indexers/instances/{indexer_instance_public_id}/reputation": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "indexer_instance_public_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window_key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexerSourceReputationListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Manage indexer reputation",
+        "tags": [
+          "indexers"
+        ]
+      }
+    },
+    "/v1/indexers/instances/{indexer_instance_public_id}/rss": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "indexer_instance_public_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexerRssSubscriptionResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Manage indexer rss",
+        "tags": [
+          "indexers"
+        ]
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "indexer_instance_public_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexerRssSubscriptionUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexerRssSubscriptionResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Manage indexer rss",
+        "tags": [
+          "indexers"
+        ]
+      }
+    },
+    "/v1/indexers/instances/{indexer_instance_public_id}/rss/items": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "indexer_instance_public_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexerRssSeenItemsResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Manage indexer rss/items",
+        "tags": [
+          "indexers"
+        ]
+      },
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "indexer_instance_public_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexerRssSeenMarkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexerRssSeenMarkResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Manage indexer rss/items",
+        "tags": [
+          "indexers"
+        ]
       }
     },
     "/v1/indexers/instances/{indexer_instance_public_id}/tags": {
@@ -5451,12 +8274,125 @@
         "responses": {
           "204": {
             "description": "Updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Referenced resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
           }
         },
         "summary": "Set indexer tags"
       }
     },
     "/v1/indexers/policies": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicySetListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List policies",
+        "tags": [
+          "indexers"
+        ]
+      },
       "post": {
         "operationId": "createPolicySet",
         "requestBody": {
@@ -6239,6 +9175,59 @@
       }
     },
     "/v1/indexers/rate-limits": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitPolicyListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List rate-limits",
+        "tags": [
+          "indexers"
+        ]
+      },
       "post": {
         "requestBody": {
           "content": {
@@ -6491,6 +9480,59 @@
       }
     },
     "/v1/indexers/routing-policies": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutingPolicyListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List routing-policies",
+        "tags": [
+          "indexers"
+        ]
+      },
       "post": {
         "requestBody": {
           "content": {
@@ -6861,6 +9903,59 @@
       }
     },
     "/v1/indexers/search-profiles": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProfileListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List search-profiles",
+        "tags": [
+          "indexers"
+        ]
+      },
       "post": {
         "requestBody": {
           "content": {
@@ -8420,6 +11515,59 @@
         ],
         "summary": "Revoke a secret"
       },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretMetadataListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List secrets",
+        "tags": [
+          "indexers"
+        ]
+      },
       "patch": {
         "requestBody": {
           "content": {
@@ -8655,6 +11803,59 @@
         ],
         "summary": "Delete an indexer tag"
       },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List tags",
+        "tags": [
+          "indexers"
+        ]
+      },
       "patch": {
         "requestBody": {
           "content": {
@@ -8826,7 +12027,148 @@
         "summary": "Create an indexer tag"
       }
     },
+    "/v1/indexers/tags/{tag_key}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Completed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Delete a tag by key",
+        "tags": [
+          "indexers"
+        ]
+      }
+    },
     "/v1/indexers/torznab-instances": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorznabInstanceListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List torznab-instances",
+        "tags": [
+          "indexers"
+        ]
+      },
       "post": {
         "requestBody": {
           "content": {

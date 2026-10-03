@@ -18,53 +18,112 @@ jobs:
   sonar:
     name: SonarQube
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     env:
-      REVAER_TEST_DATABASE_URL: ${{ vars.REVAER_DATABASE_URL }}
-      DATABASE_URL: ${{ vars.REVAER_DATABASE_URL }}
+      REVAER_TEST_DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)
+        }}@localhost:5432/revaer
+      DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer
+      SONAR_AUTH_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
+      REVAER_REQUIRE_NATIVE_COVERAGE: '1'
+      E2E_BROWSERS: chromium,firefox,webkit
     services:
       postgres:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: revaer
-          POSTGRES_PASSWORD: revaer
+          POSTGRES_PASSWORD: ${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}
           POSTGRES_DB: revaer
-        options: >-
-          --health-cmd="pg_isready -U revaer -d revaer"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
+        options: --health-cmd="pg_isready -U revaer -d revaer" --health-interval=10s --health-timeout=5s --health-retries=5
+          --shm-size=1g
         ports:
           - 5432:5432
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          fetch-depth: 0
-
+          fetch-depth: '0'
+          ref: ${{ github.sha }}
       - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-          apt-profile: db
-
+          apt-profile: coverage
+          sonar-scanner: 'true'
+          cargo-tools: cargo-audit,cargo-deny,cargo-llvm-cov,cargo-udeps,sqlx-cli,trunk,mdbook,mdbook-mermaid,lychee
+          helm: 'true'
+          oras: 'true'
+          trivy: 'true'
+          browsers: chromium,firefox,webkit
       - name: Run migrations
         env:
           DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}
-        run: just db-migrate
-
-      - name: Build combined LCOV report
-        run: just cov
-
+        run: uv run --locked -- rv db-migrate
+      - name: Coverage
+        run: uv run --locked -- rv cov
+      - name: Python tooling coverage
+        run: uv run --locked -- rv tooling-cov
+      - name: Bootstrap execution coverage
+        run: uv run --locked -- rv script-coverage
+      - name: Run Playwright with browser coverage
+        env:
+          E2E_API_BASE_URL: http://localhost:7070
+          E2E_BASE_URL: http://localhost:8080
+          E2E_DB_ADMIN_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)
+            }}@localhost:5432/postgres
+          E2E_SKIP_DB_START: '1'
+          E2E_BROWSER_COVERAGE: '1'
+        run: uv run --locked -- rv ui-e2e
+      - name: Merge Python coverage inputs
+        run: uv run --locked -- rv python-coverage-merge
+      - name: Merge browser coverage inputs
+        run: uv run --locked -- rv js-coverage-merge
+      - name: Build native compile database
+        run: uv run --locked -- rv sonar-compile-db
+      - name: Verify Sonar analysis inputs
+        run: uv run --locked -- rv sonar-verify-inputs
+      - name: Prepare Sonar source inputs
+        run: uv run --locked -- rv sonar-prepare-sources
+      - name: Prepare exact Sonar SCM context
+        env:
+          SONAR_BASE_SHA: ${{ github.event.before }}
+          SONAR_BASE_REF: main
+          SONAR_HEAD_SHA: ${{ github.sha }}
+        run: uv run --locked -- rv sonar-prepare-scm
+      - name: SonarQube scan
+        env:
+          SONAR_TOKEN: ${{ env.SONAR_AUTH_TOKEN }}
+        run: uv run --locked -- rv sonar-scan
+      - name: Package Sonar analysis evidence
+        run: uv run --locked -- rv sonar-package-report
+        if: always()
+      - name: Verify Sonar published result
+        env:
+          SONAR_PROJECT_KEY: VannaDii_Revaer
+        run: uv run --locked -- rv sonar-verify-result
       - name: Upload coverage artifact
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: sonar-coverage
-          path: coverage
+          path: |
+            coverage/lcov.info
+            coverage/llvm-cov.txt
+            coverage/js-lcov.info
+            coverage/script-coverage.xml
+            coverage/compile_commands.json
+            coverage/cxxbridge/include/rust/cxx.h
+            coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h
+
+            coverage/python.xml
           if-no-files-found: error
-
-      - name: Build native compile database
-        run: just sonar-compile-db
-
-      - name: SonarQube scan
-        uses: SonarSource/sonarqube-scan-action@299e4b793aaa83bf2aba7c9c14bedbb485688ec4 # v7.1.0
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
+      - name: Upload Sonar analysis evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: sonar-analysis-evidence
+          path: |
+            artifacts/sonar/scanner.log
+            artifacts/sonar/scm-evidence.txt
+            .scannerwork/report-task.txt
+            .scannerwork/scanner-report.tar.xz
+            artifacts/sonar/api/*.json
+            coverage/llvm-cov.txt
+          if-no-files-found: error

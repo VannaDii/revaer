@@ -1,0 +1,8 @@
+name: Unknown recipe
+on:
+  pull_request:
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: just nonexistent

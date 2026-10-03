@@ -1,0 +1,2039 @@
+{
+  "source_revision": "f1a8624f8c9c80325bfd14769bc1305c0fa5b793",
+  "documents": {
+    ".github/workflows/pr.yml": {
+      "name": "PR",
+      "on": {
+        "pull_request": ""
+      },
+      "concurrency": {
+        "group": "pr-${{ github.ref }}",
+        "cancel-in-progress": "true"
+      },
+      "permissions": {
+        "contents": "read"
+      },
+      "env": {
+        "CARGO_TERM_COLOR": "always",
+        "NODE_VERSION": "24.19.0",
+        "IMAGE_NAME": "revaer"
+      },
+      "jobs": {
+        "instruction-drift": {
+          "name": "Check Instruction Drift",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "30",
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd",
+              "with": {
+                "fetch-depth": "0",
+                "ref": "${{ github.event.pull_request.head.sha }}"
+              }
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {}
+            },
+            {
+              "name": "Instruction drift",
+              "env": {
+                "REVAER_INSTRUCTION_DIFF_BASE": "${{ github.event.pull_request.base.sha }}",
+                "REVAER_INSTRUCTION_DIFF_HEAD": "${{ github.event.pull_request.head.sha }}"
+              },
+              "run": "rv instruction-drift"
+            }
+          ]
+        },
+        "fmt": {
+          "name": "Check Formatting",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "30",
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {}
+            },
+            {
+              "name": "Format",
+              "run": "rv fmt"
+            }
+          ]
+        },
+        "lint": {
+          "name": "Check Lint",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "60",
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "apt-profile": "base"
+              }
+            },
+            {
+              "name": "Lint",
+              "run": "rv lint"
+            }
+          ]
+        },
+        "check": {
+          "name": "Run Checks",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "60",
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "apt-profile": "base"
+              }
+            },
+            {
+              "name": "Check",
+              "run": "rv check"
+            }
+          ]
+        },
+        "helm-lint": {
+          "name": "Helm Lint",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "30",
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "apt-profile": "base"
+              }
+            },
+            {
+              "name": "Set up Helm",
+              "uses": "Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4",
+              "with": {
+                "version": "v3.19.0"
+              }
+            },
+            {
+              "name": "Helm lint",
+              "run": "rv helm-lint"
+            }
+          ]
+        },
+        "coverage": {
+          "name": "Check Coverage",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "180",
+          "needs": [
+            "fmt",
+            "lint",
+            "check",
+            "helm-lint",
+            "udeps",
+            "deny",
+            "audit",
+            "load-matrix",
+            "instruction-drift"
+          ],
+          "permissions": {
+            "contents": "read",
+            "pull-requests": "read"
+          },
+          "env": {
+            "REVAER_TEST_DATABASE_URL": "${{ vars.REVAER_DATABASE_URL}}",
+            "DATABASE_URL": "${{ vars.REVAER_DATABASE_URL}}",
+            "SONAR_AUTH_TOKEN": "${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}",
+            "REVAER_REQUIRE_NATIVE_COVERAGE": "1"
+          },
+          "services": {
+            "postgres": {
+              "image": "postgres:16-alpine",
+              "env": {
+                "POSTGRES_USER": "revaer",
+                "POSTGRES_PASSWORD": "revaer",
+                "POSTGRES_DB": "revaer"
+              },
+              "options": "--shm-size=1g --health-cmd=\"pg_isready -U revaer -d revaer\" --health-interval=10s --health-timeout=5s --health-retries=5",
+              "ports": [
+                "5432:5432"
+              ]
+            }
+          },
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd",
+              "with": {
+                "fetch-depth": "0",
+                "ref": "${{ github.event.pull_request.head.sha }}"
+              }
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "apt-profile": "coverage",
+                "sonar-scanner": "true"
+              }
+            },
+            {
+              "name": "Run migrations",
+              "env": {
+                "DATABASE_URL": "${{ env.REVAER_TEST_DATABASE_URL }}"
+              },
+              "run": "rv db-migrate"
+            },
+            {
+              "name": "Coverage",
+              "run": "rv cov"
+            },
+            {
+              "name": "Python tooling coverage",
+              "run": "rv tooling-cov"
+            },
+            {
+              "name": "Run Playwright with browser coverage",
+              "env": {
+                "E2E_API_BASE_URL": "http://localhost:7070",
+                "E2E_BASE_URL": "http://localhost:8080",
+                "E2E_DB_ADMIN_URL": "postgres://revaer:revaer@localhost:5432/postgres",
+                "E2E_SKIP_DB_START": "1",
+                "E2E_BROWSER_COVERAGE": "1"
+              },
+              "run": "rv ui-e2e"
+            },
+            {
+              "name": "Merge Python coverage inputs",
+              "run": "rv python-coverage-merge"
+            },
+            {
+              "name": "Merge browser coverage inputs",
+              "run": "rv js-coverage-merge"
+            },
+            {
+              "name": "Build native compile database",
+              "run": "rv sonar-compile-db"
+            },
+            {
+              "name": "Verify Sonar analysis inputs",
+              "run": "rv sonar-verify-inputs"
+            },
+            {
+              "name": "Prepare Sonar source inputs",
+              "run": "rv sonar-prepare-sources"
+            },
+            {
+              "name": "Prepare exact Sonar SCM context",
+              "env": {
+                "SONAR_BASE_SHA": "${{ github.event.pull_request.base.sha }}",
+                "SONAR_BASE_REF": "${{ github.event.pull_request.base.ref }}",
+                "SONAR_HEAD_SHA": "${{ github.event.pull_request.head.sha }}"
+              },
+              "run": "rv sonar-prepare-scm"
+            },
+            {
+              "name": "SonarQube scan",
+              "env": {
+                "SONAR_TOKEN": "${{ env.SONAR_AUTH_TOKEN }}"
+              },
+              "run": "rv sonar-scan"
+            },
+            {
+              "name": "Package Sonar analysis evidence",
+              "run": "rv sonar-package-report"
+            },
+            {
+              "name": "Verify Sonar published result",
+              "env": {
+                "SONAR_PROJECT_KEY": "VannaDii_Revaer",
+                "SONAR_PULL_REQUEST": "${{ github.event.pull_request.number }}"
+              },
+              "run": "rv sonar-verify-result"
+            },
+            {
+              "name": "Upload coverage artifact",
+              "if": "always()",
+              "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+              "with": {
+                "name": "sonar-coverage",
+                "path": "coverage/lcov.info\ncoverage/llvm-cov.txt\ncoverage/js-lcov.info\ncoverage/script-coverage.xml\ncoverage/compile_commands.json\ncoverage/cxxbridge/include/rust/cxx.h\ncoverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h\n\ncoverage/python.xml\n",
+                "if-no-files-found": "error"
+              }
+            },
+            {
+              "name": "Upload Sonar analysis evidence",
+              "if": "always()",
+              "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+              "with": {
+                "name": "sonar-analysis-evidence",
+                "path": "artifacts/sonar/scanner.log\nartifacts/sonar/scm-evidence.txt\n.scannerwork/report-task.txt\n.scannerwork/scanner-report.tar.xz\nartifacts/sonar/api/*.json\ncoverage/llvm-cov.txt\n",
+                "if-no-files-found": "error"
+              }
+            }
+          ]
+        },
+        "native-it": {
+          "name": "Native Integration Tests",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "60",
+          "needs": [
+            "fmt",
+            "lint",
+            "check",
+            "helm-lint",
+            "udeps",
+            "deny",
+            "audit",
+            "load-matrix",
+            "instruction-drift"
+          ],
+          "env": {
+            "REVAER_NATIVE_IT": "1",
+            "DOCKER_HOST": "unix:///var/run/docker.sock"
+          },
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "apt-profile": "base"
+              }
+            },
+            {
+              "name": "Native integration tests",
+              "run": "rv test-native"
+            }
+          ]
+        },
+        "media-conversion": {
+          "name": "Media Conversion Fixtures",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "30",
+          "needs": [
+            "fmt",
+            "lint",
+            "check",
+            "helm-lint",
+            "udeps",
+            "deny",
+            "audit",
+            "load-matrix",
+            "instruction-drift"
+          ],
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "apt-packages": "coreutils curl ffmpeg jq"
+              }
+            },
+            {
+              "id": "media-tools",
+              "name": "Media tool cache key",
+              "shell": "bash",
+              "run": "set -euo pipefail\n{\n  ffmpeg -version | head -n 1\n  ffprobe -version | head -n 1\n} | sha256sum | awk '{ print \"key=\" $1 }' >> \"${GITHUB_OUTPUT}\"\n"
+            },
+            {
+              "name": "Restore media fixture cache",
+              "uses": "actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7",
+              "with": {
+                "path": "test-fixtures/source\ntest-fixtures/chromium\ntest-fixtures/derived\n",
+                "key": "${{ runner.os }}-media-fixtures-${{ steps.media-tools.outputs.key }}-${{ hashFiles('test-fixtures/lock.json', 'test-fixtures/manifest.json', 'scripts/test-fixtures/*.sh') }}",
+                "restore-keys": "${{ runner.os }}-media-fixtures-${{ steps.media-tools.outputs.key }}-\n"
+              }
+            },
+            {
+              "name": "Prepare media fixtures",
+              "run": "rv download-test-fixtures\nrv generate-test-fixtures\n"
+            },
+            {
+              "name": "Media conversion integration tests",
+              "run": "rv test-media-conversion"
+            },
+            {
+              "name": "Publish media conversion report",
+              "if": "always()",
+              "shell": "bash",
+              "run": "set -euo pipefail\nreport_path=\"target/media-conversion-report.md\"\ntest -s \"${report_path}\"\ntee -a \"${GITHUB_STEP_SUMMARY}\" < \"${report_path}\"\n"
+            },
+            {
+              "name": "Upload media conversion report",
+              "if": "always()",
+              "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+              "with": {
+                "name": "media-conversion-report",
+                "path": "target/media-conversion-report.md",
+                "if-no-files-found": "error"
+              }
+            },
+            {
+              "name": "Clean media fixtures",
+              "if": "always()",
+              "run": "rv clean-test-fixtures"
+            }
+          ]
+        },
+        "feature-matrix": {
+          "name": "Feature Matrix",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "60",
+          "needs": [
+            "fmt",
+            "lint",
+            "check",
+            "helm-lint",
+            "udeps",
+            "deny",
+            "audit",
+            "load-matrix",
+            "instruction-drift"
+          ],
+          "env": {
+            "REVAER_TEST_DATABASE_URL": "${{ vars.REVAER_DATABASE_URL}}",
+            "DATABASE_URL": "${{ vars.REVAER_DATABASE_URL}}"
+          },
+          "services": {
+            "postgres": {
+              "image": "postgres:16-alpine",
+              "env": {
+                "POSTGRES_USER": "revaer",
+                "POSTGRES_PASSWORD": "revaer",
+                "POSTGRES_DB": "revaer"
+              },
+              "options": "--shm-size=1g --health-cmd=\"pg_isready -U revaer -d revaer\" --health-interval=10s --health-timeout=5s --health-retries=5",
+              "ports": [
+                "5432:5432"
+              ]
+            }
+          },
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "apt-profile": "db"
+              }
+            },
+            {
+              "name": "Database rebaseline contract",
+              "run": "rv db-rebaseline-candidate"
+            },
+            {
+              "name": "Run migrations",
+              "env": {
+                "DATABASE_URL": "${{ env.REVAER_TEST_DATABASE_URL }}"
+              },
+              "run": "rv db-migrate"
+            },
+            {
+              "name": "Feature matrix tests (no default features)",
+              "run": "rv test-features-min"
+            }
+          ]
+        },
+        "ui-e2e": {
+          "name": "UI E2E (shard ${{ matrix.shard }}/3)",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "120",
+          "strategy": {
+            "fail-fast": "false",
+            "matrix": {
+              "shard": [
+                "1",
+                "2",
+                "3"
+              ]
+            }
+          },
+          "needs": [
+            "fmt",
+            "lint",
+            "check",
+            "helm-lint",
+            "udeps",
+            "deny",
+            "audit",
+            "load-matrix",
+            "instruction-drift"
+          ],
+          "env": {
+            "E2E_API_BASE_URL": "http://localhost:7070",
+            "E2E_BASE_URL": "http://localhost:8080",
+            "E2E_BROWSER_CHANNEL": "chrome",
+            "E2E_COVERAGE_REQUIRE_API": "0",
+            "E2E_DB_ADMIN_URL": "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/postgres",
+            "E2E_PLAYWRIGHT_NO_DEPS": "1",
+            "E2E_PLAYWRIGHT_PROJECTS": "ui-chromium",
+            "E2E_SKIP_DB_START": "1",
+            "REVAER_TEST_DATABASE_URL": "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer",
+            "DATABASE_URL": "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer",
+            "E2E_VIDEO": "off",
+            "PLAYWRIGHT_SHARD_INDEX": "${{ matrix.shard }}",
+            "PLAYWRIGHT_SHARD_TOTAL": "3"
+          },
+          "services": {
+            "postgres": {
+              "image": "postgres:16-alpine",
+              "env": {
+                "POSTGRES_USER": "revaer",
+                "POSTGRES_PASSWORD": "${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}",
+                "POSTGRES_DB": "revaer"
+              },
+              "options": "--shm-size=1g --health-cmd=\"pg_isready -U revaer -d revaer\" --health-interval=10s --health-timeout=5s --health-retries=5",
+              "ports": [
+                "5432:5432"
+              ]
+            }
+          },
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "apt-profile": "db"
+              }
+            },
+            {
+              "name": "UI E2E",
+              "run": "rv ui-e2e"
+            },
+            {
+              "name": "Upload E2E coverage",
+              "if": "always()",
+              "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+              "with": {
+                "name": "ui-e2e-coverage-shard-${{ matrix.shard }}",
+                "path": "tests/test-results/api-coverage-*.json\ntests/test-results/ui-coverage-*.json\n",
+                "if-no-files-found": "error"
+              }
+            },
+            {
+              "name": "Upload E2E line coverage",
+              "if": "always()",
+              "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+              "with": {
+                "name": "ui-e2e-line-coverage-shard-${{ matrix.shard }}",
+                "path": "coverage/js/playwright-shard-${{ matrix.shard }}/lcov.info",
+                "if-no-files-found": "error"
+              }
+            }
+          ]
+        },
+        "api-e2e": {
+          "name": "API E2E Coverage",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "120",
+          "needs": [
+            "fmt",
+            "lint",
+            "check",
+            "helm-lint",
+            "udeps",
+            "deny",
+            "audit",
+            "load-matrix",
+            "instruction-drift"
+          ],
+          "env": {
+            "E2E_API_BASE_URL": "http://localhost:7070",
+            "E2E_BASE_URL": "http://localhost:8080",
+            "E2E_COVERAGE_REQUIRE_UI": "0",
+            "E2E_PLAYWRIGHT_PROJECTS": "api-api-key",
+            "E2E_SKIP_DB_START": "1",
+            "E2E_VIDEO": "off",
+            "REVAER_TEST_DB_USER": "revaer",
+            "REVAER_TEST_DB_PASSWORD": "${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}",
+            "REVAER_TEST_DATABASE_URL": "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer",
+            "DATABASE_URL": "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer"
+          },
+          "services": {
+            "postgres": {
+              "image": "postgres:16-alpine",
+              "env": {
+                "POSTGRES_USER": "revaer",
+                "POSTGRES_PASSWORD": "${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}",
+                "POSTGRES_DB": "revaer"
+              },
+              "options": "--health-cmd=\"pg_isready -U revaer -d revaer\" --health-interval=10s --health-timeout=5s --health-retries=5 --shm-size=1g",
+              "ports": [
+                "5432:5432"
+              ]
+            }
+          },
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "apt-profile": "db"
+              }
+            },
+            {
+              "name": "Configure API E2E database URL",
+              "shell": "bash",
+              "run": "set -euo pipefail\nprintf 'E2E_DB_ADMIN_URL=postgres://%s:%s@localhost:5432/postgres\\n' \\\n  \"${REVAER_TEST_DB_USER}\" \\\n  \"${REVAER_TEST_DB_PASSWORD}\" >> \"${GITHUB_ENV}\"\n"
+            },
+            {
+              "name": "API E2E coverage",
+              "env": {
+                "JS_COVERAGE_DIR": "coverage/js/api"
+              },
+              "run": "rv ui-e2e"
+            },
+            {
+              "name": "Upload API E2E coverage",
+              "if": "always()",
+              "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+              "with": {
+                "name": "api-e2e-coverage",
+                "path": "tests/test-results/api-coverage-*.json",
+                "if-no-files-found": "error"
+              }
+            }
+          ]
+        },
+        "ui-e2e-coverage": {
+          "name": "UI E2E Coverage",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "30",
+          "needs": [
+            "api-e2e",
+            "ui-e2e",
+            "feature-matrix",
+            "native-it",
+            "coverage"
+          ],
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {}
+            },
+            {
+              "name": "Download API E2E coverage",
+              "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+              "with": {
+                "name": "api-e2e-coverage",
+                "path": "tests/test-results"
+              }
+            },
+            {
+              "name": "Download E2E coverage shard 1",
+              "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+              "with": {
+                "name": "ui-e2e-coverage-shard-1",
+                "path": "tests/test-results"
+              }
+            },
+            {
+              "name": "Download E2E coverage shard 2",
+              "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+              "with": {
+                "name": "ui-e2e-coverage-shard-2",
+                "path": "tests/test-results"
+              }
+            },
+            {
+              "name": "Download E2E coverage shard 3",
+              "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+              "with": {
+                "name": "ui-e2e-coverage-shard-3",
+                "path": "tests/test-results"
+              }
+            },
+            {
+              "name": "Verify all UI E2E shard coverage inputs",
+              "run": "rv ui-e2e-shard-coverage"
+            },
+            {
+              "name": "UI E2E coverage",
+              "run": "rv ui-e2e-coverage"
+            }
+          ]
+        },
+        "load-matrix": {
+          "name": "Load Matrix",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "15",
+          "outputs": {
+            "matrix": "${{ steps.out.outputs.matrix }}",
+            "short_sha": "${{ steps.sha.outputs.short_sha }}"
+          },
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd",
+              "with": {
+                "ref": "${{ github.event.pull_request.head.sha }}"
+              }
+            },
+            {
+              "id": "sha",
+              "shell": "bash",
+              "run": "set -euo pipefail\necho \"short_sha=$(git rev-parse --short HEAD)\" >> \"$GITHUB_OUTPUT\"\n"
+            },
+            {
+              "id": "out",
+              "shell": "bash",
+              "run": "set -euo pipefail\n\n{\n  echo \"matrix<<EOF\"\n  cat .github/matrices/build-images.json\n  echo \"EOF\"\n} >> \"$GITHUB_OUTPUT\"\n"
+            }
+          ]
+        },
+        "build-pr-images": {
+          "name": "Images",
+          "needs": [
+            "ui-e2e",
+            "feature-matrix",
+            "native-it",
+            "media-conversion",
+            "coverage",
+            "supply-chain",
+            "load-matrix"
+          ],
+          "if": "github.event.pull_request.head.repo.fork == false",
+          "uses": "./.github/workflows/build-images.yml",
+          "permissions": {
+            "contents": "read",
+            "packages": "write",
+            "security-events": "write",
+            "id-token": "write"
+          },
+          "with": {
+            "matrix": "${{ needs.load-matrix.outputs.matrix }}",
+            "image_name": "revaer",
+            "version_tag": "pr-${{ github.event.pull_request.number }}-${{ needs.load-matrix.outputs.short_sha }}",
+            "alias_tag": "pr-${{ github.event.pull_request.number }}",
+            "include_sha_tag": "false",
+            "publish_dev_helm": "true",
+            "pr_number": "${{ github.event.pull_request.number }}",
+            "checkout_ref": "${{ github.event.pull_request.head.sha }}"
+          },
+          "secrets": {
+            "HELM_GPG_PRIVATE": "${{ secrets.HELM_GPG_PRIVATE }}",
+            "HELM_GPG_PUBLIC": "${{ secrets.HELM_GPG_PUBLIC }}"
+          }
+        },
+        "audit": {
+          "name": "Run Audit",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "45",
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {}
+            },
+            {
+              "name": "Audit",
+              "run": "rv audit"
+            }
+          ]
+        },
+        "deny": {
+          "name": "Check Deny",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "45",
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {}
+            },
+            {
+              "name": "Deny",
+              "run": "rv deny"
+            }
+          ]
+        },
+        "udeps": {
+          "name": "Check Unused Deps",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "60",
+          "env": {
+            "REVAER_UDEPS_VERSION": "0.1.57",
+            "REVAER_UDEPS_TOOLCHAIN": "nightly-2026-06-13"
+          },
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "apt-profile": "base"
+              }
+            },
+            {
+              "name": "Restore exact cargo-udeps binary",
+              "uses": "actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7",
+              "with": {
+                "path": "~/.cargo/bin/cargo-udeps",
+                "key": "${{ runner.os }}-cargo-udeps-${{ env.REVAER_UDEPS_VERSION }}-${{ env.REVAER_UDEPS_TOOLCHAIN }}"
+              }
+            },
+            {
+              "name": "Unused Deps",
+              "run": "rv udeps"
+            },
+            {
+              "name": "Upload cargo-udeps toolchain evidence",
+              "if": "always()",
+              "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+              "with": {
+                "name": "cargo-udeps-toolchain-evidence",
+                "path": "target/udeps-toolchain-evidence.txt",
+                "if-no-files-found": "error"
+              }
+            }
+          ]
+        },
+        "supply-chain": {
+          "name": "Supply Chain Checks",
+          "if": "always()",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "15",
+          "needs": [
+            "audit",
+            "deny",
+            "udeps"
+          ],
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {}
+            },
+            {
+              "name": "Verify supply chain results",
+              "env": {
+                "AUDIT_RESULT": "${{ needs.audit.result }}",
+                "DENY_RESULT": "${{ needs.deny.result }}",
+                "UDEPS_RESULT": "${{ needs.udeps.result }}"
+              },
+              "run": "rv verify-supply-chain-results"
+            }
+          ]
+        },
+        "build-release": {
+          "name": "Build Release",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "90",
+          "needs": [
+            "ui-e2e",
+            "feature-matrix",
+            "native-it",
+            "media-conversion",
+            "coverage",
+            "supply-chain"
+          ],
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "apt-profile": "base"
+              }
+            },
+            {
+              "name": "Build release",
+              "run": "rv build-release"
+            }
+          ]
+        }
+      }
+    },
+    ".github/workflows/sonar.yml": {
+      "name": "SonarQube Scan",
+      "on": {
+        "push": {
+          "branches": [
+            "main"
+          ]
+        }
+      },
+      "concurrency": {
+        "group": "sonar-${{ github.ref }}",
+        "cancel-in-progress": "true"
+      },
+      "permissions": {
+        "contents": "read"
+      },
+      "env": {
+        "CARGO_TERM_COLOR": "always",
+        "NODE_VERSION": "24.19.0"
+      },
+      "jobs": {
+        "sonar": {
+          "name": "SonarQube",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "180",
+          "env": {
+            "REVAER_TEST_DATABASE_URL": "${{ vars.REVAER_DATABASE_URL }}",
+            "DATABASE_URL": "${{ vars.REVAER_DATABASE_URL }}",
+            "SONAR_AUTH_TOKEN": "${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}",
+            "REVAER_REQUIRE_NATIVE_COVERAGE": "1"
+          },
+          "services": {
+            "postgres": {
+              "image": "postgres:16-alpine",
+              "env": {
+                "POSTGRES_USER": "revaer",
+                "POSTGRES_PASSWORD": "revaer",
+                "POSTGRES_DB": "revaer"
+              },
+              "options": "--health-cmd=\"pg_isready -U revaer -d revaer\" --health-interval=10s --health-timeout=5s --health-retries=5",
+              "ports": [
+                "5432:5432"
+              ]
+            }
+          },
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd",
+              "with": {
+                "fetch-depth": "0",
+                "ref": "${{ github.sha }}"
+              }
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "apt-profile": "coverage",
+                "sonar-scanner": "true"
+              }
+            },
+            {
+              "name": "Run migrations",
+              "env": {
+                "DATABASE_URL": "${{ env.REVAER_TEST_DATABASE_URL }}"
+              },
+              "run": "rv db-migrate"
+            },
+            {
+              "name": "Coverage",
+              "run": "rv cov"
+            },
+            {
+              "name": "Python tooling coverage",
+              "run": "rv tooling-cov"
+            },
+            {
+              "name": "Run Playwright with browser coverage",
+              "env": {
+                "E2E_API_BASE_URL": "http://localhost:7070",
+                "E2E_BASE_URL": "http://localhost:8080",
+                "E2E_DB_ADMIN_URL": "postgres://revaer:revaer@localhost:5432/postgres",
+                "E2E_SKIP_DB_START": "1",
+                "E2E_BROWSER_COVERAGE": "1"
+              },
+              "run": "rv ui-e2e"
+            },
+            {
+              "name": "Merge Python coverage inputs",
+              "run": "rv python-coverage-merge"
+            },
+            {
+              "name": "Merge browser coverage inputs",
+              "run": "rv js-coverage-merge"
+            },
+            {
+              "name": "Build native compile database",
+              "run": "rv sonar-compile-db"
+            },
+            {
+              "name": "Verify Sonar analysis inputs",
+              "run": "rv sonar-verify-inputs"
+            },
+            {
+              "name": "Prepare Sonar source inputs",
+              "run": "rv sonar-prepare-sources"
+            },
+            {
+              "name": "Prepare exact Sonar SCM context",
+              "env": {
+                "SONAR_BASE_SHA": "${{ github.event.before }}",
+                "SONAR_BASE_REF": "main",
+                "SONAR_HEAD_SHA": "${{ github.sha }}"
+              },
+              "run": "rv sonar-prepare-scm"
+            },
+            {
+              "name": "SonarQube scan",
+              "env": {
+                "SONAR_TOKEN": "${{ env.SONAR_AUTH_TOKEN }}"
+              },
+              "run": "rv sonar-scan"
+            },
+            {
+              "name": "Package Sonar analysis evidence",
+              "run": "rv sonar-package-report"
+            },
+            {
+              "name": "Verify Sonar published result",
+              "env": {
+                "SONAR_PROJECT_KEY": "VannaDii_Revaer"
+              },
+              "run": "rv sonar-verify-result"
+            },
+            {
+              "name": "Upload coverage artifact",
+              "if": "always()",
+              "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+              "with": {
+                "name": "sonar-coverage",
+                "path": "coverage/lcov.info\ncoverage/llvm-cov.txt\ncoverage/js-lcov.info\ncoverage/script-coverage.xml\ncoverage/compile_commands.json\ncoverage/cxxbridge/include/rust/cxx.h\ncoverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h\n\ncoverage/python.xml\n",
+                "if-no-files-found": "error"
+              }
+            },
+            {
+              "name": "Upload Sonar analysis evidence",
+              "if": "always()",
+              "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+              "with": {
+                "name": "sonar-analysis-evidence",
+                "path": "artifacts/sonar/scanner.log\nartifacts/sonar/scm-evidence.txt\n.scannerwork/report-task.txt\n.scannerwork/scanner-report.tar.xz\nartifacts/sonar/api/*.json\ncoverage/llvm-cov.txt\n",
+                "if-no-files-found": "error"
+              }
+            }
+          ]
+        }
+      }
+    },
+    ".github/workflows/build-images.yml": {
+      "name": "Build Images",
+      "on": {
+        "workflow_call": {
+          "inputs": {
+            "matrix": {
+              "description": "Build matrix JSON.",
+              "required": "true",
+              "type": "string"
+            },
+            "image_name": {
+              "description": "Base image name.",
+              "required": "true",
+              "type": "string"
+            },
+            "version_tag": {
+              "description": "Version tag to apply.",
+              "required": "true",
+              "type": "string"
+            },
+            "alias_tag": {
+              "description": "Optional alias tag.",
+              "required": "false",
+              "type": "string",
+              "default": ""
+            },
+            "include_sha_tag": {
+              "description": "Whether to tag the manifest with the short SHA.",
+              "required": "false",
+              "type": "boolean",
+              "default": "true"
+            },
+            "publish_dev_helm": {
+              "description": "Whether to publish a PR-scoped dev Helm chart after the multi-arch manifest succeeds.",
+              "required": "false",
+              "type": "boolean",
+              "default": "false"
+            },
+            "pr_number": {
+              "description": "Pull request number used to derive the dev Helm chart version.",
+              "required": "false",
+              "type": "string",
+              "default": ""
+            },
+            "checkout_ref": {
+              "description": "Optional git ref to checkout.",
+              "required": "false",
+              "type": "string",
+              "default": ""
+            },
+            "final_image_compliance_bundle": {
+              "description": "Final-image compliance bundle path required before publishing images.",
+              "required": "false",
+              "type": "string",
+              "default": ""
+            }
+          },
+          "secrets": {
+            "HELM_GPG_PRIVATE": {
+              "required": "false"
+            },
+            "HELM_GPG_PUBLIC": {
+              "required": "false"
+            }
+          }
+        }
+      },
+      "jobs": {
+        "build": {
+          "name": "Build ${{ matrix.name }}",
+          "if": "inputs.final_image_compliance_bundle != '' || github.event_name == 'pull_request'",
+          "runs-on": "${{ matrix.runner }}",
+          "timeout-minutes": "120",
+          "permissions": {
+            "contents": "read",
+            "packages": "write",
+            "security-events": "write",
+            "id-token": "write"
+          },
+          "strategy": {
+            "fail-fast": "false",
+            "matrix": "${{ fromJSON(inputs.matrix) }}"
+          },
+          "steps": [
+            {
+              "name": "Checkout",
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd",
+              "with": {
+                "ref": "${{ inputs.checkout_ref != '' && inputs.checkout_ref || github.ref }}"
+              }
+            },
+            {
+              "name": "Set up Revaer",
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "profile": "python",
+                "cargo-cache": "false"
+              }
+            },
+            {
+              "name": "Set up QEMU",
+              "if": "matrix.needs_qemu == true",
+              "uses": "docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a"
+            },
+            {
+              "name": "Set up Docker Buildx",
+              "id": "buildx",
+              "uses": "docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd"
+            },
+            {
+              "name": "Log in to GHCR",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "uses": "docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121",
+              "with": {
+                "registry": "ghcr.io",
+                "username": "${{ github.actor }}",
+                "password": "${{ secrets.GITHUB_TOKEN }}"
+              }
+            },
+            {
+              "name": "Build & Push Image",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "id": "build_image",
+              "env": {
+                "BUILDX_BUILDER": "${{ steps.buildx.outputs.name }}",
+                "PLATFORM": "${{ matrix.platform }}",
+                "ARCH_TAG": "${{ matrix.arch_tag }}",
+                "RUST_TARGET": "${{ matrix.rust_target }}",
+                "REPOSITORY_OWNER": "${{ github.repository_owner }}",
+                "IMAGE_NAME": "${{ inputs.image_name }}",
+                "VERSION_TAG": "${{ inputs.version_tag }}"
+              },
+              "run": "uv run --locked -- rv image-build-push"
+            },
+            {
+              "name": "Validate supplied compliance authorization against built digest",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "env": {
+                "FINAL_IMAGE_COMPLIANCE_BUNDLE": "${{ inputs.final_image_compliance_bundle }}",
+                "IMAGE_REFERENCE": "${{ steps.build_image.outputs.image_reference }}"
+              },
+              "run": "uv run --locked -- rv image-compliance-validate \"$FINAL_IMAGE_COMPLIANCE_BUNDLE\" \"$IMAGE_REFERENCE\""
+            },
+            {
+              "name": "Build Image (verification only)",
+              "if": "inputs.final_image_compliance_bundle == ''",
+              "id": "verify_image",
+              "env": {
+                "BUILDX_BUILDER": "${{ steps.buildx.outputs.name }}",
+                "PLATFORM": "${{ matrix.platform }}",
+                "ARCH_TAG": "${{ matrix.arch_tag }}",
+                "RUST_TARGET": "${{ matrix.rust_target }}",
+                "IMAGE_NAME": "${{ inputs.image_name }}",
+                "VERSION_TAG": "${{ inputs.version_tag }}"
+              },
+              "run": "uv run --locked -- rv image-build-verify"
+            },
+            {
+              "name": "Install Trivy",
+              "uses": "aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567",
+              "with": {
+                "version": "v0.69.3",
+                "cache": "true"
+              }
+            },
+            {
+              "name": "Inventory digest-qualified image",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "env": {
+                "IMAGE_REFERENCE": "${{ steps.build_image.outputs.image_reference }}",
+                "IMAGE_SOURCE": "remote",
+                "PLATFORM": "${{ matrix.platform }}",
+                "TRIVY_OUTPUT_PATH": "image-package-inventory.spdx.json"
+              },
+              "run": "uv run --locked -- rv image-inventory"
+            },
+            {
+              "name": "Scan digest-qualified image",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "env": {
+                "IMAGE_REFERENCE": "${{ steps.build_image.outputs.image_reference }}",
+                "IMAGE_SOURCE": "remote",
+                "PLATFORM": "${{ matrix.platform }}"
+              },
+              "run": "uv run --locked -- rv image-scan"
+            },
+            {
+              "name": "Scan verification image",
+              "if": "inputs.final_image_compliance_bundle == ''",
+              "env": {
+                "IMAGE_REFERENCE": "${{ steps.verify_image.outputs.image_tag }}",
+                "IMAGE_SOURCE": "docker",
+                "PLATFORM": "${{ matrix.platform }}"
+              },
+              "run": "uv run --locked -- rv image-scan"
+            },
+            {
+              "name": "Verify HIGH and CRITICAL findings",
+              "run": "uv run --locked -- rv trivy-sarif-verify trivy-results.sarif"
+            },
+            {
+              "name": "Resolve code scanning category",
+              "if": "always()",
+              "id": "code-scanning-category",
+              "env": {
+                "ARCH_TAG": "${{ matrix.arch_tag }}",
+                "MATRIX_NAME": "${{ matrix.name }}",
+                "NEEDS_QEMU": "${{ matrix.needs_qemu && 'true' || '' }}",
+                "PLATFORM": "${{ matrix.platform }}",
+                "RUNNER": "${{ matrix.runner }}",
+                "RUST_TARGET": "${{ matrix.rust_target }}"
+              },
+              "run": "uv run --locked -- rv image-scan-category"
+            },
+            {
+              "name": "Upload scan results",
+              "if": "always() && hashFiles('trivy-results.sarif') != ''",
+              "uses": "github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13",
+              "with": {
+                "sarif_file": "trivy-results.sarif",
+                "category": "${{ steps.code-scanning-category.outputs.value }}"
+              }
+            },
+            {
+              "name": "Install Cosign",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "uses": "sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003"
+            },
+            {
+              "name": "Generate digest-bound compliance evidence",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "env": {
+                "IMAGE_REFERENCE": "${{ steps.build_image.outputs.image_reference }}"
+              },
+              "run": "uv run --locked -- rv image-compliance-generate \"$IMAGE_REFERENCE\" image-package-inventory.spdx.json image-compliance"
+            },
+            {
+              "name": "Validate digest-bound compliance evidence",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "env": {
+                "IMAGE_REFERENCE": "${{ steps.build_image.outputs.image_reference }}"
+              },
+              "run": "uv run --locked -- rv image-compliance-validate image-compliance/final-image-compliance-bundle.json \"$IMAGE_REFERENCE\""
+            },
+            {
+              "name": "Sign image and compliance evidence",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "env": {
+                "IMAGE_REFERENCE": "${{ steps.build_image.outputs.image_reference }}",
+                "COMPLIANCE_PREDICATE": "image-compliance/final-image-compliance-bundle.json"
+              },
+              "run": "uv run --locked -- rv image-sign-attest"
+            },
+            {
+              "name": "Verify signed compliance evidence",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "env": {
+                "IMAGE_REFERENCE": "${{ steps.build_image.outputs.image_reference }}",
+                "ATTESTATION_OUTPUT": "image-compliance/verified-attestation.json"
+              },
+              "run": "uv run --locked -- rv image-attestation-verify"
+            },
+            {
+              "name": "Upload compliance evidence",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+              "with": {
+                "name": "image-compliance-${{ matrix.arch_tag }}",
+                "path": "image-compliance",
+                "if-no-files-found": "error",
+                "retention-days": "30"
+              }
+            }
+          ]
+        },
+        "create-manifest": {
+          "name": "Manifest",
+          "if": "inputs.final_image_compliance_bundle != '' || github.event_name == 'pull_request'",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "30",
+          "needs": "build",
+          "permissions": {
+            "contents": "read",
+            "packages": "write",
+            "id-token": "write"
+          },
+          "steps": [
+            {
+              "name": "Checkout",
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd",
+              "with": {
+                "ref": "${{ inputs.checkout_ref != '' && inputs.checkout_ref || github.ref }}"
+              }
+            },
+            {
+              "name": "Set up Revaer",
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "profile": "python",
+                "cargo-cache": "false"
+              }
+            },
+            {
+              "name": "Set up Docker Buildx",
+              "uses": "docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd"
+            },
+            {
+              "name": "Log in to GHCR",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "uses": "docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121",
+              "with": {
+                "registry": "ghcr.io",
+                "username": "${{ github.actor }}",
+                "password": "${{ secrets.GITHUB_TOKEN }}"
+              }
+            },
+            {
+              "name": "Create and push multi-arch manifest",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "env": {
+                "REPOSITORY_OWNER": "${{ github.repository_owner }}",
+                "IMAGE_NAME": "${{ inputs.image_name }}",
+                "VERSION_TAG": "${{ inputs.version_tag }}",
+                "ALIAS_TAG": "${{ inputs.alias_tag }}",
+                "INCLUDE_SHA_TAG": "${{ inputs.include_sha_tag }}"
+              },
+              "run": "uv run --locked -- rv image-manifest-create"
+            },
+            {
+              "name": "Verify multi-arch manifest inputs",
+              "if": "inputs.final_image_compliance_bundle == ''",
+              "env": {
+                "REPOSITORY_OWNER": "${{ github.repository_owner }}",
+                "IMAGE_NAME": "${{ inputs.image_name }}",
+                "VERSION_TAG": "${{ inputs.version_tag }}",
+                "ALIAS_TAG": "${{ inputs.alias_tag }}",
+                "INCLUDE_SHA_TAG": "${{ inputs.include_sha_tag }}"
+              },
+              "run": "uv run --locked -- rv image-manifest-verify"
+            },
+            {
+              "name": "Install Cosign",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "uses": "sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003"
+            },
+            {
+              "name": "Sign multi-arch tags",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "env": {
+                "REPOSITORY_OWNER": "${{ github.repository_owner }}",
+                "IMAGE_NAME": "${{ inputs.image_name }}",
+                "VERSION_TAG": "${{ inputs.version_tag }}",
+                "ALIAS_TAG": "${{ inputs.alias_tag }}",
+                "INCLUDE_SHA_TAG": "${{ inputs.include_sha_tag }}"
+              },
+              "run": "uv run --locked -- rv image-manifest-sign"
+            }
+          ]
+        },
+        "publish-dev-helm": {
+          "name": "Helm Chart",
+          "if": "inputs.publish_dev_helm && (inputs.final_image_compliance_bundle != '' || github.event_name == 'pull_request')",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "30",
+          "needs": "create-manifest",
+          "permissions": {
+            "contents": "read",
+            "packages": "write"
+          },
+          "steps": [
+            {
+              "name": "Checkout",
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd",
+              "with": {
+                "ref": "${{ inputs.checkout_ref != '' && inputs.checkout_ref || github.ref }}"
+              }
+            },
+            {
+              "name": "Set up Revaer",
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "profile": "python",
+                "cargo-cache": "false",
+                "apt-packages": "gnupg",
+                "helm": "true",
+                "oras": "true"
+              }
+            },
+            {
+              "name": "Resolve Helm versions",
+              "id": "chart-versions",
+              "env": {
+                "PR_NUMBER": "${{ inputs.pr_number }}"
+              },
+              "run": "uv run --locked -- rv workflow-chart-versions --pr-number \"$PR_NUMBER\""
+            },
+            {
+              "name": "Package Helm chart",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "env": {
+                "HELM_GPG_PRIVATE": "${{ secrets.HELM_GPG_PRIVATE }}",
+                "HELM_GPG_PUBLIC": "${{ secrets.HELM_GPG_PUBLIC }}",
+                "ARTIFACTHUB_REPOSITORY_ID": "${{ vars.ARTIFACTHUB_REPOSITORY_ID }}",
+                "ARTIFACTHUB_OWNER_NAME": "${{ vars.ARTIFACTHUB_OWNER_NAME }}",
+                "ARTIFACTHUB_OWNER_EMAIL": "${{ vars.ARTIFACTHUB_OWNER_EMAIL }}",
+                "CHART_VERSION": "${{ steps.chart-versions.outputs.chart_version }}",
+                "APP_VERSION": "${{ steps.chart-versions.outputs.app_version }}"
+              },
+              "run": "uv run --locked -- rv helm-package \"$CHART_VERSION\" \"$APP_VERSION\""
+            },
+            {
+              "name": "Package Helm chart (verification only)",
+              "if": "inputs.final_image_compliance_bundle == ''",
+              "env": {
+                "REVAER_HELM_SIGN": "0",
+                "CHART_VERSION": "${{ steps.chart-versions.outputs.chart_version }}",
+                "APP_VERSION": "${{ steps.chart-versions.outputs.app_version }}"
+              },
+              "run": "uv run --locked -- rv helm-package \"$CHART_VERSION\" \"$APP_VERSION\""
+            },
+            {
+              "name": "Publish dev Helm chart",
+              "if": "inputs.final_image_compliance_bundle != ''",
+              "env": {
+                "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+                "HELM_REGISTRY_USERNAME": "${{ github.actor }}",
+                "HELM_REGISTRY_PASSWORD": "${{ secrets.GITHUB_TOKEN }}",
+                "CHART_VERSION": "${{ steps.chart-versions.outputs.chart_version }}",
+                "APP_VERSION": "${{ steps.chart-versions.outputs.app_version }}"
+              },
+              "run": "uv run --locked -- rv helm-publish \"$CHART_VERSION\" \"$APP_VERSION\""
+            },
+            {
+              "name": "Verify packaged Helm chart without publishing",
+              "if": "inputs.final_image_compliance_bundle == ''",
+              "env": {
+                "CHART_VERSION": "${{ steps.chart-versions.outputs.chart_version }}",
+                "APP_VERSION": "${{ steps.chart-versions.outputs.app_version }}",
+                "REVAER_HELM_SIGN": "0"
+              },
+              "run": "uv run --locked -- rv helm-verify \"$CHART_VERSION\" \"$APP_VERSION\""
+            }
+          ]
+        }
+      }
+    },
+    ".github/actions/setup-revaer/action.yml": {
+      "name": "Setup Revaer",
+      "description": "Install the locked Python tooling and the selected native prerequisites.",
+      "inputs": {
+        "profile": {
+          "description": "rv setup profile (ci installs Rust; python is for Python-only jobs).",
+          "default": "ci"
+        },
+        "cargo-tools": {
+          "description": "Comma-separated package names from tools/versions.toml; empty installs none.",
+          "default": ""
+        },
+        "browsers": {
+          "description": "Comma-separated Playwright engines; empty installs none.",
+          "default": ""
+        },
+        "apt-profile": {
+          "description": "Optional Debian package set (base, db, coverage, media).",
+          "default": ""
+        },
+        "apt-packages": {
+          "description": "Optional whitespace-separated Debian packages, overriding apt-profile.",
+          "default": ""
+        },
+        "cargo-cache": {
+          "description": "Restore and save Cargo tools, downloads and compiler artifacts.",
+          "default": "true"
+        },
+        "helm": {
+          "description": "Install the supported Helm CLI.",
+          "default": "false"
+        },
+        "oras": {
+          "description": "Install the supported ORAS CLI.",
+          "default": "false"
+        },
+        "trivy": {
+          "description": "Install the supported Trivy CLI.",
+          "default": "false"
+        },
+        "sonar-scanner": {
+          "description": "Install the pinned scanner and retain its analyzer cache.",
+          "default": "false"
+        }
+      },
+      "runs": {
+        "using": "composite",
+        "steps": [
+          {
+            "name": "Install uv",
+            "uses": "astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9",
+            "with": {
+              "version-file": "pyproject.toml",
+              "enable-cache": "true",
+              "cache-python": "true",
+              "cache-dependency-glob": "uv.lock\npyproject.toml\n.python-version\ntools/launcher/pyproject.toml\n"
+            }
+          },
+          {
+            "name": "Sync locked Python environment",
+            "shell": "bash",
+            "run": "uv sync --locked"
+          },
+          {
+            "name": "Cache Rust artifacts and installed tools",
+            "if": "inputs.cargo-cache == 'true'",
+            "uses": "actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7",
+            "with": {
+              "path": "~/.cargo/registry\n~/.cargo/git\n~/.cargo/.crates.toml\n~/.cargo/.crates2.json\n~/.cargo/bin/cargo-audit\n~/.cargo/bin/cargo-deny\n~/.cargo/bin/cargo-llvm-cov\n~/.cargo/bin/cargo-udeps\n~/.cargo/bin/cargo-sqlx\n~/.cargo/bin/sqlx\n~/.cargo/bin/trunk\n~/.cargo/bin/mdbook\n~/.cargo/bin/mdbook-mermaid\n~/.cargo/bin/lychee\n~/.cache/sccache\n",
+              "key": "${{ runner.os }}-${{ runner.arch }}-cargo-${{ github.job }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/versions.toml', '.github/build-inputs.env') }}",
+              "restore-keys": "${{ runner.os }}-${{ runner.arch }}-cargo-${{ github.job }}-\n"
+            }
+          },
+          {
+            "name": "Install Helm",
+            "if": "inputs.helm == 'true'",
+            "uses": "Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4",
+            "with": {
+              "version": "v3.19.0"
+            }
+          },
+          {
+            "name": "Install ORAS",
+            "if": "inputs.oras == 'true'",
+            "uses": "oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3",
+            "with": {
+              "version": "1.3.1"
+            }
+          },
+          {
+            "name": "Install Trivy",
+            "if": "inputs.trivy == 'true'",
+            "uses": "aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567",
+            "with": {
+              "version": "v0.69.3",
+              "cache": "true"
+            }
+          },
+          {
+            "name": "Set up selected Revaer tools",
+            "shell": "bash",
+            "env": {
+              "RV_SETUP_PROFILE": "${{ inputs.profile }}",
+              "RV_SETUP_CARGO_TOOLS": "${{ inputs.cargo-tools }}",
+              "RV_SETUP_BROWSERS": "${{ inputs.browsers }}",
+              "RV_SETUP_APT_PROFILE": "${{ inputs.apt-profile }}",
+              "RV_SETUP_APT_PACKAGES": "${{ inputs.apt-packages }}"
+            },
+            "run": "uv run --locked -- rv setup --no-launcher --profile \"$RV_SETUP_PROFILE\" --cargo-tools \"$RV_SETUP_CARGO_TOOLS\" --browsers \"$RV_SETUP_BROWSERS\" --apt-profile \"$RV_SETUP_APT_PROFILE\" --apt-packages \"$RV_SETUP_APT_PACKAGES\""
+          },
+          {
+            "name": "Cache pinned kcov source and installation",
+            "if": "inputs.apt-profile == 'coverage'",
+            "uses": "actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7",
+            "with": {
+              "path": "~/.local/revaer/kcov",
+              "key": "${{ runner.os }}-${{ runner.arch }}-kcov-${{ hashFiles('tools/versions.toml') }}"
+            }
+          },
+          {
+            "name": "Install pinned kcov",
+            "if": "inputs.apt-profile == 'coverage'",
+            "shell": "bash",
+            "run": "uv run --locked -- rv setup --profile python --no-launcher --kcov"
+          },
+          {
+            "name": "Cache scanner and analyzers",
+            "if": "inputs.sonar-scanner == 'true'",
+            "uses": "actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7",
+            "with": {
+              "path": "~/.local/revaer/sonar-scanner\n~/.sonar/cache\n",
+              "key": "${{ runner.os }}-${{ runner.arch }}-sonar-${{ hashFiles('tools/versions.toml', 'config/sonarsource-public-key.asc') }}"
+            }
+          },
+          {
+            "name": "Install pinned Sonar scanner",
+            "if": "inputs.sonar-scanner == 'true'",
+            "shell": "bash",
+            "run": "uv run --locked -- rv setup --profile python --no-launcher --sonar-scanner"
+          }
+        ]
+      }
+    },
+    ".github/workflows/ci.yml": {
+      "name": "CI",
+      "on": {
+        "push": {
+          "branches": [
+            "main"
+          ],
+          "tags": [
+            "v*.*.*"
+          ]
+        }
+      },
+      "concurrency": {
+        "group": "ci-${{ github.ref }}",
+        "cancel-in-progress": "true"
+      },
+      "permissions": {
+        "contents": "read"
+      },
+      "env": {
+        "CARGO_TERM_COLOR": "always",
+        "IMAGE_NAME": "revaer"
+      },
+      "jobs": {
+        "build-release": {
+          "name": "Build Release",
+          "if": "github.ref_type != 'tag' || !contains(github.ref_name, '-')",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "90",
+          "outputs": {
+            "short_sha": "${{ steps.source.outputs.short_sha }}"
+          },
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "apt-profile": "base"
+              }
+            },
+            {
+              "name": "Resolve source identity",
+              "id": "source",
+              "run": "uv run --locked -- rv workflow-metadata"
+            },
+            {
+              "name": "Build release artifacts",
+              "run": "uv run --locked -- rv release-artifacts"
+            },
+            {
+              "name": "Upload release artifacts",
+              "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+              "with": {
+                "name": "revaer-release-${{ steps.source.outputs.short_sha }}",
+                "path": "dist",
+                "if-no-files-found": "error"
+              }
+            }
+          ]
+        },
+        "release-dev": {
+          "name": "Publish Dev Release",
+          "if": "github.ref == 'refs/heads/main'",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "120",
+          "needs": "build-release",
+          "permissions": {
+            "contents": "write"
+          },
+          "outputs": {
+            "release_tag": "${{ steps.release-info.outputs.tag }}",
+            "release_version": "${{ steps.release-info.outputs.version }}",
+            "released": "${{ steps.release-info.outputs.released }}"
+          },
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd",
+              "with": {
+                "fetch-depth": "0"
+              }
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "profile": "python",
+                "cargo-cache": "false",
+                "apt-packages": "gnupg gh",
+                "helm": "true"
+              }
+            },
+            {
+              "name": "Download release artifacts",
+              "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+              "with": {
+                "name": "revaer-release-${{ needs.build-release.outputs.short_sha }}",
+                "path": "dist"
+              }
+            },
+            {
+              "name": "Publish dev release",
+              "id": "release-info",
+              "env": {
+                "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+                "REVAER_ENABLE_HELM_RELEASE_ASSETS": "1",
+                "HELM_GPG_PRIVATE": "${{ secrets.HELM_GPG_PRIVATE }}",
+                "HELM_GPG_PUBLIC": "${{ secrets.HELM_GPG_PUBLIC }}",
+                "ARTIFACTHUB_REPOSITORY_ID": "${{ vars.ARTIFACTHUB_REPOSITORY_ID }}",
+                "ARTIFACTHUB_OWNER_NAME": "${{ vars.ARTIFACTHUB_OWNER_NAME }}",
+                "ARTIFACTHUB_OWNER_EMAIL": "${{ vars.ARTIFACTHUB_OWNER_EMAIL }}"
+              },
+              "run": "uv run --locked -- rv release publish"
+            },
+            {
+              "name": "Upload Helm release assets",
+              "if": "steps.release-info.outputs.released == 'true'",
+              "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+              "with": {
+                "name": "revaer-helm-${{ steps.release-info.outputs.tag }}",
+                "path": "dist/helm",
+                "if-no-files-found": "error"
+              }
+            }
+          ]
+        },
+        "publish-release": {
+          "name": "Publish Release",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "120",
+          "needs": "build-release",
+          "if": "startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-')",
+          "permissions": {
+            "contents": "write"
+          },
+          "outputs": {
+            "release_tag": "${{ steps.release-info.outputs.tag }}",
+            "release_version": "${{ steps.release-info.outputs.version }}",
+            "released": "${{ steps.release-info.outputs.released }}"
+          },
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd",
+              "with": {
+                "fetch-depth": "0"
+              }
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "profile": "python",
+                "cargo-cache": "false",
+                "apt-packages": "gnupg gh",
+                "helm": "true"
+              }
+            },
+            {
+              "name": "Download release artifacts",
+              "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+              "with": {
+                "name": "revaer-release-${{ needs.build-release.outputs.short_sha }}",
+                "path": "dist"
+              }
+            },
+            {
+              "name": "Publish stable release",
+              "id": "release-info",
+              "env": {
+                "RELEASE_TAG": "${{ github.ref_name }}",
+                "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+                "REVAER_ENABLE_HELM_RELEASE_ASSETS": "1",
+                "HELM_GPG_PRIVATE": "${{ secrets.HELM_GPG_PRIVATE }}",
+                "HELM_GPG_PUBLIC": "${{ secrets.HELM_GPG_PUBLIC }}",
+                "ARTIFACTHUB_REPOSITORY_ID": "${{ vars.ARTIFACTHUB_REPOSITORY_ID }}",
+                "ARTIFACTHUB_OWNER_NAME": "${{ vars.ARTIFACTHUB_OWNER_NAME }}",
+                "ARTIFACTHUB_OWNER_EMAIL": "${{ vars.ARTIFACTHUB_OWNER_EMAIL }}"
+              },
+              "run": "uv run --locked -- rv release publish --tag \"$RELEASE_TAG\""
+            },
+            {
+              "name": "Upload Helm release assets",
+              "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+              "with": {
+                "name": "revaer-helm-${{ steps.release-info.outputs.tag }}",
+                "path": "dist/helm",
+                "if-no-files-found": "error"
+              }
+            }
+          ]
+        },
+        "publish-dev-helm": {
+          "name": "Publish Dev Helm Chart",
+          "if": "github.ref == 'refs/heads/main' && needs.release-dev.outputs.released == 'true'",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "60",
+          "needs": "release-dev",
+          "permissions": {
+            "contents": "read",
+            "packages": "write"
+          },
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "profile": "python",
+                "cargo-cache": "false",
+                "apt-packages": "gnupg",
+                "helm": "true",
+                "oras": "true"
+              }
+            },
+            {
+              "name": "Download Helm release assets",
+              "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+              "with": {
+                "name": "revaer-helm-${{ needs.release-dev.outputs.release_tag }}",
+                "path": "dist/helm"
+              }
+            },
+            {
+              "name": "Publish dev Helm chart",
+              "env": {
+                "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+                "HELM_REGISTRY_USERNAME": "${{ github.actor }}",
+                "HELM_REGISTRY_PASSWORD": "${{ secrets.GITHUB_TOKEN }}",
+                "RELEASE_VERSION": "${{ needs.release-dev.outputs.release_version }}",
+                "RELEASE_TAG": "${{ needs.release-dev.outputs.release_tag }}"
+              },
+              "run": "uv run --locked -- rv helm-publish \"$RELEASE_VERSION\" \"$RELEASE_TAG\""
+            }
+          ]
+        },
+        "publish-release-helm": {
+          "name": "Publish Release Helm Chart",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "60",
+          "needs": "publish-release",
+          "if": "startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-')",
+          "permissions": {
+            "contents": "read",
+            "packages": "write"
+          },
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "profile": "python",
+                "cargo-cache": "false",
+                "apt-packages": "gnupg",
+                "helm": "true",
+                "oras": "true"
+              }
+            },
+            {
+              "name": "Download Helm release assets",
+              "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+              "with": {
+                "name": "revaer-helm-${{ needs.publish-release.outputs.release_tag }}",
+                "path": "dist/helm"
+              }
+            },
+            {
+              "name": "Publish release Helm chart",
+              "env": {
+                "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+                "HELM_REGISTRY_USERNAME": "${{ github.actor }}",
+                "HELM_REGISTRY_PASSWORD": "${{ secrets.GITHUB_TOKEN }}",
+                "RELEASE_VERSION": "${{ needs.publish-release.outputs.release_version }}",
+                "RELEASE_TAG": "${{ needs.publish-release.outputs.release_tag }}"
+              },
+              "run": "uv run --locked -- rv helm-publish \"$RELEASE_VERSION\" \"$RELEASE_TAG\""
+            }
+          ]
+        },
+        "load-matrix": {
+          "name": "Load Matrix",
+          "runs-on": "ubuntu-latest",
+          "timeout-minutes": "15",
+          "needs": "build-release",
+          "outputs": {
+            "matrix": "${{ steps.out.outputs.matrix }}"
+          },
+          "steps": [
+            {
+              "uses": "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+            },
+            {
+              "uses": "./.github/actions/setup-revaer",
+              "timeout-minutes": "20",
+              "with": {
+                "profile": "python",
+                "cargo-cache": "false"
+              }
+            },
+            {
+              "name": "Select release image matrix",
+              "id": "out",
+              "run": "uv run --locked -- rv workflow-matrix --release-only"
+            }
+          ]
+        },
+        "build-images-dev": {
+          "name": "Build Dev Images",
+          "needs": [
+            "load-matrix",
+            "release-dev"
+          ],
+          "permissions": {
+            "contents": "read",
+            "packages": "write",
+            "security-events": "write",
+            "id-token": "write"
+          },
+          "if": "github.ref == 'refs/heads/main' && needs.release-dev.result == 'success' && needs.release-dev.outputs.released == 'true' && needs.load-matrix.result == 'success'",
+          "uses": "./.github/workflows/build-images.yml",
+          "with": {
+            "matrix": "${{ needs.load-matrix.outputs.matrix }}",
+            "image_name": "revaer",
+            "version_tag": "${{ needs.release-dev.outputs.release_tag }}",
+            "alias_tag": "dev",
+            "include_sha_tag": "true"
+          }
+        },
+        "build-images-release": {
+          "name": "Build Release Images",
+          "needs": "load-matrix",
+          "permissions": {
+            "contents": "read",
+            "packages": "write",
+            "security-events": "write",
+            "id-token": "write"
+          },
+          "if": "startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') && needs.load-matrix.result == 'success'",
+          "uses": "./.github/workflows/build-images.yml",
+          "with": {
+            "matrix": "${{ needs.load-matrix.outputs.matrix }}",
+            "image_name": "revaer",
+            "version_tag": "${{ github.ref_name }}",
+            "alias_tag": "latest",
+            "include_sha_tag": "true"
+          }
+        }
+      }
+    }
+  },
+  "matrix": {
+    "include": [
+      {
+        "name": "amd64",
+        "runner": "ubuntu-latest",
+        "platform": "linux/amd64",
+        "rust_target": "x86_64-unknown-linux-musl",
+        "arch_tag": "amd64",
+        "needs_qemu": false
+      },
+      {
+        "name": "arm64",
+        "runner": "ubuntu-24.04-arm",
+        "platform": "linux/arm64",
+        "rust_target": "aarch64-unknown-linux-musl",
+        "arch_tag": "arm64",
+        "needs_qemu": false
+      }
+    ]
+  },
+  "required_contexts": [
+    "Check Lint",
+    "Check Coverage",
+    "Check Formatting",
+    "Run Checks",
+    "Native Integration Tests",
+    "Feature Matrix",
+    "UI E2E Coverage",
+    "Images / Manifest",
+    "Check Instruction Drift",
+    "Helm Lint",
+    "Images / Helm Chart",
+    "Images / Build arm64",
+    "Images / Build amd64",
+    "Load Matrix",
+    "UI E2E (shard 1/3)",
+    "UI E2E (shard 2/3)",
+    "UI E2E (shard 3/3)",
+    "SonarCloud Code Analysis",
+    "Media Conversion Fixtures",
+    "Supply Chain Checks",
+    "Build Release"
+  ]
+}

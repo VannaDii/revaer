@@ -1,0 +1,9 @@
+name: Invalid step
+on:
+  pull_request:
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decoy only
+        description: uses actions/checkout@main and run just nonexistent

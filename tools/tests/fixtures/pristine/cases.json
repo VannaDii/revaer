@@ -1,0 +1,110 @@
+{
+  "pg_namespace": [
+    "",
+    "REVOKE USAGE ON SCHEMA public FROM PUBLIC"
+  ],
+  "pg_extension": [
+    "",
+    "UPDATE pg_extension SET extversion = 'fixture-version' WHERE extname = 'plpgsql'"
+  ],
+  "pg_class": [
+    "CREATE TABLE public.fixture_table (id integer)",
+    "ALTER TABLE public.fixture_table ENABLE ROW LEVEL SECURITY"
+  ],
+  "pg_proc": [
+    "",
+    "ALTER FUNCTION pg_catalog.abs(integer) SECURITY DEFINER"
+  ],
+  "pg_type": [
+    "",
+    "CREATE TYPE public.fixture_type AS ENUM ('first', 'second')"
+  ],
+  "pg_trigger": [
+    "CREATE TABLE public.fixture_table (id integer); CREATE FUNCTION public.fixture_trigger() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RETURN NEW; END'",
+    "CREATE TRIGGER fixture_trigger BEFORE INSERT ON public.fixture_table FOR EACH ROW EXECUTE FUNCTION public.fixture_trigger()"
+  ],
+  "pg_event_trigger": [
+    "CREATE FUNCTION public.fixture_event() RETURNS event_trigger LANGUAGE plpgsql AS 'BEGIN END'",
+    "CREATE EVENT TRIGGER fixture_event ON ddl_command_end EXECUTE FUNCTION public.fixture_event()"
+  ],
+  "pg_language": [
+    "",
+    "REVOKE USAGE ON LANGUAGE plpgsql FROM PUBLIC"
+  ],
+  "pg_cast": [
+    "",
+    "UPDATE pg_cast SET castcontext = 'e' WHERE castsource = 'integer'::regtype AND casttarget = 'bigint'::regtype"
+  ],
+  "pg_collation": [
+    "",
+    "CREATE COLLATION public.fixture_collation (provider = libc, locale = 'C')"
+  ],
+  "pg_conversion": [
+    "",
+    "CREATE CONVERSION public.fixture_conversion FOR 'UTF8' TO 'LATIN1' FROM pg_catalog.utf8_to_iso8859_1"
+  ],
+  "pg_operator": [
+    "",
+    "CREATE OPERATOR public.=== (LEFTARG = integer, RIGHTARG = integer, FUNCTION = pg_catalog.int4eq)"
+  ],
+  "pg_opclass": [
+    "",
+    "CREATE OPERATOR CLASS public.fixture_class FOR TYPE int4 USING btree AS OPERATOR 1 < (int4, int4), FUNCTION 1 pg_catalog.btint4cmp(int4, int4)"
+  ],
+  "pg_opfamily": [
+    "",
+    "CREATE OPERATOR FAMILY public.fixture_family USING btree"
+  ],
+  "pg_amop": [
+    "CREATE OPERATOR FAMILY public.fixture_family USING btree",
+    "ALTER OPERATOR FAMILY public.fixture_family USING btree ADD OPERATOR 1 < (int4, int4)"
+  ],
+  "pg_amproc": [
+    "CREATE OPERATOR FAMILY public.fixture_family USING btree",
+    "ALTER OPERATOR FAMILY public.fixture_family USING btree ADD FUNCTION 1 (int4, int4) pg_catalog.btint4cmp(int4, int4)"
+  ],
+  "pg_ts_config": [
+    "",
+    "CREATE TEXT SEARCH CONFIGURATION public.fixture_config (COPY = pg_catalog.simple)"
+  ],
+  "pg_ts_dict": [
+    "",
+    "CREATE TEXT SEARCH DICTIONARY public.fixture_dict (TEMPLATE = pg_catalog.simple)"
+  ],
+  "pg_ts_parser": [
+    "",
+    "CREATE TEXT SEARCH PARSER public.fixture_parser (START = pg_catalog.prsd_start, GETTOKEN = pg_catalog.prsd_nexttoken, END = pg_catalog.prsd_end, LEXTYPES = pg_catalog.prsd_lextype, HEADLINE = pg_catalog.prsd_headline)"
+  ],
+  "pg_ts_template": [
+    "",
+    "CREATE TEXT SEARCH TEMPLATE public.fixture_template (INIT = pg_catalog.dsimple_init, LEXIZE = pg_catalog.dsimple_lexize)"
+  ],
+  "pg_foreign_data_wrapper": [
+    "",
+    "CREATE FOREIGN DATA WRAPPER fixture_wrapper"
+  ],
+  "pg_foreign_server": [
+    "CREATE FOREIGN DATA WRAPPER fixture_wrapper",
+    "CREATE SERVER fixture_server FOREIGN DATA WRAPPER fixture_wrapper"
+  ],
+  "pg_user_mapping": [
+    "CREATE FOREIGN DATA WRAPPER fixture_wrapper; CREATE SERVER fixture_server FOREIGN DATA WRAPPER fixture_wrapper",
+    "CREATE USER MAPPING FOR CURRENT_USER SERVER fixture_server OPTIONS (user 'fixture')"
+  ],
+  "pg_policy": [
+    "CREATE TABLE public.fixture_table (id integer)",
+    "CREATE POLICY fixture_policy ON public.fixture_table FOR SELECT USING (id > 7)"
+  ],
+  "pg_publication": [
+    "",
+    "CREATE PUBLICATION fixture_publication WITH (publish = 'insert, update')"
+  ],
+  "pg_publication_rel": [
+    "CREATE TABLE public.fixture_table (id integer); CREATE PUBLICATION fixture_publication",
+    "ALTER PUBLICATION fixture_publication ADD TABLE public.fixture_table (id) WHERE (id > 7)"
+  ],
+  "pg_subscription": [
+    "",
+    "CREATE SUBSCRIPTION fixture_subscription CONNECTION 'dbname=unused' PUBLICATION fixture_publication WITH (connect = false, slot_name = NONE)"
+  ]
+}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Revaer" viewBox="0 0 240 64">
+  <rect width="240" height="64" rx="14" fill="#101828"/>
+  <path d="M28 43V21h24c8 0 13 4 13 11 0 5-3 9-8 10l10 1v5H53L42 35h-3v13H28Zm11-22v8h11c3 0 5-1 5-4s-2-4-5-4H39Z" fill="#ffffff"/>
+  <text x="82" y="41" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="700">Revaer</text>
+  <circle cx="216" cy="19" r="7" fill="#38bdf8"/>
+  <circle cx="216" cy="45" r="7" fill="#22c55e"/>
+</svg>

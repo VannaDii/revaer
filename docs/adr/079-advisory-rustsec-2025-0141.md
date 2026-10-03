@@ -1,6 +1,6 @@
 # Advisory RUSTSEC-2025-0141 Temporary Ignore
 
-- Status: In Progress
+- Status: Superseded by ADR 357
 - Date: 2026-01-11
 - Context:
   - `bincode` 1.3.3 is flagged as unmaintained (RUSTSEC-2025-0141).
@@ -15,6 +15,7 @@
 - Follow-up:
   - Track `gloo` and `yew` release notes for `bincode` replacement/removal.
   - Remove the ignore once the dependency graph no longer includes `bincode` 1.3.x.
+  - Completed by ADR 357: the unused worker dependency path was removed and the advisory ignore was deleted.
 
 ## Motivation
 

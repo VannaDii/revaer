@@ -1,0 +1,56 @@
+# PR 71 Deterministic Cargo Tools
+
+- Status: Accepted
+- Date: 2026-08-04
+- Context:
+  - Required supply-chain and coverage recipes accepted newer locally installed Cargo tools, so the same revision could execute different analyzer behavior.
+  - The cargo-udeps gate used the moving `nightly` channel even though cargo-udeps depends on nightly-only compiler behavior.
+- Decision:
+  - Add one exact-version Cargo tool installer for cargo-audit, cargo-deny, cargo-llvm-cov, cargo-udeps, SQLx CLI, and Trunk.
+  - Replace any missing, older, or newer tool and retain only the exact reviewed version.
+  - Pin cargo-udeps `0.1.57` to `nightly-2026-06-13` and preserve the pair in the PR cache key and uploaded execution evidence.
+  - Keep the mandatory cargo-udeps command at `--workspace --all-targets`.
+  - Run Justfile recipes through non-login Bash so an NVM-selected Node toolchain is not replaced by login-shell startup configuration.
+  - Render multiline Helm annotations with a portable Bash line replacement instead of passing newline-bearing values through `awk -v`.
+  - Pin the vulnerable Playwright dependency lineages to patched, major-compatible `brace-expansion`, `fast-uri`, and `js-yaml` releases without advisory exceptions.
+  - Replace the CLI tail test's fixed cancellation delay with a bounded wait for its observable resume-file write.
+  - Update `event-listener` from `5.4.1` to `5.4.2` after current advisory data identified `RUSTSEC-2026-0221` during validation.
+- Consequences:
+  - Required tool behavior is deterministic across developer machines and CI runners.
+  - A tool upgrade now incurs installation work until its exact binary cache is populated.
+- Follow-up:
+  - Upgrade a tool or the nightly only through a reviewed pin change with the version tests and real cargo-udeps smoke gate.
+
+## Task Record
+
+- Motivation:
+  - Resolve both remaining PR 71 review threads without weakening supply-chain analysis.
+- Design notes:
+  - The helper reads each binary's `--version` output, compares the reported version for exact equality, installs through a bounded retry wrapper, and verifies the resulting binary again.
+  - The version test uses isolated fake binaries and a fake Cargo executable; it cannot mutate operator-installed tools.
+  - The PR cache variables are consumed by `just udeps`, which rejects either value unless it exactly matches the reviewed Justfile pins.
+  - The Justfile shell selection preserves the caller's PATH; validation selected Node `24.14.1` through NVM before invoking Just.
+- Test coverage summary:
+  - Added missing, older, exact, and newer installed-version cases.
+  - Added assertions binding the Justfile udeps version, dated nightly, full workspace/all-target command, and workflow cache pins.
+  - Added negative recipe tests proving a mismatched version or moving nightly fails before tool installation or analysis.
+  - Ran the real pinned cargo-udeps combination through `--workspace --all-targets`.
+  - Ran `just audit` and `just deny` against current advisory data after the lockfile repair.
+  - Ran focused policy, instruction-drift, formatting, SQLx, Trunk, and cargo-llvm-cov pin checks under NVM-selected Node `24.14.1`.
+  - Ran `just lint`, `just check`, and `just ui-e2e`; all 101 Playwright tests passed.
+  - Full `just ci` and `just ui-e2e` results are recorded after the repaired early-stack gate completes.
+- Observability updates:
+  - `just udeps` writes `target/udeps-toolchain-evidence.txt` with exact cargo-udeps, rustc commit, toolchain, and command data.
+  - The PR workflow uploads that evidence even when the gate fails.
+- Status-doc validation:
+  - Updated `docs/adr/index.md` and `docs/SUMMARY.md`; no user-facing runtime documentation changed.
+- Risk & rollback plan:
+  - The principal risk is an upstream yanked lockfile dependency preventing a clean exact install. The gate remains fail-closed; rollback this commit only together with reopening the two review findings.
+  - The early stack layer now carries the minimum Helm and npm repairs required for its own gates to pass independently; rollback must reopen those gate failures rather than relying on later stack layers.
+- Dependency rationale:
+  - No direct dependency was added. Existing transitive JavaScript packages were constrained to patched releases, and the implementation otherwise uses Bash, Cargo, rustup, and pinned existing GitHub actions.
+  - `event-listener` `5.4.2` is the narrow compatible advisory fix; it also removes the obsolete `concurrent-queue` transitive edge.
+- Stale-policy check:
+  - Reviewed `AGENTS.md` and `.github/instructions/devops.instructions.md`.
+  - Updated the DevOps instruction for the shared exact-version mechanism, dated nightly, cache identity, and retained evidence.
+  - No policy contradiction or stale reference was retained.

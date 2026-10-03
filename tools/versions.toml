@@ -1,0 +1,40 @@
+[cargo.cargo-audit]
+version = "0.22.0"
+[cargo.cargo-deny]
+version = "0.18.9"
+[cargo.cargo-llvm-cov]
+version = "0.8.7"
+[cargo.cargo-udeps]
+version = "0.1.57"
+[cargo.sqlx-cli]
+version = "0.8.6"
+features = ["postgres"]
+no_default_features = true
+[cargo.trunk]
+version = "0.21.14"
+[cargo.mdbook]
+version = "0.5.0"
+[cargo.mdbook-mermaid]
+version = "0.17.0"
+[cargo.lychee]
+version = "0.24.2"
+# Pin the tools already used by the current development/media work. Cargo owns
+# version/feature tracking and skips matching installations without --force.
+[rust]
+udeps_toolchain = "nightly-2026-06-13"
+
+[sonar]
+version = "8.1.0.6389"
+fingerprint = "679F1EE92B19609DE816FDE81DB198F93525EC1A"
+
+[sonar.archive_sha256]
+linux-x64 = "bb8f709f9cb73352f8d1260a3b3c506c0f41146754bc630762c126d795499d0b"
+linux-aarch64 = "5e1c9328f4e261838de778c9e586ee608cca45ff7f0538108642219214628ba5"
+macosx-x64 = "8afc8bbff9008434e53b31cb681333ff643b999f84ca537db573d0fae8883cdc"
+macosx-aarch64 = "20d12be4081896b337cd873d98ebd3d554be666086a45e31dd84a12ef51c3688"
+
+# Preserve the media stack's reviewed source build and upstream archive hash.
+[kcov]
+version = "43"
+commit = "a39874f938ce13f7a65f253120d1ec946b349ffe"
+sha256 = "dac01569171979477b500924be264d2a1bc649dae6010536228cbb319344d516"

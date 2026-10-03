@@ -40,6 +40,11 @@ on:
         required: false
         type: string
         default: ""
+      final_image_compliance_bundle:
+        description: Final-image compliance bundle path required before publishing images.
+        required: false
+        type: string
+        default: ""
     secrets:
       HELM_GPG_PRIVATE:
         required: false
@@ -49,13 +54,16 @@ on:
 jobs:
   build:
     name: Build ${{ matrix.name }}
+    if: inputs.final_image_compliance_bundle != '' || github.event_name == 'pull_request'
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
     permissions:
       contents: read
       packages: write
       security-events: write
       id-token: write
     strategy:
+      fail-fast: false
       matrix: ${{ fromJSON(inputs.matrix) }}
     steps:
       - name: Checkout
@@ -63,14 +71,23 @@ jobs:
         with:
           ref: ${{ inputs.checkout_ref != '' && inputs.checkout_ref || github.ref }}
 
+      - name: Set up Revaer
+        uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
+        with:
+          profile: python
+          cargo-cache: "false"
+
       - name: Set up QEMU
         if: matrix.needs_qemu == true
         uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
 
       - name: Set up Docker Buildx
+        id: buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: Log in to GHCR
+        if: inputs.final_image_compliance_bundle != ''
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
@@ -78,51 +95,80 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build & Push Image
+        if: inputs.final_image_compliance_bundle != ''
         id: build_image
         env:
+          BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
           PLATFORM: ${{ matrix.platform }}
           ARCH_TAG: ${{ matrix.arch_tag }}
+          RUST_TARGET: ${{ matrix.rust_target }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
           IMAGE_NAME: ${{ inputs.image_name }}
           VERSION_TAG: ${{ inputs.version_tag }}
-        run: |
-          set -euo pipefail
+        run: >-
+          uv run --locked -- rv image-build-push
 
-          GIT_SHA_SHORT=$(git rev-parse --short HEAD)
-          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE_BASE="ghcr.io/${REPO_OWNER}/${IMAGE_NAME}"
-          IMAGE_TAG="${IMAGE_BASE}:${GIT_SHA_SHORT}-${ARCH_TAG}"
-          RUST_TARGET="${{ matrix.rust_target }}"
-          BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          REVISION="${GIT_SHA_SHORT}"
-
-          echo "Building ${IMAGE_TAG} for ${PLATFORM}"
-          echo "image_tag=${IMAGE_TAG}" >> "${GITHUB_OUTPUT}"
-
-          docker buildx build \
-            --platform "${PLATFORM}" \
-            -t "${IMAGE_TAG}" \
-            --push \
-            --attest type=provenance,mode=max \
-            --attest type=sbom \
-            --build-arg RUST_TARGET="${RUST_TARGET}" \
-            --build-arg BUILD_DATE="${BUILD_DATE}" \
-            --build-arg VERSION="${VERSION_TAG}" \
-            --build-arg REVISION="${REVISION}" \
-            .
-
-      - name: Scan pushed image
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+      - name: Validate supplied compliance authorization against built digest
+        if: inputs.final_image_compliance_bundle != ''
         env:
-          TRIVY_IMAGE_SRC: remote
-          TRIVY_PLATFORM: ${{ matrix.platform }}
+          FINAL_IMAGE_COMPLIANCE_BUNDLE: ${{ inputs.final_image_compliance_bundle }}
+          IMAGE_REFERENCE: ${{ steps.build_image.outputs.image_reference }}
+        run: >-
+          uv run --locked -- rv image-compliance-validate "$FINAL_IMAGE_COMPLIANCE_BUNDLE" "$IMAGE_REFERENCE"
+
+      - name: Build Image (verification only)
+        if: inputs.final_image_compliance_bundle == ''
+        id: verify_image
+        env:
+          BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH_TAG: ${{ matrix.arch_tag }}
+          RUST_TARGET: ${{ matrix.rust_target }}
+          IMAGE_NAME: ${{ inputs.image_name }}
+          VERSION_TAG: ${{ inputs.version_tag }}
+        run: >-
+          uv run --locked -- rv image-build-verify
+
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
-          image-ref: ${{ steps.build_image.outputs.image_tag }}
-          format: sarif
-          output: trivy-results.sarif
-          severity: HIGH,CRITICAL
-          exit-code: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+          version: v0.69.3
+          cache: "true"
+
+      - name: Inventory digest-qualified image
+        if: inputs.final_image_compliance_bundle != ''
+        env:
+          IMAGE_REFERENCE: ${{ steps.build_image.outputs.image_reference }}
+          IMAGE_SOURCE: remote
+          PLATFORM: ${{ matrix.platform }}
+          TRIVY_OUTPUT_PATH: image-package-inventory.spdx.json
+        run: >-
+          uv run --locked -- rv image-inventory
+
+      - name: Scan digest-qualified image
+        if: inputs.final_image_compliance_bundle != ''
+        env:
+          IMAGE_REFERENCE: ${{ steps.build_image.outputs.image_reference }}
+          IMAGE_SOURCE: remote
+          PLATFORM: ${{ matrix.platform }}
+        run: >-
+          uv run --locked -- rv image-scan
+
+      - name: Scan verification image
+        if: inputs.final_image_compliance_bundle == ''
+        env:
+          IMAGE_REFERENCE: ${{ steps.verify_image.outputs.image_tag }}
+          IMAGE_SOURCE: docker
+          PLATFORM: ${{ matrix.platform }}
+        run: >-
+          uv run --locked -- rv image-scan
+
+      - name: Verify HIGH and CRITICAL findings
+        run: >-
+          uv run --locked -- rv trivy-sarif-verify trivy-results.sarif
 
       - name: Resolve code scanning category
+        if: always()
         id: code-scanning-category
         env:
           ARCH_TAG: ${{ matrix.arch_tag }}
@@ -131,10 +177,8 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
           RUNNER: ${{ matrix.runner }}
           RUST_TARGET: ${{ matrix.rust_target }}
-        run: |
-          set -euo pipefail
-          category=".github/workflows/ci.yml:build-images/arch_tag:${ARCH_TAG}/name:${MATRIX_NAME}/needs_qemu:${NEEDS_QEMU}/platform:${PLATFORM}/runner:${RUNNER}/rust_target:${RUST_TARGET}"
-          printf 'value=%s\n' "${category}" >> "${GITHUB_OUTPUT}"
+        run: >-
+          uv run --locked -- rv image-scan-category
 
       - name: Upload scan results
         if: always() && hashFiles('trivy-results.sarif') != ''
@@ -144,14 +188,53 @@ jobs:
           category: ${{ steps.code-scanning-category.outputs.value }}
 
       - name: Install Cosign
+        if: inputs.final_image_compliance_bundle != ''
         uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
 
-      - name: Sign pushed image
-        run: cosign sign --yes "${{ steps.build_image.outputs.image_tag }}"
+      - name: Generate digest-bound compliance evidence
+        if: inputs.final_image_compliance_bundle != ''
+        env:
+          IMAGE_REFERENCE: ${{ steps.build_image.outputs.image_reference }}
+        run: >-
+          uv run --locked -- rv image-compliance-generate "$IMAGE_REFERENCE" image-package-inventory.spdx.json image-compliance
+
+      - name: Validate digest-bound compliance evidence
+        if: inputs.final_image_compliance_bundle != ''
+        env:
+          IMAGE_REFERENCE: ${{ steps.build_image.outputs.image_reference }}
+        run: >-
+          uv run --locked -- rv image-compliance-validate image-compliance/final-image-compliance-bundle.json "$IMAGE_REFERENCE"
+
+      - name: Sign image and compliance evidence
+        if: inputs.final_image_compliance_bundle != ''
+        env:
+          IMAGE_REFERENCE: ${{ steps.build_image.outputs.image_reference }}
+          COMPLIANCE_PREDICATE: image-compliance/final-image-compliance-bundle.json
+        run: >-
+          uv run --locked -- rv image-sign-attest
+
+      - name: Verify signed compliance evidence
+        if: inputs.final_image_compliance_bundle != ''
+        env:
+          IMAGE_REFERENCE: ${{ steps.build_image.outputs.image_reference }}
+          ATTESTATION_OUTPUT: image-compliance/verified-attestation.json
+        run: >-
+          uv run --locked -- rv image-attestation-verify
+
+      - name: Upload compliance evidence
+        if: inputs.final_image_compliance_bundle != ''
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: image-compliance-${{ matrix.arch_tag }}
+          path: image-compliance
+          if-no-files-found: error
+          retention-days: 30
 
   create-manifest:
     name: Manifest
+    if: inputs.final_image_compliance_bundle != '' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: build
     permissions:
       contents: read
@@ -163,10 +246,18 @@ jobs:
         with:
           ref: ${{ inputs.checkout_ref != '' && inputs.checkout_ref || github.ref }}
 
+      - name: Set up Revaer
+        uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
+        with:
+          profile: python
+          cargo-cache: "false"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: Log in to GHCR
+        if: inputs.final_image_compliance_bundle != ''
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
@@ -174,80 +265,47 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create and push multi-arch manifest
+        if: inputs.final_image_compliance_bundle != ''
         env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
           IMAGE_NAME: ${{ inputs.image_name }}
           VERSION_TAG: ${{ inputs.version_tag }}
           ALIAS_TAG: ${{ inputs.alias_tag }}
           INCLUDE_SHA_TAG: ${{ inputs.include_sha_tag }}
-        run: |
-          set -euo pipefail
+        run: >-
+          uv run --locked -- rv image-manifest-create
 
-          GIT_SHA_SHORT=$(git rev-parse --short HEAD)
-          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE_BASE="ghcr.io/${REPO_OWNER}/${IMAGE_NAME}"
-
-          AMD64_TAG="${IMAGE_BASE}:${GIT_SHA_SHORT}-amd64"
-          ARM64_TAG="${IMAGE_BASE}:${GIT_SHA_SHORT}-arm64"
-
-          SHA_TAG="${IMAGE_BASE}:${GIT_SHA_SHORT}"
-          VERSION_TAG="${IMAGE_BASE}:${VERSION_TAG}"
-
-          echo "Will create multi-arch manifest for:"
-          echo "  ${VERSION_TAG}"
-
-          TAG_ARGS="-t ${VERSION_TAG}"
-          if [ -n "${ALIAS_TAG}" ]; then
-            ALIAS_TAG="${IMAGE_BASE}:${ALIAS_TAG}"
-            TAG_ARGS="${TAG_ARGS} -t ${ALIAS_TAG}"
-            echo "  ${ALIAS_TAG}"
-          fi
-
-          if [ "${INCLUDE_SHA_TAG}" = "true" ]; then
-            TAG_ARGS="${TAG_ARGS} -t ${SHA_TAG}"
-            echo "  ${SHA_TAG}"
-          fi
-
-          echo "Using:"
-          echo "  ${AMD64_TAG}"
-          echo "  ${ARM64_TAG}"
-
-          docker buildx imagetools create \
-            ${TAG_ARGS} \
-            "${AMD64_TAG}" \
-            "${ARM64_TAG}"
+      - name: Verify multi-arch manifest inputs
+        if: inputs.final_image_compliance_bundle == ''
+        env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          IMAGE_NAME: ${{ inputs.image_name }}
+          VERSION_TAG: ${{ inputs.version_tag }}
+          ALIAS_TAG: ${{ inputs.alias_tag }}
+          INCLUDE_SHA_TAG: ${{ inputs.include_sha_tag }}
+        run: >-
+          uv run --locked -- rv image-manifest-verify
 
       - name: Install Cosign
+        if: inputs.final_image_compliance_bundle != ''
         uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
 
       - name: Sign multi-arch tags
+        if: inputs.final_image_compliance_bundle != ''
         env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
           IMAGE_NAME: ${{ inputs.image_name }}
           VERSION_TAG: ${{ inputs.version_tag }}
           ALIAS_TAG: ${{ inputs.alias_tag }}
           INCLUDE_SHA_TAG: ${{ inputs.include_sha_tag }}
-        run: |
-          set -euo pipefail
-
-          GIT_SHA_SHORT=$(git rev-parse --short HEAD)
-          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE_BASE="ghcr.io/${REPO_OWNER}/${IMAGE_NAME}"
-
-          TAGS=("${IMAGE_BASE}:${VERSION_TAG}")
-          if [ -n "${ALIAS_TAG}" ]; then
-            TAGS+=("${IMAGE_BASE}:${ALIAS_TAG}")
-          fi
-          if [ "${INCLUDE_SHA_TAG}" = "true" ]; then
-            TAGS+=("${IMAGE_BASE}:${GIT_SHA_SHORT}")
-          fi
-
-          for tag in "${TAGS[@]}"; do
-            cosign sign --yes "${tag}"
-          done
+        run: >-
+          uv run --locked -- rv image-manifest-sign
 
   publish-dev-helm:
     name: Helm Chart
-    if: inputs.publish_dev_helm
+    if: inputs.publish_dev_helm && (inputs.final_image_compliance_bundle != '' || github.event_name == 'pull_request')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: create-manifest
     permissions:
       contents: read
@@ -258,68 +316,61 @@ jobs:
         with:
           ref: ${{ inputs.checkout_ref != '' && inputs.checkout_ref || github.ref }}
 
-      - uses: ./.github/actions/setup-revaer
+      - name: Set up Revaer
+        uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-
-      - name: Set up Helm
-        uses: Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
-        with:
-          version: v3.19.0
-
-      - name: Set up ORAS
-        uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3 # v2.0.0
-        with:
-          version: 1.3.1
+          profile: python
+          cargo-cache: "false"
+          apt-packages: gnupg
+          helm: "true"
+          oras: "true"
 
       - name: Resolve Helm versions
+        id: chart-versions
         env:
           PR_NUMBER: ${{ inputs.pr_number }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${PR_NUMBER}" ]; then
-            echo "Missing pr_number for PR-scoped dev Helm publish." >&2
-            exit 1
-          fi
-
-          case "${PR_NUMBER}" in
-            (*[!0-9]*)
-              echo "Invalid pr_number: expected a numeric pull request number." >&2
-              exit 1
-              ;;
-          esac
-
-          git_sha_short="$(git rev-parse --short HEAD)"
-          chart_version="0.0.0-dev.pr${PR_NUMBER}.${GITHUB_RUN_NUMBER}"
-          app_version="pr-${PR_NUMBER}-${git_sha_short}"
-
-          {
-            echo "RELEASE_VERSION<<EOF"
-            echo "${chart_version}"
-            echo "EOF"
-            echo "RELEASE_TAG<<EOF"
-            echo "${app_version}"
-            echo "EOF"
-          } >> "${GITHUB_ENV}"
+        run: >-
+          uv run --locked -- rv workflow-chart-versions --pr-number "$PR_NUMBER"
 
       - name: Package Helm chart
+        if: inputs.final_image_compliance_bundle != ''
         env:
           HELM_GPG_PRIVATE: ${{ secrets.HELM_GPG_PRIVATE }}
           HELM_GPG_PUBLIC: ${{ secrets.HELM_GPG_PUBLIC }}
           ARTIFACTHUB_REPOSITORY_ID: ${{ vars.ARTIFACTHUB_REPOSITORY_ID }}
           ARTIFACTHUB_OWNER_NAME: ${{ vars.ARTIFACTHUB_OWNER_NAME }}
           ARTIFACTHUB_OWNER_EMAIL: ${{ vars.ARTIFACTHUB_OWNER_EMAIL }}
-        run: |
-          set -euo pipefail
-          just helm-package "${RELEASE_VERSION}" "${RELEASE_TAG}"
+          CHART_VERSION: ${{ steps.chart-versions.outputs.chart_version }}
+          APP_VERSION: ${{ steps.chart-versions.outputs.app_version }}
+        run: >-
+          uv run --locked -- rv helm-package "$CHART_VERSION" "$APP_VERSION"
+
+      - name: Package Helm chart (verification only)
+        if: inputs.final_image_compliance_bundle == ''
+        env:
+          REVAER_HELM_SIGN: "0"
+          CHART_VERSION: ${{ steps.chart-versions.outputs.chart_version }}
+          APP_VERSION: ${{ steps.chart-versions.outputs.app_version }}
+        run: >-
+          uv run --locked -- rv helm-package "$CHART_VERSION" "$APP_VERSION"
 
       - name: Publish dev Helm chart
+        if: inputs.final_image_compliance_bundle != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HELM_REGISTRY_USERNAME: ${{ github.actor }}
           HELM_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-          REVAER_HELM_SKIP_PACKAGE: "1"
-        run: |
-          set -euo pipefail
-          just helm-publish "${RELEASE_VERSION}" "${RELEASE_TAG}"
+          CHART_VERSION: ${{ steps.chart-versions.outputs.chart_version }}
+          APP_VERSION: ${{ steps.chart-versions.outputs.app_version }}
+        run: >-
+          uv run --locked -- rv helm-publish "$CHART_VERSION" "$APP_VERSION"
+
+      - name: Verify packaged Helm chart without publishing
+        if: inputs.final_image_compliance_bundle == ''
+        env:
+          CHART_VERSION: ${{ steps.chart-versions.outputs.chart_version }}
+          APP_VERSION: ${{ steps.chart-versions.outputs.app_version }}
+          REVAER_HELM_SIGN: "0"
+        run: >-
+          uv run --locked -- rv helm-verify "$CHART_VERSION" "$APP_VERSION"

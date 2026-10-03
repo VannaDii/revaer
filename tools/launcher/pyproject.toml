@@ -1,0 +1,14 @@
+[build-system]
+requires = ["uv_build==0.12.13"]
+build-backend = "uv_build"
+
+[project]
+name = "revaer-launcher"
+version = "0.1.0"
+description = "Select the current Revaer worktree for rv"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = []
+
+[project.scripts]
+rv = "revaer_launcher:main"

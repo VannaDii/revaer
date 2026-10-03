@@ -1,14 +1,6 @@
-set shell := ["bash", "-lc"]
+set shell := ["bash", "-c"]
 
-fmt:
-    cargo fmt --all --check
-
-fmt-fix:
-    cargo fmt --all
-
-policy:
-    bash scripts/policy-guardrails.sh
-    bash scripts/workflow-guardrails.sh
+import 'just/quality.just'
 
 instruction-drift:
     bash scripts/instruction-drift-check.sh
@@ -36,7 +28,7 @@ test-native:
     REVAER_NATIVE_IT=1 \
     REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}" \
     DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}" \
-        cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-torrent-libt --all-features
+        cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-torrent-libt --all-features -- --test-threads=1
 
 test-features-min:
     REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}" \
@@ -45,6 +37,40 @@ test-features-min:
     REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}" \
     DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}" \
         cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-app --no-default-features
+
+test-fixture-scripts:
+    bash scripts/test-fixtures/test-lock-manifest.sh
+    bash scripts/test-fixtures/test-download-integrity.sh
+    bash scripts/test-fixtures/test-probe-verification.sh
+
+download-test-fixtures:
+    bash scripts/test-fixtures/download-test-fixtures.sh
+
+generate-test-fixtures:
+    bash scripts/test-fixtures/generate-derived-fixtures.sh
+
+verify-test-fixtures:
+    bash scripts/test-fixtures/verify-fixtures.sh
+
+test-media-conversion: verify-test-fixtures
+
+update-test-fixture-probes:
+    bash scripts/test-fixtures/update-probe-snapshots.sh
+
+clean-test-fixtures:
+    bash scripts/test-fixtures/clean-test-fixtures.sh
+
+verify-supply-chain-results:
+    bash scripts/verify-supply-chain-results.sh
+
+stack-check-contract-test:
+    bash scripts/tests/stack-check-contract-test.sh
+
+supply-chain-results-test:
+    bash scripts/tests/supply-chain-results-test.sh
+
+advisory-exception-guardrails-test:
+    bash scripts/tests/advisory-exception-guardrails-test.sh
 
 build: sync-assets
     cargo build --workspace --all-targets --all-features
@@ -59,42 +85,49 @@ release-artifacts: build-release api-export
     cp docs/api/openapi.json dist/openapi.json
 
 udeps:
-    if ! command -v cargo-udeps >/dev/null 2>&1; then \
-        cargo install cargo-udeps --locked; \
-    fi
-    if ! cargo +stable udeps --workspace --all-targets >/dev/null 2>&1; then \
-        echo "cargo-udeps: stable toolchain lacks required -Z flags, retrying with nightly"; \
-        if ! rustup toolchain list | grep -q nightly; then \
-            rustup toolchain install nightly --no-self-update; \
-        fi; \
-        cargo +nightly udeps --workspace --all-targets; \
-    fi
+    set -euo pipefail; \
+    required_udeps_version="0.1.57"; \
+    requested_udeps_version="${REVAER_UDEPS_VERSION:-${required_udeps_version}}"; \
+    if [ "${requested_udeps_version}" != "${required_udeps_version}" ]; then \
+        echo "REVAER_UDEPS_VERSION must equal ${required_udeps_version}" >&2; \
+        exit 1; \
+    fi; \
+    required_udeps_toolchain="nightly-2026-06-13"; \
+    udeps_toolchain="${REVAER_UDEPS_TOOLCHAIN:-${required_udeps_toolchain}}"; \
+    if [ "${udeps_toolchain}" != "${required_udeps_toolchain}" ]; then \
+        echo "REVAER_UDEPS_TOOLCHAIN must equal ${required_udeps_toolchain}" >&2; \
+        exit 1; \
+    fi; \
+    bash scripts/ensure-exact-cargo-tool.sh \
+        cargo-udeps cargo-udeps "${requested_udeps_version}"; \
+    if ! rustup run "${udeps_toolchain}" rustc --version >/dev/null 2>&1; then \
+        rustup toolchain install "${udeps_toolchain}" --no-self-update; \
+    fi; \
+    mkdir -p target; \
+    { \
+        printf 'cargo-udeps-version='; \
+        cargo udeps --version; \
+        printf 'toolchain=%s\n' "${udeps_toolchain}"; \
+        rustup run "${udeps_toolchain}" rustc --version --verbose; \
+        printf 'command=cargo +%s udeps --workspace --all-targets\n' "${udeps_toolchain}"; \
+    } | tee target/udeps-toolchain-evidence.txt; \
+    cargo +"${udeps_toolchain}" udeps --workspace --all-targets
 
 sqlx-install:
-    if ! command -v sqlx >/dev/null 2>&1; then \
-        cargo install sqlx-cli --no-default-features --features postgres; \
-    fi
+    required_sqlx_version="0.8.6"; \
+    bash scripts/ensure-exact-cargo-tool.sh \
+        sqlx sqlx-cli "${required_sqlx_version}" \
+        --no-default-features --features postgres
 
 db-migrate: sqlx-install
     db_url="${DATABASE_URL:-${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}}"; \
     DATABASE_URL="${db_url}" sqlx migrate run --source crates/revaer-data/migrations
 
 audit:
+    set -euo pipefail; \
     required_audit_version="0.22.0"; \
-    install_audit() { \
-        cargo install cargo-audit --locked --force --version "${required_audit_version}"; \
-    }; \
-    version_ge() { \
-        [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]; \
-    }; \
-    if command -v cargo-audit >/dev/null 2>&1; then \
-        installed_version="$(cargo audit -V | awk 'NR==1 {print $2}')"; \
-        if ! version_ge "$installed_version" "$required_audit_version"; then \
-            install_audit; \
-        fi; \
-    else \
-        install_audit; \
-    fi; \
+    bash scripts/ensure-exact-cargo-tool.sh \
+        cargo-audit cargo-audit "${required_audit_version}"; \
     ignore_args=""; \
     if [ -f .secignore ]; then \
         while IFS= read -r advisory; do \
@@ -108,47 +141,31 @@ audit:
 
 deny:
     required_deny_version="0.18.9"; \
-    install_deny() { \
-        cargo install cargo-deny --locked --force --version "${required_deny_version}"; \
-    }; \
-    version_ge() { \
-        [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]; \
-    }; \
-    if command -v cargo-deny >/dev/null 2>&1; then \
-        installed_version="$(cargo deny --version | awk 'NR==1 {print $2}')"; \
-        if ! version_ge "$installed_version" "$required_deny_version"; then \
-            install_deny; \
-        fi; \
-    else \
-        install_deny; \
-    fi
+    bash scripts/ensure-exact-cargo-tool.sh \
+        cargo-deny cargo-deny "${required_deny_version}"
     cargo deny check
 
 cov:
     required_llvm_cov_version="0.8.5"; \
-    install_llvm_cov() { \
-        cargo install cargo-llvm-cov --locked --force --version "${required_llvm_cov_version}"; \
-    }; \
-    version_ge() { \
-        [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]; \
-    }; \
-    if command -v cargo-llvm-cov >/dev/null 2>&1; then \
-        installed_version="$(cargo llvm-cov --version | awk '{print $2}')"; \
-        if ! version_ge "$installed_version" "$required_llvm_cov_version"; then \
-            install_llvm_cov; \
-        fi; \
-    else \
-        install_llvm_cov; \
-    fi
+    bash scripts/ensure-exact-cargo-tool.sh \
+        cargo-llvm-cov cargo-llvm-cov "${required_llvm_cov_version}"
     rustup component add llvm-tools-preview
     cargo llvm-cov clean --workspace
-    REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}"; \
-    DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}"; \
-        export REVAER_TEST_DATABASE_URL DATABASE_URL; \
-    just db-start
+    test_database_url="${REVAER_TEST_DATABASE_URL:-$(bash scripts/local-postgres-url.sh postgres)}"; \
+    database_url="${DATABASE_URL:-${test_database_url}}"; \
+    db_managed="${REVAER_DB_MANAGED:-0}"; \
+    if [ -z "${DATABASE_URL:-}" ]; then \
+        db_managed="${REVAER_DB_MANAGED:-1}"; \
+    fi; \
+    llvm_tools_bin="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin"; \
+    REVAER_DB_MANAGED="${db_managed}" REVAER_TEST_DATABASE_URL="${test_database_url}" DATABASE_URL="${database_url}" just db-start && \
+    REVAER_TEST_DATABASE_URL="${test_database_url}" DATABASE_URL="${database_url}" \
     RUST_TEST_THREADS="${RUST_TEST_THREADS:-1}" \
     CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}" \
-        cargo llvm-cov --workspace --all-features --no-report
+    CC="${CC:-clang}" CXX="${CXX:-clang++}" \
+    LLVM_COV="${LLVM_COV:-${llvm_tools_bin}/llvm-cov}" \
+    LLVM_PROFDATA="${LLVM_PROFDATA:-${llvm_tools_bin}/llvm-profdata}" \
+        cargo llvm-cov --workspace --all-features --include-ffi --no-report
     fail_list=""; \
         while IFS= read -r member; do \
             manifest="${member}/Cargo.toml"; \
@@ -164,7 +181,7 @@ cov:
                 continue; \
             fi; \
             echo "== coverage: ${name} =="; \
-            if ! cargo llvm-cov report --package "${name}" --json --summary-only --fail-under-lines 90 >/dev/null; then \
+            if ! cargo llvm-cov report --package "${name}" --ignore-filename-regex '(^|/)(target|usr|opt|Applications)/|\.(c|cc|cpp|h|hpp|ipp)$' --json --summary-only --fail-under-lines 90 >/dev/null; then \
                 fail_list="${fail_list} ${name}"; \
             fi; \
         done < <(awk ' \
@@ -178,33 +195,96 @@ cov:
         fi
     rm -rf coverage
     mkdir -p coverage
-    cargo llvm-cov report --lcov --output-path coverage/lcov.info
-    cargo llvm-cov report --html --output-dir coverage
+    cargo llvm-cov report --ignore-filename-regex '(^|/)(target|usr|opt|Applications)/|\.(c|cc|cpp|h|hpp|ipp)$' --lcov --output-path coverage/lcov.info
+    cargo llvm-cov report --ignore-filename-regex '(^|/)(target|usr|opt|Applications)/|\.(c|cc|cpp|h|hpp|ipp)$' --html --output-dir coverage
+    cargo llvm-cov report --ignore-filename-regex '(^|/)(target|usr|opt|Applications|\.cargo)/' --text --output-path coverage/llvm-cov.txt
+    just script-coverage
+
+script-coverage:
+    command -v kcov >/dev/null 2>&1 || { echo "kcov is required for authored shell coverage" >&2; exit 1; }
+    rm -rf coverage/scripts
+    mkdir -p coverage/scripts/ruby
+    REVAER_RUBY_COVERAGE_DIR="${PWD}/coverage/scripts/ruby" \
+    RUBYOPT="-r${PWD}/scripts/ruby-coverage-bootstrap.rb" \
+        kcov --include-path="${PWD}/scripts" coverage/scripts/kcov scripts/tests/policy-suite.sh
+    REVAER_RUBY_COVERAGE_DIR="${PWD}/coverage/scripts/ruby" \
+    RUBYOPT="-r${PWD}/scripts/ruby-coverage-bootstrap.rb" \
+        ruby scripts/generate-generic-coverage.rb \
+            coverage/scripts/kcov \
+            coverage/scripts/ruby \
+            coverage/scripts/preliminary.xml
+    ruby scripts/generate-generic-coverage.rb \
+        coverage/scripts/kcov \
+        coverage/scripts/ruby \
+        coverage/script-coverage.xml
+    rm coverage/scripts/preliminary.xml
+    test -s coverage/script-coverage.xml
+    grep -Eq "<file path=['\"]scripts/.*\\.sh['\"]" coverage/script-coverage.xml
+    grep -Eq "<file path=['\"]scripts/.*\\.rb['\"]" coverage/script-coverage.xml
+    grep -Eq "covered=['\"]true['\"]" coverage/script-coverage.xml
+    grep -Eq "covered=['\"]false['\"]" coverage/script-coverage.xml
 
 sonar-compile-db:
     mkdir -p coverage
     rm -f coverage/compile_commands.json
-    mkdir -p target/sonar-build
+    cargo clean --target-dir "${PWD}/target/sonar-build" -p revaer-torrent-libt
     REVAER_NATIVE_IT=1 \
     CARGO_TARGET_DIR="${PWD}/target/sonar-build" \
     REVAER_NATIVE_COMPILE_COMMANDS_PATH="${PWD}/coverage/compile_commands.json" \
         cargo --config 'build.rustflags=["-Dwarnings"]' build -p revaer-torrent-libt --all-features
+    test -s coverage/compile_commands.json
+
+sonar-verify-inputs:
+    test -s coverage/lcov.info
+    test -s coverage/js-lcov.info
+    test -s coverage/script-coverage.xml
+    test -s coverage/compile_commands.json
+    test -s coverage/cxxbridge/include/rust/cxx.h
+    test -s coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h
+    grep -q '^SF:' coverage/lcov.info
+    grep -q '^DA:' coverage/lcov.info
+    grep -q '^SF:' coverage/js-lcov.info
+    grep -q '^DA:' coverage/js-lcov.info
+    test "$(grep -c '^DA:' coverage/js-lcov.info)" -ge 1000
+    grep -Eq '^DA:[0-9]+,[1-9][0-9]*(,|$)' coverage/js-lcov.info
+    grep -Eq '^DA:[0-9]+,0(,|$)' coverage/js-lcov.info
+    grep -q '<lineToCover ' coverage/script-coverage.xml
+    grep -Eq "covered=['\"]true['\"]" coverage/script-coverage.xml
+    grep -Eq "covered=['\"]false['\"]" coverage/script-coverage.xml
+    grep -q '"file":' coverage/compile_commands.json
+    grep -q 'coverage/cxxbridge/include' coverage/compile_commands.json
+
+sonar-prepare-sources:
+    test -z "$(git ls-files -- tests/node_modules release/node_modules tests/support/api/schema.ts)"
+    rm -rf tests/node_modules release/node_modules tests/support/api/schema.ts \
+        crates/revaer-ui/dist-serve tests/test-results tests/playwright-report
+
+sonar-package-report:
+    test -s .scannerwork/report-task.txt
+    test -d .scannerwork/scanner-report
+    tar -cJf .scannerwork/scanner-report.tar.xz -C .scannerwork scanner-report
+    test -s .scannerwork/scanner-report.tar.xz
+    tar -tf .scannerwork/scanner-report.tar.xz | grep -q '^scanner-report/'
+
+sonar-verify-result: sonar-package-report
+    bash scripts/sonar-result-guardrails.sh
 
 sbom:
     mkdir -p artifacts
     cargo metadata --format-version 1 --all-features --locked > artifacts/sbom.json
 
 licenses:
-    if ! command -v cargo-deny >/dev/null 2>&1; then \
-        cargo install cargo-deny --locked; \
-    fi
+    bash scripts/ensure-exact-cargo-tool.sh cargo-deny cargo-deny 0.18.9
     mkdir -p artifacts
     cargo deny list --format json > artifacts/licenses.json
 
 api-export:
     cargo run -p revaer-api --bin generate_openapi
 
-helm-lint:
+helm-annotation-test:
+    bash release/tests/helm-annotation-rendering.sh
+
+helm-lint: helm-annotation-test
     if ! command -v helm >/dev/null 2>&1; then \
         echo "helm is required to lint the chart"; \
         exit 1; \
@@ -235,6 +315,7 @@ ci: validate
     just build-release
 
 docker-build:
+    set -a; source .github/build-inputs.env; set +a; \
     platforms="${PLATFORMS:-linux/amd64,linux/arm64}"; \
     version="${VERSION:-dev.$(date -u +%y%m%d).$(git rev-parse --short HEAD)}"; \
     tags="--tag revaer:latest --tag revaer:${version}"; \
@@ -247,10 +328,18 @@ docker-build:
     if printf "%s" "$platforms" | grep -q ','; then \
         mkdir -p artifacts; \
         docker buildx build --builder "$builder" --platform "$platforms" $tags \
+            --build-arg RUST_BUILDER_IMAGE="${RUST_BUILDER_IMAGE}" \
+            --build-arg ALPINE_RUNTIME_IMAGE="${ALPINE_RUNTIME_IMAGE}" \
+            --build-arg RUST_VERSION="${RUST_VERSION}" \
+            --build-arg ALPINE_VERSION="${ALPINE_VERSION}" \
             --output=type=oci,dest=artifacts/revaer-${version}.oci \
             .; \
     else \
         docker buildx build --builder "$builder" --platform "$platforms" $tags \
+            --build-arg RUST_BUILDER_IMAGE="${RUST_BUILDER_IMAGE}" \
+            --build-arg ALPINE_RUNTIME_IMAGE="${ALPINE_RUNTIME_IMAGE}" \
+            --build-arg RUST_VERSION="${RUST_VERSION}" \
+            --build-arg ALPINE_VERSION="${ALPINE_VERSION}" \
             --load \
             .; \
     fi
@@ -266,40 +355,88 @@ sync-assets:
     cargo run -p asset_sync
 
 check-assets: sync-assets
-    git diff --exit-code -- static/nexus
+    git diff --exit-code -- crates/revaer-ui/static/nexus
 
-ui-serve: sync-assets
+trunk-install:
+    required_trunk_version="0.21.14"; \
+    bash scripts/ensure-exact-cargo-tool.sh \
+        trunk trunk "${required_trunk_version}"
+
+ui-serve: sync-assets trunk-install
     rustup target add wasm32-unknown-unknown
-    if ! command -v trunk >/dev/null 2>&1; then \
-        cargo install trunk; \
-    fi
     mkdir -p crates/revaer-ui/dist-serve/.stage
     cd crates/revaer-ui && NO_COLOR=true trunk serve --dist dist-serve --open
 
-ui-build: sync-assets
+ui-build: sync-assets trunk-install
     rustup target add wasm32-unknown-unknown
-    if ! command -v trunk >/dev/null 2>&1; then \
-        cargo install trunk; \
-    fi
     mkdir -p crates/revaer-ui/dist/.stage
     cd crates/revaer-ui && NO_COLOR=true trunk build --release
 
-ui-e2e:
-    cd tests && npm install
-    cd tests && npm run gen:api-client
+api-test-client:
+    npm --prefix tests ci --ignore-scripts
+    npm --prefix tests audit --audit-level=info
+    npm --prefix tests run gen:api-client
+    test -s tests/support/api/schema.ts
+
+ui-e2e: trunk-install
+    just api-test-client
     if [ "${CI:-}" = "true" ] || { [ "$(uname -s)" = "Linux" ] && sudo -n true >/dev/null 2>&1; }; then \
         cd tests && npx playwright install --with-deps; \
     else \
         cd tests && npx playwright install; \
     fi
+    tests/node_modules/.bin/tsc --project tests/tsconfig.coverage.json
     shard_arg=""; \
+    coverage_suffix=""; \
     if [ -n "${PLAYWRIGHT_SHARD_INDEX:-}" ] && [ -n "${PLAYWRIGHT_SHARD_TOTAL:-}" ]; then \
         shard_arg="--shard=${PLAYWRIGHT_SHARD_INDEX}/${PLAYWRIGHT_SHARD_TOTAL}"; \
+        coverage_suffix="-shard-${PLAYWRIGHT_SHARD_INDEX}"; \
     fi; \
-    cd tests && npx playwright test ${shard_arg}
+    coverage_dir="coverage/js/playwright${coverage_suffix}"; \
+    state_key="$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")"; \
+    rm -rf "${coverage_dir}"; \
+    REVAER_E2E_STATE_KEY="${state_key}" \
+    E2E_ENV_DIR="${PWD}/tests" \
+    NODE_PATH="${PWD}/tests/node_modules" env -u NO_COLOR tests/node_modules/.bin/c8 \
+        --reporter=lcovonly \
+        --reports-dir "${coverage_dir}" \
+        --include 'target/js-coverage-tests/**/*.js' \
+        --exclude-after-remap=false \
+        tests/node_modules/.bin/playwright test \
+        --config target/js-coverage-tests/playwright.config.js \
+        ${shard_arg}; \
+    test -s "${coverage_dir}/lcov.info"; \
+    grep -q '^SF:tests/' "${coverage_dir}/lcov.info"; \
+    test "$(grep -c '^DA:' "${coverage_dir}/lcov.info")" -ge 1000; \
+    grep -Eq '^DA:[0-9]+,[1-9][0-9]*(,|$)' "${coverage_dir}/lcov.info"; \
+    grep -Eq '^DA:[0-9]+,0(,|$)' "${coverage_dir}/lcov.info"
 
 ui-e2e-coverage:
     node tests/scripts/check-e2e-coverage.js
+
+js-release-coverage:
+    npm --prefix tests install
+    rm -rf coverage/js/release
+    mkdir -p coverage/js/release
+    tests/node_modules/.bin/c8 \
+        --reporter=lcovonly \
+        --reports-dir coverage/js/release \
+        node scripts/js-coverage/semantic-release-npm-stub.mjs
+    test -s coverage/js/release/lcov.info
+    grep -q '^SF:vendor/semantic-release-npm-stub/index.js' coverage/js/release/lcov.info
+    grep -q '^DA:' coverage/js/release/lcov.info
+
+js-coverage-merge:
+    mkdir -p coverage
+    lcov_files="$(find coverage/js -name lcov.info -type f | sort)"; \
+    if [ -z "${lcov_files}" ]; then \
+        echo "No JavaScript/TypeScript LCOV files were produced." >&2; \
+        exit 1; \
+    fi; \
+    cat ${lcov_files} > coverage/js-lcov.info
+    test -s coverage/js-lcov.info
+    grep -q '^SF:' coverage/js-lcov.info
+    grep -q '^DA:' coverage/js-lcov.info
 
 runbook:
     status=0; \
@@ -359,7 +496,7 @@ zombies:
         fi; \
     done
 
-dev: sync-assets
+dev: sync-assets trunk-install
     just db-start
     db_url="${DATABASE_URL:-postgres://revaer:revaer@localhost:5432/revaer}"; \
     check_port_free() { \
@@ -379,9 +516,6 @@ dev: sync-assets
         cargo install cargo-watch; \
     fi; \
     rustup target add wasm32-unknown-unknown; \
-    if ! command -v trunk >/dev/null 2>&1; then \
-        cargo install trunk; \
-    fi; \
     DATABASE_URL="${db_url}" RUST_LOG=${RUST_LOG:-debug} cargo watch \
         --ignore 'docs/api/openapi.json' \
         --ignore 'crates/revaer-ui/dist/**' \
@@ -451,25 +585,35 @@ dev: sync-assets
     wait $api_pid $ui_pid
 
 docs-install:
+    cargo_bin_dir="${CARGO_HOME:-${HOME}/.cargo}/bin"; \
+    mdbook_bin="${cargo_bin_dir}/mdbook"; \
+    mdbook_mermaid_bin="${cargo_bin_dir}/mdbook-mermaid"; \
+    required_mdbook_version="0.5.0"; \
     required_mdbook_mermaid_version="0.17.0"; \
-    if ! command -v mdbook >/dev/null 2>&1; then \
-        cargo install --locked mdbook; \
+    current_mdbook_version=""; \
+    if [ -x "$mdbook_bin" ]; then \
+        current_mdbook_version="$("$mdbook_bin" --version | awk '{print $2}' | sed 's/^v//')"; \
     fi; \
-    if ! command -v mdbook-mermaid >/dev/null 2>&1; then \
+    if [ "$current_mdbook_version" != "$required_mdbook_version" ]; then \
+        cargo install --locked mdbook --version "$required_mdbook_version" --force; \
+    fi; \
+    if [ ! -x "$mdbook_mermaid_bin" ]; then \
         cargo install --locked mdbook-mermaid --version "$required_mdbook_mermaid_version"; \
     else \
-        current_mdbook_mermaid_version="$(mdbook-mermaid --version | awk '{print $2}')"; \
+        current_mdbook_mermaid_version="$("$mdbook_mermaid_bin" --version | awk '{print $2}')"; \
         if [ "$current_mdbook_mermaid_version" != "$required_mdbook_mermaid_version" ]; then \
             cargo install --locked mdbook-mermaid --version "$required_mdbook_mermaid_version" --force; \
         fi; \
     fi; \
-    mdbook-mermaid install ./docs
+    "$mdbook_mermaid_bin" install ./docs
 
 docs-build:
-    cd docs && mdbook build
+    mdbook_bin="${CARGO_HOME:-${HOME}/.cargo}/bin/mdbook"; \
+    cd docs && "$mdbook_bin" build
 
 docs-serve:
-    cd docs && mdbook serve --open
+    mdbook_bin="${CARGO_HOME:-${HOME}/.cargo}/bin/mdbook"; \
+    cd docs && "$mdbook_bin" serve --open
 
 docs-index:
     cargo run -p revaer-doc-indexer --release
@@ -502,6 +646,7 @@ db-start:
     fi; \
     echo "Using database URL: ${db_url}"; \
     container_name="${PG_CONTAINER:-revaer-db}"; \
+    required_shm_bytes="1073741824"; \
     db_data_dir="${PWD}/.server_root/postgres-data"; \
     mkdir -p "${db_data_dir}"; \
     existing_container="$(docker ps -aq -f name=^${container_name}$)"; \
@@ -509,6 +654,14 @@ db-start:
         if docker logs --tail 50 "${container_name}" 2>&1 | grep -q 'No space left on device'; then \
             echo "Recreating failed Postgres container (${container_name}) with host-backed storage"; \
             docker rm -f "${container_name}" >/dev/null 2>&1 || true; \
+            existing_container=""; \
+        fi; \
+    fi; \
+    if [ -n "${existing_container}" ]; then \
+        configured_shm_bytes="$(docker inspect "${container_name}" 2>/dev/null | python3 -c 'import json, sys; print(json.load(sys.stdin)[0]["HostConfig"].get("ShmSize", 0))' || printf '0')"; \
+        if [ "${configured_shm_bytes}" -lt "${required_shm_bytes}" ]; then \
+            echo "Recreating underprovisioned Postgres container (${container_name}) with 1 GiB shared memory"; \
+            docker rm -f "${container_name}" >/dev/null; \
             existing_container=""; \
         fi; \
     fi; \
@@ -536,6 +689,7 @@ db-start:
             echo "Starting new Postgres container (${container_name})"; \
             docker run -d \
                 --name "${container_name}" \
+                --shm-size 1g \
                 -e POSTGRES_USER=revaer \
                 -e POSTGRES_PASSWORD=revaer \
                 -e POSTGRES_DB=revaer \

@@ -6,6 +6,7 @@
 #include <array>
 #include <cctype>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cmath>
 #include <filesystem>
@@ -40,6 +41,7 @@
 #include <libtorrent/socket_type.hpp>
 #include <libtorrent/file_storage.hpp>
 #include <libtorrent/info_hash.hpp>
+#include <libtorrent/load_torrent.hpp>
 #include <libtorrent/magnet_uri.hpp>
 #include <libtorrent/peer_info.hpp>
 #include <libtorrent/read_resume_data.hpp>
@@ -52,8 +54,17 @@
 #include <libtorrent/torrent_info.hpp>
 #include <libtorrent/torrent_flags.hpp>
 #include <libtorrent/torrent_status.hpp>
+#include <libtorrent/version.hpp>
 #include <libtorrent/write_resume_data.hpp>
 #include <openssl/evp.h>
+
+#ifndef REVAER_LIBTORRENT_ABI_VERSION
+#error "libtorrent ABI configuration missing"
+#endif
+
+static_assert(
+    TORRENT_ABI_VERSION == REVAER_LIBTORRENT_ABI_VERSION,
+    "libtorrent header and library ABI configuration differ");
 
 namespace revaer {
 
@@ -75,6 +86,21 @@ std::string to_std_string(::rust::Str value) {
 
 std::string to_std_string(const ::rust::String& value) {
     return static_cast<std::string>(value);
+}
+
+std::string to_hex_string(const std::string& bytes) {
+    constexpr std::array<char, 16> kHex = {
+        '0', '1', '2', '3', '4', '5', '6', '7',
+        '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+    };
+    std::string encoded;
+    encoded.reserve(bytes.size() * 2);
+    for (const char value : bytes) {
+        const auto byte = static_cast<std::byte>(static_cast<unsigned char>(value));
+        encoded.push_back(kHex[std::to_integer<std::size_t>(byte >> 4)]);
+        encoded.push_back(kHex[std::to_integer<std::size_t>(byte & std::byte{0x0f})]);
+    }
+    return encoded;
 }
 
 std::string glob_to_regex(const std::string& pattern) {
@@ -187,7 +213,9 @@ MetainfoOverrides overrides_from_request(const AddTorrentRequest& request) {
 
 MetainfoDetails extract_metainfo_details(const lt::torrent_info& info) {
     MetainfoDetails details{};
+#if LIBTORRENT_VERSION_NUM < 20100
     details.comment = info.comment();
+#endif
     {
         auto section = info.info_section();
         if (!section.empty()) {
@@ -204,6 +232,70 @@ MetainfoDetails extract_metainfo_details(const lt::torrent_info& info) {
     details.private_flag = info.priv();
     details.has_private = true;
     return details;
+}
+
+MetainfoDetails extract_metainfo_details(const lt::add_torrent_params& params) {
+    MetainfoDetails details{};
+#if LIBTORRENT_VERSION_NUM >= 20100
+    details.comment = params.comment;
+#endif
+    if (params.ti) {
+        const auto torrent_details = extract_metainfo_details(*params.ti);
+        if (details.comment.empty()) {
+            details.comment = torrent_details.comment;
+        }
+        details.source = torrent_details.source;
+        details.private_flag = torrent_details.private_flag;
+        details.has_private = torrent_details.has_private;
+    }
+    return details;
+}
+
+MetainfoDetails merge_metainfo_details(
+    MetainfoDetails current,
+    const MetainfoDetails& fallback) {
+    if (current.comment.empty()) {
+        current.comment = fallback.comment;
+    }
+    if (current.source.empty()) {
+        current.source = fallback.source;
+    }
+    if (!current.has_private && fallback.has_private) {
+        current.private_flag = fallback.private_flag;
+        current.has_private = true;
+    }
+    return current;
+}
+
+const lt::file_storage& torrent_file_storage(const lt::torrent_info& info) {
+#if LIBTORRENT_VERSION_NUM >= 20100
+    return info.layout();
+#else
+    return info.files();
+#endif
+}
+
+lt::add_torrent_params load_metainfo_buffer(
+    lt::span<char const> buffer,
+    lt::error_code& ec) {
+#if LIBTORRENT_VERSION_NUM >= 20100
+    return lt::load_torrent_buffer(buffer, ec, lt::load_torrent_limits{});
+#else
+    lt::add_torrent_params params;
+    params.ti = std::make_shared<lt::torrent_info>(buffer, ec, lt::from_span);
+    return params;
+#endif
+}
+
+std::string make_magnet_uri_for_params(const lt::add_torrent_params& params) {
+    if (!params.ti) {
+        return std::string();
+    }
+#if LIBTORRENT_VERSION_NUM >= 20100
+    return lt::make_magnet_uri(params);
+#else
+    return lt::make_magnet_uri(*params.ti);
+#endif
 }
 
 bool apply_metainfo_overrides(lt::entry& metainfo,
@@ -264,11 +356,12 @@ std::optional<std::string> hash_sample(
         static_cast<int>(std::ceil(
             static_cast<double>(total_pieces) * static_cast<double>(sample_pct) / 100.0)));
     const auto pieces = pick_sample_pieces(total_pieces, sample_count);
-    const auto& files = info.files();
+    const auto& files = torrent_file_storage(info);
     const std::filesystem::path root(save_path);
 
     for (int piece : pieces) {
-        const int piece_size = info.piece_size(piece);
+        const lt::piece_index_t piece_index{piece};
+        const int piece_size = info.piece_size(piece_index);
         std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> sha_ctx(
             EVP_MD_CTX_new(),
             &EVP_MD_CTX_free);
@@ -278,7 +371,7 @@ std::optional<std::string> hash_sample(
         if (EVP_DigestInit_ex(sha_ctx.get(), EVP_sha1(), nullptr) != 1) {
             return std::string("seed-mode sample failed: unable to init sha1 digest");
         }
-        const auto slices = files.map_block(piece, 0, piece_size);
+        const auto slices = files.map_block(piece_index, 0, piece_size);
         for (const auto& slice : slices) {
             const auto path = root / files.file_path(slice.file_index);
             std::ifstream file(path, std::ios::binary);
@@ -312,7 +405,7 @@ std::optional<std::string> hash_sample(
             return std::string("seed-mode sample failed: digest length mismatch");
         }
 
-        const auto expected = info.hash_for_piece(piece);
+        const auto expected = info.hash_for_piece(piece_index);
         if (std::memcmp(expected.data(), digest.data(), lt::sha1_hash::size()) != 0) {
             return std::string("seed-mode sample failed: hash mismatch for piece ")
                 + std::to_string(piece);
@@ -365,6 +458,7 @@ struct TorrentSnapshot {
     NativeTorrentState state{NativeTorrentState::Queued};
     std::uint64_t bytes_downloaded{0};
     std::uint64_t bytes_total{0};
+    MetainfoDetails metainfo;
     bool metadata_applied{false};
     bool metadata_emitted{false};
     bool completed_emitted{false};
@@ -424,8 +518,18 @@ bool set_str_setting(lt::settings_pack& pack, const char* name, const std::strin
     return true;
 }
 
+std::string unsupported_setting_message(const char* name) {
+    return std::string("linked libtorrent does not support setting: ") + name;
+}
+
 void set_strict_super_seeding(lt::settings_pack& pack, bool value) {
     set_bool_setting(pack, "strict_super_seeding", value);
+}
+
+bool matches_any(const std::vector<std::regex>& patterns, const std::string& value) {
+    return std::any_of(patterns.begin(), patterns.end(), [&value](const std::regex& re) {
+        return std::regex_match(value, re);
+    });
 }
 }  // namespace
 
@@ -619,11 +723,13 @@ public:
             }
             set_bool_setting(
                 pack, "disable_hash_checks", !options.storage.verify_piece_hashes);
-            if (options.storage.has_cache_size) {
-                set_int_setting(pack, "cache_size", options.storage.cache_size);
+            if (options.storage.has_cache_size &&
+                !set_int_setting(pack, "cache_size", options.storage.cache_size)) {
+                return ::rust::String(unsupported_setting_message("cache_size"));
             }
-            if (options.storage.has_cache_expiry) {
-                set_int_setting(pack, "cache_expiry", options.storage.cache_expiry);
+            if (options.storage.has_cache_expiry &&
+                !set_int_setting(pack, "cache_expiry", options.storage.cache_expiry)) {
+                return ::rust::String(unsupported_setting_message("cache_expiry"));
             }
             set_bool_setting(pack, "coalesce_reads", options.storage.coalesce_reads);
             set_bool_setting(pack, "coalesce_writes", options.storage.coalesce_writes);
@@ -986,6 +1092,18 @@ public:
                 return left.path < right.path;
             });
 
+            auto named_root_path = root_path.lexically_normal();
+            while (named_root_path.filename().empty()
+                   && named_root_path.has_parent_path()
+                   && named_root_path.parent_path() != named_root_path) {
+                named_root_path = named_root_path.parent_path();
+            }
+            const std::string torrent_root_name = named_root_path.filename().generic_string();
+            if (!is_file && torrent_root_name.empty()) {
+                result.error = "root_path directory must have a name";
+                return result;
+            }
+
             if (skipped > 0) {
                 std::ostringstream message;
                 message << "skipped " << skipped << " files due to filters";
@@ -1002,17 +1120,34 @@ public:
                 append_warning(message.str());
             }
 
-            lt::file_storage storage;
-            const std::string name = root_path.filename().string();
-            if (!name.empty()) {
-                storage.set_name(name);
-            }
-
             std::uint64_t total_size = 0;
+#if LIBTORRENT_VERSION_NUM >= 20100
+            std::vector<lt::create_file_entry> create_files;
+            create_files.reserve(files.size());
             for (const auto& entry : files) {
-                storage.add_file(entry.path, entry.size);
+                std::filesystem::path torrent_entry_path(entry.path);
+                if (!is_file) {
+                    torrent_entry_path =
+                        std::filesystem::path(torrent_root_name) / torrent_entry_path;
+                }
+                create_files.emplace_back(torrent_entry_path.generic_string(), entry.size);
                 total_size += entry.size;
             }
+#else
+            lt::file_storage storage;
+            if (!torrent_root_name.empty()) {
+                storage.set_name(torrent_root_name);
+            }
+            for (const auto& entry : files) {
+                std::filesystem::path torrent_entry_path(entry.path);
+                if (!is_file) {
+                    torrent_entry_path =
+                        std::filesystem::path(torrent_root_name) / torrent_entry_path;
+                }
+                storage.add_file(torrent_entry_path.generic_string(), entry.size);
+                total_size += entry.size;
+            }
+#endif
 
             const auto normalize_piece = [&](std::uint32_t value) -> std::uint32_t {
                 constexpr std::uint32_t kMinPiece = 16 * 1024;
@@ -1076,7 +1211,11 @@ public:
 
             const int piece_length_value =
                 request.has_piece_length ? static_cast<int>(piece_length) : 0;
+#if LIBTORRENT_VERSION_NUM >= 20100
+            lt::create_torrent builder(std::move(create_files), piece_length_value);
+#else
             lt::create_torrent builder(storage, piece_length_value);
+#endif
             if (request.private_flag) {
                 builder.set_priv(true);
             }
@@ -1090,8 +1229,10 @@ public:
                 builder.add_url_seed(seed);
             }
 
+            const auto hash_root_path =
+                is_file ? root_path.parent_path() : named_root_path.parent_path();
             const auto hash_root =
-                is_file ? root_path.parent_path().string() : root_path.string();
+                hash_root_path.empty() ? std::string(".") : hash_root_path.string();
             lt::error_code hash_ec;
             lt::set_piece_hashes(builder, hash_root, hash_ec);
             if (hash_ec) {
@@ -1107,11 +1248,13 @@ public:
             std::vector<char> buffer;
             lt::bencode(std::back_inserter(buffer), metainfo_entry);
 
-            lt::error_code info_ec;
-            const int buffer_size = static_cast<int>(buffer.size());
-            lt::torrent_info info(buffer.data(), buffer_size, info_ec);
-            if (info_ec) {
-                result.error = "metainfo parse failed: " + info_ec.message();
+            lt::error_code load_ec;
+            auto metainfo_params = load_metainfo_buffer(
+                lt::span<char const>(buffer.data(), static_cast<long>(buffer.size())),
+                load_ec);
+            if (load_ec || !metainfo_params.ti) {
+                result.error = "metainfo parse failed: "
+                    + (load_ec ? load_ec.message() : std::string("missing torrent info"));
                 return result;
             }
 
@@ -1119,9 +1262,9 @@ public:
             for (char byte : buffer) {
                 result.metainfo.push_back(static_cast<std::uint8_t>(byte));
             }
-            result.magnet_uri = lt::make_magnet_uri(info);
+            result.magnet_uri = make_magnet_uri_for_params(metainfo_params);
             result.info_hash =
-                lt::aux::to_hex(info.info_hashes().get_best().to_string());
+                to_hex_string(metainfo_params.ti->info_hashes().get_best().to_string());
             const int effective_piece_length = builder.piece_length();
             result.piece_length =
                 effective_piece_length > 0
@@ -1224,16 +1367,18 @@ public:
                         metainfo_buffer.data(),
                         static_cast<long>(metainfo_buffer.size()));
                     lt::error_code parse_ec;
-                    params.ti = std::make_shared<lt::torrent_info>(
-                        buffer,
-                        parse_ec,
-                        lt::from_span);
-                    if (parse_ec) {
+                    auto metainfo_params = load_metainfo_buffer(buffer, parse_ec);
+                    if (parse_ec || !metainfo_params.ti) {
                         return ::rust::String(
                             "metainfo parse failed (bytes="
                             + std::to_string(metainfo_buffer.size())
-                            + "): " + parse_ec.message());
+                            + "): "
+                            + (parse_ec
+                                   ? parse_ec.message()
+                                   : std::string("missing torrent info")));
                     }
+                    metainfo_params.save_path = params.save_path;
+                    params = std::move(metainfo_params);
                 }
             }
 
@@ -1317,9 +1462,11 @@ public:
 
             if (overrides.has_private && overrides.private_flag) {
                 bool has_tracker = !params.trackers.empty();
+#if LIBTORRENT_VERSION_NUM < 20100
                 if (!has_tracker && params.ti) {
                     has_tracker = !params.ti->trackers().empty();
                 }
+#endif
                 if (!has_tracker) {
                     return ::rust::String("private torrents require at least one tracker");
                 }
@@ -1360,9 +1507,12 @@ public:
                 params.storage_mode = default_storage_mode_;
             }
 
+            const auto metainfo = extract_metainfo_details(params);
             lt::torrent_handle handle = session_->add_torrent(params);
             handles_[request_id] = handle;
-            snapshots_[request_id] = TorrentSnapshot{};
+            TorrentSnapshot snapshot{};
+            snapshot.metainfo = metainfo;
+            snapshots_[request_id] = std::move(snapshot);
 
             if (request.has_queue_position && request.queue_position >= 0) {
                 handle.queue_position_set(lt::queue_position_t{request.queue_position});
@@ -1665,8 +1815,13 @@ public:
         peers_out.reserve(peers.size());
         for (const auto& peer : peers) {
             NativePeerInfo info{};
-            const auto address = peer.ip.address().to_string();
-            const auto port = peer.ip.port();
+#if LIBTORRENT_VERSION_NUM >= 20100
+            const auto endpoint = peer.remote_endpoint();
+#else
+            const auto& endpoint = peer.ip;
+#endif
+            const auto address = endpoint.address().to_string();
+            const auto port = endpoint.port();
             if (port > 0) {
                 info.endpoint = address + ":" + std::to_string(port);
             } else {
@@ -1676,14 +1831,67 @@ public:
             info.progress = peer.progress;
             info.download_rate = static_cast<std::int64_t>(peer.down_speed);
             info.upload_rate = static_cast<std::int64_t>(peer.up_speed);
-            info.interesting = (peer.flags & lt::peer_info::interesting) != 0;
-            info.choked = (peer.flags & lt::peer_info::choked) != 0;
+            info.interesting =
+                static_cast<bool>(peer.flags & lt::peer_info::interesting);
+            info.choked = static_cast<bool>(peer.flags & lt::peer_info::choked);
             info.remote_interested =
-                (peer.flags & lt::peer_info::remote_interested) != 0;
-            info.remote_choked = (peer.flags & lt::peer_info::remote_choked) != 0;
+                static_cast<bool>(peer.flags & lt::peer_info::remote_interested);
+            info.remote_choked =
+                static_cast<bool>(peer.flags & lt::peer_info::remote_choked);
             peers_out.push_back(std::move(info));
         }
         return peers_out;
+    }
+
+    void emit_initial_metadata(const std::string& id,
+                               lt::torrent_handle& handle,
+                               const lt::torrent_status& status,
+                               NativeTorrentState current_state,
+                               TorrentSnapshot& snapshot,
+                               rust::Vec<NativeEvent>& events) {
+        auto info = handle.torrent_file();
+        if (!info) {
+            return;
+        }
+
+        NativeEvent files_evt{};
+        files_evt.id = id;
+        files_evt.kind = NativeEventKind::FilesDiscovered;
+        files_evt.state = current_state;
+        files_evt.name = info->name();
+        files_evt.download_dir = status.save_path;
+        files_evt.files = rust::Vec<NativeFile>();
+        const auto& layout = torrent_file_storage(*info);
+        for (lt::file_index_t idx : layout.file_range()) {
+            NativeFile file{};
+            file.index = static_cast<std::uint32_t>(static_cast<int>(idx));
+            file.path = layout.file_path(idx);
+            file.size_bytes = static_cast<std::uint64_t>(layout.file_size(idx));
+            files_evt.files.push_back(std::move(file));
+        }
+        events.push_back(files_evt);
+
+        const auto details = merge_metainfo_details(
+            extract_metainfo_details(*info),
+            snapshot.metainfo);
+        snapshot.metainfo = details;
+        NativeEvent meta_evt{};
+        meta_evt.id = id;
+        meta_evt.kind = NativeEventKind::MetadataUpdated;
+        meta_evt.state = current_state;
+        meta_evt.name = info->name();
+        meta_evt.download_dir = status.save_path;
+        meta_evt.comment = details.comment;
+        meta_evt.source = details.source;
+        meta_evt.private_flag = details.private_flag;
+        meta_evt.has_private = details.has_private;
+        events.push_back(meta_evt);
+
+        apply_selection(id, handle);
+        snapshot.metadata_applied = true;
+        snapshot.last_name = info->name();
+        snapshot.last_download_dir = status.save_path;
+        snapshot.metadata_emitted = true;
     }
 
     rust::Vec<NativeEvent> poll_events() {
@@ -1713,7 +1921,7 @@ public:
                     evt.id = id;
                     evt.kind = NativeEventKind::Error;
                     evt.state = NativeTorrentState::Failed;
-                    evt.message = err->error.message();
+                    evt.message = err->message();
                     events.push_back(evt);
                 }
             }
@@ -1728,16 +1936,16 @@ public:
                     NativeTrackerStatus status{};
                     status.url = tracker_err->tracker_url();
                     status.status = "error";
-                    status.message = tracker_err->error.message();
+                    status.message = tracker_err->message();
                     evt.tracker_statuses.push_back(std::move(status));
                     events.push_back(evt);
                 }
             }
             if (auto* listen_err = lt::alert_cast<lt::listen_failed_alert>(alert)) {
-                push_session_error("network", listen_err->error.message(), std::string());
+                push_session_error("network", listen_err->message(), std::string());
             }
             if (auto* portmap_err = lt::alert_cast<lt::portmap_error_alert>(alert)) {
-                push_session_error("portmap", portmap_err->error.message(), std::string());
+                push_session_error("portmap", portmap_err->message(), std::string());
             }
             if (auto* storage_err = lt::alert_cast<lt::file_error_alert>(alert)) {
                 auto id = find_torrent_id(storage_err->handle);
@@ -1745,9 +1953,10 @@ public:
                 evt.id = id;
                 evt.kind = NativeEventKind::Error;
                 evt.state = NativeTorrentState::Failed;
-                evt.message = storage_err->error.message();
+                const auto message = storage_err->message();
+                evt.message = message;
                 events.push_back(evt);
-                push_session_error("storage", storage_err->error.message(), id);
+                push_session_error("storage", message, id);
             }
             if (auto* tracker_warn = lt::alert_cast<lt::tracker_warning_alert>(alert)) {
                 auto id = find_torrent_id(tracker_warn->handle);
@@ -1768,7 +1977,7 @@ public:
             if (auto* tracker_err =
                     lt::alert_cast<lt::tracker_error_alert>(alert)) {
                 auto id = find_torrent_id(tracker_err->handle);
-                push_session_error("tracker", tracker_err->error.message(), id);
+                push_session_error("tracker", tracker_err->message(), id);
             }
             if (auto* peer_ban = lt::alert_cast<lt::peer_ban_alert>(alert)) {
                 auto id = find_torrent_id(peer_ban->handle);
@@ -1798,7 +2007,10 @@ public:
                     evt.name = snapshot->second.last_name;
                     evt.download_dir = moved->storage_path();
                     if (auto info = moved->handle.torrent_file()) {
-                        const auto details = extract_metainfo_details(*info);
+                        const auto details = merge_metainfo_details(
+                            extract_metainfo_details(*info),
+                            snapshot->second.metainfo);
+                        snapshot->second.metainfo = details;
                         evt.comment = details.comment;
                         evt.source = details.source;
                         evt.private_flag = details.private_flag;
@@ -1816,7 +2028,7 @@ public:
                     evt.id = id;
                     evt.kind = NativeEventKind::Error;
                     evt.state = snapshot->second.state;
-                    evt.message = move_failed->error.message();
+                    evt.message = move_failed->message();
                     events.push_back(evt);
                 }
             }
@@ -1882,43 +2094,7 @@ public:
 
             if (!snapshot.metadata_emitted) {
                 try {
-                    auto info = handle.torrent_file();
-                    if (info) {
-                        NativeEvent files_evt{};
-                        files_evt.id = id;
-                        files_evt.kind = NativeEventKind::FilesDiscovered;
-                        files_evt.state = current_state;
-                        files_evt.name = info->name();
-                        files_evt.download_dir = status.save_path;
-                        files_evt.files = rust::Vec<NativeFile>();
-                        for (lt::file_index_t idx : info->files().file_range()) {
-                            NativeFile file{};
-                            file.index = static_cast<std::uint32_t>(static_cast<int>(idx));
-                            file.path = info->files().file_path(idx);
-                            file.size_bytes = static_cast<std::uint64_t>(info->files().file_size(idx));
-                            files_evt.files.push_back(std::move(file));
-                        }
-                        events.push_back(files_evt);
-
-                        const auto details = extract_metainfo_details(*info);
-                        NativeEvent meta_evt{};
-                        meta_evt.id = id;
-                        meta_evt.kind = NativeEventKind::MetadataUpdated;
-                        meta_evt.state = current_state;
-                        meta_evt.name = info->name();
-                        meta_evt.download_dir = status.save_path;
-                        meta_evt.comment = details.comment;
-                        meta_evt.source = details.source;
-                        meta_evt.private_flag = details.private_flag;
-                        meta_evt.has_private = details.has_private;
-                        events.push_back(meta_evt);
-
-                        apply_selection(id, handle);
-                        snapshot.metadata_applied = true;
-                        snapshot.last_name = info->name();
-                        snapshot.last_download_dir = status.save_path;
-                        snapshot.metadata_emitted = true;
-                    }
+                    emit_initial_metadata(id, handle, status, current_state, snapshot, events);
                 } catch (const std::exception& ex) {
                     note_invalid_handle(id, events, stale_ids, ex.what());
                     continue;
@@ -1934,7 +2110,10 @@ public:
                 meta.download_dir = status.save_path;
                 try {
                     if (auto info = handle.torrent_file()) {
-                        const auto details = extract_metainfo_details(*info);
+                        const auto details = merge_metainfo_details(
+                            extract_metainfo_details(*info),
+                            snapshot.metainfo);
+                        snapshot.metainfo = details;
                         meta.comment = details.comment;
                         meta.source = details.source;
                         meta.private_flag = details.private_flag;
@@ -1998,10 +2177,16 @@ public:
                 snapshot.completed_emitted = true;
             }
 
-            if (status.need_save_resume) {
+#if LIBTORRENT_VERSION_NUM >= 20100
+            const bool should_save_resume =
+                static_cast<bool>(status.need_save_resume_data);
+#else
+            const bool should_save_resume = status.need_save_resume;
+#endif
+            if (should_save_resume) {
                 if (!snapshot.resume_requested) {
                     try {
-                        handle.save_resume_data(lt::torrent_handle::save_resume_flags_t{});
+                        handle.save_resume_data(lt::resume_data_flags_t{});
                         snapshot.resume_requested = true;
                     } catch (const std::exception& ex) {
                         note_invalid_handle(id, events, stale_ids, ex.what());
@@ -2118,13 +2303,6 @@ private:
         stale_ids.insert(id);
     }
 
-    bool matches_any(const std::vector<std::regex>& patterns, const std::string& value) const {
-        return std::any_of(patterns.begin(), patterns.end(),
-                           [&value](const std::regex& re) {
-                               return std::regex_match(value, re);
-                           });
-    }
-
     void apply_selection(const std::string& id, lt::torrent_handle& handle) {
         auto info = handle.torrent_file();
         if (!info) {
@@ -2137,25 +2315,29 @@ private:
 
         const SelectionEntry& rules = rules_it->second;
 
+        const auto& layout = torrent_file_storage(*info);
         std::vector<lt::download_priority_t> priorities;
-        priorities.resize(static_cast<std::size_t>(info->files().num_files()),
+        priorities.resize(static_cast<std::size_t>(layout.num_files()),
                           lt::default_priority);
 
-        for (lt::file_index_t idx : info->files().file_range()) {
-            std::string path = info->files().file_path(idx);
+        for (lt::file_index_t idx : layout.file_range()) {
+            std::string path = layout.file_path(idx);
 
             if (rules.skip_fluff && is_fluff(path)) {
-                priorities[static_cast<std::size_t>(idx)] = lt::dont_download;
+                priorities[static_cast<std::size_t>(static_cast<int>(idx))] =
+                    lt::dont_download;
                 continue;
             }
 
             if (!rules.exclude.empty() && matches_any(rules.exclude, path)) {
-                priorities[static_cast<std::size_t>(idx)] = lt::dont_download;
+                priorities[static_cast<std::size_t>(static_cast<int>(idx))] =
+                    lt::dont_download;
                 continue;
             }
 
             if (!rules.include.empty() && matches_any(rules.include, path)) {
-                priorities[static_cast<std::size_t>(idx)] = lt::default_priority;
+                priorities[static_cast<std::size_t>(static_cast<int>(idx))] =
+                    lt::default_priority;
             }
         }
 

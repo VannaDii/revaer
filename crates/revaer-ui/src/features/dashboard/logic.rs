@@ -18,14 +18,14 @@ pub(crate) struct EventBadge {
 #[must_use]
 pub(crate) fn queue_icon_src(index: usize) -> String {
     let avatar = (index % 5) + 1;
-    format!("/static/nexus/images/avatars/{avatar}.png")
+    format!("/static/nexus/images/avatars/{avatar}.svg")
 }
 
 /// Choose the product image for recent events.
 #[must_use]
 pub(crate) fn event_icon_src(index: usize) -> String {
     let product = (index % 10) + 1;
-    format!("/static/nexus/images/apps/ecommerce/products/{product}.jpg")
+    format!("/static/nexus/images/apps/ecommerce/products/{product}.svg")
 }
 
 /// Format capacity in GB or TB.
@@ -86,8 +86,8 @@ mod tests {
 
     #[test]
     fn icon_sources_rotate() {
-        assert!(queue_icon_src(0).contains("avatars/1.png"));
-        assert!(event_icon_src(0).contains("products/1.jpg"));
+        assert!(queue_icon_src(0).contains("avatars/1.svg"));
+        assert!(event_icon_src(0).contains("products/1.svg"));
     }
 
     #[test]

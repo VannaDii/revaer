@@ -26,7 +26,7 @@
     - Artifact Hub repository and organization branding, plus `Verified publisher` and `official` badges, still require manual control-plane approval after repository registration.
 - Follow-up:
   - Implementation tasks.
-    - Register the OCI repository in Artifact Hub, set the repository ID in workflow configuration, use `revaer-logo.png` for the repository and organization branding there, and request verified publisher / official status for the Revaer organization when operational ownership is ready.
+    - Register the OCI repository in Artifact Hub, set the repository ID in workflow configuration, use `revaer-logo.svg` for the repository and organization branding there, and request verified publisher / official status for the Revaer organization when operational ownership is ready.
     - Monitor prerelease and stable chart publication for drift between GitHub release assets and OCI-published artifacts.
   - Review checkpoints.
     - Revisit the chart defaults when the container image location or first-run setup flow changes.

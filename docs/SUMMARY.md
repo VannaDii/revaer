@@ -23,6 +23,7 @@
 
 -   [API Overview](api/index.md)
 -   [OpenAPI Reference](api/openapi.md)
+-   [Maintaining the API Contract](api/contract.md)
 -   [OpenAPI Gaps](api/openapi-gaps.md)
 -   [Indexer Migration Rollback](api/guides/indexer-migration-rollback.md)
 
@@ -346,3 +347,20 @@
     -   [314: Artifact Hub verification and official readiness](adr/314-artifacthub-verification-and-official-readiness.md)
     -   [315: Indexer import job runtime worker](adr/315-indexer-import-job-runtime-worker.md)
     -   [316: Import runtime gap-closure follow-up](adr/316-import-runtime-gap-closure-followup.md)
+    -   [317: Supply chain advisory baseline](adr/317-supply-chain-advisory-baseline.md)
+    -   [322: Supply chain CI and advisory remediation](adr/322-supply-chain-ci-tool-cache.md)
+    -   [404: Doc indexer fixture isolation](adr/404-doc-indexer-fixture-isolation.md)
+    -   [406: PR 71 deterministic Cargo tools](adr/406-pr-71-deterministic-cargo-tools.md)
+    -   [407: Database-backed coverage execution](adr/407-database-backed-coverage-execution.md)
+    -   [409: Portable Helm annotation rendering](adr/409-portable-helm-annotation-rendering.md)
+    -   [410: Libtorrent 2.1 compatibility foundation](adr/410-libtorrent-21-compatibility.md)
+    -   [411: Untracked generated API schema](adr/411-untracked-generated-api-schema.md)
+    -   [461: ADR and task-record status semantics](adr/461-adr-task-record-status-semantics.md)
+    -   [462: PR 88 shell return correction](adr/462-pr88-shell-return.md)
+    -   [477: Uniform stacked-PR check emission](adr/477-stacked-pr-check-emission.md)
+    -   [478: Validation foundation advisory refresh](adr/478-validation-foundation-advisory-refresh.md)
+    -   [479: Platform-safe test dependencies](adr/479-platform-safe-test-dependencies.md)
+    -   [480: PostgreSQL test shared memory](adr/480-postgres-test-shared-memory.md)
+    -   [481: Warning-free validation tools](adr/481-warning-free-validation-tools.md)
+
+    -   [592: Python tooling](adr/592-python-tooling.md)

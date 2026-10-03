@@ -1,26 +1,70 @@
 use std::fs;
+use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
-use postgres::NoTls;
 use revaer_test_support::fixtures::{docker_available, docker_available_with_host};
 use revaer_test_support::postgres::{start_postgres, start_postgres_at};
+use sqlx::postgres::{PgConnection, PgPoolOptions};
+use sqlx::{AssertSqlSafe, Connection, Row, raw_sql};
+use url::Url;
 
 fn current_database_name(url: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let config = postgres::Config::from_str(url)?;
-    let mut client = config.connect(NoTls)?;
-    let row = client.query_one("SELECT current_database()", &[])?;
-    Ok(row.get(0))
+    let url = url.to_owned();
+    thread_query(move || async move {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await?;
+        let row = raw_sql("SELECT current_database()")
+            .fetch_one(&pool)
+            .await?;
+        let current_database = row.try_get(0)?;
+        Ok(current_database)
+    })
 }
 
 fn database_exists(url: &str, database_name: &str) -> Result<bool, Box<dyn std::error::Error>> {
-    let config = postgres::Config::from_str(url)?;
-    let mut client = config.connect(NoTls)?;
-    let row = client.query_one(
-        "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)",
-        &[&database_name],
-    )?;
-    Ok(row.get(0))
+    let url = url.to_owned();
+    let database_name = database_name.to_owned();
+    thread_query(move || async move {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await?;
+        let database_name = sql_string_literal(&database_name);
+        let sql =
+            format!("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = {database_name})");
+        let row = raw_sql(AssertSqlSafe(sql)).fetch_one(&pool).await?;
+        let exists = row.try_get(0)?;
+        Ok(exists)
+    })
+}
+
+fn sql_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn thread_query<F, Fut, T>(operation: F) -> Result<T, Box<dyn std::error::Error>>
+where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T, anyhow::Error>> + Send + 'static,
+    T: Send + 'static,
+{
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        runtime.block_on(operation())
+    })
+    .join()
+    .map_err(|_| anyhow::Error::msg("postgres test worker panicked"))?
+    .map_err(Into::into)
+}
+
+fn admin_database_url(url: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let mut admin_url = Url::parse(url)?;
+    admin_url.set_path("/postgres");
+    Ok(admin_url.to_string())
 }
 
 #[test]
@@ -85,7 +129,7 @@ fn start_postgres_at_rejects_invalid_url() {
 
 #[test]
 fn start_postgres_at_reports_unreachable_database() {
-    let err = start_postgres_at("postgres://127.0.0.1:1/revaer")
+    let err = start_postgres_at("postgres://[::1]:1/revaer")
         .expect_err("unreachable database should fail");
     assert!(format!("{err:#}").contains("failed to create database"));
 }
@@ -93,15 +137,16 @@ fn start_postgres_at_reports_unreachable_database() {
 #[test]
 fn start_postgres_uses_external_database_when_available() -> Result<(), Box<dyn std::error::Error>>
 {
-    let base_url = std::env::var("REVAER_TEST_DATABASE_URL")
+    let has_base_url = std::env::var("REVAER_TEST_DATABASE_URL")
         .ok()
-        .or_else(|| std::env::var("DATABASE_URL").ok());
-    let Some(base_url) = base_url else {
+        .or_else(|| std::env::var("DATABASE_URL").ok())
+        .is_some();
+    if !has_base_url {
         eprintln!(
             "skipping start_postgres_uses_external_database_when_available: no DATABASE_URL configured"
         );
         return Ok(());
-    };
+    }
 
     let db = match start_postgres() {
         Ok(database) => database,
@@ -113,8 +158,116 @@ fn start_postgres_uses_external_database_when_available() -> Result<(), Box<dyn 
 
     let current_database = current_database_name(db.connection_string())?;
     assert!(current_database.starts_with("revaer_test_"));
-    assert!(database_exists(&base_url, &current_database)?);
+    let admin_url = admin_database_url(db.connection_string())?;
+    assert!(database_exists(&admin_url, &current_database)?);
     drop(db);
-    assert!(!database_exists(&base_url, &current_database)?);
+    assert!(!database_exists(&admin_url, &current_database)?);
+    Ok(())
+}
+
+fn test_runtime() -> Result<tokio::runtime::Runtime, Box<dyn std::error::Error>> {
+    Ok(tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()?)
+}
+
+fn fixture_roles_exist(url: &str, name: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    test_runtime()?.block_on(async {
+        let mut admin = PgConnection::connect(url).await?;
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname = $1 OR rolname = $2)",
+        )
+        .bind(format!("{name}_owner"))
+        .bind(format!("{name}_runtime"))
+        .fetch_one(&mut admin)
+        .await?;
+        admin.close().await?;
+        Ok(exists)
+    })
+}
+
+#[test]
+fn initialized_fixture_failure_cleans_database_and_roles() -> Result<(), Box<dyn std::error::Error>>
+{
+    for explicit_close in [false, true] {
+        let mut fixture = start_postgres()?;
+        let database = current_database_name(fixture.connection_string())?;
+        let admin_url = admin_database_url(fixture.connection_string())?;
+        let result = test_runtime()?.block_on(fixture.initialize_runtime(include_str!(
+            "../../../scripts/tests/database-runtime-fixture-failing-init.sql"
+        )));
+        assert!(result.is_err());
+        assert!(fixture_roles_exist(&admin_url, &database)?);
+        if explicit_close {
+            fixture.close()?;
+        } else {
+            drop(fixture);
+        }
+        assert!(!database_exists(&admin_url, &database)?);
+        assert!(!fixture_roles_exist(&admin_url, &database)?);
+    }
+    Ok(())
+}
+
+#[test]
+fn initialized_fixture_empty_input_preserves_raw_database() -> Result<(), Box<dyn std::error::Error>>
+{
+    let mut fixture = start_postgres()?;
+    let database = current_database_name(fixture.connection_string())?;
+    let admin_url = admin_database_url(fixture.connection_string())?;
+    assert!(
+        test_runtime()?
+            .block_on(fixture.initialize_runtime(" "))
+            .is_err()
+    );
+    assert!(database_exists(&admin_url, &database)?);
+    assert!(!fixture_roles_exist(&admin_url, &database)?);
+    fixture.close()?;
+    Ok(())
+}
+
+#[test]
+fn initialized_fixture_seals_runtime_identity_and_cleans_owned_roles()
+-> Result<(), Box<dyn std::error::Error>> {
+    const INITIALIZER: &str =
+        include_str!("../../../scripts/tests/database-runtime-fixture-success.sql");
+    let mut fixture = start_postgres()?;
+    let database = current_database_name(fixture.connection_string())?;
+    let admin_url = admin_database_url(fixture.connection_string())?;
+    test_runtime()?.block_on(async {
+        fixture.initialize_runtime(INITIALIZER).await?;
+        let mut runtime = PgConnection::connect(fixture.connection_string()).await?;
+        let identity: String = sqlx::query_scalar("SELECT current_user")
+            .fetch_one(&mut runtime)
+            .await?;
+        assert_eq!(identity, format!("{database}_runtime"));
+        let sealed: bool = sqlx::query_scalar(
+            "SELECT digest = sha256(convert_to($1, 'UTF8')) FROM revaer_system.fixture_seal",
+        )
+        .bind(INITIALIZER)
+        .fetch_one(&mut runtime)
+        .await?;
+        assert!(sealed);
+        let privileges: (bool, bool, bool) = sqlx::query_as(
+            "SELECT rolsuper, rolcreaterole, has_schema_privilege(current_user, 'revaer_system', 'CREATE') FROM pg_roles WHERE rolname = current_user",
+        )
+        .fetch_one(&mut runtime)
+        .await?;
+        assert_eq!(privileges, (false, false, false));
+        let owner_login: bool = sqlx::query_scalar(
+            "SELECT rolcanlogin FROM pg_roles WHERE rolname = $1",
+        )
+        .bind(format!("{database}_owner"))
+        .fetch_one(&mut runtime)
+        .await?;
+        assert!(!owner_login);
+        runtime.close().await?;
+        assert!(fixture.initialize_runtime(INITIALIZER).await.is_err());
+        Ok::<(), anyhow::Error>(())
+    })?;
+    fixture.close()?;
+    assert!(!database_exists(&admin_url, &database)?);
+    assert!(!fixture_roles_exist(&admin_url, &database)?);
     Ok(())
 }

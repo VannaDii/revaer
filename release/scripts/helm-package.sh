@@ -21,6 +21,7 @@ dist_dir="${repo_root}/dist/helm"
 public_key_asset="revaer-helm-public.asc"
 public_keyring_asset="revaer-helm-public.gpg"
 metadata_template="${chart_root}/artifacthub-repo.yml"
+annotations_renderer="${repo_root}/release/scripts/render-helm-annotations.sh"
 release_repository="${REVAER_RELEASE_REPOSITORY:-${GITHUB_REPOSITORY:-VannaDii/Revaer}}"
 release_asset_url="https://github.com/${release_repository}/releases/download/${app_version}/${public_key_asset}"
 lint_database_url="${REVAER_HELM_LINT_DATABASE_URL:-postgres://revaer:revaer@postgres.default.svc.cluster.local:5432/revaer}"
@@ -41,7 +42,7 @@ yaml_quote() {
 
     case "${value}" in
         *$'\n'*|*$'\r'*)
-            echo "Artifact Hub owner metadata must not contain newlines" >&2
+            echo "YAML scalar values must not contain newlines" >&2
             exit 1
             ;;
         *)
@@ -87,28 +88,29 @@ EOF
 
 cp -R "${chart_root}" "${chart_copy_dir}/revaer"
 chart_yaml="${chart_copy_dir}/revaer/Chart.yaml"
+release_annotations_file="${chart_copy_dir}/release-annotations.yml"
 metadata_output="${dist_dir}/artifacthub-repo.yml"
 cp "${metadata_template}" "${metadata_output}"
 release_owner="$(printf '%s' "${release_repository%%/*}" | tr '[:upper:]' '[:lower:]')"
 image_repository="${REVAER_HELM_IMAGE_REPOSITORY:-ghcr.io/${release_owner}/revaer}"
 owner_name="${ARTIFACTHUB_OWNER_NAME:-}"
 owner_email="${ARTIFACTHUB_OWNER_EMAIL:-}"
+image_reference_yaml="$(yaml_quote "${image_repository}:${app_version}")"
 
 prerelease="false"
 if [[ "${chart_version}" == *-* ]]; then
     prerelease="true"
 fi
 
-release_annotations="$(cat <<EOF
+cat > "${release_annotations_file}" <<EOF
   artifacthub.io/prerelease: "${prerelease}"
   artifacthub.io/images: |
     - name: revaer
-      image: ${image_repository}:${app_version}
+      image: ${image_reference_yaml}
       platforms:
         - linux/amd64
         - linux/arm64
 EOF
-)"
 
 if [[ "${sign_chart}" == "1" ]]; then
     if ! command -v gpg >/dev/null 2>&1; then
@@ -151,21 +153,18 @@ if [[ "${sign_chart}" == "1" ]]; then
         exit 1
     fi
 
-    release_annotations="$(cat <<EOF
-${release_annotations}
+    fingerprint_yaml="$(yaml_quote "${fingerprint}")"
+    release_asset_url_yaml="$(yaml_quote "${release_asset_url}")"
+    cat >> "${release_annotations_file}" <<EOF
   artifacthub.io/signKey: |
-    fingerprint: ${fingerprint}
-    url: ${release_asset_url}
+    fingerprint: ${fingerprint_yaml}
+    url: ${release_asset_url_yaml}
 EOF
-)"
 
-    awk -v replacement="${release_annotations}" '
-        /__RELEASE_HELM_ANNOTATIONS__/ {
-            print replacement
-            next
-        }
-        { print }
-    ' "${chart_root}/Chart.yaml" > "${chart_yaml}"
+    bash "${annotations_renderer}" \
+        "${chart_root}/Chart.yaml" \
+        "${release_annotations_file}" \
+        "${chart_yaml}"
 
     if [[ -n "${ARTIFACTHUB_REPOSITORY_ID:-}" ]]; then
         append_repository_id "${metadata_output}" "${ARTIFACTHUB_REPOSITORY_ID}"
@@ -182,13 +181,10 @@ EOF
         --keyring "${secret_keyring}"
     helm verify "${dist_dir}/revaer-${chart_version}.tgz" --keyring "${dist_dir}/${public_keyring_asset}"
 else
-    awk -v replacement="${release_annotations}" '
-        /__RELEASE_HELM_ANNOTATIONS__/ {
-            print replacement
-            next
-        }
-        { print }
-    ' "${chart_root}/Chart.yaml" > "${chart_yaml}"
+    bash "${annotations_renderer}" \
+        "${chart_root}/Chart.yaml" \
+        "${release_annotations_file}" \
+        "${chart_yaml}"
     if [[ -n "${ARTIFACTHUB_REPOSITORY_ID:-}" ]]; then
         append_repository_id "${metadata_output}" "${ARTIFACTHUB_REPOSITORY_ID}"
     fi

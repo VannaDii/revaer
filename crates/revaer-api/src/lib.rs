@@ -1030,7 +1030,7 @@ mod tests {
     fn rate_limiter_blocks_after_burst_exhausted() {
         let limit = ApiKeyRateLimit {
             burst: 2,
-            replenish_period: Duration::from_secs(60),
+            replenish_period: Duration::from_mins(1),
         };
         let mut limiter = RateLimiter::new(limit.clone());
         let start = Instant::now();

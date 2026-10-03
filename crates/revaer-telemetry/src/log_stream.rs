@@ -15,7 +15,7 @@ use tokio::sync::broadcast;
 use tracing_subscriber::fmt::MakeWriter;
 
 const LOG_STREAM_CAPACITY: usize = 1024;
-const LOG_STREAM_RETENTION: Duration = Duration::from_secs(120);
+const LOG_STREAM_RETENTION: Duration = Duration::from_mins(2);
 
 static LOG_STREAM: OnceLock<broadcast::Sender<String>> = OnceLock::new();
 static LOG_STREAM_BUFFER: OnceLock<Mutex<VecDeque<LogEntry>>> = OnceLock::new();
@@ -285,7 +285,7 @@ mod tests {
     #[test]
     fn prune_log_buffer_discards_old_entries() {
         let now = Instant::now();
-        let old = now.checked_sub(Duration::from_secs(300)).unwrap_or(now);
+        let old = now.checked_sub(Duration::from_mins(5)).unwrap_or(now);
         let mut buffer = std::collections::VecDeque::from([
             LogEntry {
                 at: old,

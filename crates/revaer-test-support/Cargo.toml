@@ -11,5 +11,6 @@ authors.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-postgres = { version = "0.19", default-features = true }
+sqlx.workspace = true
+tokio.workspace = true
 url = "2.5"

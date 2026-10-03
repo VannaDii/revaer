@@ -16,12 +16,15 @@
 //!
 //! # Design
 //! - Resolves the UI root relative to `CARGO_MANIFEST_DIR` so it can be run from any cwd.
-//! - Copies CSS, images, and JS into `static/nexus`, replacing any previous outputs.
+//! - Copies CSS and JS into `static/nexus`, replacing previous synced outputs.
+//! - Validates required runtime SVGs, UTF-8 text, SVG structure, and canonical URLs.
+//! - Rejects raster extensions from the committed `static` runtime asset tree.
 //! - Validates the copied CSS for size and a `DaisyUI` marker before writing the lock file.
 //! - Emits a deterministic `ASSET_LOCK.txt` containing the CSS hash and directory stats.
 //!
-//! Failure modes include missing vendor inputs, copy errors, invalid CSS contents,
-//! or inability to write outputs and the lock file.
+//! Failure modes include missing vendor or runtime inputs, copy errors, invalid CSS
+//! or JavaScript contents, invalid runtime assets, or inability to write outputs
+//! and the lock file.
 
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
@@ -33,9 +36,35 @@ use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
 const VENDOR_ROOT: &str = "ui_vendor/nexus-html@3.1.0";
+const STATIC_ROOT: &str = "static";
 const OUTPUT_ROOT: &str = "static/nexus";
 const MIN_CSS_BYTES: usize = 1024;
 const CSS_MARKER: &str = ".btn";
+const DATATABLES_JS: &str = "components/datatables.js";
+const LEGACY_AVATAR_DIRECTORY: &str = "/images/avatars/";
+const LEGACY_AVATAR_EXTENSION: &str = ".png";
+const RUNTIME_AVATAR_DIRECTORY: &str = "/static/nexus/images/avatars/";
+const RUNTIME_AVATAR_EXTENSION: &str = ".svg";
+const DATATABLES_AVATAR_COUNT: u8 = 10;
+const DASHBOARD_PRODUCT_COUNT: u8 = 10;
+const RUNTIME_ICON_URL: &str = "/static/icons/app-icon.svg";
+const RUNTIME_LOGO_URL: &str = "/static/revaer-logo.svg";
+const REVAER_BRAND_SVGS: &[&str] = &["icons/app-icon.svg", "revaer-logo.svg"];
+const REVAER_BRAND_IDENTIFIERS: &[&str] = &["revaer-purple-gradient", "revaer-r-silhouette"];
+const REQUIRED_STATIC_SVGS: &[&str] = &[
+    "icons/app-icon.svg",
+    "revaer-logo.svg",
+    "nexus/images/landing/footer-grainy.svg",
+    "nexus/images/landing/hero-bg-gradient.svg",
+    "nexus/images/landing/hero-text-underline.svg",
+    "nexus/images/landing/showcase-bg-element.svg",
+    "nexus/images/landing/showcase-bg-gradient.svg",
+    "nexus/images/landing/testimonial-background.svg",
+];
+const FORBIDDEN_RASTER_EXTENSIONS: &[&str] = &[
+    "avif", "bmp", "gif", "heic", "heif", "ico", "jpeg", "jpg", "png", "tif", "tiff", "webp",
+];
+const UTF8_TEXT_EXTENSIONS: &[&str] = &["css", "html", "js", "json", "svg", "txt", "xml"];
 
 /// Errors returned by the asset sync tool.
 #[derive(Debug)]
@@ -76,6 +105,20 @@ pub enum AssetSyncError {
         /// CSS path that failed validation.
         path: PathBuf,
         /// Reason the CSS was rejected.
+        reason: String,
+    },
+    /// The copied JavaScript failed canonicalization.
+    JsInvalid {
+        /// JavaScript path that failed validation.
+        path: PathBuf,
+        /// Reason the JavaScript was rejected.
+        reason: String,
+    },
+    /// A committed runtime asset failed validation.
+    RuntimeAssetInvalid {
+        /// Runtime asset or reference file that failed validation.
+        path: PathBuf,
+        /// Reason the runtime asset was rejected.
         reason: String,
     },
     /// Traversal of a directory failed.
@@ -121,6 +164,16 @@ impl Display for AssetSyncError {
                 "copied CSS failed validation at {}: {reason}",
                 path.display()
             ),
+            Self::JsInvalid { path, reason } => write!(
+                formatter,
+                "copied JavaScript failed validation at {}: {reason}",
+                path.display()
+            ),
+            Self::RuntimeAssetInvalid { path, reason } => write!(
+                formatter,
+                "runtime asset failed validation at {}: {reason}",
+                path.display()
+            ),
             Self::WalkFailed { path, message } => {
                 write!(
                     formatter,
@@ -150,8 +203,8 @@ struct DirStats {
 /// Run the asset synchronization using the repository-relative paths.
 ///
 /// # Errors
-/// Returns an error if vendor inputs are missing, outputs cannot be written,
-/// or the copied CSS fails the sanity check.
+/// Returns an error if vendor or runtime inputs are missing, outputs cannot be
+/// written, or copied and committed runtime assets fail validation.
 pub fn run() -> Result<(), AssetSyncError> {
     let ui_root = ui_root_dir()?;
     sync_assets(&ui_root)
@@ -170,11 +223,9 @@ fn ui_root_dir() -> Result<PathBuf, AssetSyncError> {
 
 fn sync_assets(ui_root: &Path) -> Result<(), AssetSyncError> {
     let vendor_css = ui_root.join(VENDOR_ROOT).join("html/assets/app.css");
-    let vendor_images = ui_root.join(VENDOR_ROOT).join("html/images");
     let vendor_js = ui_root.join(VENDOR_ROOT).join("public/js");
 
     ensure_file(&vendor_css)?;
-    ensure_dir(&vendor_images)?;
     ensure_dir(&vendor_js)?;
 
     let output_root = ui_root.join(OUTPUT_ROOT);
@@ -184,12 +235,15 @@ fn sync_assets(ui_root: &Path) -> Result<(), AssetSyncError> {
     let output_js = output_root.join("js");
 
     ensure_dir_exists(&output_assets)?;
+    ensure_dir(&output_images)?;
 
     copy_file(&vendor_css, &output_css)?;
-    copy_dir(&vendor_images, &output_images)?;
     copy_dir(&vendor_js, &output_js)?;
+    canonicalize_js_asset_references(&output_js)?;
 
     validate_css(&output_css)?;
+    validate_runtime_assets(ui_root)?;
+    validate_runtime_references(ui_root, &output_js)?;
 
     let css_hash = sha256_hex(&output_css)?;
     let images_stats = dir_stats(&output_images)?;
@@ -295,6 +349,246 @@ fn validate_css(path: &Path) -> Result<(), AssetSyncError> {
     Ok(())
 }
 
+fn canonicalize_js_asset_references(output_js: &Path) -> Result<(), AssetSyncError> {
+    let datatables_path = output_js.join(DATATABLES_JS);
+    ensure_file(&datatables_path)?;
+    let contents = fs::read_to_string(&datatables_path).map_err(|source| AssetSyncError::Io {
+        path: datatables_path.clone(),
+        source,
+    })?;
+    let canonical = canonicalize_legacy_avatar_paths(&datatables_path, &contents)?;
+    if canonical != contents {
+        fs::write(&datatables_path, canonical).map_err(|source| AssetSyncError::Io {
+            path: datatables_path,
+            source,
+        })?;
+    }
+    Ok(())
+}
+
+fn canonicalize_legacy_avatar_paths(path: &Path, contents: &str) -> Result<String, AssetSyncError> {
+    let mut canonical = contents.to_string();
+    for avatar_index in (1..=DATATABLES_AVATAR_COUNT).rev() {
+        let legacy = format!("{LEGACY_AVATAR_DIRECTORY}{avatar_index}{LEGACY_AVATAR_EXTENSION}");
+        let runtime_png =
+            format!("{RUNTIME_AVATAR_DIRECTORY}{avatar_index}{LEGACY_AVATAR_EXTENSION}");
+        let runtime_svg =
+            format!("{RUNTIME_AVATAR_DIRECTORY}{avatar_index}{RUNTIME_AVATAR_EXTENSION}");
+        canonical = canonical.replace(&legacy, &runtime_svg);
+        canonical = canonical.replace(&runtime_png, &runtime_svg);
+    }
+    if contains_legacy_avatar_url(&canonical) {
+        return Err(AssetSyncError::JsInvalid {
+            path: path.to_path_buf(),
+            reason: "non-canonical DataTables avatar URL".to_string(),
+        });
+    }
+    Ok(canonical)
+}
+
+fn contains_legacy_avatar_url(contents: &str) -> bool {
+    contents
+        .split(RUNTIME_AVATAR_DIRECTORY)
+        .any(|segment| segment.contains(LEGACY_AVATAR_DIRECTORY))
+}
+
+fn validate_runtime_assets(ui_root: &Path) -> Result<(), AssetSyncError> {
+    let static_root = ui_root.join(STATIC_ROOT);
+    ensure_dir(&static_root)?;
+
+    for relative_path in REQUIRED_STATIC_SVGS {
+        ensure_file(&static_root.join(relative_path))?;
+    }
+    for asset_index in 1..=DATATABLES_AVATAR_COUNT {
+        ensure_file(
+            &static_root
+                .join("nexus/images/avatars")
+                .join(format!("{asset_index}.svg")),
+        )?;
+    }
+    for asset_index in 1..=DASHBOARD_PRODUCT_COUNT {
+        ensure_file(
+            &static_root
+                .join("nexus/images/apps/ecommerce/products")
+                .join(format!("{asset_index}.svg")),
+        )?;
+    }
+
+    for entry in WalkDir::new(&static_root).min_depth(1) {
+        let entry = entry.map_err(|err| AssetSyncError::WalkFailed {
+            path: static_root.clone(),
+            message: err.to_string(),
+        })?;
+        if entry.file_type().is_file() {
+            validate_runtime_asset_file(entry.path())?;
+        }
+    }
+    for relative_path in REVAER_BRAND_SVGS {
+        let path = static_root.join(relative_path);
+        let contents = read_utf8_text(&path)?;
+        validate_revaer_brand_svg(&path, &contents)?;
+    }
+    Ok(())
+}
+
+fn validate_runtime_asset_file(path: &Path) -> Result<(), AssetSyncError> {
+    let Some(extension) = path.extension() else {
+        return Ok(());
+    };
+    let extension = extension
+        .to_str()
+        .ok_or_else(|| AssetSyncError::RuntimeAssetInvalid {
+            path: path.to_path_buf(),
+            reason: "asset extension is not valid UTF-8".to_string(),
+        })?
+        .to_ascii_lowercase();
+
+    if FORBIDDEN_RASTER_EXTENSIONS.contains(&extension.as_str()) {
+        return Err(AssetSyncError::RuntimeAssetInvalid {
+            path: path.to_path_buf(),
+            reason: format!("forbidden raster extension .{extension}"),
+        });
+    }
+    if !UTF8_TEXT_EXTENSIONS.contains(&extension.as_str()) {
+        return Ok(());
+    }
+
+    let contents = read_utf8_text(path)?;
+    if extension == "svg" {
+        validate_svg_structure(path, &contents)?;
+    }
+    Ok(())
+}
+
+fn read_utf8_text(path: &Path) -> Result<String, AssetSyncError> {
+    let bytes = fs::read(path).map_err(|source| AssetSyncError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    String::from_utf8(bytes).map_err(|source| AssetSyncError::RuntimeAssetInvalid {
+        path: path.to_path_buf(),
+        reason: format!("text is not valid UTF-8: {source}"),
+    })
+}
+
+fn validate_svg_structure(path: &Path, contents: &str) -> Result<(), AssetSyncError> {
+    let trimmed = contents.trim();
+    if trimmed.is_empty() {
+        return Err(invalid_runtime_asset(path, "SVG is empty"));
+    }
+    if contents.contains('\0') {
+        return Err(invalid_runtime_asset(path, "SVG contains a NUL byte"));
+    }
+    let Some(after_root_name) = trimmed.strip_prefix("<svg") else {
+        return Err(invalid_runtime_asset(path, "SVG root element is missing"));
+    };
+    if !after_root_name
+        .chars()
+        .next()
+        .is_some_and(|character| character == '>' || character.is_ascii_whitespace())
+    {
+        return Err(invalid_runtime_asset(path, "SVG root element is malformed"));
+    }
+    let opening_end = trimmed
+        .find('>')
+        .ok_or_else(|| invalid_runtime_asset(path, "SVG root opening tag is incomplete"))?;
+    let opening_tag = &trimmed[..=opening_end];
+    if opening_tag.ends_with("/>") {
+        return Err(invalid_runtime_asset(
+            path,
+            "SVG root element is self-closing",
+        ));
+    }
+    if !opening_tag.contains("xmlns=\"http://www.w3.org/2000/svg\"")
+        && !opening_tag.contains("xmlns='http://www.w3.org/2000/svg'")
+    {
+        return Err(invalid_runtime_asset(
+            path,
+            "SVG root is missing the SVG namespace",
+        ));
+    }
+    if !trimmed.ends_with("</svg>") {
+        return Err(invalid_runtime_asset(
+            path,
+            "SVG root closing tag is missing",
+        ));
+    }
+    Ok(())
+}
+
+fn invalid_runtime_asset(path: &Path, reason: &str) -> AssetSyncError {
+    AssetSyncError::RuntimeAssetInvalid {
+        path: path.to_path_buf(),
+        reason: reason.to_string(),
+    }
+}
+
+fn validate_revaer_brand_svg(path: &Path, contents: &str) -> Result<(), AssetSyncError> {
+    for identifier in REVAER_BRAND_IDENTIFIERS {
+        let marker = format!("id=\"{identifier}\"");
+        if !contents.contains(&marker) {
+            return Err(invalid_runtime_asset(
+                path,
+                &format!("missing required Revaer brand identifier {identifier}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_runtime_references(ui_root: &Path, output_js: &Path) -> Result<(), AssetSyncError> {
+    validate_reference_count(&ui_root.join("index.html"), RUNTIME_ICON_URL, 3)?;
+    validate_reference_count(&ui_root.join("manifest.json"), RUNTIME_ICON_URL, 1)?;
+    validate_reference_count(&ui_root.join("browserconfig.xml"), RUNTIME_ICON_URL, 3)?;
+    validate_reference_count(
+        &ui_root.join("src/components/shell.rs"),
+        RUNTIME_LOGO_URL,
+        2,
+    )?;
+    validate_datatables_references(&output_js.join(DATATABLES_JS))
+}
+
+fn validate_reference_count(
+    path: &Path,
+    expected_reference: &str,
+    expected_count: usize,
+) -> Result<(), AssetSyncError> {
+    ensure_file(path)?;
+    let contents = read_utf8_text(path)?;
+    let actual_count = contents.matches(expected_reference).count();
+    if actual_count != expected_count {
+        return Err(AssetSyncError::RuntimeAssetInvalid {
+            path: path.to_path_buf(),
+            reason: format!(
+                "expected {expected_count} references to {expected_reference}, found {actual_count}"
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn validate_datatables_references(path: &Path) -> Result<(), AssetSyncError> {
+    ensure_file(path)?;
+    let contents = read_utf8_text(path)?;
+    if contains_legacy_avatar_url(&contents) {
+        return Err(AssetSyncError::JsInvalid {
+            path: path.to_path_buf(),
+            reason: "non-canonical DataTables avatar URL".to_string(),
+        });
+    }
+    for avatar_index in 1..=DATATABLES_AVATAR_COUNT {
+        let expected =
+            format!("{RUNTIME_AVATAR_DIRECTORY}{avatar_index}{RUNTIME_AVATAR_EXTENSION}");
+        if !contents.contains(&expected) {
+            return Err(AssetSyncError::JsInvalid {
+                path: path.to_path_buf(),
+                reason: format!("missing DataTables avatar URL {expected}"),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn sha256_hex(path: &Path) -> Result<String, AssetSyncError> {
     let bytes = fs::read(path).map_err(|source| AssetSyncError::Io {
         path: path.to_path_buf(),
@@ -347,6 +641,7 @@ fn write_lock(
 mod tests {
     use super::*;
     use std::error::Error;
+    use std::fmt::Write as _;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -355,7 +650,7 @@ mod tests {
     fn repo_root() -> PathBuf {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         for ancestor in manifest_dir.ancestors() {
-            if ancestor.join("AGENT.md").is_file() {
+            if ancestor.join("AGENTS.md").is_file() {
                 return ancestor.to_path_buf();
             }
         }
@@ -375,6 +670,21 @@ mod tests {
             css.push_str(filler);
         }
         css
+    }
+
+    fn svg_fixture() -> &'static str {
+        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1H0z"/></svg>"#
+    }
+
+    fn revaer_brand_svg_fixture() -> &'static str {
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><linearGradient id="revaer-purple-gradient"><stop stop-color="#d11ac4"/></linearGradient><path id="revaer-r-silhouette" d="M0 0h1v1H0z"/></svg>"##
+    }
+
+    fn write_fixture_file(path: &Path, contents: &[u8]) -> Result<(), std::io::Error> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, contents)
     }
 
     struct TempRoot {
@@ -404,20 +714,71 @@ mod tests {
         }
     }
 
-    fn write_vendor_fixture(root: &Path, css: &str) -> Result<(), std::io::Error> {
-        let css_path = root.join(VENDOR_ROOT).join("html/assets/app.css");
-        if let Some(parent) = css_path.parent() {
-            fs::create_dir_all(parent)?;
+    fn write_runtime_fixture(root: &Path) -> Result<(), std::io::Error> {
+        let static_root = root.join(STATIC_ROOT);
+        for relative_path in REQUIRED_STATIC_SVGS {
+            write_fixture_file(&static_root.join(relative_path), svg_fixture().as_bytes())?;
         }
-        fs::write(&css_path, css)?;
+        for relative_path in REVAER_BRAND_SVGS {
+            write_fixture_file(
+                &static_root.join(relative_path),
+                revaer_brand_svg_fixture().as_bytes(),
+            )?;
+        }
+        for asset_index in 1..=DATATABLES_AVATAR_COUNT {
+            write_fixture_file(
+                &static_root
+                    .join("nexus/images/avatars")
+                    .join(format!("{asset_index}.svg")),
+                svg_fixture().as_bytes(),
+            )?;
+        }
+        for asset_index in 1..=DASHBOARD_PRODUCT_COUNT {
+            write_fixture_file(
+                &static_root
+                    .join("nexus/images/apps/ecommerce/products")
+                    .join(format!("{asset_index}.svg")),
+                svg_fixture().as_bytes(),
+            )?;
+        }
 
-        let images_path = root.join(VENDOR_ROOT).join("html/images");
-        fs::create_dir_all(&images_path)?;
-        fs::write(images_path.join("logo.png"), "png")?;
+        write_fixture_file(
+            &root.join("index.html"),
+            format!("{RUNTIME_ICON_URL}\n{RUNTIME_ICON_URL}\n{RUNTIME_ICON_URL}\n").as_bytes(),
+        )?;
+        write_fixture_file(
+            &root.join("manifest.json"),
+            format!("{RUNTIME_ICON_URL}\n").as_bytes(),
+        )?;
+        write_fixture_file(
+            &root.join("browserconfig.xml"),
+            format!("{RUNTIME_ICON_URL}\n{RUNTIME_ICON_URL}\n{RUNTIME_ICON_URL}\n").as_bytes(),
+        )?;
+        write_fixture_file(
+            &root.join("src/components/shell.rs"),
+            format!("{RUNTIME_LOGO_URL}\n{RUNTIME_LOGO_URL}\n").as_bytes(),
+        )
+    }
+
+    fn write_vendor_fixture(root: &Path, css: &str) -> Result<(), std::io::Error> {
+        write_runtime_fixture(root)?;
+
+        let css_path = root.join(VENDOR_ROOT).join("html/assets/app.css");
+        write_fixture_file(&css_path, css.as_bytes())?;
 
         let js_path = root.join(VENDOR_ROOT).join("public/js");
         fs::create_dir_all(&js_path)?;
         fs::write(js_path.join("app.js"), "console.log('ok');")?;
+        fs::create_dir_all(js_path.join("components"))?;
+        let mut datatables = String::new();
+        for avatar_index in 1..=DATATABLES_AVATAR_COUNT {
+            writeln!(
+                datatables,
+                "const avatar{avatar_index} = \"{LEGACY_AVATAR_DIRECTORY}{avatar_index}{LEGACY_AVATAR_EXTENSION}\";"
+            )
+            .map_err(|source| std::io::Error::other(source.to_string()))?;
+        }
+        fs::write(js_path.join(DATATABLES_JS), datatables)?;
         Ok(())
     }
 
@@ -438,10 +799,229 @@ mod tests {
         let css_hash = sha256_hex(&output_css)?;
         assert!(lock_contents.contains(&format!("app.css sha256 {css_hash}")));
 
-        let images_dir = temp_root.path.join(OUTPUT_ROOT).join("images");
-        assert!(images_dir.join("logo.png").is_file());
+        let avatar_path = temp_root
+            .path
+            .join(OUTPUT_ROOT)
+            .join("images/avatars/1.svg");
+        assert!(avatar_path.is_file());
+        assert_eq!(fs::read_to_string(avatar_path)?, svg_fixture());
         let js_dir = temp_root.path.join(OUTPUT_ROOT).join("js");
         assert!(js_dir.join("app.js").is_file());
+        let datatables_contents = fs::read_to_string(js_dir.join(DATATABLES_JS))?;
+        assert!(datatables_contents.contains("/static/nexus/images/avatars/1.svg"));
+        assert!(!contains_legacy_avatar_url(&datatables_contents));
+        assert!(!datatables_contents.contains("/static/nexus/images/avatars/1.png"));
+        Ok(())
+    }
+
+    #[test]
+    fn sync_assets_requires_committed_runtime_images() -> TestResult {
+        let temp_root = TempRoot::new()?;
+        let css_content = css_fixture();
+        write_vendor_fixture(&temp_root.path, &css_content)?;
+        fs::remove_dir_all(temp_root.path.join(OUTPUT_ROOT).join("images"))?;
+
+        let result = sync_assets(&temp_root.path);
+        assert!(
+            matches!(result, Err(AssetSyncError::MissingPath { .. })),
+            "expected MissingPath error, got {result:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn canonicalize_js_asset_references_requires_datatables_file() -> TestResult {
+        let temp_root = TempRoot::new()?;
+        let js_dir = temp_root.path.join(OUTPUT_ROOT).join("js");
+        fs::create_dir_all(&js_dir)?;
+
+        let result = canonicalize_js_asset_references(&js_dir);
+        assert!(
+            matches!(result, Err(AssetSyncError::MissingPath { .. })),
+            "expected MissingPath error, got {result:?}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn canonicalize_legacy_avatar_paths_writes_emitted_runtime_url() -> TestResult {
+        let canonical = canonicalize_legacy_avatar_paths(
+            Path::new("components/datatables.js"),
+            r#"const avatar = "/images/avatars/10.png";"#,
+        )?;
+
+        assert!(canonical.contains(r"/static/nexus/images/avatars/10.svg"));
+        assert!(!contains_legacy_avatar_url(&canonical));
+        assert!(!canonical.contains(LEGACY_AVATAR_EXTENSION));
+        Ok(())
+    }
+
+    #[test]
+    fn canonicalize_legacy_avatar_paths_keeps_non_avatar_javascript() -> TestResult {
+        let contents = "console.log('ok');";
+        let canonical = canonicalize_legacy_avatar_paths(Path::new("app.js"), contents)?;
+
+        assert_eq!(canonical, contents);
+        Ok(())
+    }
+
+    #[test]
+    fn canonicalize_legacy_avatar_paths_rejects_unknown_avatar_png() {
+        let result = canonicalize_legacy_avatar_paths(
+            Path::new("components/datatables.js"),
+            r#"const rows = [{ avatar: "/images/avatars/11.png" }].map((data) => {
+    return {
+        ...data,
+        dateTime: new Date(),
+    }
+})"#,
+        );
+
+        assert!(
+            matches!(result, Err(AssetSyncError::JsInvalid { .. })),
+            "expected JsInvalid error, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn canonicalize_legacy_avatar_paths_rejects_backtick_unknown_avatar_url() {
+        let result = canonicalize_legacy_avatar_paths(
+            Path::new("components/datatables.js"),
+            r"const avatar = `/images/avatars/${avatarId}.png`;",
+        );
+
+        assert!(
+            matches!(result, Err(AssetSyncError::JsInvalid { .. })),
+            "expected JsInvalid error, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn canonicalize_legacy_avatar_paths_rejects_wrong_svg_url() {
+        let result = canonicalize_legacy_avatar_paths(
+            Path::new("components/datatables.js"),
+            r#"const avatar = "/images/avatars/1.svg";"#,
+        );
+
+        assert!(
+            matches!(result, Err(AssetSyncError::JsInvalid { .. })),
+            "expected JsInvalid error, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn runtime_asset_validation_rejects_missing_required_svg() -> TestResult {
+        let temp_root = TempRoot::new()?;
+        write_runtime_fixture(&temp_root.path)?;
+        fs::remove_file(temp_root.path.join("static/icons/app-icon.svg"))?;
+
+        let result = validate_runtime_assets(&temp_root.path);
+        assert!(
+            matches!(result, Err(AssetSyncError::MissingPath { .. })),
+            "expected MissingPath error, got {result:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_asset_validation_rejects_malformed_svg() -> TestResult {
+        let temp_root = TempRoot::new()?;
+        write_runtime_fixture(&temp_root.path)?;
+        fs::write(
+            temp_root.path.join("static/icons/app-icon.svg"),
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><path/></svg"#,
+        )?;
+
+        let result = validate_runtime_assets(&temp_root.path);
+        assert!(
+            matches!(result, Err(AssetSyncError::RuntimeAssetInvalid { .. })),
+            "expected RuntimeAssetInvalid error, got {result:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_asset_validation_rejects_missing_brand_gradient_identifier() -> TestResult {
+        let temp_root = TempRoot::new()?;
+        write_runtime_fixture(&temp_root.path)?;
+        let invalid = revaer_brand_svg_fixture()
+            .replace("revaer-purple-gradient", "unapproved-purple-gradient");
+        fs::write(temp_root.path.join("static/revaer-logo.svg"), invalid)?;
+
+        let result = validate_runtime_assets(&temp_root.path);
+        assert!(
+            matches!(result, Err(AssetSyncError::RuntimeAssetInvalid { .. })),
+            "expected RuntimeAssetInvalid error, got {result:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_asset_validation_rejects_missing_brand_silhouette_identifier() -> TestResult {
+        let temp_root = TempRoot::new()?;
+        write_runtime_fixture(&temp_root.path)?;
+        let invalid = revaer_brand_svg_fixture()
+            .replace("revaer-r-silhouette", "unapproved-brand-silhouette");
+        fs::write(temp_root.path.join("static/icons/app-icon.svg"), invalid)?;
+
+        let result = validate_runtime_assets(&temp_root.path);
+        assert!(
+            matches!(result, Err(AssetSyncError::RuntimeAssetInvalid { .. })),
+            "expected RuntimeAssetInvalid error, got {result:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_asset_validation_rejects_non_utf8_text() -> TestResult {
+        let temp_root = TempRoot::new()?;
+        write_runtime_fixture(&temp_root.path)?;
+        fs::write(
+            temp_root.path.join("static/icons/app-icon.svg"),
+            [0xff, 0xfe, 0xfd],
+        )?;
+
+        let result = validate_runtime_assets(&temp_root.path);
+        assert!(
+            matches!(result, Err(AssetSyncError::RuntimeAssetInvalid { .. })),
+            "expected RuntimeAssetInvalid error, got {result:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_asset_validation_rejects_forbidden_binary_extension() -> TestResult {
+        let temp_root = TempRoot::new()?;
+        write_runtime_fixture(&temp_root.path)?;
+        fs::write(
+            temp_root.path.join("static/nexus/images/legacy.PNG"),
+            b"raster",
+        )?;
+
+        let result = validate_runtime_assets(&temp_root.path);
+        assert!(
+            matches!(result, Err(AssetSyncError::RuntimeAssetInvalid { .. })),
+            "expected RuntimeAssetInvalid error, got {result:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_reference_validation_rejects_wrong_icon_url() -> TestResult {
+        let temp_root = TempRoot::new()?;
+        write_runtime_fixture(&temp_root.path)?;
+        fs::write(
+            temp_root.path.join("index.html"),
+            "/icons/app-icon.svg\n/icons/app-icon.svg\n/icons/app-icon.svg\n",
+        )?;
+
+        let output_js = temp_root.path.join(OUTPUT_ROOT).join("js");
+        let result = validate_runtime_references(&temp_root.path, &output_js);
+        assert!(
+            matches!(result, Err(AssetSyncError::RuntimeAssetInvalid { .. })),
+            "expected RuntimeAssetInvalid error, got {result:?}"
+        );
         Ok(())
     }
 
@@ -516,6 +1096,28 @@ mod tests {
                 .contains("copied CSS failed validation")
         );
         assert!(css_variant.source().is_none());
+
+        let js_variant = AssetSyncError::JsInvalid {
+            path: PathBuf::from("static/nexus/js/components/datatables.js"),
+            reason: "missing map".to_string(),
+        };
+        assert!(
+            js_variant
+                .to_string()
+                .contains("copied JavaScript failed validation")
+        );
+        assert!(js_variant.source().is_none());
+
+        let runtime_asset_variant = AssetSyncError::RuntimeAssetInvalid {
+            path: PathBuf::from("static/icons/app-icon.svg"),
+            reason: "malformed SVG".to_string(),
+        };
+        assert!(
+            runtime_asset_variant
+                .to_string()
+                .contains("runtime asset failed validation")
+        );
+        assert!(runtime_asset_variant.source().is_none());
 
         let walk_variant = AssetSyncError::WalkFailed {
             path: PathBuf::from("static/nexus/images"),

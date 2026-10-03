@@ -1,0 +1,25 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Trivy",
+          "rules": [
+            {
+              "id": "CVE-2099-0001",
+              "properties": { "tags": ["vulnerability", "CRITICAL"] }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "CVE-2099-0001",
+          "level": "error",
+          "message": { "text": "Deterministic vulnerable-image regression fixture" }
+        }
+      ]
+    }
+  ]
+}
