@@ -1,0 +1,31 @@
+[semantic_release]
+commit_parser = "conventional"
+tag_format = "v{version}"
+allow_zero_version = true
+major_on_zero = true
+version_toml = []
+version_variables = []
+assets = []
+
+[semantic_release.branches.main]
+match = "^main$"
+prerelease = true
+prerelease_token = "dev"
+
+[semantic_release.branches.stable]
+match = "^gh-pages$"
+prerelease = false
+
+[semantic_release.commit_parser_options]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf", "build", "chore", "ci", "docs", "refactor", "style", "test", "revert"]
+parse_squash_commits = false
+
+[semantic_release.remote]
+type = "github"
+token = { env = "GITHUB_TOKEN", default = "" }
+
+[semantic_release.changelog.default_templates]
+# Recovery uses the engine's changelog command. Keep its local rendering in the
+# existing ignored artifact directory; the release notes are still engine-owned.
+changelog_file = "artifacts/release-changelog.md"

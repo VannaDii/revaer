@@ -23,6 +23,11 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 
 # Revaer Sonar Workflow
 
+- For the migrated root `setup.sh` only, ADR 592 permits at most one uncovered
+  executable line and accepts full coverage. Preserve complete native records
+  and require positive execution. This supersedes the covered-and-uncovered
+  requirement below only for that bootstrap; other inputs retain their gates.
+
 - Revaer versions its complete strict Sonar scope in `sonar-project.properties`. Keep every authored tracked top-level entry in main-code scope, use only the committed empty `.sonar-test-scope` sentinel for `sonar.tests`, and keep source, test, coverage, duplication, JavaScript, SCA, and issue-scope filters explicitly empty.
 - PostgreSQL migrations must remain visible to generic text, secrets, and main-code analysis. Do not assign `.sql`, `.pgsql`, or `.plpgsql` to the PL/SQL analyzer; reserve `sonar.plsql.file.suffixes=.plsql` for actual PL/SQL.
 - Sonar property policy is enforced after Java-properties parsing. Escaped keys, leading-whitespace forms, continuations, duplicate logical keys, workflow overrides, and properties outside the exact reviewed allowlist are forbidden.

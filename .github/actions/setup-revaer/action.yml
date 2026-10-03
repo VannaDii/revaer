@@ -1,236 +1,138 @@
 name: Setup Revaer
-description: Install Rust toolchain, just, optional Node.js, and apt packages.
+description: Install the locked Python tooling and the selected native prerequisites.
 inputs:
-  toolchain:
-    description: Rust toolchain version to install.
-    required: true
-  components:
-    description: Rust components to install (comma-separated).
-    required: false
+  profile:
+    description: rv setup profile (ci installs Rust; python is for Python-only jobs).
+    default: ci
+  cargo-tools:
+    description: Comma-separated package names from tools/versions.toml; empty installs none.
     default: ""
-  apt-packages:
-    description: Apt packages to install (whitespace-separated; spaces, tabs, and newlines allowed).
-    required: false
+  browsers:
+    description: Comma-separated Playwright browsers (chromium, firefox, webkit, chrome); empty installs none.
     default: ""
   apt-profile:
-    description: Predefined apt package set (base, db, coverage).
-    required: false
+    description: Optional Debian package set (base, db, coverage, media).
     default: ""
-  node-version:
-    description: Node.js version to install.
-    required: false
+  apt-packages:
+    description: Optional whitespace-separated Debian packages, overriding apt-profile.
     default: ""
   cargo-cache:
-    description: Restore and save the shared Cargo and sccache artifact cache.
-    required: false
+    description: Restore and save Cargo tools, downloads and compiler artifacts.
     default: "true"
+  helm:
+    description: Install the supported Helm CLI.
+    default: "false"
+  oras:
+    description: Install the supported ORAS CLI.
+    default: "false"
+  trivy:
+    description: Install the supported Trivy CLI.
+    default: "false"
+  sonar-scanner:
+    description: Install the pinned scanner and retain its analyzer cache.
+    default: "false"
 runs:
   using: composite
   steps:
-    - name: Read exact build inputs
-      id: build-inputs
-      shell: bash
-      run: |
-        set -euo pipefail
-        set -a
-        source .github/build-inputs.env
-        set +a
-        printf 'rust_version=%s\n' "${RUST_VERSION}" >> "${GITHUB_OUTPUT}"
-        printf 'node_version=%s\n' "${NODE_VERSION}" >> "${GITHUB_OUTPUT}"
-        printf 'npm_version=%s\n' "${NPM_VERSION}" >> "${GITHUB_OUTPUT}"
-        printf 'just_version=%s\n' "${JUST_VERSION}" >> "${GITHUB_OUTPUT}"
+    # setup-uv reads tool.uv.required-version and owns Python/cache installation.
+    # The checkout's .python-version and uv.lock select the interpreter and graph.
+    - name: Install uv
+      uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      with:
+        version-file: pyproject.toml
+        enable-cache: "true"
+        cache-python: "true"
+        cache-dependency-glob: |
+          uv.lock
+          pyproject.toml
+          .python-version
+          tools/launcher/pyproject.toml
 
-    - name: Verify Rust toolchain input
+    - name: Sync locked Python environment
       shell: bash
-      env:
-        INPUT_TOOLCHAIN: ${{ inputs.toolchain }}
-        MANIFEST_RUST_VERSION: ${{ steps.build-inputs.outputs.rust_version }}
-        INPUT_NODE_VERSION: ${{ inputs.node-version }}
-        MANIFEST_NODE_VERSION: ${{ steps.build-inputs.outputs.node_version }}
-      run: |
-        set -euo pipefail
-        configured_toolchain="$(sed -n 's/^channel = "\([^"]*\)"$/\1/p' rust-toolchain.toml)"
-        if [ -z "${configured_toolchain}" ]; then
-          echo "rust-toolchain.toml does not contain a parseable channel" >&2
-          exit 1
-        fi
-        if [ "${INPUT_TOOLCHAIN}" != "${configured_toolchain}" ]; then
-          echo "Workflow Rust toolchain ${INPUT_TOOLCHAIN} does not match rust-toolchain.toml ${configured_toolchain}" >&2
-          exit 1
-        fi
-        if [ "${MANIFEST_RUST_VERSION}" != "${configured_toolchain}" ]; then
-          echo "Build-input Rust ${MANIFEST_RUST_VERSION} does not match rust-toolchain.toml ${configured_toolchain}" >&2
-          exit 1
-        fi
-        if [ -n "${INPUT_NODE_VERSION}" ] && [ "${INPUT_NODE_VERSION}" != "${MANIFEST_NODE_VERSION}" ]; then
-          echo "Workflow Node.js ${INPUT_NODE_VERSION} does not match build-input manifest ${MANIFEST_NODE_VERSION}" >&2
-          exit 1
-        fi
+      run: uv sync --locked
 
-    - name: Cache Rust artifacts
-      if: ${{ inputs['cargo-cache'] != 'false' }}
+    - name: Cache Rust artifacts and installed tools
+      if: inputs.cargo-cache == 'true'
       uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
+          ~/.cargo/.crates.toml
+          ~/.cargo/.crates2.json
+          ~/.cargo/bin/cargo-audit
+          ~/.cargo/bin/cargo-deny
+          ~/.cargo/bin/cargo-llvm-cov
+          ~/.cargo/bin/cargo-udeps
+          ~/.cargo/bin/cargo-sqlx
+          ~/.cargo/bin/sqlx
+          ~/.cargo/bin/trunk
+          ~/.cargo/bin/mdbook
+          ~/.cargo/bin/mdbook-mermaid
+          ~/.cargo/bin/lychee
           ~/.cache/sccache
-        key: ${{ runner.os }}-cargo-${{ inputs.toolchain }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '.github/build-inputs.env') }}
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ github.job }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/versions.toml', '.github/build-inputs.env') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-${{ inputs.toolchain }}-${{ github.job }}-
-          ${{ runner.os }}-cargo-${{ inputs.toolchain }}-
+          ${{ runner.os }}-${{ runner.arch }}-cargo-${{ github.job }}-
 
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+    - name: Install Helm
+      if: inputs.helm == 'true'
+      uses: Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
       with:
-        toolchain: ${{ inputs.toolchain }}
-        components: ${{ inputs.components }}
+        version: v3.19.0
 
-    - name: Install just
-      uses: taiki-e/install-action@cf39a74df4a72510be4e5b63348d61067f11e64a # v2.75.0
+    - name: Install ORAS
+      if: inputs.oras == 'true'
+      uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3 # v2.0.0
       with:
-        tool: just@${{ steps.build-inputs.outputs.just_version }}
-        fallback: none
+        version: 1.3.1
 
-    - name: Install Node.js
-      if: ${{ inputs.node-version != '' }}
-      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+    - name: Install Trivy
+      if: inputs.trivy == 'true'
+      uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
       with:
-        node-version: ${{ steps.build-inputs.outputs.node_version }}
-        cache: npm
-        cache-dependency-path: tests/package-lock.json
+        version: v0.69.3
+        cache: "true"
 
-    - name: Install exact npm
-      if: ${{ inputs.node-version != '' }}
+    - name: Set up selected Revaer tools
       shell: bash
       env:
-        EXPECTED_NODE_VERSION: ${{ steps.build-inputs.outputs.node_version }}
-        EXPECTED_NPM_VERSION: ${{ steps.build-inputs.outputs.npm_version }}
-      run: |
-        set -euo pipefail
-        test "$(node --version)" = "v${EXPECTED_NODE_VERSION}"
-        npm install --global --ignore-scripts --no-audit --no-fund "npm@11.12.1"
-        test "$(npm --version)" = "${EXPECTED_NPM_VERSION}"
+        RV_SETUP_PROFILE: ${{ inputs.profile }}
+        RV_SETUP_CARGO_TOOLS: ${{ inputs.cargo-tools }}
+        RV_SETUP_BROWSERS: ${{ inputs.browsers }}
+        RV_SETUP_APT_PROFILE: ${{ inputs.apt-profile }}
+        RV_SETUP_APT_PACKAGES: ${{ inputs.apt-packages }}
+      run: >-
+        uv run --locked -- rv setup --no-launcher
+        --profile "$RV_SETUP_PROFILE"
+        --cargo-tools "$RV_SETUP_CARGO_TOOLS"
+        --browsers "$RV_SETUP_BROWSERS"
+        --apt-profile "$RV_SETUP_APT_PROFILE"
+        --apt-packages "$RV_SETUP_APT_PACKAGES"
 
-    - name: Install apt packages
-      shell: bash
-      env:
-        INPUT_APT_PACKAGES: ${{ inputs.apt-packages }}
-        INPUT_APT_PROFILE: ${{ inputs.apt-profile }}
-      run: |
-        set -euo pipefail
-
-        declare -a packages=()
-
-        if [ -n "${INPUT_APT_PACKAGES}" ]; then
-          # Accept YAML multiline strings and CRLF input by tokenizing on shell whitespace.
-          read -r -a packages <<<"$(printf '%s\n' "${INPUT_APT_PACKAGES}" | tr -d '\r' | tr '\n\t' '  ')"
-        else
-          case "${INPUT_APT_PROFILE}" in
-            base)
-              packages=(libtorrent-rasterbar-dev pkg-config sccache)
-              ;;
-            db)
-              packages=(libtorrent-rasterbar-dev pkg-config libpq-dev postgresql-client sccache)
-              ;;
-            coverage)
-              packages=(
-                libtorrent-rasterbar-dev
-                pkg-config
-                libpq-dev
-                postgresql-client
-                sccache
-                clang-19
-                ca-certificates
-                curl
-                build-essential
-                cmake
-                python3
-                binutils-dev
-                libssl-dev
-                libcurl4-openssl-dev
-                libelf-dev
-                libstdc++-12-dev
-                zlib1g-dev
-                libdw-dev
-                libiberty-dev
-              )
-              ;;
-            "")
-              packages=()
-              ;;
-            *)
-              echo "Unknown apt profile: ${INPUT_APT_PROFILE}" >&2
-              exit 1
-              ;;
-          esac
-        fi
-
-        if [ "${#packages[@]}" -eq 0 ]; then
-          exit 0
-        fi
-
-        for package in "${packages[@]}"; do
-          case "${package}" in
-            [A-Za-z0-9][A-Za-z0-9.+:=~-]*)
-              ;;
-            *)
-              echo "Invalid apt package token: ${package}" >&2
-              exit 1
-              ;;
-          esac
-        done
-
-        sudo apt-get update
-        sudo apt-get install -y -- "${packages[@]}"
-
-    - name: Cache exact kcov
-      if: ${{ inputs.apt-profile == 'coverage' }}
+    - name: Cache pinned kcov source and installation
+      if: inputs.apt-profile == 'coverage'
       uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
-        path: ~/.local/revaer/kcov/a39874f938ce13f7a65f253120d1ec946b349ffe
-        key: ${{ runner.os }}-${{ runner.arch }}-kcov-a39874f938ce13f7a65f253120d1ec946b349ffe
+        path: ~/.local/revaer/kcov
+        key: ${{ runner.os }}-${{ runner.arch }}-kcov-${{ hashFiles('tools/versions.toml') }}
 
-    - name: Install exact kcov
-      if: ${{ inputs.apt-profile == 'coverage' }}
+    - name: Install pinned kcov
+      if: inputs.apt-profile == 'coverage'
       shell: bash
-      env:
-        KCOV_COMMIT: a39874f938ce13f7a65f253120d1ec946b349ffe
-        KCOV_SHA256: dac01569171979477b500924be264d2a1bc649dae6010536228cbb319344d516
-      run: |
-        set -euo pipefail
-        install_prefix="${HOME}/.local/revaer/kcov/${KCOV_COMMIT}"
-        if [ ! -x "${install_prefix}/bin/kcov" ]; then
-          archive="${RUNNER_TEMP}/kcov-${KCOV_COMMIT}.tar.gz"
-          source_directory="${RUNNER_TEMP}/kcov-${KCOV_COMMIT}"
-          build_directory="${RUNNER_TEMP}/kcov-build-${KCOV_COMMIT}"
-          curl --fail --location --proto '=https' --tlsv1.2 \
-            --output "${archive}" \
-            "https://github.com/SimonKagstrom/kcov/archive/${KCOV_COMMIT}.tar.gz"
-          printf '%s  %s\n' "${KCOV_SHA256}" "${archive}" | sha256sum --check --strict
-          mkdir -p "${source_directory}" "${build_directory}"
-          tar --extract --gzip --file "${archive}" --directory "${source_directory}" --strip-components=1
-          cmake \
-            -S "${source_directory}" \
-            -B "${build_directory}" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="${install_prefix}"
-          cmake --build "${build_directory}" --parallel "$(nproc)"
-          cmake --install "${build_directory}"
-        fi
-        actual_version="$("${install_prefix}/bin/kcov" --version)"
-        if [ "${actual_version}" != "kcov 43" ]; then
-          echo "Expected kcov 43, found ${actual_version}" >&2
-          exit 1
-        fi
-        echo "${install_prefix}/bin" >> "${GITHUB_PATH}"
+      run: uv run --locked -- rv setup --profile python --no-launcher --kcov
 
-    - name: Configure sccache
+    - name: Cache scanner and analyzers
+      if: inputs.sonar-scanner == 'true'
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      with:
+        path: |
+          ~/.local/revaer/sonar-scanner
+          ~/.sonar/cache
+        key: ${{ runner.os }}-${{ runner.arch }}-sonar-${{ hashFiles('tools/versions.toml', 'config/sonarsource-public-key.asc') }}
+
+    - name: Install pinned Sonar scanner
+      if: inputs.sonar-scanner == 'true'
       shell: bash
-      run: |
-        if command -v sccache >/dev/null 2>&1; then
-          mkdir -p "${HOME}/.cache/sccache"
-          echo "RUSTC_WRAPPER=sccache" >> "${GITHUB_ENV}"
-          echo "SCCACHE_DIR=${HOME}/.cache/sccache" >> "${GITHUB_ENV}"
-          echo "SCCACHE_CACHE_SIZE=5G" >> "${GITHUB_ENV}"
-        fi
+      run: uv run --locked -- rv setup --profile python --no-launcher --sonar-scanner

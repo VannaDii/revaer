@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use revaer_test_support::fixtures::{docker_available, docker_available_with_host};
 use revaer_test_support::postgres::{start_postgres, start_postgres_at};
-use sqlx::postgres::PgPoolOptions;
-use sqlx::{AssertSqlSafe, Row, raw_sql};
+use sqlx::postgres::{PgConnection, PgPoolOptions};
+use sqlx::{AssertSqlSafe, Connection, Row, raw_sql};
 use url::Url;
 
 fn current_database_name(url: &str) -> Result<String, Box<dyn std::error::Error>> {
@@ -162,5 +162,67 @@ fn start_postgres_uses_external_database_when_available() -> Result<(), Box<dyn 
     assert!(database_exists(&admin_url, &current_database)?);
     drop(db);
     assert!(!database_exists(&admin_url, &current_database)?);
+    Ok(())
+}
+
+fn test_runtime() -> Result<tokio::runtime::Runtime, Box<dyn std::error::Error>> {
+    Ok(tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()?)
+}
+
+fn fixture_roles_exist(url: &str, name: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    test_runtime()?.block_on(async {
+        let mut admin = PgConnection::connect(url).await?;
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname = $1 OR rolname = $2)",
+        )
+        .bind(format!("{name}_owner"))
+        .bind(format!("{name}_runtime"))
+        .fetch_one(&mut admin)
+        .await?;
+        admin.close().await?;
+        Ok(exists)
+    })
+}
+
+#[test]
+fn initialized_fixture_failure_cleans_database_and_roles() -> Result<(), Box<dyn std::error::Error>>
+{
+    for explicit_close in [false, true] {
+        let mut fixture = start_postgres()?;
+        let database = current_database_name(fixture.connection_string())?;
+        let admin_url = admin_database_url(fixture.connection_string())?;
+        let result = test_runtime()?.block_on(fixture.initialize_runtime(include_str!(
+            "../../../scripts/tests/database-runtime-fixture-failing-init.sql"
+        )));
+        assert!(result.is_err());
+        assert!(fixture_roles_exist(&admin_url, &database)?);
+        if explicit_close {
+            fixture.close()?;
+        } else {
+            drop(fixture);
+        }
+        assert!(!database_exists(&admin_url, &database)?);
+        assert!(!fixture_roles_exist(&admin_url, &database)?);
+    }
+    Ok(())
+}
+
+#[test]
+fn initialized_fixture_empty_input_preserves_raw_database() -> Result<(), Box<dyn std::error::Error>>
+{
+    let mut fixture = start_postgres()?;
+    let database = current_database_name(fixture.connection_string())?;
+    let admin_url = admin_database_url(fixture.connection_string())?;
+    assert!(
+        test_runtime()?
+            .block_on(fixture.initialize_runtime(" "))
+            .is_err()
+    );
+    assert!(database_exists(&admin_url, &database)?);
+    assert!(!fixture_roles_exist(&admin_url, &database)?);
+    fixture.close()?;
     Ok(())
 }

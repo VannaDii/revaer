@@ -118,6 +118,8 @@ async fn native_alerts_and_rate_limits_smoke() -> Result<()> {
     let resume = temp_dir("revaer-libt-resume-").context("temp resume dir")?;
 
     let bus = revaer_events::EventBus::with_capacity(64);
+    // Subscribe before issuing commands: live subscriptions do not replay prior events.
+    let mut stream = bus.subscribe(None);
     let engine = LibtorrentEngine::new(bus.clone()).context("engine init")?;
 
     let config = base_runtime_config(&download, &resume);
@@ -167,7 +169,6 @@ async fn native_alerts_and_rate_limits_smoke() -> Result<()> {
         .await
         .context("clear piece deadline")?;
 
-    let mut stream = bus.subscribe(None);
     let mut saw_added = false;
 
     let window = Duration::from_secs(15);

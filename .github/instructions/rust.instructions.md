@@ -13,7 +13,7 @@ applyTo:
 ---
 
 `AGENTS.md` is the root contract. This file tightens Rust-specific guidance for the paths in `applyTo`.
-If any Rust-path rule in this file conflicts with `AGENTS.md`, this file wins for those Rust paths.
+Root policy takes precedence; these scoped rules may only tighten or specialize it.
 
 # Rust Quality Rules
 
@@ -51,6 +51,12 @@ If any Rust-path rule in this file conflicts with `AGENTS.md`, this file wins fo
 - `just cov` records coverage once with `cargo llvm-cov --workspace --all-features --no-report`, then enforces the 90% per-package line threshold with `cargo llvm-cov report --package ...` against that shared workspace dataset. Keep the coverage gate workspace-sourced so library crates receive credit for lines exercised by downstream crates and integration tests.
 - The `revaer-torrent-libt` build script must select exactly one native source per build: bundle, paired explicit include/library override, pkg-config, or one coherent fallback prefix. It must propagate pkg-config defines, select Boost and OpenSSL headers from the same installation family ahead of ambient system headers, accept libtorrent `>=2.0.10,<2.2.0`, and verify that the selected macOS libtorrent library contains the Cargo target architecture before enabling the native backend. When pkg-config omits `TORRENT_ABI_VERSION`, query the configured C++ preprocessor for the effective packaged-header ABI and fail closed if it cannot be proven. Manual bundle, override, and fallback sources must provide their complete build definitions through `LIBTORRENT_DEFINES`, including `TORRENT_ABI_VERSION`; missing native ABI metadata fails closed.
 - `just test-native` serializes native libtorrent tests with `--test-threads=1`; keep all native tests enabled and do not reintroduce overlapping native sessions without task-recorded evidence across the supported 2.0.x and 2.1.x API lines.
+- During the accepted `rv` migration, preserve that Rust-only 90% threshold while
+  adding native instrumentation and complete Rust/C++ evidence. Per-package JSON
+  must retain native measurements even though the existing numeric gate measures
+  Rust. Published reports must not hide authored files. Install `rust-src` through
+  rustup and use LLVM path equivalence to render compiler-mapped standard-library
+  sources; do not suppress missing-source diagnostics or filter those files away.
 
 # Documentation
 
@@ -76,3 +82,7 @@ If any Rust-path rule in this file conflicts with `AGENTS.md`, this file wins fo
 - Measure before optimizing. Do not land “performance” refactors based on taste or folklore.
 - For performance-driven changes, record the command, benchmark, trace, or timing report that justified the change in the task record or ADR.
 - Prefer simpler, more explicit code unless measurement shows a real hotspot.
+
+- The migrated `rv test-runtime-shutdown` and `rv lint-runtime-shutdown` retain
+  both all-feature and no-default-feature configurations. Each test selection
+  must execute positive passing tests; preserve both existing Clippy passes.

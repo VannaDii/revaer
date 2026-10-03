@@ -1,0 +1,8 @@
+# Reporting uses one source root so Cobertura filenames retain their complete
+# checkout-relative path. Collection and its 90% gate remain in pyproject.toml.
+# rv supplies every authored Python file to the reporter, including unexecuted
+# files. This configuration adds no source, test, or coverage exclusions.
+[tool.coverage.run]
+source = ["."]
+relative_files = true
+branch = true

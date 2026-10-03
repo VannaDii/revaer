@@ -34,6 +34,11 @@ revaer/
 
 ## Getting Started
 
+Python tooling is moving to `rv`, managed by uv. Start with `./setup.sh` and the
+[rv setup and architecture guide](tools/README.md). The
+[migration inventory](tools/migration.md) identifies verified replacements and
+the remaining work before the existing Just gates are retired.
+
 1. Install the Rust toolchain (`rustup show`) at MSRV `1.91.0` (pinned in `rust-toolchain.toml`) and ensure `cargo`, `rustfmt`, and `clippy` are available.
 2. Provide a PostgreSQL connection string via the `DATABASE_URL` environment variable.
 3. Run `just check` to verify the workspace (all workflows must go through `just`; avoid calling `cargo …` directly).

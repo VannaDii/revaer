@@ -4,7 +4,7 @@ This directory hosts HTTP API specifications, the generated OpenAPI document, an
 
 ## Contents
 
-- `openapi.json` - Generated OpenAPI document (`just api-export`).
+- `openapi.json` - Generated OpenAPI document (`rv api-export`).
 - `openapi.md` - How to regenerate and consume the OpenAPI document.
 - `guides/` - Scenario-based walkthroughs (bootstrap, operations, telemetry, CLI usage).
 - `openapi-gaps.md` - Inventory of router endpoints missing from the OpenAPI spec (should be empty).

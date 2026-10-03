@@ -238,7 +238,6 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
         with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
           apt-packages: >-
             coreutils
             curl
@@ -247,13 +246,7 @@ jobs:
 
       - id: media-tools
         name: Media tool cache key
-        shell: bash
-        run: |
-          set -euo pipefail
-          {
-            ffmpeg -version | head -n 1
-            ffprobe -version | head -n 1
-          } | sha256sum | awk '{ print "key=" $1 }' >> "${GITHUB_OUTPUT}"
+        run: uv run --locked -- rv fixture-cache-key
 
       - name: Restore media fixture cache
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
@@ -262,26 +255,21 @@ jobs:
             test-fixtures/source
             test-fixtures/chromium
             test-fixtures/derived
-          key: ${{ runner.os }}-media-fixtures-${{ steps.media-tools.outputs.key }}-${{ hashFiles('test-fixtures/lock.json', 'test-fixtures/manifest.json', 'scripts/test-fixtures/*.sh') }}
+          key: ${{ runner.os }}-media-fixtures-${{ steps.media-tools.outputs.tool_version }}-${{ steps.media-tools.outputs.fixtures }}
           restore-keys: |
-            ${{ runner.os }}-media-fixtures-${{ steps.media-tools.outputs.key }}-
+            ${{ runner.os }}-media-fixtures-${{ steps.media-tools.outputs.tool_version }}-
 
       - name: Prepare media fixtures
         run: |
-          just download-test-fixtures
-          just generate-test-fixtures
+          uv run --locked -- rv download-test-fixtures
+          uv run --locked -- rv generate-test-fixtures
 
-      - name: Media conversion fixtures
-        run: just test-media-conversion
+      - name: Media conversion integration tests
+        run: uv run --locked -- rv test-media-conversion
 
       - name: Publish media conversion report
         if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          report_path="target/media-conversion-report.md"
-          test -s "${report_path}"
-          cat "${report_path}" | tee -a "${GITHUB_STEP_SUMMARY}"
+        run: uv run --locked -- rv workflow-report --report target/media-conversion-report.md
 
       - name: Upload media conversion report
         if: always()
@@ -293,7 +281,7 @@ jobs:
 
       - name: Clean media fixtures
         if: always()
-        run: just clean-test-fixtures
+        run: uv run --locked -- rv clean-test-fixtures
 
   feature-matrix:
     name: Feature Matrix

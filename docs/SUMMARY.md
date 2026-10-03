@@ -23,6 +23,7 @@
 
 -   [API Overview](api/index.md)
 -   [OpenAPI Reference](api/openapi.md)
+-   [Maintaining the API Contract](api/contract.md)
 -   [OpenAPI Gaps](api/openapi-gaps.md)
 -   [Indexer Migration Rollback](api/guides/indexer-migration-rollback.md)
 
@@ -348,8 +349,6 @@
     -   [316: Import runtime gap-closure follow-up](adr/316-import-runtime-gap-closure-followup.md)
     -   [317: Supply chain advisory baseline](adr/317-supply-chain-advisory-baseline.md)
     -   [322: Supply chain CI and advisory remediation](adr/322-supply-chain-ci-tool-cache.md)
-    -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
-    -   [379: UI runtime image canonicalization](adr/379-ui-runtime-image-canonicalization.md)
     -   [404: Doc indexer fixture isolation](adr/404-doc-indexer-fixture-isolation.md)
     -   [406: PR 71 deterministic Cargo tools](adr/406-pr-71-deterministic-cargo-tools.md)
     -   [407: Database-backed coverage execution](adr/407-database-backed-coverage-execution.md)
@@ -363,3 +362,5 @@
     -   [479: Platform-safe test dependencies](adr/479-platform-safe-test-dependencies.md)
     -   [480: PostgreSQL test shared memory](adr/480-postgres-test-shared-memory.md)
     -   [481: Warning-free validation tools](adr/481-warning-free-validation-tools.md)
+
+    -   [592: Python tooling](adr/592-python-tooling.md)

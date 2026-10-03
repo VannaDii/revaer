@@ -1,5 +1,20 @@
 # AGENT.MD — Codex Operating Instructions (Revaer, Rust 2024)
 
+## Pre-read secret scans
+
+Before reading workspace files, run `sonar analyze secrets` on the explicit file
+paths. Exclude files named `.env` from this pre-read scan: the operator confirmed
+that these contain arbitrary local testing passwords and authorized this
+exception on 2026-09-21. Enumerate files before scanning directories so `.env`
+files are not included indirectly.
+
+Source files remain in the scan. A reported credential that the operator has
+confirmed is a testing placeholder may be inspected in that context; do not
+infer that an unfamiliar credential is harmless from the product's deployment
+model. Stop before reading an unconfirmed credential and request clarification.
+This local pre-read exception does not change the repository's Sonar analysis
+scope, quality gates, or remote finding dispositions.
+
 > **Prime Directives**
 >
 > 1. **Rust 2024 only**. Never lower the edition.
@@ -32,6 +47,7 @@
   - [`sonar-project.properties`](./sonar-project.properties)
 - This file must reference those operational files instead of copying large command bodies or stale workflow inventories.
 - Current scoped instruction files:
+  - [`.github/instructions/python.instructions.md`](./.github/instructions/python.instructions.md)
   - [`.github/instructions/rust.instructions.md`](./.github/instructions/rust.instructions.md)
   - [`.github/instructions/revaer-data.instructions.md`](./.github/instructions/revaer-data.instructions.md)
   - [`.github/instructions/revaer-ui.instructions.md`](./.github/instructions/revaer-ui.instructions.md)

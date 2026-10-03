@@ -1,0 +1,1 @@
+"""Revaer application acceptance tests."""
