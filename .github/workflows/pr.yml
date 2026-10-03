@@ -146,10 +146,8 @@ jobs:
           oras: 'true'
           trivy: 'true'
           browsers: chromium,firefox,webkit
-      - name: Run migrations
-        env:
-          DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}
-        run: uv run --locked -- rv db-migrate
+      - name: Single-init application fixtures
+        run: uv run --locked -- rv ui-e2e-app-test
       - name: Coverage
         run: uv run --locked -- rv cov
       - name: Python tooling coverage
@@ -336,10 +334,8 @@ jobs:
           apt-profile: db
           cargo-tools: sqlx-cli
 
-      - name: Run migrations
-        env:
-          DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}
-        run: uv run --locked -- rv db-migrate
+      - name: Single-init application fixtures
+        run: uv run --locked -- rv ui-e2e-app-test
 
       - name: Feature matrix tests (no default features)
         run: uv run --locked -- rv test-features-min

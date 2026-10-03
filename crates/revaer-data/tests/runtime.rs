@@ -11,13 +11,10 @@ use uuid::Uuid;
 
 #[tokio::test]
 async fn runtime_store_persists_status_and_fs_jobs() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping runtime_store_persists_status_and_fs_jobs: {err}");
-            return Ok(());
-        }
-    };
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../init.sql"))
+        .await?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(postgres.connection_string())
@@ -89,18 +86,16 @@ async fn runtime_store_persists_status_and_fs_jobs() -> anyhow::Result<()> {
         "failed state is tracked only for known jobs"
     );
 
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn runtime_store_round_trips_files_and_failed_state() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping runtime_store_round_trips_files_and_failed_state: {err}");
-            return Ok(());
-        }
-    };
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../init.sql"))
+        .await?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(postgres.connection_string())
@@ -203,6 +198,7 @@ async fn runtime_store_round_trips_files_and_failed_state() -> anyhow::Result<()
     assert_eq!(files[1].priority, FilePriority::Skip);
     assert!(!files[1].selected);
 
+    postgres.close()?;
     Ok(())
 }
 
@@ -212,13 +208,10 @@ async fn runtime_store_rejects_non_utf8_fs_job_paths() -> anyhow::Result<()> {
     use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt;
 
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping runtime_store_rejects_non_utf8_fs_job_paths: {err}");
-            return Ok(());
-        }
-    };
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../init.sql"))
+        .await?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(postgres.connection_string())
@@ -256,5 +249,6 @@ async fn runtime_store_rejects_non_utf8_fs_job_paths() -> anyhow::Result<()> {
         }
     ));
 
+    postgres.close()?;
     Ok(())
 }

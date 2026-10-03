@@ -13,9 +13,19 @@ use url::{Position, Url, form_urlencoded};
 const TEST_DATABASE_URL_IS_REQUIRED: &str = "test database url is required";
 
 #[doc = "Handle to a disposable Postgres database used in tests."]
-#[derive(Debug)]
 #[rustfmt::skip]
-pub struct TestDatabase { connection_string: String, admin_url: String, database: String }
+pub struct TestDatabase { connection_string: String, admin_url: String, database: String, runtime_roles: bool, closed: bool }
+
+impl std::fmt::Debug for TestDatabase {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("TestDatabase")
+            .field("database", &self.database)
+            .field("runtime_roles", &self.runtime_roles)
+            .field("closed", &self.closed)
+            .finish_non_exhaustive()
+    }
+}
 
 impl TestDatabase {
     /// Apply an initialization script atomically to this owned disposable database.
@@ -38,8 +48,125 @@ impl TestDatabase {
     pub fn connection_string(&self) -> &str { &self.connection_string }
 }
 
-#[rustfmt::skip]
-impl Drop for TestDatabase { fn drop(&mut self) { let _ = run_admin_operation(&self.admin_url, &drop_database_sql(&self.database), "failed to drop test database"); } }
+impl Drop for TestDatabase {
+    fn drop(&mut self) {
+        if let Err(error) = self.cleanup() {
+            eprintln!("owned test database cleanup failed: {error}");
+        }
+    }
+}
+
+impl TestDatabase {
+    /// Initialize and seal this owned database, then expose only its runtime login.
+    ///
+    /// Raw fixtures remain empty until this method is explicitly called. The
+    /// server hashes the exact UTF-8 initializer submitted by the caller, using
+    /// the same SHA-256 bytes as the packaged runtime baseline verifier.
+    ///
+    /// # Errors
+    /// Returns initialization, sealing or connection errors. The handle retains
+    /// cleanup ownership on failure; it must not be used as an initialized fixture.
+    pub async fn initialize_runtime(&mut self, init: &str) -> Result<()> {
+        anyhow::ensure!(
+            !self.closed && !self.runtime_roles,
+            "fixture is already initialized or closed"
+        );
+        anyhow::ensure!(
+            !init.trim().is_empty(),
+            "fixture initializer must not be empty"
+        );
+        let mut admin = PgConnection::connect(&self.connection_string).await?;
+        let database: String = sqlx::query_scalar("SELECT current_database()")
+            .fetch_one(&mut admin)
+            .await?;
+        anyhow::ensure!(
+            database == self.database,
+            "fixture connection reached another database"
+        );
+        let password: String = sqlx::query_scalar("SELECT gen_random_uuid()::text")
+            .fetch_one(&mut admin)
+            .await?;
+        let mut transaction = admin.begin().await?;
+        sqlx::query("SELECT set_config('revaer_test.fixture_password', $1, true)")
+            .bind(&password)
+            .execute(&mut *transaction)
+            .await?;
+        sqlx::raw_sql(include_str!(
+            "../../../scripts/tests/database-runtime-fixture-roles.sql"
+        ))
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        self.runtime_roles = true;
+        let owner_name = format!("{}_owner", self.database);
+        let runtime_name = format!("{}_runtime", self.database);
+        let mut owner_url = Url::parse(&self.connection_string)?;
+        owner_url
+            .set_username(&owner_name)
+            .map_err(|()| anyhow::anyhow!("invalid owner URL"))?;
+        owner_url
+            .set_password(Some(&password))
+            .map_err(|()| anyhow::anyhow!("invalid owner password field"))?;
+        let mut owner = PgConnection::connect(owner_url.as_str()).await?;
+        let mut transaction = owner.begin().await?;
+        sqlx::raw_sql(sqlx::AssertSqlSafe(init))
+            .execute(&mut *transaction)
+            .await?;
+        sqlx::query("SELECT * FROM revaer_system.seal_database_baseline_v1(1::smallint, sha256(convert_to($1, 'UTF8')), $2)")
+            .bind(init).bind(&runtime_name).execute(&mut *transaction).await?;
+        transaction.commit().await?;
+        owner.close().await?;
+        sqlx::raw_sql(include_str!(
+            "../../../scripts/tests/database-runtime-fixture-owner-disable.sql"
+        ))
+        .execute(&mut admin)
+        .await?;
+        admin.close().await?;
+        owner_url
+            .set_username(&runtime_name)
+            .map_err(|()| anyhow::anyhow!("invalid runtime URL"))?;
+        let mut runtime = PgConnection::connect(owner_url.as_str()).await?;
+        let identity: (String, String) = sqlx::query_as("SELECT current_database(), current_user")
+            .fetch_one(&mut runtime)
+            .await?;
+        runtime.close().await?;
+        anyhow::ensure!(
+            identity == (self.database.clone(), runtime_name),
+            "fixture runtime connection has the wrong database or role"
+        );
+        self.connection_string = owner_url.to_string();
+        Ok(())
+    }
+
+    /// Remove the owned database and any fixture roles, reporting cleanup errors.
+    ///
+    /// # Errors
+    /// Returns the administrative cleanup error. Drop also attempts cleanup on
+    /// early returns, and reports failures rather than silently discarding them.
+    pub fn close(mut self) -> Result<()> {
+        self.cleanup()
+    }
+
+    fn cleanup(&mut self) -> Result<()> {
+        if self.closed {
+            return Ok(());
+        }
+        run_admin_operation(
+            &self.admin_url,
+            &drop_database_sql(&self.database),
+            "failed to drop test database",
+        )?;
+        if self.runtime_roles {
+            let sql = format!(
+                "DROP ROLE IF EXISTS \"{}_runtime\", \"{}_owner\"",
+                self.database, self.database
+            );
+            run_admin_operation(&self.admin_url, &sql, "failed to drop test fixture roles")?;
+        }
+        self.closed = true;
+        Ok(())
+    }
+}
 
 #[doc = "Start a disposable test database on an externally managed Postgres instance."]
 #[doc = ""]
@@ -88,6 +215,8 @@ fn create_test_database(parsed: &Url) -> Result<TestDatabase> {
         connection_string,
         admin_url,
         database,
+        runtime_roles: false,
+        closed: false,
     })
 }
 

@@ -292,7 +292,9 @@ fn import_profile_row(profile: &PortableProfile) -> PortableProfileRow {
     }
 }
 
-fn expected_import_head(row: &revaer_api::models::MediaYamlResourcePrecondition) -> Option<i32> {
+const fn expected_import_head(
+    row: &revaer_api::models::MediaYamlResourcePrecondition,
+) -> Option<i32> {
     use revaer_api::models::MediaYamlResourcePrecondition;
     match row {
         MediaYamlResourcePrecondition::Create { .. } => None,

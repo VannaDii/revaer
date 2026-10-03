@@ -336,15 +336,23 @@ class Cargo(ExternalTool):
             )
         )
 
+    def lock_workspace(self) -> Completed:
+        """Reconcile workspace metadata offline without upgrading registry dependencies."""
+        return self._invoke(("update", "--workspace", "--offline"))
+
     def run_binary(
-        self, package: str, binary: str | None = None, release: bool = False
+        self,
+        package: str,
+        binary: str | None = None,
+        release: bool = False,
+        env: Mapping[str, str] | None = None,
     ) -> Completed:
         args = ["run", "--locked", "--package", package]
         if binary:
             args.extend(("--bin", binary))
         if release:
             args.append("--release")
-        return self._invoke(tuple(args))
+        return self._invoke(tuple(args), env=env)
 
     def install(self, args: CargoInstallArgs) -> Completed:
         # Cargo tracks package versions, features and installed binaries. Let it

@@ -561,3 +561,5 @@
     -   [592: Native root writer assertion (Accepted)](adr/592-native-root-writer-assertion.md)
     -   [593: Simple checkpoint recovery (Accepted)](adr/593-simple-checkpoint-recovery.md)
     -   [594: Self-contained transcoding and bounded recovery (Accepted)](adr/594-simple-discovery-worker-cleanup.md)
+    -   [592: uv-managed rv tooling](adr/592-python-tooling.md)
+    -   [595: Media continuation on merged rv foundation](adr/595-media-continuation.md)

@@ -77,6 +77,26 @@ pub(crate) fn profile_root_editor(props: &ProfileRootEditorProps) -> Html {
             move || active.set(false)
         });
     }
+    let root_selects = [
+        use_node_ref(),
+        use_node_ref(),
+        use_node_ref(),
+        use_node_ref(),
+    ];
+    {
+        let root_selects = root_selects.clone();
+        let draft = draft.clone();
+        // Browsers may select an inserted option while Yew reconciles children.
+        // Restore the authoritative draft after every render, including a
+        // catalog refresh that leaves the draft itself unchanged.
+        use_effect(move || {
+            for (kind, node) in ProfileRootKind::ALL.into_iter().zip(root_selects) {
+                if let Some(select) = node.cast::<HtmlSelectElement>() {
+                    select.set_value(draft.selected(kind));
+                }
+            }
+        });
+    }
     let onsubmit = {
         let draft = draft.clone();
         let profile = profile.clone();
@@ -179,7 +199,7 @@ pub(crate) fn profile_root_editor(props: &ProfileRootEditorProps) -> Html {
             <fieldset disabled={*busy || saved.is_some() || (props.selected.is_some() && edit.is_none())} class="space-y-3" style="min-width:0">
                 {profile_authoring_fields::fields(&profile, props.selected.is_some())}
                 <div class="grid gap-3 md:grid-cols-2">
-                {for ProfileRootKind::ALL.map(|kind| render_field(kind, &draft, &error, &props.choices))}
+                {for ProfileRootKind::ALL.into_iter().zip(root_selects).map(|(kind, node)| render_field(kind, &draft, &error, &props.choices, node))}
                 </div>
                 <button type="submit" class="btn btn-primary" disabled={*busy || saved.is_some()}>{if *busy { "Saving..." } else if props.selected.is_some() { "Save profile" } else { "Create profile" }}</button>
             </fieldset>
@@ -194,6 +214,7 @@ fn render_field(
     draft: &UseStateHandle<ProfileRootDraft>,
     error: &UseStateHandle<Option<&'static str>>,
     choices: &[RootChoice],
+    node: NodeRef,
 ) -> Html {
     let selected = draft.selected(kind);
     let readiness = draft.readiness(kind, choices);
@@ -217,7 +238,7 @@ fn render_field(
         <div style="min-width:0" class="space-y-1">
             <label class="form-control" style="min-width:0">
                 <span>{kind.label()}</span>
-                <select class="select select-bordered" style="width:100%;min-width:0" value={selected.to_owned()} {onchange}>
+                <select ref={node} class="select select-bordered" style="width:100%;min-width:0" value={selected.to_owned()} {onchange}>
                     <option value="" selected={selected.is_empty()}>{if kind.required() { "Select a root" } else { "None" }}</option>
                     {if readiness == SelectionReadiness::Unavailable {
                         html! { <option value={selected.to_owned()} disabled=true selected=true>{format!("{selected} (unavailable)")}</option> }

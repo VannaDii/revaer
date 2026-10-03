@@ -5,10 +5,23 @@ use crate::indexers::search_requests::{
     search_indexer_run_mark_finished, search_indexer_run_mark_started,
 };
 use chrono::Duration;
-use sqlx::PgConnection;
+use sqlx::{Connection, PgConnection};
 
 async fn setup_db() -> anyhow::Result<crate::indexers::IndexerTestDb> {
-    crate::indexers::setup_indexer_db("indexer tests").await
+    let mut database = revaer_test_support::postgres::start_postgres()?;
+    let admin_url = database.connection_string().to_owned();
+    database
+        .initialize_runtime(include_str!("../../../init.sql"))
+        .await?;
+    // Existing seed helpers require direct table writes; runtime calls are also
+    // exercised independently through the sealed fixture's restricted role.
+    let pool = PgPool::connect(&admin_url).await?;
+    let now = sqlx::query_scalar("SELECT now()").fetch_one(&pool).await?;
+    Ok(crate::indexers::IndexerTestDb {
+        database,
+        pool,
+        now,
+    })
 }
 
 async fn insert_indexer_instance(pool: &PgPool) -> anyhow::Result<Uuid> {
@@ -331,9 +344,7 @@ async fn search_result_ingest_on_connection(
 }
 #[tokio::test]
 async fn search_result_ingest_requires_request() -> anyhow::Result<()> {
-    let Ok(test_db) = setup_db().await else {
-        return Ok(());
-    };
+    let test_db = setup_db().await?;
 
     let pool = test_db.pool();
 
@@ -373,9 +384,7 @@ async fn search_result_ingest_requires_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn search_result_ingest_rejects_duplicate_attr_keys() -> anyhow::Result<()> {
-    let Ok(test_db) = setup_db().await else {
-        return Ok(());
-    };
+    let test_db = setup_db().await?;
     let pool = test_db.pool();
     let (search_request_public_id, indexer_instance_public_id) = setup_ingest_scope(pool).await?;
     let now = test_db.now();
@@ -419,17 +428,17 @@ async fn search_result_ingest_rejects_duplicate_attr_keys() -> anyhow::Result<()
         attr_value_uuid: Some(&uuid_values),
     };
 
+    let before = ingestion_counts(pool).await?;
     let err = search_result_ingest(pool, &input).await.unwrap_err();
     assert!(matches!(err, DataError::QueryFailed { .. }));
     assert_eq!(err.database_detail(), Some("duplicate_attr_key"));
+    assert_eq!(ingestion_counts(pool).await?, before);
     Ok(())
 }
 
 #[tokio::test]
 async fn search_result_ingest_keeps_last_seen_monotonic() -> anyhow::Result<()> {
-    let Ok(test_db) = setup_db().await else {
-        return Ok(());
-    };
+    let test_db = setup_db().await?;
     let pool = test_db.pool();
     let (search_request_public_id, indexer_instance_public_id) = setup_ingest_scope(pool).await?;
     let now = test_db.now();
@@ -475,9 +484,7 @@ async fn search_result_ingest_keeps_last_seen_monotonic() -> anyhow::Result<()> 
 #[tokio::test]
 async fn search_result_ingest_logs_hash_conflicts_without_overwriting_source_identity()
 -> anyhow::Result<()> {
-    let Ok(test_db) = setup_db().await else {
-        return Ok(());
-    };
+    let test_db = setup_db().await?;
     let pool = test_db.pool();
     let (search_request_public_id, indexer_instance_public_id) = setup_ingest_scope(pool).await?;
     let source_guid = "conflict-guid";
@@ -565,9 +572,7 @@ async fn search_result_ingest_logs_hash_conflicts_without_overwriting_source_ide
 
 #[tokio::test]
 async fn search_result_ingest_rejects_missing_identity() -> anyhow::Result<()> {
-    let Ok(test_db) = setup_db().await else {
-        return Ok(());
-    };
+    let test_db = setup_db().await?;
     let pool = test_db.pool();
     let (search_request_public_id, indexer_instance_public_id) = setup_ingest_scope(pool).await?;
 
@@ -606,9 +611,7 @@ async fn search_result_ingest_rejects_missing_identity() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn search_result_ingest_uses_title_size_fallback_without_hashes() -> anyhow::Result<()> {
-    let Ok(test_db) = setup_db().await else {
-        return Ok(());
-    };
+    let test_db = setup_db().await?;
     let pool = test_db.pool();
     let (search_request_public_id, indexer_instance_public_id) = setup_ingest_scope(pool).await?;
 
@@ -656,9 +659,7 @@ async fn search_result_ingest_uses_title_size_fallback_without_hashes() -> anyho
 #[tokio::test]
 async fn search_result_ingest_updates_size_rollup_median_after_three_samples() -> anyhow::Result<()>
 {
-    let Ok(test_db) = setup_db().await else {
-        return Ok(());
-    };
+    let test_db = setup_db().await?;
     let pool = test_db.pool();
     let (search_request_public_id, indexer_instance_public_id) = setup_ingest_scope(pool).await?;
     let now = test_db.now();
@@ -821,9 +822,7 @@ async fn assert_request_finished_and_pages_sealed(
 #[tokio::test]
 async fn search_result_ingest_streaming_pages_remain_append_only_and_seal_deterministically()
 -> anyhow::Result<()> {
-    let Ok(test_db) = setup_db().await else {
-        return Ok(());
-    };
+    let test_db = setup_db().await?;
     let pool = test_db.pool();
     let (search_request_public_id, indexer_instance_public_id) =
         setup_ingest_scope_with_page_size(pool, 10).await?;
@@ -887,9 +886,7 @@ async fn search_result_ingest_streaming_pages_remain_append_only_and_seal_determ
 #[tokio::test]
 async fn search_result_ingest_dropped_sources_are_persisted_but_excluded_from_pages()
 -> anyhow::Result<()> {
-    let Ok(test_db) = setup_db().await else {
-        return Ok(());
-    };
+    let test_db = setup_db().await?;
     let pool = test_db.pool();
     let (search_request_public_id, indexer_instance_public_id, source_guid) =
         setup_ingest_scope_with_request_drop_policy(pool, "blocked").await?;
@@ -948,5 +945,33 @@ async fn search_result_ingest_dropped_sources_are_persisted_but_excluded_from_pa
     assert_eq!(audit_row.1.as_str(), "drop_canonical");
     assert!(audit_row.2);
     assert!(audit_row.3);
+    Ok(())
+}
+
+async fn ingestion_counts(pool: &PgPool) -> anyhow::Result<(i64, i64, i64)> {
+    sqlx::query_as(
+        "SELECT (SELECT count(*) FROM canonical_torrent),
+                (SELECT count(*) FROM canonical_torrent_source),
+                (SELECT count(*) FROM search_request_source_observation)",
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(Into::into)
+}
+
+#[tokio::test]
+async fn initialized_ingestion_rolls_back_runtime_transaction() -> anyhow::Result<()> {
+    let test_db = setup_db().await?;
+    let (request, indexer) = setup_ingest_scope(test_db.pool()).await?;
+    let before = ingestion_counts(test_db.pool()).await?;
+    let input = make_ingest_input(request, indexer, test_db.now());
+    let mut runtime = PgConnection::connect(test_db.database.connection_string()).await?;
+    let mut transaction = runtime.begin().await?;
+    let row = search_result_ingest_on_connection(&mut transaction, &input).await?;
+    assert!(row.observation_created);
+    assert!(row.durable_source_created);
+    transaction.rollback().await?;
+    assert_eq!(ingestion_counts(test_db.pool()).await?, before);
+    runtime.close().await?;
     Ok(())
 }

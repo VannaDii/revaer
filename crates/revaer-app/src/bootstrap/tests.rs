@@ -203,17 +203,13 @@ fn otel_and_guardrail_helpers_cover_expected_modes() -> AppResult<()> {
 }
 
 #[tokio::test]
-async fn bootstrap_dependencies_from_database_url_track_persisted_settings_changes() -> AppResult<()>
-{
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!(
-                "skipping bootstrap_dependencies_from_database_url_track_persisted_settings_changes: {err}"
-            );
-            return Ok(());
-        }
-    };
+async fn bootstrap_dependencies_from_database_url_track_persisted_settings_changes()
+-> anyhow::Result<()> {
+    // This scenario needs a running application, not an empty baseline fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
     let workspace = test_media_workspace()?;
     let BootstrapDependencies {
@@ -269,18 +265,17 @@ async fn bootstrap_dependencies_from_database_url_track_persisted_settings_chang
         .map_err(|err| AppError::config("config_watcher.next", err))?;
     assert!(updated.revision >= applied.revision);
     assert_eq!(updated.app_profile.instance_name, "Bootstrap watcher");
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
-async fn build_api_server_accepts_bootstrapped_config() -> AppResult<()> {
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!("skipping build_api_server_accepts_bootstrapped_config: {err}");
-            return Ok(());
-        }
-    };
+async fn build_api_server_accepts_bootstrapped_config() -> anyhow::Result<()> {
+    // This scenario needs a running application, not an empty baseline fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
     let config = ConfigService::new(postgres.connection_string().to_string())
         .await
@@ -297,20 +292,18 @@ async fn build_api_server_accepts_bootstrapped_config() -> AppResult<()> {
         .map_err(|source| AppError::Compliance { source })?;
     let server = build_api_server(&config, &events, None, telemetry, media, source_compliance)?;
     drop(server);
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
-async fn run_bootstrap_services_rejects_public_setup_bind_from_dependencies() -> AppResult<()> {
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!(
-                "skipping run_bootstrap_services_rejects_public_setup_bind_from_dependencies: {err}"
-            );
-            return Ok(());
-        }
-    };
+async fn run_bootstrap_services_rejects_public_setup_bind_from_dependencies() -> anyhow::Result<()>
+{
+    // This scenario needs a running application, not an empty baseline fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
     let workspace = test_media_workspace()?;
     let mut dependencies = BootstrapDependencies::from_database_url_with_workspace_root(
@@ -334,20 +327,17 @@ async fn run_bootstrap_services_rejects_public_setup_bind_from_dependencies() ->
             value: Some(_),
         }
     ));
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
-async fn run_bootstrap_services_rejects_zero_http_port_from_dependencies() -> AppResult<()> {
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!(
-                "skipping run_bootstrap_services_rejects_zero_http_port_from_dependencies: {err}"
-            );
-            return Ok(());
-        }
-    };
+async fn run_bootstrap_services_rejects_zero_http_port_from_dependencies() -> anyhow::Result<()> {
+    // This scenario needs a running application, not an empty baseline fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
     let workspace = test_media_workspace()?;
     let mut dependencies = BootstrapDependencies::from_database_url_with_workspace_root(
@@ -370,20 +360,17 @@ async fn run_bootstrap_services_rejects_zero_http_port_from_dependencies() -> Ap
             value: Some(_),
         }
     ));
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
-async fn run_bootstrap_services_surfaces_bind_failures_for_valid_snapshot() -> AppResult<()> {
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!(
-                "skipping run_bootstrap_services_surfaces_bind_failures_for_valid_snapshot: {err}"
-            );
-            return Ok(());
-        }
-    };
+async fn run_bootstrap_services_surfaces_bind_failures_for_valid_snapshot() -> anyhow::Result<()> {
+    // This scenario needs a running application, not an empty baseline fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
     let reserved_listener =
         TcpListener::bind((IpAddr::from([127, 0, 0, 1]), 0)).map_err(|source| AppError::Io {
@@ -418,6 +405,7 @@ async fn run_bootstrap_services_surfaces_bind_failures_for_valid_snapshot() -> A
         .await
         .expect_err("occupied listener should fail api server startup");
     assert!(matches!(err, AppError::ApiServer { .. }), "{err:?}");
+    postgres.close()?;
     Ok(())
 }
 

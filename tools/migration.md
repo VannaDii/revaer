@@ -1,7 +1,7 @@
 # Tooling migration inventory
 
 Initial foundation: `54641c63`. Shared prerequisite baseline: `ec8adc14`.
-Current disposable media integration starts from `f4b80bf7` plus its recorded dirty-tree snapshot (2026-09-21).
+Current continuation: `work/media-continuation`, from pushed checkpoint `71596802` merged with main `d413f0c6` (2026-10-03). The `f4b80bf7` dirty-tree integration is preserved historical evidence.
 The operator paused media work and authorized merge/restack on 2026-10-02. The
 pushed operator checkpoint is `71596802`; the older disposable validation
 snapshot above remains historical evidence, not current acceptance.
@@ -16,7 +16,7 @@ A fixture result proves the stated wrapper or behavior; it does not claim that
 the application CI or browser suite has passed. Final acceptance still requires
 `rv ci` and `rv ui-e2e` on this foundation and a disposable media integration.
 
-### Current merge preparation (2026-10-02)
+### Historical merge preparation (2026-10-02)
 
 All PR and Sonar workflow gates now invoke the shared uv-managed CLI. The full
 policy check and GitHub Actions syntax checks pass. The required-check snapshot
@@ -253,3 +253,7 @@ against their newer implementation even where a foundation command already exist
   to avoid its previous output collision with `index.md`.
 - Logs and the integration fixture patch are retained under
   `artifacts/workspace-bootstrap-qualification/`.
+
+## Current continuation (2026-10-03)
+
+The foundation merged as PR 211. [ADR 595](../docs/adr/595-media-continuation.md) owns current PR/checkout accounting and qualification status. Direct Just aliases dispatch rv. CI/E2E now select owned single-init fixtures in the accepted feature-development phase; existing databases are baseline verified, not migrated or repaired. No historical result certifies this continuation. Recovery refs remain intact while fixture/API contract adaptation and unique media behavior/test transplants are incomplete.

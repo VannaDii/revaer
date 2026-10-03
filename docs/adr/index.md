@@ -527,3 +527,5 @@
 -   [592](592-native-root-writer-assertion.md) - Native root writer assertion (Accepted)
 -   [593](593-simple-checkpoint-recovery.md) - Simple checkpoint recovery (Accepted; supersedes custom supervisor machinery)
 -   [594](594-simple-discovery-worker-cleanup.md) - Self-contained transcoding and bounded recovery (Accepted 2026-10-02)
+-   [592](592-python-tooling.md) - uv-managed rv tooling (merged foundation; historical numbering retained)
+-   [595](595-media-continuation.md) - Media continuation on merged rv foundation (integration checkpoint; qualification incomplete)

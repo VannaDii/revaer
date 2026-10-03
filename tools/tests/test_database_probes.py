@@ -169,3 +169,26 @@ def test_explicit_proof_settings_are_loaded_at_the_boundary() -> None:
     assert values.cancellation_proof == Path("/tmp/cancellation.json")
     defaults = load_settings({}).database
     assert defaults.pool_proof is None and defaults.cancellation_proof is None
+
+
+def test_baseline_command_preserves_selected_endpoint_and_failure(qualification: Context) -> None:
+    binary = qualification.root / "src/bin"
+    binary.mkdir()
+    (binary / "verify_database_baseline.rs").write_text(
+        "fn main() -> Result<(), Box<dyn std::error::Error>> { "
+        'if std::env::var("DATABASE_URL")? != "postgres://tests.invalid/runtime" { '
+        'return Err("wrong selected runtime".into()); } '
+        'std::fs::write(std::env::var("RV_PROBE_FIXTURE_OUTPUT")?, "verified")?; Ok(()) }'
+    )
+    database = replace(qualification.settings.database, url="postgres://tests.invalid/runtime")
+    active = replace(qualification, settings=replace(qualification.settings, database=database))
+    assert "runtime identity verified" in COMMANDS["db-baseline-verify"](active).message
+    assert (qualification.root / "baseline-result").read_text() == "verified"
+    active = replace(
+        active,
+        settings=replace(
+            active.settings, database=replace(database, url="postgres://tests.invalid/admin")
+        ),
+    )
+    with pytest.raises(ToolingError):
+        COMMANDS["db-baseline-verify"](active)

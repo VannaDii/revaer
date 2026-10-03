@@ -8,16 +8,36 @@ const SYSTEM_USER_PUBLIC_ID: Uuid = Uuid::nil();
 
 async fn build_service()
 -> anyhow::Result<(IndexerService, revaer_test_support::postgres::TestDatabase)> {
-    let database = start_postgres()?;
+    let (service, database, admin) = build_service_with_admin().await?;
+    admin.close().await;
+    Ok((service, database))
+}
+
+async fn build_service_with_admin() -> anyhow::Result<(
+    IndexerService,
+    revaer_test_support::postgres::TestDatabase,
+    sqlx::PgPool,
+)> {
+    let mut database = start_postgres()?;
+    // Retain administrative access only for explicit fixture seeding. The service
+    // always verifies and uses the separately restricted runtime connection.
+    let admin_url = database.connection_string().to_owned();
+    database
+        .initialize_runtime(include_str!("../../../../revaer-data/init.sql"))
+        .await?;
     let config = ConfigService::new_with_session(
         database.connection_string(),
         Some(DbSessionConfig::new("test-key", "test-secret")),
     )
     .await?;
-
+    let admin = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&admin_url)
+        .await?;
     Ok((
         IndexerService::new(Arc::new(config), Metrics::new()?),
         database,
+        admin,
     ))
 }
 
@@ -298,9 +318,7 @@ async fn restore_backup_indexer_instance_fixture(
 
 #[tokio::test]
 async fn run_operation_records_success_and_error_metrics() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let success = service
         .run_operation(
@@ -330,9 +348,7 @@ async fn run_operation_records_success_and_error_metrics() -> anyhow::Result<()>
 
 #[tokio::test]
 async fn data_operation_helpers_map_errors_and_record_metrics() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let success = service
         .run_data_operation(
@@ -391,9 +407,7 @@ async fn data_operation_helpers_map_errors_and_record_metrics() -> anyhow::Resul
 #[tokio::test]
 async fn restore_backup_helpers_create_inventory_and_track_missing_secret_bindings()
 -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let definition_slug = unique_name("restore-helper-indexer");
     let definition_name = unique_name("Restore Helper Indexer");

@@ -532,9 +532,10 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_processes_supported_and_rejected_import_jobs() -> TestResult<()> {
-        let Ok(postgres) = start_postgres() else {
-            return Ok(());
-        };
+        let mut postgres = start_postgres()?;
+        postgres
+            .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+            .await?;
         let config = Arc::new(ConfigService::new(postgres.connection_string().to_string()).await?);
         let telemetry = Metrics::new()?;
         let runtime = ImportJobRuntime::new(Arc::clone(&config), telemetry.clone());
@@ -548,6 +549,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(20)).await;
         handle.abort();
         assert!(handle.await.is_err());
+        postgres.close()?;
         Ok(())
     }
 }

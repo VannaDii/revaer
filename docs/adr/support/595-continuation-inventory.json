@@ -1,0 +1,3513 @@
+{
+  "date": "2026-10-03",
+  "checkpoint": "71596802cb0cb8c05b73ff00d1e3e00f4bba4caf",
+  "main": "d413f0c61635fba8fcaa984e91740343fb9f2937",
+  "open_media_pr_count": 105,
+  "open_media_prs": [
+    {
+      "baseRefName": "stack/media3-54-sonar-vendor-image-inputs",
+      "headRefName": "stack/media3-00e-quality-baseline",
+      "headRefOid": "d62f6c98f58b95e6c9626a46e43aeb5a64ad930c",
+      "number": 203,
+      "title": "ci(media): restore quality gate baseline",
+      "subject": "ci(test): bind database clients to services",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "d62f6c98f58b95e6c9626a46e43aeb5a64ad930c",
+      "changed_path_count": 108,
+      "changed_paths_sha256": "5171ffad9500a1d8e039efc5019e0769dd47a47efd5b6a9828931c01c297df87",
+      "baseRefOid": "4681b5c4a94d324c41cb3aa516d6f7edbe83a7d4"
+    },
+    {
+      "baseRefName": "stack/media3-00c-database-probe",
+      "headRefName": "stack/media3-00d-native-abi",
+      "headRefOid": "8ab54c8de3e0ac34fdfaff221a85bdc42a493d25",
+      "number": 200,
+      "title": "fix(native): enforce ABI coherence",
+      "subject": "fix(torrent): enforce native ABI coherence",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "8ab54c8de3e0ac34fdfaff221a85bdc42a493d25",
+      "changed_path_count": 15,
+      "changed_paths_sha256": "a160d4b13aaf21de56e68553a90d6c666082be3a4064a4538dd1ce2036012e45",
+      "baseRefOid": "851022ca2c66afc179cbcb2402d3af721d7c1100"
+    },
+    {
+      "baseRefName": "stack/media3-00b-libtorrent-compatibility",
+      "headRefName": "stack/media3-00c-database-probe",
+      "headRefOid": "851022ca2c66afc179cbcb2402d3af721d7c1100",
+      "number": 199,
+      "title": "test(db): fail closed on unreachable probe",
+      "subject": "test(db): avoid fallback in unreachable probe",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "851022ca2c66afc179cbcb2402d3af721d7c1100",
+      "changed_path_count": 2,
+      "changed_paths_sha256": "b75cd533010efd2b23347dc04db735dc53620d4ffc2fb8504102b7a5484034cf",
+      "baseRefOid": "294adb463ed7c2c96e97b3e4aa8aaf5ed992c368"
+    },
+    {
+      "baseRefName": "stack/media3-00a-analysis-portability",
+      "headRefName": "stack/media3-00b-libtorrent-compatibility",
+      "headRefOid": "294adb463ed7c2c96e97b3e4aa8aaf5ed992c368",
+      "number": 198,
+      "title": "fix(native): support libtorrent 2.1",
+      "subject": "fix(build): support libtorrent 2.1",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "294adb463ed7c2c96e97b3e4aa8aaf5ed992c368",
+      "changed_path_count": 10,
+      "changed_paths_sha256": "9807ba40f32fc99d9a437248d65c0da5392551f2441d91cccf296c157d1172e9",
+      "baseRefOid": "ebddb420accd81c2756fcf427e103b548290f9a9"
+    },
+    {
+      "baseRefName": "stack/media3-00-validation-foundation",
+      "headRefName": "stack/media3-00a-analysis-portability",
+      "headRefOid": "ebddb420accd81c2756fcf427e103b548290f9a9",
+      "number": 197,
+      "title": "ci(validation): stabilize analysis and release tooling",
+      "subject": "fix(release): render Helm annotations portably",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "ebddb420accd81c2756fcf427e103b548290f9a9",
+      "changed_path_count": 14,
+      "changed_paths_sha256": "922c4b84b3cd244e3bc776b9fb2e963b3b513f7add3c7b501051f1a7fbb99f05",
+      "baseRefOid": "370622664f2024537f3f8a3ab8efc247626daa49"
+    },
+    {
+      "baseRefName": "main",
+      "headRefName": "stack/media3-00-validation-foundation",
+      "headRefOid": "370622664f2024537f3f8a3ab8efc247626daa49",
+      "number": 195,
+      "title": "ci(media): establish validation foundation",
+      "subject": "fix(ci): publish complete sonar coverage",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "370622664f2024537f3f8a3ab8efc247626daa49",
+      "changed_path_count": 839,
+      "changed_paths_sha256": "254429322c326fb9435a3eae614d0c132e2f06ed5b92ee79be04aeede7401b96",
+      "baseRefOid": "d413f0c61635fba8fcaa984e91740343fb9f2937"
+    },
+    {
+      "baseRefName": "stack/media3-80-architecture-approval",
+      "headRefName": "stack/media3-81-clean-runtime-shutdown",
+      "headRefOid": "cfed91f82a07a909ac1b96d9129e9eabeaddbf1c",
+      "number": 194,
+      "title": "fix(runtime): classify requested shutdown cancellation",
+      "subject": "fix(runtime): classify requested shutdown cancellation",
+      "accounting": "shutdown requirement retained in checkpoint; later deadline/watcher implementation owns it",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 6,
+      "changed_paths_sha256": "b8a83f69b1144c3df3f25a409cca01b8eea19eaa6db0e8148569880cda23fb7b",
+      "baseRefOid": "7cd14eb217d5284a5642ca956c667b916425e665"
+    },
+    {
+      "baseRefName": "stack/media3-79-degraded-capability-startup",
+      "headRefName": "stack/media3-80-architecture-approval",
+      "headRefOid": "7cd14eb217d5284a5642ca956c667b916425e665",
+      "number": 193,
+      "title": "docs(governance): require architecture approval",
+      "subject": "docs(governance): require architecture approval",
+      "accounting": "governance superseded in scope by ADRs 593/594; retain unrelated constraints",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 5,
+      "changed_paths_sha256": "f94c4e83225d04eb1970bed8deb1cdc6382c992b0115c79d7610832a8fef6509",
+      "baseRefOid": "011fb2bd65512cdaf0ebfd8bbb9f0e00967ccf33"
+    },
+    {
+      "baseRefName": "stack/media3-78-runtime-lifecycle",
+      "headRefName": "stack/media3-79-degraded-capability-startup",
+      "headRefOid": "011fb2bd65512cdaf0ebfd8bbb9f0e00967ccf33",
+      "number": 191,
+      "title": "fix(media): degrade failed capability startup",
+      "subject": "fix(media): degrade failed capability startup",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 7,
+      "changed_paths_sha256": "971d8af72a2bfa63b9d0b504656fe4978d65e669c85f5b5be47fd7dd093b31c6",
+      "baseRefOid": "8a7e0cdd03d7e2aa957170a519c936c99beed461"
+    },
+    {
+      "baseRefName": "stack/media3-77-production-runtime-e2e",
+      "headRefName": "stack/media3-78-runtime-lifecycle",
+      "headRefOid": "8a7e0cdd03d7e2aa957170a519c936c99beed461",
+      "number": 190,
+      "title": "fix(media): enforce deployable runtime lifecycle",
+      "subject": "fix(media): enforce deployable runtime lifecycle",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 23,
+      "changed_paths_sha256": "524a297e97f8b9cee257d34211341dab1796756b186a599dc685a8c8a3cb583a",
+      "baseRefOid": "536c8fe5292323608c45d6e9d8863fb6ed92cc4e"
+    },
+    {
+      "baseRefName": "stack/media3-76-fail-closed-media-tests",
+      "headRefName": "stack/media3-77-production-runtime-e2e",
+      "headRefOid": "536c8fe5292323608c45d6e9d8863fb6ed92cc4e",
+      "number": 189,
+      "title": "test(media): verify production runtime end to end",
+      "subject": "test(media): verify production runtime end to end",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 14,
+      "changed_paths_sha256": "dfda01501c741911211632c8ed2b58b437b2566925873760ca1b69c42811a945",
+      "baseRefOid": "e58b25d82b1b410177197928808a6a71b609e464"
+    },
+    {
+      "baseRefName": "stack/media3-75-retire-media-history-b",
+      "headRefName": "stack/media3-76-fail-closed-media-tests",
+      "headRefOid": "e58b25d82b1b410177197928808a6a71b609e464",
+      "number": 187,
+      "title": "test(media): fail closed without database",
+      "subject": "test(media): fail closed without database",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 14,
+      "changed_paths_sha256": "cf47432cdd5e40b2b2943d42bfe90c5588886b2251421ee527ca67780b15dcea",
+      "baseRefOid": "adb64ca5964ddc75ecffc2089f072ccda7a7a251"
+    },
+    {
+      "baseRefName": "stack/media3-74-retire-media-history-a",
+      "headRefName": "stack/media3-75-retire-media-history-b",
+      "headRefOid": "adb64ca5964ddc75ecffc2089f072ccda7a7a251",
+      "number": 186,
+      "title": "refactor(data): retire final v0 migration history",
+      "subject": "refactor(data): retire final v0 migration history",
+      "accounting": "historical v0 transition; replaced by ADR 591 single-init authority",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 55,
+      "changed_paths_sha256": "74fc274140988c0634413c34c054171976ca2d6f4a9d24ed89c5be34a44930cc",
+      "baseRefOid": "6eb56bc28f31589445b38bf1a0d507ab839dd382"
+    },
+    {
+      "baseRefName": "stack/media3-73-retire-service-history",
+      "headRefName": "stack/media3-74-retire-media-history-a",
+      "headRefOid": "6eb56bc28f31589445b38bf1a0d507ab839dd382",
+      "number": 185,
+      "title": "refactor(data): retire early media history",
+      "subject": "refactor(data): retire early media history",
+      "accounting": "historical v0 transition; replaced by ADR 591 single-init authority",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 28,
+      "changed_paths_sha256": "ac8de65bb7ff09007f0660ef5a9c124c4cfe2ad5b4be2d38f48c04a85482e9f8",
+      "baseRefOid": "a6e9ff504ad1103cff5e33d54517e43133ba21af"
+    },
+    {
+      "baseRefName": "stack/media3-72-retire-search-history",
+      "headRefName": "stack/media3-73-retire-service-history",
+      "headRefOid": "a6e9ff504ad1103cff5e33d54517e43133ba21af",
+      "number": 184,
+      "title": "refactor(data): retire service schema history",
+      "subject": "refactor(data): retire service schema history",
+      "accounting": "historical v0 transition; replaced by ADR 591 single-init authority",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 44,
+      "changed_paths_sha256": "aa73af46675fa21293174809490086757678b339936e131635d21004119f1ca6",
+      "baseRefOid": "ffa8d01048ea156927afb6ea295c91344e568d88"
+    },
+    {
+      "baseRefName": "stack/media3-70-retire-indexer-history-b",
+      "headRefName": "stack/media3-71-retire-indexer-history-c",
+      "headRefOid": "1ade5ca2ecdd1f6815afdeabde7f6f61a0308969",
+      "number": 183,
+      "title": "refactor(data): retire corrected indexer history",
+      "subject": "refactor(data): retire corrected indexer history",
+      "accounting": "historical v0 transition; replaced by ADR 591 single-init authority",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 14,
+      "changed_paths_sha256": "cf46fd62252c0461cafe066c1e98486b1edc3b156a80437547ac772f6555a8aa",
+      "baseRefOid": "3e3687da87f97f750288d777c0d5e1ebe511de5e"
+    },
+    {
+      "baseRefName": "stack/media3-71-retire-indexer-history-c",
+      "headRefName": "stack/media3-72-retire-search-history",
+      "headRefOid": "ffa8d01048ea156927afb6ea295c91344e568d88",
+      "number": 182,
+      "title": "refactor(data): retire search request history",
+      "subject": "refactor(data): retire search request history",
+      "accounting": "historical v0 transition; replaced by ADR 591 single-init authority",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 28,
+      "changed_paths_sha256": "5f9a9cc26d1cae09add190473fa9d806e4833b2d177c311367d66a56cce0d53f",
+      "baseRefOid": "1ade5ca2ecdd1f6815afdeabde7f6f61a0308969"
+    },
+    {
+      "baseRefName": "stack/media3-69-retire-indexer-history-a",
+      "headRefName": "stack/media3-70-retire-indexer-history-b",
+      "headRefOid": "3e3687da87f97f750288d777c0d5e1ebe511de5e",
+      "number": 181,
+      "title": "refactor(data): retire search indexer history",
+      "subject": "refactor(data): retire search indexer history",
+      "accounting": "historical v0 transition; replaced by ADR 591 single-init authority",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 16,
+      "changed_paths_sha256": "d5b5a7d2f826ec9254ed6bcd00bfac281792b834bc2f6c43e0443e5dc82e0e61",
+      "baseRefOid": "f5e28a8e85678f3c680713efdbadba1d4e0ab8ee"
+    },
+    {
+      "baseRefName": "stack/media3-67-integrity-activation",
+      "headRefName": "stack/media3-68-retire-schema-history",
+      "headRefOid": "217e444d2a045b84af70f05f8529f1306c6cd272",
+      "number": 180,
+      "title": "refactor(data): retire legacy schema history",
+      "subject": "refactor(data): retire legacy schema history",
+      "accounting": "historical v0 transition; replaced by ADR 591 single-init authority",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 30,
+      "changed_paths_sha256": "ccc11e3f58cd4504b39587af00961f0368bbaadedee7663dbf99b0eee6a61f2a",
+      "baseRefOid": "67cae88c7b955ea577a30e9a9ddb864b3ce9c88b"
+    },
+    {
+      "baseRefName": "stack/media3-68-retire-schema-history",
+      "headRefName": "stack/media3-69-retire-indexer-history-a",
+      "headRefOid": "f5e28a8e85678f3c680713efdbadba1d4e0ab8ee",
+      "number": 179,
+      "title": "refactor(data): retire early indexer history",
+      "subject": "refactor(data): retire early indexer history",
+      "accounting": "historical v0 transition; replaced by ADR 591 single-init authority",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 9,
+      "changed_paths_sha256": "e77de77698a38c7fa36c70601e012977d38cfa4a638db5b8dee65661cd672b80",
+      "baseRefOid": "217e444d2a045b84af70f05f8529f1306c6cd272"
+    },
+    {
+      "baseRefName": "stack/media3-64-init-search",
+      "headRefName": "stack/media3-65-init-config",
+      "headRefOid": "e2c01210f96ddd15d367ffb82f7dd7e14bbe4562",
+      "number": 178,
+      "title": "feat(data): stage v0 configuration routines",
+      "subject": "feat(data): stage v0 configuration routines",
+      "accounting": "historical v0 transition; replaced by ADR 591 single-init authority",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 1,
+      "changed_paths_sha256": "81c7ff2832fa9ae1c2207fd9823c2d1a0a9c6260a606b9e8fa84941bf82905db",
+      "baseRefOid": "a2a30d99507a48220e91979a1eaa5606d864c35c"
+    },
+    {
+      "baseRefName": "stack/media3-66-init-catalog",
+      "headRefName": "stack/media3-67-integrity-activation",
+      "headRefOid": "67cae88c7b955ea577a30e9a9ddb864b3ce9c88b",
+      "number": 177,
+      "title": "fix(media): activate verified v0 runtime",
+      "subject": "fix(media): activate verified v0 runtime",
+      "accounting": "historical v0 transition; replaced by ADR 591 single-init authority",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 32,
+      "changed_paths_sha256": "62021ffb5963898172f2c634b85120a8ff74d16ec2e5f8a70bce00b2a13aa5bb",
+      "baseRefOid": "1446a8c814d1536db390d74e1c0171176a77cdbb"
+    },
+    {
+      "baseRefName": "stack/media3-65-init-config",
+      "headRefName": "stack/media3-66-init-catalog",
+      "headRefOid": "1446a8c814d1536db390d74e1c0171176a77cdbb",
+      "number": 176,
+      "title": "feat(data): complete v0 initialization schema",
+      "subject": "feat(data): complete v0 initialization schema",
+      "accounting": "historical v0 transition; replaced by ADR 591 single-init authority",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 1,
+      "changed_paths_sha256": "81c7ff2832fa9ae1c2207fd9823c2d1a0a9c6260a606b9e8fa84941bf82905db",
+      "baseRefOid": "e2c01210f96ddd15d367ffb82f7dd7e14bbe4562"
+    },
+    {
+      "baseRefName": "stack/media3-63-init-indexers",
+      "headRefName": "stack/media3-64-init-search",
+      "headRefOid": "a2a30d99507a48220e91979a1eaa5606d864c35c",
+      "number": 175,
+      "title": "feat(data): stage v0 search routines",
+      "subject": "feat(data): stage v0 search routines",
+      "accounting": "historical v0 transition; replaced by ADR 591 single-init authority",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 1,
+      "changed_paths_sha256": "81c7ff2832fa9ae1c2207fd9823c2d1a0a9c6260a606b9e8fa84941bf82905db",
+      "baseRefOid": "576f4602ea08a0e657921792e3f4ab3801db27d2"
+    },
+    {
+      "baseRefName": "stack/media3-61-video-technical-constraints",
+      "headRefName": "stack/media3-62-init-foundation",
+      "headRefOid": "2f8ea25abf535aa8a0b031b8efe8ee5bdaf8a6f1",
+      "number": 174,
+      "title": "feat(data): stage v0 init foundations",
+      "subject": "feat(data): stage v0 init foundations",
+      "accounting": "historical v0 transition; replaced by ADR 591 single-init authority",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 1,
+      "changed_paths_sha256": "81c7ff2832fa9ae1c2207fd9823c2d1a0a9c6260a606b9e8fa84941bf82905db",
+      "baseRefOid": "66f7ee12bda7d26276b7fc7c48730c21e13f4978"
+    },
+    {
+      "baseRefName": "stack/media3-62-init-foundation",
+      "headRefName": "stack/media3-63-init-indexers",
+      "headRefOid": "576f4602ea08a0e657921792e3f4ab3801db27d2",
+      "number": 173,
+      "title": "feat(data): stage v0 indexer routines",
+      "subject": "feat(data): stage v0 indexer routines",
+      "accounting": "historical v0 transition; replaced by ADR 591 single-init authority",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 1,
+      "changed_paths_sha256": "81c7ff2832fa9ae1c2207fd9823c2d1a0a9c6260a606b9e8fa84941bf82905db",
+      "baseRefOid": "2f8ea25abf535aa8a0b031b8efe8ee5bdaf8a6f1"
+    },
+    {
+      "baseRefName": "stack/media3-06-data-schema",
+      "headRefName": "stack/media3-06a-data-invariants",
+      "headRefOid": "dc4dcc9e1f690536c7b7012cd9f65d5dbe813db9",
+      "number": 171,
+      "title": "fix(media): enforce durable job data invariants",
+      "subject": "fix(media): enforce durable job data invariants",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "dc4dcc9e1f690536c7b7012cd9f65d5dbe813db9",
+      "changed_path_count": 9,
+      "changed_paths_sha256": "b7f77f13abb21f336cef34baf61ad2d5cdca856bed3cc17f5453a5c1667a2467",
+      "baseRefOid": "5a4e1b109c5b7377c85a3a56a93b9870d355835c"
+    },
+    {
+      "baseRefName": "stack/media3-10-job-runtime",
+      "headRefName": "stack/media3-10a-workspace-retention",
+      "headRefOid": "959d99ec31db9c3e40942811b295f23becd7550f",
+      "number": 170,
+      "title": "feat(media): run workspace retention janitor",
+      "subject": "feat(media): run workspace retention janitor",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "959d99ec31db9c3e40942811b295f23becd7550f",
+      "changed_path_count": 13,
+      "changed_paths_sha256": "1697e66276477b4682ae33fddefd2458e13e01982545041af50722cc02dc124c",
+      "baseRefOid": "b900df62e54c26a116ec8e952c7548dbe4ad0ce6"
+    },
+    {
+      "baseRefName": "stack/media3-08b-api-service",
+      "headRefName": "stack/media3-08c-config-rng-cleanup",
+      "headRefOid": "4116c8ffd9f62d3424ae873b67a61c2ebe1491b4",
+      "number": 169,
+      "title": "refactor(config): simplify random generation",
+      "subject": "refactor(config): simplify random generation",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "4116c8ffd9f62d3424ae873b67a61c2ebe1491b4",
+      "changed_path_count": 7,
+      "changed_paths_sha256": "0316e4a53ea0e88b33c07e171ab505d1bad502365582e213f340e3e236613d4b",
+      "baseRefOid": "68af9e4796eaab9ea7c042a045382ee216e68c52"
+    },
+    {
+      "baseRefName": "stack/media3-08-api-source",
+      "headRefName": "stack/media3-08b-api-service",
+      "headRefOid": "68af9e4796eaab9ea7c042a045382ee216e68c52",
+      "number": 168,
+      "title": "feat(media): expose API service",
+      "subject": "feat(media): expose API service",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "68af9e4796eaab9ea7c042a045382ee216e68c52",
+      "changed_path_count": 16,
+      "changed_paths_sha256": "efca56f248e81e905b55f72889540906b15d5bdbb45c4d8915190f5ee9a51dec",
+      "baseRefOid": "e624890a729c1811a6ba6b1add5a91f2c99adf71"
+    },
+    {
+      "baseRefName": "stack/media3-09d-docs-openapi-schemas",
+      "headRefName": "stack/media3-09e-docs-openapi-routes",
+      "headRefOid": "bd1bfb7bbca06b394a0e720882efad0d4d24c69a",
+      "number": 167,
+      "title": "docs(api): complete docs media routes",
+      "subject": "docs(api): complete docs media routes",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "bd1bfb7bbca06b394a0e720882efad0d4d24c69a",
+      "changed_path_count": 2,
+      "changed_paths_sha256": "4510d4599c8bf2ca08f853431cf602b23060c433032abbd77f8e77f56ba97882",
+      "baseRefOid": "d84c1ea63b38d163718ea05f418e28f9237bb6e7"
+    },
+    {
+      "baseRefName": "stack/media3-09c-app-openapi-routes",
+      "headRefName": "stack/media3-09d-docs-openapi-schemas",
+      "headRefOid": "d84c1ea63b38d163718ea05f418e28f9237bb6e7",
+      "number": 166,
+      "title": "docs(api): stage docs media schemas",
+      "subject": "docs(api): stage docs media schemas",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "d84c1ea63b38d163718ea05f418e28f9237bb6e7",
+      "changed_path_count": 4,
+      "changed_paths_sha256": "18f97b48b0cab12d59b9a0d990d6d5d7d42756d955bbd95fb851328b8ec110cd",
+      "baseRefOid": "ce6a8cc5df74218226fc38e083eafa63680d8200"
+    },
+    {
+      "baseRefName": "stack/media3-09b-app-openapi-schemas",
+      "headRefName": "stack/media3-09c-app-openapi-routes",
+      "headRefOid": "ce6a8cc5df74218226fc38e083eafa63680d8200",
+      "number": 165,
+      "title": "docs(api): complete app media routes",
+      "subject": "docs(api): complete app media routes",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "ce6a8cc5df74218226fc38e083eafa63680d8200",
+      "changed_path_count": 2,
+      "changed_paths_sha256": "f7e87c44f6beda1531b7b3e18a944d9e0af3564c8ba49d4e50edc5b0d9303c82",
+      "baseRefOid": "d3d96523872ba05e4da77b60a37ce4970984c497"
+    },
+    {
+      "baseRefName": "stack/media3-09-app-services",
+      "headRefName": "stack/media3-09b-app-openapi-schemas",
+      "headRefOid": "d3d96523872ba05e4da77b60a37ce4970984c497",
+      "number": 164,
+      "title": "docs(api): stage app media schemas",
+      "subject": "docs(api): stage app media schemas",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "d3d96523872ba05e4da77b60a37ce4970984c497",
+      "changed_path_count": 4,
+      "changed_paths_sha256": "6a11414bf244a101568b25bf4a2567f6f873338f3e4dd62369a1598b15da1809",
+      "baseRefOid": "fc6b3d87c04a21a7b2e614a543112c30227e8faf"
+    },
+    {
+      "baseRefName": "stack/media3-05-runtime-execution",
+      "headRefName": "stack/media3-05b-runtime-review-hardening",
+      "headRefOid": "1d29c1b05c36435e1fc76833949dbeee950f3b02",
+      "number": 162,
+      "title": "fix(media): harden runtime execution boundaries",
+      "subject": "fix(media): harden runtime execution boundaries",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "1d29c1b05c36435e1fc76833949dbeee950f3b02",
+      "changed_path_count": 9,
+      "changed_paths_sha256": "3bdf2db61420b7e47660245bb2d6721c9cb369b59ece019e42b3332cefda7763",
+      "baseRefOid": "549f6015c1d3f6dfebf6e4cd6d55248e189f9a82"
+    },
+    {
+      "baseRefName": "stack/media3-59a-hdr10-mastering-geometry",
+      "headRefName": "stack/media3-59b-chapter-replacement-hardening",
+      "headRefOid": "c4777b9588c029196365d404e55fba7e408f2068",
+      "number": 159,
+      "title": "fix(media): harden authored chapter replacement",
+      "subject": "fix(media): harden authored chapter replacement",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 7,
+      "changed_paths_sha256": "b91190c546f873a44af1b7500f4de41d1bd9dd82b333a513bf41f114940c48b1",
+      "baseRefOid": "44f76ee071a37149f0be64c3cf801b0b093921a8"
+    },
+    {
+      "baseRefName": "stack/media3-57a-ffprobe-frame-robustness",
+      "headRefName": "stack/media3-57b-native-discovery-contract",
+      "headRefOid": "8de017176dcc6e2ac9534ef076348927b4c3c40d",
+      "number": 158,
+      "title": "test(torrent): preserve native discovery contract",
+      "subject": "test(torrent): preserve native discovery contract",
+      "accounting": "unique native toolchain/pkg-config discovery assertions ported in continuation",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 5,
+      "changed_paths_sha256": "2502dd0d6d2c29fc6833a3bb6f91218a0a0c7365a9330c41fc6ad1f73e6a8011",
+      "baseRefOid": "1030f17272e43677303dbd0acfd7ab1b3a31f4a5"
+    },
+    {
+      "baseRefName": "stack/media3-58-explicit-retained-streams",
+      "headRefName": "stack/media3-58a-factory-reset-retry",
+      "headRefOid": "a8e7e4d401080eddf55fbdf4ffc558df2381a7dd",
+      "number": 157,
+      "title": "fix(config): retry transient factory reset contention",
+      "subject": "fix(config): retry transient factory reset contention",
+      "accounting": "unique bounded transient factory-reset retry and tests ported in continuation",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 5,
+      "changed_paths_sha256": "636989d8aa1b0228fb3ec0ad940182c7ceae9e33a6f4872f36677e3866628570",
+      "baseRefOid": "a8533744366088f935cc6878e0284b72f78b0666"
+    },
+    {
+      "baseRefName": "stack/media3-57-hdr10-pixel-format-verification",
+      "headRefName": "stack/media3-57a-ffprobe-frame-robustness",
+      "headRefOid": "1030f17272e43677303dbd0acfd7ab1b3a31f4a5",
+      "number": 156,
+      "title": "fix(media): accept unindexed ffprobe frames",
+      "subject": "fix(media): accept unindexed ffprobe frames",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 7,
+      "changed_paths_sha256": "1d7866ac4ca16fe774e9c408e91f170a007b87bd5212a434918f6fbb11decede",
+      "baseRefOid": "1c45df9dc502669dbb68a8656d50f415d3c85763"
+    },
+    {
+      "baseRefName": "stack/media3-04b-sidecar-discovery",
+      "headRefName": "stack/media3-04c-bounded-inspection",
+      "headRefOid": "95108c8044a2cb55c9111603779f8571237fa9a1",
+      "number": 150,
+      "title": "feat(media): add bounded media inspection",
+      "subject": "feat(media): add bounded media inspection",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "95108c8044a2cb55c9111603779f8571237fa9a1",
+      "changed_path_count": 11,
+      "changed_paths_sha256": "2e2e43e6d3be911439b11e8126b22ce1c457f9f11cdbc442146e43ad246bb947",
+      "baseRefOid": "f923eb0b6eae65aaad92c7fbe44759b0349ebfcb"
+    },
+    {
+      "baseRefName": "stack/media3-04a-managed-workspace",
+      "headRefName": "stack/media3-04b-sidecar-discovery",
+      "headRefOid": "f923eb0b6eae65aaad92c7fbe44759b0349ebfcb",
+      "number": 149,
+      "title": "feat(media): add bounded sidecar discovery",
+      "subject": "feat(media): add bounded sidecar discovery",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "f923eb0b6eae65aaad92c7fbe44759b0349ebfcb",
+      "changed_path_count": 5,
+      "changed_paths_sha256": "d4dfa7a1375b81d69fd6c4ac4452c5a54bbde7692884d3e007d4afa5b75be600",
+      "baseRefOid": "ba74b3b2349025215e2c4d9b196f58cdf0a7aa67"
+    },
+    {
+      "baseRefName": "stack/media3-04-runtime-preflight",
+      "headRefName": "stack/media3-04a-managed-workspace",
+      "headRefOid": "ba74b3b2349025215e2c4d9b196f58cdf0a7aa67",
+      "number": 148,
+      "title": "feat(media): add managed workspace lifecycle",
+      "subject": "test(media): close managed-workspace coverage gaps",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "ba74b3b2349025215e2c4d9b196f58cdf0a7aa67",
+      "changed_path_count": 10,
+      "changed_paths_sha256": "0ae3ce8024d46e972b69daeef3b097fedd84c663f4a709ce670aafd7efcdd2ca",
+      "baseRefOid": "1cd08aaeec1ee3af3e1e5a7d04ebbb9c9cac69cd"
+    },
+    {
+      "baseRefName": "stack/media3-00d-native-abi",
+      "headRefName": "stack/media3-00a-generated-api-schema",
+      "headRefOid": "6471074ea4da6a41b1c59b4450a2f0249a7dc467",
+      "number": 145,
+      "title": "test(api): generate client schema on demand",
+      "subject": "test(api): generate client schema on demand",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "6471074ea4da6a41b1c59b4450a2f0249a7dc467",
+      "changed_path_count": 10,
+      "changed_paths_sha256": "95565cb991733ae8db96de11eaa43f288cb8f4aea381ad7b3a74e2d4c2ac8611",
+      "baseRefOid": "8ab54c8de3e0ac34fdfaff221a85bdc42a493d25"
+    },
+    {
+      "baseRefName": "main",
+      "headRefName": "stack/validation-00-helm-annotation-portability",
+      "headRefOid": "f571d858a96d397cf1904e90eee80f331226d029",
+      "number": 144,
+      "title": "fix(release): render Helm annotations portably",
+      "subject": "fix(release): render Helm annotations portably",
+      "accounting": "portable chart rendering retained by main rv chart tests",
+      "checkpoint_subject_match": "ebddb420accd81c2756fcf427e103b548290f9a9",
+      "changed_path_count": 914,
+      "changed_paths_sha256": "8e07bf9f3cdd477720992b9dc0066867d61a5910776771bb11976a9f731c73c9",
+      "baseRefOid": "d413f0c61635fba8fcaa984e91740343fb9f2937"
+    },
+    {
+      "baseRefName": "stack/media3-60b-media-fixture-cleanup",
+      "headRefName": "stack/media3-60c-doc-indexer-fixture-isolation",
+      "headRefOid": "d27ab997062df3223241211d7e68fc20a855fb04",
+      "number": 143,
+      "title": "test(doc-indexer): reserve isolated manifest roots",
+      "subject": "test(doc-indexer): reserve isolated manifest roots",
+      "accounting": "unique isolated document-indexer roots and tests ported in continuation",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 4,
+      "changed_paths_sha256": "83f538569622cb6d6402f93af2fb9fb9d734010442e4f83510673ea23b1daf3c",
+      "baseRefOid": "089c324581b5f3e4dc5876216db9e5484cc1a351"
+    },
+    {
+      "baseRefName": "stack/media3-60a-ci-node24-helm",
+      "headRefName": "stack/media3-60b-media-fixture-cleanup",
+      "headRefOid": "089c324581b5f3e4dc5876216db9e5484cc1a351",
+      "number": 142,
+      "title": "ci(media): clean fixture artifacts after PR checks",
+      "subject": "ci(media): clean fixture artifacts after PR checks",
+      "accounting": "fixture report/upload/always-cleanup retained by main rv workflow",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 8,
+      "changed_paths_sha256": "bac7f6837c0320800ca19439259dae3e1999a19651bdeeec69ea3cd4dc78bfac",
+      "baseRefOid": "958de5d815eb97579e21dcfb2e2de437c0695a51"
+    },
+    {
+      "baseRefName": "stack/media3-60-hdr10-color-volume-contract",
+      "headRefName": "stack/media3-60a-ci-node24-helm",
+      "headRefOid": "958de5d815eb97579e21dcfb2e2de437c0695a51",
+      "number": 141,
+      "title": "ci(deps): upgrade Helm setup action",
+      "subject": "ci(deps): upgrade Helm setup action",
+      "accounting": "Helm action setup superseded by rv pinned native provisioning",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 8,
+      "changed_paths_sha256": "68f5781e462ac8791d54c71fdd987b41ee256c187dcd41b187ccaa0b5353c5d1",
+      "baseRefOid": "8af55c43a83bdeb0c514a4ba9e91e2933fd123a0"
+    },
+    {
+      "baseRefName": "stack/media3-58a-factory-reset-retry",
+      "headRefName": "stack/media3-59a-hdr10-mastering-geometry",
+      "headRefOid": "44f76ee071a37149f0be64c3cf801b0b093921a8",
+      "number": 139,
+      "title": "fix(media): enforce audio stream constraints",
+      "subject": "fix(media): materialize audio rate constraints",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 7,
+      "changed_paths_sha256": "79eae6e5fb2fd8c7f8543ff3292fbe6ff655493f7c0eb4bdf0a63dff2298b8fa",
+      "baseRefOid": "a8e7e4d401080eddf55fbdf4ffc558df2381a7dd"
+    },
+    {
+      "baseRefName": "stack/media3-60c-doc-indexer-fixture-isolation",
+      "headRefName": "stack/media3-61-video-technical-constraints",
+      "headRefOid": "66f7ee12bda7d26276b7fc7c48730c21e13f4978",
+      "number": 138,
+      "title": "feat(media): add video technical constraints",
+      "subject": "feat(media): add video technical constraints",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 40,
+      "changed_paths_sha256": "5a187d91ab9dc4d2e57ead3d1739ec43b44ba942b7b66480893e144e730a2ab0",
+      "baseRefOid": "d27ab997062df3223241211d7e68fc20a855fb04"
+    },
+    {
+      "baseRefName": "stack/media3-59b-chapter-replacement-hardening",
+      "headRefName": "stack/media3-60-hdr10-color-volume-contract",
+      "headRefOid": "8af55c43a83bdeb0c514a4ba9e91e2933fd123a0",
+      "number": 137,
+      "title": "fix(media): enforce HDR10 color volume contract",
+      "subject": "fix(media): enforce hdr10 color volume contract",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 31,
+      "changed_paths_sha256": "398c5da78f1d40197b2033aea0bf3a73156183ba03bd786013af1727a78931a0",
+      "baseRefOid": "c4777b9588c029196365d404e55fba7e408f2068"
+    },
+    {
+      "baseRefName": "stack/media3-57b-native-discovery-contract",
+      "headRefName": "stack/media3-58-explicit-retained-streams",
+      "headRefOid": "a8533744366088f935cc6878e0284b72f78b0666",
+      "number": 135,
+      "title": "ci(node): restore NVM managed recipes",
+      "subject": "ci(node): restore NVM managed recipes",
+      "accounting": "NVM recipe executor superseded by merged rv; retain literal typed process arguments",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 8,
+      "changed_paths_sha256": "50c7c115993e4771a1ab5adebdfbac20723c613b72f486169a34e33a4f0e0e9e",
+      "baseRefOid": "8de017176dcc6e2ac9534ef076348927b4c3c40d"
+    },
+    {
+      "baseRefName": "stack/media3-56-container-metadata-fixture",
+      "headRefName": "stack/media3-57-hdr10-pixel-format-verification",
+      "headRefOid": "1c45df9dc502669dbb68a8656d50f415d3c85763",
+      "number": 134,
+      "title": "fix(media): use native-first watcher fallback",
+      "subject": "fix(media): use native-first watcher fallback",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 6,
+      "changed_paths_sha256": "0ab614a3a3690abdbdd37bf562ff68475fe55ace34be6ab124d03eed6bb20863",
+      "baseRefOid": "8270010e677187e78393be8ae0f598e78e0cd31d"
+    },
+    {
+      "baseRefName": "stack/media3-55-chapter-replace-planning",
+      "headRefName": "stack/media3-56-container-metadata-fixture",
+      "headRefOid": "8270010e677187e78393be8ae0f598e78e0cd31d",
+      "number": 133,
+      "title": "test(media): prove attachment strip behavior",
+      "subject": "test(media): prove attachment strip behavior",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 12,
+      "changed_paths_sha256": "007dd3c156bb4cdb7a811e60051add2bef6335ac62222eab9b3662283fb2bdea",
+      "baseRefOid": "ad0b3137103ce6911163d75e02d75d6e7cc4f441"
+    },
+    {
+      "baseRefName": "stack/media3-52-operator-loop",
+      "headRefName": "stack/media3-55-chapter-replace-planning",
+      "headRefOid": "ad0b3137103ce6911163d75e02d75d6e7cc4f441",
+      "number": 132,
+      "title": "test(media): prove attachment and data job policies",
+      "subject": "test(sonar): verify bounded API retries",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 11,
+      "changed_paths_sha256": "1241928a1f41547b17e206ea8d79f43db94e34a8677244ba128b88b8272a3d94",
+      "baseRefOid": "cd288ff9ce67eaa8bbac71ea0bc40f92e909cd62"
+    },
+    {
+      "baseRefName": "stack/media3-53-sonar-asset-inputs",
+      "headRefName": "stack/media3-54-sonar-vendor-image-inputs",
+      "headRefOid": "4681b5c4a94d324c41cb3aa516d6f7edbe83a7d4",
+      "number": 131,
+      "title": "ci(sonar): replace binary UI image inputs",
+      "subject": "fix(ui): harden runtime asset validation",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "4681b5c4a94d324c41cb3aa516d6f7edbe83a7d4",
+      "changed_path_count": 16,
+      "changed_paths_sha256": "5777b59f9e0ad56f93209c937db4a74bde8c455a7559c5e5043d2b0e1710eb12",
+      "baseRefOid": "a379717455aae39f005e4120fb59b1f5247bbc95"
+    },
+    {
+      "baseRefName": "stack/media3-00a-generated-api-schema",
+      "headRefName": "stack/media3-53-sonar-asset-inputs",
+      "headRefOid": "a379717455aae39f005e4120fb59b1f5247bbc95",
+      "number": 130,
+      "title": "ci(sonar): prune unused UI vendor images",
+      "subject": "refactor(ui): canonicalize scanner-readable assets",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "a379717455aae39f005e4120fb59b1f5247bbc95",
+      "changed_path_count": 309,
+      "changed_paths_sha256": "9d1f8cc42e37710d9d0a349835fa15f7f24674180a9994961ac6333c532261a9",
+      "baseRefOid": "6471074ea4da6a41b1c59b4450a2f0249a7dc467"
+    },
+    {
+      "baseRefName": "stack/media3-51-unmatched-stream-actions",
+      "headRefName": "stack/media3-52-operator-loop",
+      "headRefOid": "cd288ff9ce67eaa8bbac71ea0bc40f92e909cd62",
+      "number": 129,
+      "title": "feat(media): add manual operator jobs",
+      "subject": "feat(media): add manual operator jobs",
+      "accounting": "manual jobs retained through current association-bound workflow; old path-profile ingress superseded",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 21,
+      "changed_paths_sha256": "208245166c7c64e58c1d15d4ebd0fd6495fc48180a628cc86c49821bdbf7a3d0",
+      "baseRefOid": "f15d0bf4e736314db6c89d10a2f96f260a56b4f5"
+    },
+    {
+      "baseRefName": "stack/media3-50-container-attachment-policy",
+      "headRefName": "stack/media3-51-unmatched-stream-actions",
+      "headRefOid": "f15d0bf4e736314db6c89d10a2f96f260a56b4f5",
+      "number": 128,
+      "title": "feat(media): support per-kind unmatched actions",
+      "subject": "feat(media): support per-kind unmatched actions",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 19,
+      "changed_paths_sha256": "34d9eb2920d76c65511332e319fede6d68c1c689f45682b55f62daa484daed2a",
+      "baseRefOid": "e448a5eb887932f2421dd857da49f5fd86585e76"
+    },
+    {
+      "baseRefName": "stack/media3-49-chapter-timeline-values",
+      "headRefName": "stack/media3-50-container-attachment-policy",
+      "headRefOid": "e448a5eb887932f2421dd857da49f5fd86585e76",
+      "number": 127,
+      "title": "feat(media): support container attachment policy",
+      "subject": "feat(media): support container attachment policy",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 26,
+      "changed_paths_sha256": "6418ebdfb30655054d23b8bc28f065bb117f9b5c0fa07e752bbda99681424f6d",
+      "baseRefOid": "a492f1cfc71327facd07dd9d36560a64ef250bcb"
+    },
+    {
+      "baseRefName": "stack/media3-48-container-metadata-values",
+      "headRefName": "stack/media3-49-chapter-timeline-values",
+      "headRefOid": "a492f1cfc71327facd07dd9d36560a64ef250bcb",
+      "number": 126,
+      "title": "feat(media): support container chapter values",
+      "subject": "feat(media): support container chapter values",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 25,
+      "changed_paths_sha256": "67319f1b4d73a5052640e5dac4202575e20f1e2d92f13c188adbfc523e690442",
+      "baseRefOid": "a27a2ea80d0acc23f3164514b5803c4d32f19b91"
+    },
+    {
+      "baseRefName": "stack/media3-47-container-chapter-policy",
+      "headRefName": "stack/media3-48-container-metadata-values",
+      "headRefOid": "a27a2ea80d0acc23f3164514b5803c4d32f19b91",
+      "number": 124,
+      "title": "feat(media): support container metadata values",
+      "subject": "feat(media): support container metadata values",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 34,
+      "changed_paths_sha256": "ced048d052b7d743fa5609905d543a4477ae6f0d8f81e49f89de02bed9567521",
+      "baseRefOid": "051a4bc7bf1e8032d9743b5e11f40c4b9ac62b4f"
+    },
+    {
+      "baseRefName": "stack/media3-46-container-metadata-policy",
+      "headRefName": "stack/media3-47-container-chapter-policy",
+      "headRefOid": "051a4bc7bf1e8032d9743b5e11f40c4b9ac62b4f",
+      "number": 123,
+      "title": "feat(media): support container chapter strip policy",
+      "subject": "fix(media): make chapter strip planning idempotent",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 35,
+      "changed_paths_sha256": "433f4fd40cab66cd0541e3a61760770c69d6decded069c754b77b868cb8bcfe1",
+      "baseRefOid": "23100f8a44bb57d8deef04378bb2cd0e98185c5e"
+    },
+    {
+      "baseRefName": "stack/media3-45-metadata-preservation-boundary",
+      "headRefName": "stack/media3-46-container-metadata-policy",
+      "headRefOid": "23100f8a44bb57d8deef04378bb2cd0e98185c5e",
+      "number": 122,
+      "title": "fix(media): enforce container metadata policy",
+      "subject": "fix(media): enforce container metadata policy",
+      "accounting": "retained requirement; adapt unique behavior/tests to current contracts before replay",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 34,
+      "changed_paths_sha256": "4b499a3513d2b25acf79c9a9890b1eeb9e879c28280d7633206ed897cec0887c",
+      "baseRefOid": "4afca0db69edeea8761a6fd9967379829b87c97e"
+    },
+    {
+      "baseRefName": "stack/media3-44-target-label-contract",
+      "headRefName": "stack/media3-45-metadata-preservation-boundary",
+      "headRefOid": "4afca0db69edeea8761a6fd9967379829b87c97e",
+      "number": 120,
+      "title": "fix(media): preserve source container metadata",
+      "subject": "fix(media): preserve source container metadata",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "eb31c3f561d2dda1d5637829536c90fbc8d57bea",
+      "changed_path_count": 6,
+      "changed_paths_sha256": "eb4e43d1b1cf1d75dc5d6f7bdbb04aaf8fdf22c29e3e3cf0bf74f1525f8d8e35",
+      "baseRefOid": "024fb27f970d466f3036d77f3c216034ea618ca6"
+    },
+    {
+      "baseRefName": "stack/media3-43-worker-owned-job-creation",
+      "headRefName": "stack/media3-44-target-label-contract",
+      "headRefOid": "024fb27f970d466f3036d77f3c216034ea618ca6",
+      "number": 119,
+      "title": "test(media): cover data target boundary",
+      "subject": "test(media): cover data target boundary",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "b2c2006b5be3374cd466125387448aa60c0c3532",
+      "changed_path_count": 5,
+      "changed_paths_sha256": "8170f11a5c07d7b50d6905b48ff2320664e55350afa245e4b5a92619ca1d768c",
+      "baseRefOid": "f042e233ca1e86c91e21dba117d91a71e40d1a19"
+    },
+    {
+      "baseRefName": "stack/media3-42-worker-owned-job-records",
+      "headRefName": "stack/media3-43-worker-owned-job-creation",
+      "headRefOid": "f042e233ca1e86c91e21dba117d91a71e40d1a19",
+      "number": 118,
+      "title": "fix(media): keep job creation discovery-owned",
+      "subject": "fix(media): keep job creation discovery-owned",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "88a55fa086b3b46a19cddf4f039105777db1e0da",
+      "changed_path_count": 12,
+      "changed_paths_sha256": "5ae7993512c9d1137e305521645c0a163adcabc89e4f28053f5158995ad82713",
+      "baseRefOid": "d5ffb0367c2d7073f477a689033f549dbae583a0"
+    },
+    {
+      "baseRefName": "stack/media3-41-worker-phase-boundary",
+      "headRefName": "stack/media3-42-worker-owned-job-records",
+      "headRefOid": "d5ffb0367c2d7073f477a689033f549dbae583a0",
+      "number": 117,
+      "title": "fix(media): keep job records worker-owned",
+      "subject": "fix(media): keep job records worker-owned",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "5445d9d57fcf244973a0719800255e17c977d96e",
+      "changed_path_count": 9,
+      "changed_paths_sha256": "05cf3b2bd8928abf523bf2157296ffc68a0ba0874dcd838da593e6fcffd8cc32",
+      "baseRefOid": "19cc8370600ab08b93102bf882523888e90cf2e1"
+    },
+    {
+      "baseRefName": "stack/media3-40-contextual-stream-rewrites",
+      "headRefName": "stack/media3-41-worker-phase-boundary",
+      "headRefOid": "19cc8370600ab08b93102bf882523888e90cf2e1",
+      "number": 116,
+      "title": "fix(media): keep job phases worker-owned",
+      "subject": "fix(media): keep job phases worker-owned",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "1a0b63e7b2020875fd43d7d352a7e05815073b0e",
+      "changed_path_count": 19,
+      "changed_paths_sha256": "fcd124b932bae9724ad42c31c162dd82252d8c84c787ed215159f9b0173df0de",
+      "baseRefOid": "06fe08a2596fd4409041496472175277f6de5a5e"
+    },
+    {
+      "baseRefName": "stack/media3-39-desired-target-readiness",
+      "headRefName": "stack/media3-40-contextual-stream-rewrites",
+      "headRefOid": "06fe08a2596fd4409041496472175277f6de5a5e",
+      "number": 115,
+      "title": "fix(media): require desired graph for stream rewrites",
+      "subject": "fix(media): require desired graph for stream rewrites",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "177f01b4f7321bf4adc5980963855fd2599c42ac",
+      "changed_path_count": 6,
+      "changed_paths_sha256": "f0a8177ba0affbb05a95945da9f60f399c06f37cceeab72b84148ed69dff69bb",
+      "baseRefOid": "a86491441bd259a51f4900de2b3105902e73c2c0"
+    },
+    {
+      "baseRefName": "stack/media3-38-profile-readiness-api",
+      "headRefName": "stack/media3-39-desired-target-readiness",
+      "headRefOid": "a86491441bd259a51f4900de2b3105902e73c2c0",
+      "number": 114,
+      "title": "feat(media): validate desired target readiness",
+      "subject": "feat(media): validate desired target readiness",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "3a7ddd4a07e83c4ab9a94e6e3f2791493de0ea5a",
+      "changed_path_count": 7,
+      "changed_paths_sha256": "8b0d5a938e57876c78b895825af0253c249b537c72a8a08657dbcc9a51cf2d70",
+      "baseRefOid": "66d2362f103d465809f29b863afef8030ba4a2a1"
+    },
+    {
+      "baseRefName": "stack/media3-37-profile-capability-readiness",
+      "headRefName": "stack/media3-38-profile-readiness-api",
+      "headRefOid": "66d2362f103d465809f29b863afef8030ba4a2a1",
+      "number": 113,
+      "title": "feat(media): expose profile readiness checks",
+      "subject": "feat(media): expose profile readiness checks",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "5a0f2e326ab4ddb0b120ed329d2c9823092a284f",
+      "changed_path_count": 13,
+      "changed_paths_sha256": "3cafaab70610420255cbd90dbc94ef1733622e8d67aaaad8ab7b9a781775df13",
+      "baseRefOid": "7b160aa1fe1c1a89c8a278ddef76ad7654aacda7"
+    },
+    {
+      "baseRefName": "stack/media3-36-direct-job-fingerprint",
+      "headRefName": "stack/media3-37-profile-capability-readiness",
+      "headRefOid": "7b160aa1fe1c1a89c8a278ddef76ad7654aacda7",
+      "number": 112,
+      "title": "fix(media): block unsupported compatibility targets",
+      "subject": "fix(media): block unsupported compatibility targets",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "47ec901b7aa10f999f1a4ce8afdf9fc47e2e6ba0",
+      "changed_path_count": 5,
+      "changed_paths_sha256": "242671f61da694d4640278cfe9e0d580fc2a11edf9cc2d59674eb64fed1d8298",
+      "baseRefOid": "f7f23c6c29e1359911ed373c82e27fa62b308850"
+    },
+    {
+      "baseRefName": "stack/media3-35-job-phase-read-model",
+      "headRefName": "stack/media3-36-direct-job-fingerprint",
+      "headRefOid": "f7f23c6c29e1359911ed373c82e27fa62b308850",
+      "number": 111,
+      "title": "fix(media): require source fingerprints for direct jobs",
+      "subject": "fix(media): require source fingerprints for direct jobs",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "195d804b24c305c11a98c0f2be4985c0893e6169",
+      "changed_path_count": 19,
+      "changed_paths_sha256": "825b62994f1775856673a32f2ae3b0962b97ac4680a9a42b7b99c5594629bf1b",
+      "baseRefOid": "193538f03d89f3c688ce733d5bdc8087eb37d1fc"
+    },
+    {
+      "baseRefName": "stack/media3-34-claim-shutdown",
+      "headRefName": "stack/media3-35-job-phase-read-model",
+      "headRefOid": "193538f03d89f3c688ce733d5bdc8087eb37d1fc",
+      "number": 110,
+      "title": "fix(media): expose read-only job phases",
+      "subject": "fix(media): expose read-only job phases",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "28f727113bbd6ed6023f646bf0afcc1d9a5efa8f",
+      "changed_path_count": 27,
+      "changed_paths_sha256": "2de5dc117f53c1b76287c240847c815692fc33032a42eab0178b5f9461dbab54",
+      "baseRefOid": "fbec0583152eabddd59aab0938dcc485fada4cbc"
+    },
+    {
+      "baseRefName": "stack/media3-33-runtime-shutdown",
+      "headRefName": "stack/media3-34-claim-shutdown",
+      "headRefOid": "fbec0583152eabddd59aab0938dcc485fada4cbc",
+      "number": 109,
+      "title": "fix(media): cancel claimed jobs during shutdown",
+      "subject": "fix(media): cancel claimed jobs during shutdown",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "7fed935a39d14a46025a5a3beb396c989b570137",
+      "changed_path_count": 4,
+      "changed_paths_sha256": "276e40b53ac26573fb79802121e0b65965fdc622ee78f06419a7ed16d6e948f7",
+      "baseRefOid": "53b2e6c90bf9a254156abdbb8bac5b3ef36fffd0"
+    },
+    {
+      "baseRefName": "stack/media3-31-finalized-completion",
+      "headRefName": "stack/media3-33-runtime-shutdown",
+      "headRefOid": "53b2e6c90bf9a254156abdbb8bac5b3ef36fffd0",
+      "number": 108,
+      "title": "fix(media): stop runtimes cooperatively",
+      "subject": "fix(media): stop runtimes cooperatively",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "2d8fc92d0588fcc26bfd6e9bb103389eaf8bf8b9",
+      "changed_path_count": 9,
+      "changed_paths_sha256": "5529fbd37d502e93fe0e22220b6d8a348f5e09361cfb29cf46eb621120832289",
+      "baseRefOid": "4a759ba66f6b5b23e58b4343e530fa4666135e07"
+    },
+    {
+      "baseRefName": "stack/media3-30-execution-timeouts",
+      "headRefName": "stack/media3-31-finalized-completion",
+      "headRefOid": "4a759ba66f6b5b23e58b4343e530fa4666135e07",
+      "number": 106,
+      "title": "fix(media): make finalized replacements terminally completed",
+      "subject": "fix(media): make finalized replacements terminally completed",
+      "accounting": "terminal replacement requirement retained by later checkpoint cancellation/replacement safeguards",
+      "checkpoint_subject_match": null,
+      "changed_path_count": 8,
+      "changed_paths_sha256": "592229b8dcc1a4d6a89c2ac877310b2575c1643520f5d72fc62acbcce2994678",
+      "baseRefOid": "f1e3e3dab5a594302c8b39d42e26ad3e845329d0"
+    },
+    {
+      "baseRefName": "stack/media3-29-stale-worker-recovery",
+      "headRefName": "stack/media3-30-execution-timeouts",
+      "headRefOid": "f1e3e3dab5a594302c8b39d42e26ad3e845329d0",
+      "number": 105,
+      "title": "fix(media): bound execution runtimes",
+      "subject": "fix(media): bound execution runtimes",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "968ebca3420609c102e2cc1a86e435ece182f671",
+      "changed_path_count": 5,
+      "changed_paths_sha256": "de3b10bde340231ee8867ea102cbe585007595cad9009a51e3ce5abd6e7d0093",
+      "baseRefOid": "38be0aa735b1def2eca57fb71ceb13825fd2103d"
+    },
+    {
+      "baseRefName": "stack/media3-28-inspect-probe-timeout",
+      "headRefName": "stack/media3-29-stale-worker-recovery",
+      "headRefOid": "38be0aa735b1def2eca57fb71ceb13825fd2103d",
+      "number": 104,
+      "title": "fix(media): recover stale worker jobs",
+      "subject": "fix(media): recover stale worker jobs",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "633ac62829e31ca3e950379c02a14d6ef323f9a6",
+      "changed_path_count": 8,
+      "changed_paths_sha256": "3c2aada37091e3034cbe9ca41201e58dd91981184c1449b966149fbdcd58a1d7",
+      "baseRefOid": "986000d5d5612e2347e578499f713c3458c714ae"
+    },
+    {
+      "baseRefName": "stack/media3-27-recovery-manifest",
+      "headRefName": "stack/media3-28-inspect-probe-timeout",
+      "headRefOid": "986000d5d5612e2347e578499f713c3458c714ae",
+      "number": 103,
+      "title": "fix(media): bound inspect probe runtime",
+      "subject": "fix(media): bound inspect probe runtime",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "c143faa4668e7f87f86c9dc6215f0b81fcdfa3d6",
+      "changed_path_count": 3,
+      "changed_paths_sha256": "ccafcf11c927963eff7d5244fc430e6b5bd8571963e20a3159c74b44a2dbc41f",
+      "baseRefOid": "aad4c8f96f69ee7c90c287904b98ee1401c79102"
+    },
+    {
+      "baseRefName": "stack/media3-26-verifier-timeout",
+      "headRefName": "stack/media3-27-recovery-manifest",
+      "headRefOid": "aad4c8f96f69ee7c90c287904b98ee1401c79102",
+      "number": 102,
+      "title": "fix(media): validate replacement recovery manifests",
+      "subject": "fix(media): validate replacement recovery manifests",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "b2dd16a8161d13708b7b337db74b01a1701bb9c7",
+      "changed_path_count": 5,
+      "changed_paths_sha256": "792c21d55ebeb7a2e737aea2f2e3393607573376f6391d3ddf2800dba3a6caa5",
+      "baseRefOid": "d43dc682e05ae1d03bd554eb493af2168e2aad9a"
+    },
+    {
+      "baseRefName": "stack/media3-25-capability-probe-boundary",
+      "headRefName": "stack/media3-26-verifier-timeout",
+      "headRefOid": "d43dc682e05ae1d03bd554eb493af2168e2aad9a",
+      "number": 101,
+      "title": "fix(media): bound verifier runtime",
+      "subject": "fix(media): bound verifier runtime",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "e7bc8241d3edf1d9838db120958c635a7a28c909",
+      "changed_path_count": 5,
+      "changed_paths_sha256": "7b373104e5ff364f10d384400625b9266468ac3e163ba8ba50518cceaba421d5",
+      "baseRefOid": "82690bc9728882e0ba27b606c32115891afeaa22"
+    },
+    {
+      "baseRefName": "stack/media3-24-target-stream-invariant",
+      "headRefName": "stack/media3-25-capability-probe-boundary",
+      "headRefOid": "82690bc9728882e0ba27b606c32115891afeaa22",
+      "number": 100,
+      "title": "fix(media): bound capability probes",
+      "subject": "fix(media): bound capability probes",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "13d308b45add862138ff88aeb3cf58dc62421c58",
+      "changed_path_count": 3,
+      "changed_paths_sha256": "b1150ddbd2a84667f3fc4921a36b473e6a6a402fd371da796914d9f03504fa6a",
+      "baseRefOid": "8c985b4bf004c64677b0a49523d448680a3191e6"
+    },
+    {
+      "baseRefName": "stack/media3-23-verifier-boundary",
+      "headRefName": "stack/media3-24-target-stream-invariant",
+      "headRefOid": "8c985b4bf004c64677b0a49523d448680a3191e6",
+      "number": 99,
+      "title": "fix(media): require desired target streams",
+      "subject": "fix(media): enforce desired target stream limits",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "ccf8b3ef2a4d2f69aa1566183c89b59c008cfce4",
+      "changed_path_count": 17,
+      "changed_paths_sha256": "38e804f4075ae9b941988fec8c8916a85a7c77b2a1e51f36a76e87c102086b73",
+      "baseRefOid": "7ed723d58529332217a30adf25498b6d84efc5ec"
+    },
+    {
+      "baseRefName": "stack/media3-22-adr-closeout",
+      "headRefName": "stack/media3-23-verifier-boundary",
+      "headRefOid": "7ed723d58529332217a30adf25498b6d84efc5ec",
+      "number": 98,
+      "title": "fix(media): bound verifier diagnostics",
+      "subject": "fix(media): bound verifier diagnostics",
+      "accounting": "replayed; exact subject matches",
+      "checkpoint_subject_match": "f87bea0bc2bba1a3c51aeeb3fb600b5d3c97df6b",
+      "changed_path_count": 150,
+      "changed_paths_sha256": "24e36b5f390c5ec833709449bfcd8be74136ca92a4f26814d353bb2d8b3e16dd",
+      "baseRefOid": "54157ef8ea77770d76b47efe78b71bea25765a37"
+    },
+    {
+      "baseRefName": "stack/media3-18-api-cli-source",
+      "headRefName": "stack/media3-22-adr-closeout",
+      "headRefOid": "54157ef8ea77770d76b47efe78b71bea25765a37",
+      "number": 97,
+      "title": "docs(media): consolidate review ADRs",
+      "subject": "docs(media): consolidate review ADRs",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "54157ef8ea77770d76b47efe78b71bea25765a37",
+      "changed_path_count": 27,
+      "changed_paths_sha256": "352a86ccf3fb3b7c81b92f99b977f48542663c10d24422345b1f3a79d7cbafa0",
+      "baseRefOid": "beeb297843cde7bf266f0458a9122d74b7e9ad58"
+    },
+    {
+      "baseRefName": "stack/media3-17-runtime-verification",
+      "headRefName": "stack/media3-18-api-cli-source",
+      "headRefOid": "beeb297843cde7bf266f0458a9122d74b7e9ad58",
+      "number": 93,
+      "title": "feat(media): update API and CLI contract",
+      "subject": "feat(media): update API and CLI contract",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "beeb297843cde7bf266f0458a9122d74b7e9ad58",
+      "changed_path_count": 13,
+      "changed_paths_sha256": "04e120e3158e7c23f8cc8bfd87ab19fc84b4a73705991be465bddaa28ef5fa1c",
+      "baseRefOid": "6d1d8473a345eee498f0957b710ee536ffa6b80d"
+    },
+    {
+      "baseRefName": "stack/media3-16-target-contracts",
+      "headRefName": "stack/media3-17-runtime-verification",
+      "headRefOid": "6d1d8473a345eee498f0957b710ee536ffa6b80d",
+      "number": 92,
+      "title": "fix(media): seal command process boundary",
+      "subject": "fix(media): seal command process boundary",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "6d1d8473a345eee498f0957b710ee536ffa6b80d",
+      "changed_path_count": 12,
+      "changed_paths_sha256": "4921fd89f025979a7b500a7dc016e59a096e8bafe24d9af0c1420dfc7b66b59e",
+      "baseRefOid": "d76875f97c5df3944786b90e0c52b6bf82529909"
+    },
+    {
+      "baseRefName": "stack/media3-15-quality-supply",
+      "headRefName": "stack/media3-16-target-contracts",
+      "headRefOid": "d76875f97c5df3944786b90e0c52b6bf82529909",
+      "number": 91,
+      "title": "fix(media): validate target contracts",
+      "subject": "fix(media): validate target contracts",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "d76875f97c5df3944786b90e0c52b6bf82529909",
+      "changed_path_count": 11,
+      "changed_paths_sha256": "a2b5e119c2d41eec66855900f267a84303da142db4a35d9b16a0887fa4452a23",
+      "baseRefOid": "f5f22fa1d0e3660f4d3610503f62264a953cfb64"
+    },
+    {
+      "baseRefName": "stack/media3-14-review-closeout",
+      "headRefName": "stack/media3-15-quality-supply",
+      "headRefOid": "f5f22fa1d0e3660f4d3610503f62264a953cfb64",
+      "number": 90,
+      "title": "ci(media): harden quality and supply gates",
+      "subject": "ci(media): harden quality and supply gates",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "f5f22fa1d0e3660f4d3610503f62264a953cfb64",
+      "changed_path_count": 28,
+      "changed_paths_sha256": "8e44ddd81889a0d8edcd66de446999cac38063cb6da44bc530ef21d7bbb034de",
+      "baseRefOid": "21d98ce1df38567a2660fcde3387aec56050d477"
+    },
+    {
+      "baseRefName": "stack/media3-01-quality-baseline",
+      "headRefName": "stack/media3-01-fixture-catalog",
+      "headRefOid": "254f951b8d67c856ab94e6b34e2ed139d2db26fe",
+      "number": 88,
+      "title": "test(media): add fixture catalog",
+      "subject": "test(media): add fixture catalog",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "254f951b8d67c856ab94e6b34e2ed139d2db26fe",
+      "changed_path_count": 37,
+      "changed_paths_sha256": "0cfdc8315820d0795679b38663585965a808464cb81c9902f520c0d646bf0b3d",
+      "baseRefOid": "7ada27ae4818f70e1ae1151cedc7009201e1fcdb"
+    },
+    {
+      "baseRefName": "stack/media3-07-data-access",
+      "headRefName": "stack/media3-07-ui-experience",
+      "headRefOid": "1920de09d1ab6f1bea023cc86877fe2731159e99",
+      "number": 87,
+      "title": "feat(media): add UI experience",
+      "subject": "feat(media): add UI experience",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "1920de09d1ab6f1bea023cc86877fe2731159e99",
+      "changed_path_count": 21,
+      "changed_paths_sha256": "ad630ed7debf2a7f174b0589d3b60755e77d3f44f0c61f899b7a9e73ac1fd118",
+      "baseRefOid": "c3ee57334fbbfdbcf7470f1d96124a8a1ecad3a7"
+    },
+    {
+      "baseRefName": "stack/media3-13-e2e-harness",
+      "headRefName": "stack/media3-14-review-closeout",
+      "headRefOid": "21d98ce1df38567a2660fcde3387aec56050d477",
+      "number": 85,
+      "title": "fix(media): normalize video level verification",
+      "subject": "fix(media): normalize video level verification",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "21d98ce1df38567a2660fcde3387aec56050d477",
+      "changed_path_count": 7,
+      "changed_paths_sha256": "6fb87832474a2f090cb1272dbffffdb0590ef1332be3eb4174295a9bab13b114",
+      "baseRefOid": "3b78f740a586a8e2777d1b9659068f637491ee04"
+    },
+    {
+      "baseRefName": "stack/media3-10a-workspace-retention",
+      "headRefName": "stack/media3-12-fixtures",
+      "headRefOid": "8d5a35aa2a90bd21fd68374b0b64c5d741b3d2b2",
+      "number": 84,
+      "title": "test(media): add transcoding fixtures",
+      "subject": "test(media): add transcoding fixtures",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "8d5a35aa2a90bd21fd68374b0b64c5d741b3d2b2",
+      "changed_path_count": 2,
+      "changed_paths_sha256": "35dbcf16ed99db660ea7bb1966744b9479a26034ae0d822f92804a820d85f9c1",
+      "baseRefOid": "959d99ec31db9c3e40942811b295f23becd7550f"
+    },
+    {
+      "baseRefName": "stack/media3-12-fixtures",
+      "headRefName": "stack/media3-13-e2e-harness",
+      "headRefOid": "3b78f740a586a8e2777d1b9659068f637491ee04",
+      "number": 83,
+      "title": "test(media): add E2E coverage",
+      "subject": "test(media): add E2E coverage",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "3b78f740a586a8e2777d1b9659068f637491ee04",
+      "changed_path_count": 5,
+      "changed_paths_sha256": "3ef7801ef20af7cf5f76d8020d8138968fcd2c7f336cd3553cd67c6a88f4f520",
+      "baseRefOid": "8d5a35aa2a90bd21fd68374b0b64c5d741b3d2b2"
+    },
+    {
+      "baseRefName": "stack/media3-08c-config-rng-cleanup",
+      "headRefName": "stack/media3-09-app-services",
+      "headRefOid": "fc6b3d87c04a21a7b2e614a543112c30227e8faf",
+      "number": 82,
+      "title": "feat(media): bound discovery and read models",
+      "subject": "feat(media): bound discovery and read models",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "fc6b3d87c04a21a7b2e614a543112c30227e8faf",
+      "changed_path_count": 33,
+      "changed_paths_sha256": "4c2cfa1e4b42709dbb39a081a1f66e8c6347dba977194b7bb0e8a0e154f96241",
+      "baseRefOid": "4116c8ffd9f62d3424ae873b67a61c2ebe1491b4"
+    },
+    {
+      "baseRefName": "stack/media3-09e-docs-openapi-routes",
+      "headRefName": "stack/media3-10-job-runtime",
+      "headRefOid": "b900df62e54c26a116ec8e952c7548dbe4ad0ce6",
+      "number": 81,
+      "title": "feat(media): integrate durable job runtime",
+      "subject": "feat(media): integrate durable job runtime",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "b900df62e54c26a116ec8e952c7548dbe4ad0ce6",
+      "changed_path_count": 31,
+      "changed_paths_sha256": "32867a7f209ea73d6a36032ef688dba1e91d18350ff4246fa6ea5497189747f9",
+      "baseRefOid": "bd1bfb7bbca06b394a0e720882efad0d4d24c69a"
+    },
+    {
+      "baseRefName": "stack/media3-07-ui-experience",
+      "headRefName": "stack/media3-08-api-source",
+      "headRefOid": "e624890a729c1811a6ba6b1add5a91f2c99adf71",
+      "number": 79,
+      "title": "feat(media): enforce media text contracts",
+      "subject": "feat(media): enforce media text contracts",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "e624890a729c1811a6ba6b1add5a91f2c99adf71",
+      "changed_path_count": 7,
+      "changed_paths_sha256": "f9f7c9632fd29271c79f2b2c9c38f28117c3e3036685fcbb1cc0e0818d0e51ce",
+      "baseRefOid": "1920de09d1ab6f1bea023cc86877fe2731159e99"
+    },
+    {
+      "baseRefName": "stack/media3-04c-bounded-inspection",
+      "headRefName": "stack/media3-05-runtime-execution",
+      "headRefOid": "549f6015c1d3f6dfebf6e4cd6d55248e189f9a82",
+      "number": 78,
+      "title": "feat(media): add runtime execution pipeline",
+      "subject": "feat(media): add runtime execution pipeline",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "549f6015c1d3f6dfebf6e4cd6d55248e189f9a82",
+      "changed_path_count": 12,
+      "changed_paths_sha256": "46f1244478fc285856e7925a1e722d8d73e300dcb39ea9f6a7378a5ef904ff02",
+      "baseRefOid": "95108c8044a2cb55c9111603779f8571237fa9a1"
+    },
+    {
+      "baseRefName": "stack/media3-06a-data-invariants",
+      "headRefName": "stack/media3-07-data-access",
+      "headRefOid": "c3ee57334fbbfdbcf7470f1d96124a8a1ecad3a7",
+      "number": 77,
+      "title": "feat(media): add stored-procedure data access",
+      "subject": "fix(data): enforce media attempt fencing",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "c3ee57334fbbfdbcf7470f1d96124a8a1ecad3a7",
+      "changed_path_count": 13,
+      "changed_paths_sha256": "9a719f66819eaf892da90909f5410166a69195aada9a72ded6210c2c5d3a3191",
+      "baseRefOid": "dc4dcc9e1f690536c7b7012cd9f65d5dbe813db9"
+    },
+    {
+      "baseRefName": "stack/media3-05b-runtime-review-hardening",
+      "headRefName": "stack/media3-06-data-schema",
+      "headRefOid": "5a4e1b109c5b7377c85a3a56a93b9870d355835c",
+      "number": 76,
+      "title": "feat(media): add transcoding data schema",
+      "subject": "feat(media): add transcoding data schema",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "5a4e1b109c5b7377c85a3a56a93b9870d355835c",
+      "changed_path_count": 38,
+      "changed_paths_sha256": "2db5f93b9a716f7e20a7fcd6c7732b1e7cfebf8c548c99fecffdcd46503480d2",
+      "baseRefOid": "1d29c1b05c36435e1fc76833949dbeee950f3b02"
+    },
+    {
+      "baseRefName": "stack/media3-03-core-planner",
+      "headRefName": "stack/media3-04-runtime-preflight",
+      "headRefOid": "1cd08aaeec1ee3af3e1e5a7d04ebbb9c9cac69cd",
+      "number": 75,
+      "title": "feat(media): add bounded runtime capability preflight",
+      "subject": "feat(media): add bounded runtime capability preflight",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "1cd08aaeec1ee3af3e1e5a7d04ebbb9c9cac69cd",
+      "changed_path_count": 11,
+      "changed_paths_sha256": "46e9f787cfb9db16cefc944315ef7eb2838266f8dd6d2c56c6c235f50c0503e9",
+      "baseRefOid": "95da4b46bb5df4f8c03df66e8e0fe48ec5236cf3"
+    },
+    {
+      "baseRefName": "stack/media3-01-fixture-catalog",
+      "headRefName": "stack/media3-02-contract",
+      "headRefOid": "279a260215308ad5f9b6b62e11582cd7e5ced27c",
+      "number": 74,
+      "title": "docs(media): define transcoding contract",
+      "subject": "docs(media): define transcoding contract",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "279a260215308ad5f9b6b62e11582cd7e5ced27c",
+      "changed_path_count": 4,
+      "changed_paths_sha256": "00a8c616d6e39e7e55e22804a38e7b15bbc9d0772b6a4298e753627d48330e49",
+      "baseRefOid": "254f951b8d67c856ab94e6b34e2ed139d2db26fe"
+    },
+    {
+      "baseRefName": "stack/media3-00e-quality-baseline",
+      "headRefName": "stack/media3-01-quality-baseline",
+      "headRefOid": "7ada27ae4818f70e1ae1151cedc7009201e1fcdb",
+      "number": 73,
+      "title": "ci(sonar): enforce strict analysis foundation",
+      "subject": "ci(sonar): enforce strict analysis foundation",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "7ada27ae4818f70e1ae1151cedc7009201e1fcdb",
+      "changed_path_count": 75,
+      "changed_paths_sha256": "9b445883fc4651191e6ce346c08142ceca1e41da34545c598814fb86b021b9f3",
+      "baseRefOid": "d62f6c98f58b95e6c9626a46e43aeb5a64ad930c"
+    },
+    {
+      "baseRefName": "stack/media3-02-contract",
+      "headRefName": "stack/media3-03-core-planner",
+      "headRefOid": "95da4b46bb5df4f8c03df66e8e0fe48ec5236cf3",
+      "number": 72,
+      "title": "feat(media): add core planning crate",
+      "subject": "fix(media): harden core planning boundaries",
+      "accounting": "retained by ancestry",
+      "checkpoint_subject_match": "95da4b46bb5df4f8c03df66e8e0fe48ec5236cf3",
+      "changed_path_count": 20,
+      "changed_paths_sha256": "9cd86e5701c737b49437072e37c32c613114761a2e839781722059598fbf2587",
+      "baseRefOid": "279a260215308ad5f9b6b62e11582cd7e5ced27c"
+    }
+  ],
+  "existing_checkouts": [
+    {
+      "path": "/Users/vanna/Source/revaer",
+      "head": "d35320cfd807457462b7466f9bcbe27c7e098907",
+      "branch": "refs/heads/stack/media3-61-video-technical-constraints",
+      "exists": true,
+      "status_lines": [
+        "M  .github/instructions/devops.instructions.md",
+        "M  .github/workflows/build-images.yml",
+        "M  .github/workflows/ci.yml",
+        "M  .github/workflows/helm-oci-verify.yml",
+        "M  .github/workflows/pr.yml",
+        "UU docs/SUMMARY.md",
+        "A  docs/adr/402-ci-helm-setup-node24.md",
+        "UU docs/adr/index.md"
+      ],
+      "tracked_delta_sha256": "d3d665427b3929b83155cc978685d83e83f30ca83dc16ab67b36916f2600f0f9"
+    },
+    {
+      "path": "/private/tmp/revaer-adr501-current-port",
+      "head": "3462b207616ce44d622b4072a550aa9f4cc523e7",
+      "branch": "refs/heads/work/media3-adr501-current-port",
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-adr501-process-envelope",
+      "head": "8e50ff1b3c411e6b8080774fdc7e948991f101bf",
+      "branch": "refs/heads/work/media3-adr501-process-envelope",
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-approved-integration",
+      "head": "f4b80bf76043c03091a1860c5c4b3de33ed256fe",
+      "branch": "refs/heads/work/media3-approved-integration",
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-docker-sonar",
+      "head": "54641c63bd43a72a209ee5eea990f55676428eff",
+      "branch": "refs/heads/work/media3-docker-sonar",
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-media3-restack",
+      "head": "b900df62e54c26a116ec8e952c7548dbe4ad0ce6",
+      "branch": "refs/heads/work/media3-restack-integrated",
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-native-broker-implementation",
+      "head": "fb0f6eba40041a66cf1d4831bcda3ce4fac71b58",
+      "branch": "refs/heads/work/media3-native-broker-implementation",
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-postgres-pristine-catalog",
+      "head": "7fd5df307d54911edbdcd2dfdfce71aa4b9a7a2a",
+      "branch": "refs/heads/work/media3-postgres-pristine-catalog",
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-pr102-recovery-manifest",
+      "head": "54157ef8ea77770d76b47efe78b71bea25765a37",
+      "branch": "refs/heads/work/media3-pr102-recovery-manifest",
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-pr75-security-followup",
+      "head": "ce6bdf7ee98c241c8bf3eb77d2dd8b0985bd3241",
+      "branch": "refs/heads/work/media3-pr75-stable-file-identities",
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-profile-response",
+      "head": "f4b80bf76043c03091a1860c5c4b3de33ed256fe",
+      "branch": "refs/heads/work/media3-profile-response",
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-recovery-manifest-validation",
+      "head": "67a8968e362bc2abc6c2f369b852fa4048cbf86d",
+      "branch": "refs/heads/work/media3-recovery-manifest-validation",
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-root-catalog-source",
+      "head": "b1311cc21e0d18d4390f08ac9f6c0dd3991d98a0",
+      "branch": "refs/heads/work/media3-root-catalog-source",
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-root-persistence-contract",
+      "head": "bfb68bfafd43c61fe5586fde2bb243724246c578",
+      "branch": "refs/heads/work/media3-root-persistence-contract",
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-runtime-descendants",
+      "head": "54157ef8ea77770d76b47efe78b71bea25765a37",
+      "branch": "refs/heads/work/media3-runtime-descendants",
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-runtime-fs",
+      "head": "539ebcb61aacf061fb35c427cb6336fac185b9d2",
+      "branch": "refs/heads/work/media3-runtime-fs",
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-sonar-base",
+      "head": "e91261cec20da7bdcec2e5d9b8f18e578300b790",
+      "branch": null,
+      "exists": false
+    },
+    {
+      "path": "/private/tmp/revaer-stack-rebuild",
+      "head": "7fd5df307d54911edbdcd2dfdfce71aa4b9a7a2a",
+      "branch": "refs/heads/work/media3-stack-rebuild",
+      "exists": false
+    },
+    {
+      "path": "/Users/vanna/.codex/worktrees/media-continuation/revaer",
+      "head": "d4c9de8de12d2cbeb09a36e97b8d7bab98a4fde0",
+      "branch": "refs/heads/work/media-continuation",
+      "exists": true
+    },
+    {
+      "path": "/Users/vanna/Source/revaer-worktrees/approved-delivery-20260910",
+      "head": "d09daa34cc52afd748aba56f8276280377fc12aa",
+      "branch": "refs/heads/work/media3-approved-delivery-20260910",
+      "exists": true,
+      "status_lines": [],
+      "tracked_delta_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/vanna/Source/revaer-worktrees/media-restack",
+      "head": "6de2b41b2c770f1c804c3ba99f0261c68d1a96e7",
+      "branch": null,
+      "exists": true,
+      "status_lines": [
+        "M  crates/revaer-app/Cargo.toml",
+        "M  crates/revaer-app/src/lib.rs",
+        "UU crates/revaer-app/src/media.rs",
+        "UU crates/revaer-app/src/media_discovery_fingerprint.rs",
+        "M  crates/revaer-app/src/media_discovery_runtime.rs",
+        "UU crates/revaer-app/src/media_job_runtime.rs",
+        "A  crates/revaer-app/src/media_source_fingerprint.rs",
+        "A  crates/revaer-data/migrations/0169_media_job_fingerprint_required.sql",
+        "A  crates/revaer-data/migrations/0184_media_job_source_identity_fence.sql",
+        "M  crates/revaer-data/src/media/configuration.rs",
+        "UU crates/revaer-data/src/media/jobs.rs",
+        "M  crates/revaer-data/src/media/schema_tests.rs",
+        "UU crates/revaer-runtime/src/media.rs",
+        "M  docs/SUMMARY.md",
+        "A  docs/adr/354-media-direct-job-source-fingerprint.md",
+        "A  docs/adr/423-media-source-identity-fence.md",
+        "M  docs/adr/index.md",
+        "M  tests/specs/api/media.spec.ts"
+      ],
+      "tracked_delta_sha256": "e01e24a6fce780c0034565de5457c731ea7be5c65a884dcdb16fe1ab02ec5903"
+    },
+    {
+      "path": "/Users/vanna/Source/revaer-worktrees/operator-workflow",
+      "head": "71596802cb0cb8c05b73ff00d1e3e00f4bba4caf",
+      "branch": "refs/heads/work/media3-operator-workflow",
+      "exists": true,
+      "status_lines": [
+        "?? .playwright-cli/",
+        "?? output/"
+      ],
+      "tracked_delta_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/vanna/Source/revaer-worktrees/python-tooling",
+      "head": "15aa7492130cc50bbc5c94fd5378bf46973260fb",
+      "branch": "refs/heads/work/python-tooling",
+      "exists": true,
+      "status_lines": [
+        " M crates/revaer-test-support/src/fixtures.rs",
+        " M docs/adr/592-python-tooling.md"
+      ],
+      "tracked_delta_sha256": "dc082f103513b74c6f80a44bc424480c07d68b0c009b60086fea300e921c7fc1"
+    },
+    {
+      "path": "/Users/vanna/Source/revaer-worktrees/rv-media-integration",
+      "head": "f4b80bf76043c03091a1860c5c4b3de33ed256fe",
+      "branch": null,
+      "exists": true,
+      "status_lines": [
+        "M  .dockerignore",
+        "A  .github/actions/setup-revaer/README.md",
+        "M  .github/actions/setup-revaer/action.yml",
+        "M  .github/build-inputs.env",
+        "M  .github/instructions/devops.instructions.md",
+        "A  .github/instructions/python.instructions.md",
+        "MM .github/instructions/revaer-data.instructions.md",
+        "M  .github/instructions/revaer-ui.instructions.md",
+        "M  .github/instructions/rust.instructions.md",
+        "M  .github/instructions/sonarqube_mcp.instructions.md",
+        "M  .github/workflows/build-images.yml",
+        "M  .github/workflows/ci.yml",
+        "M  .github/workflows/docs.yml",
+        "M  .github/workflows/helm-oci-verify.yml",
+        "UU .github/workflows/pr.yml",
+        "M  .gitignore",
+        "A  .python-version",
+        "A  .uv-version",
+        "M  AGENTS.md",
+        "M  Cargo.lock",
+        "M  Dockerfile",
+        "M  README.md",
+        "M  config/database-rebaseline.env",
+        "M  crates/revaer-api-models/src/media_root_contract.rs",
+        "A  crates/revaer-api-models/src/media_root_contract/profile_response.rs",
+        "A  crates/revaer-api-models/src/media_root_contract/profile_response/tests.rs",
+        "A  crates/revaer-api-models/src/media_root_contract/profile_response/wire.rs",
+        "M  crates/revaer-api-models/src/media_root_contract/readiness/state.rs",
+        "M  crates/revaer-api/src/app/media.rs",
+        "M  crates/revaer-api/src/http/dto/errors.rs",
+        "M  crates/revaer-api/src/http/handlers/media.rs",
+        "A  crates/revaer-api/src/http/handlers/media_preconditions.rs",
+        "A  crates/revaer-api/src/http/handlers/media_roots.rs",
+        "M  crates/revaer-api/src/http/handlers/mod.rs",
+        "M  crates/revaer-api/src/http/router.rs",
+        "A  crates/revaer-api/src/http/router/media_root_tests.rs",
+        "M  crates/revaer-api/src/openapi.rs",
+        "A  crates/revaer-api/src/openapi/root_catalog.rs",
+        "A  crates/revaer-api/src/openapi/root_readiness.rs",
+        " M crates/revaer-app/docs/api/openapi.json",
+        "M  crates/revaer-app/src/bootstrap.rs",
+        " M crates/revaer-app/src/bootstrap/runtime_tests.rs",
+        " M crates/revaer-app/src/bootstrap/tests.rs",
+        "M  crates/revaer-app/src/error.rs",
+        " M crates/revaer-app/src/import_job_runtime.rs",
+        " M crates/revaer-app/src/indexers/tests/indexers_large_tests.rs",
+        " M crates/revaer-app/src/indexers/tests/mod.rs",
+        "M  crates/revaer-app/src/media.rs",
+        "A  crates/revaer-app/src/media/root_catalog.rs",
+        "A  crates/revaer-app/src/media/root_catalog/tests.rs",
+        "A  crates/revaer-app/src/media/root_readiness.rs",
+        "A  crates/revaer-app/src/media/root_readiness/tests.rs",
+        "MM crates/revaer-app/src/orchestrator/tests.rs",
+        "M  crates/revaer-config/src/loader.rs",
+        " M crates/revaer-config/tests/integration.rs",
+        "M  crates/revaer-data/Cargo.toml",
+        "M  crates/revaer-data/build.rs",
+        "MM crates/revaer-data/init.sql",
+        "M  crates/revaer-data/src/baseline/error.rs",
+        "M  crates/revaer-data/src/baseline/mod.rs",
+        "A  crates/revaer-data/src/baseline/pool.rs",
+        "A  crates/revaer-data/src/baseline/pool/tests.rs",
+        "A  crates/revaer-data/src/baseline/pool/tests/root_reconciliation.rs",
+        "A  crates/revaer-data/src/baseline/pool/tests/root_reconciliation/adapter.rs",
+        "M  crates/revaer-data/src/baseline/tests.rs",
+        "M  crates/revaer-data/src/config.rs",
+        "M  crates/revaer-data/src/error.rs",
+        " M crates/revaer-data/src/indexers/mod.rs",
+        "M  crates/revaer-data/src/indexers/schema_tests.rs",
+        " M crates/revaer-data/src/indexers/search_results/tests.rs",
+        "M  crates/revaer-data/src/media/mod.rs",
+        "A  crates/revaer-data/src/media/root_catalog.rs",
+        "A  crates/revaer-data/src/media/root_catalog/invalidation.rs",
+        "A  crates/revaer-data/src/media/root_catalog/page.rs",
+        "A  crates/revaer-data/src/media/root_catalog/reconciliation.rs",
+        "MM crates/revaer-data/src/media/tests.rs",
+        "M  crates/revaer-data/src/runtime.rs",
+        "MM crates/revaer-data/tests/config.rs",
+        "MM crates/revaer-data/tests/runtime.rs",
+        "MM crates/revaer-fsops/src/service/mod.rs",
+        "AM crates/revaer-media-runtime/src/root_catalog/directory.rs",
+        "A  crates/revaer-media-runtime/src/root_catalog/directory/tests.rs",
+        "M  crates/revaer-media-runtime/src/root_catalog/identity/tests/mod.rs",
+        "M  crates/revaer-media-runtime/src/root_catalog/identity/tests/semantics.rs",
+        "M  crates/revaer-media-runtime/src/root_catalog/local_file.rs",
+        "M  crates/revaer-media-runtime/src/root_catalog/mod.rs",
+        "A  crates/revaer-media-runtime/src/root_catalog/mount_source.rs",
+        "A  crates/revaer-media-runtime/src/root_catalog/mounts.rs",
+        "A  crates/revaer-media-runtime/src/root_catalog/mounts/tests.rs",
+        "A  crates/revaer-media-runtime/src/root_catalog/observation.rs",
+        "A  crates/revaer-media-runtime/src/root_catalog/opened.rs",
+        "M  crates/revaer-media-runtime/src/root_catalog/source.rs",
+        "M  crates/revaer-media-runtime/src/root_catalog/tests/source.rs",
+        "A  crates/revaer-media-runtime/src/root_catalog/write_probe.rs",
+        "A  crates/revaer-media-runtime/src/root_catalog/write_probe/tests.rs",
+        "M  crates/revaer-runtime/src/media.rs",
+        "M  crates/revaer-runtime/src/runtime.rs",
+        "MM crates/revaer-runtime/src/runtime/tests.rs",
+        " M crates/revaer-test-support/src/postgres.rs",
+        " M crates/revaer-test-support/tests/integration.rs",
+        " M crates/revaer-torrent-libt/tests/native_integration.rs",
+        "M  crates/revaer-ui/Cargo.toml",
+        "M  crates/revaer-ui/src/features/media/api.rs",
+        "A  crates/revaer-ui/src/features/media/association.rs",
+        "A  crates/revaer-ui/src/features/media/association/tests.rs",
+        "A  crates/revaer-ui/src/features/media/association_view.rs",
+        "M  crates/revaer-ui/src/features/media/mod.rs",
+        "A  crates/revaer-ui/src/features/media/profile_authoring.rs",
+        "A  crates/revaer-ui/src/features/media/profile_authoring/tests.rs",
+        "A  crates/revaer-ui/src/features/media/profile_authoring_fields.rs",
+        "A  crates/revaer-ui/src/features/media/profile_roots.rs",
+        "A  crates/revaer-ui/src/features/media/profile_roots/tests.rs",
+        "AM crates/revaer-ui/src/features/media/profile_roots_view.rs",
+        "A  crates/revaer-ui/src/features/media/root_catalog_api.rs",
+        "A  crates/revaer-ui/src/features/media/root_catalog_view.rs",
+        "A  crates/revaer-ui/src/features/media/root_readiness.rs",
+        "A  crates/revaer-ui/src/features/media/root_readiness/tests.rs",
+        "A  crates/revaer-ui/src/features/media/root_readiness_view.rs",
+        "M  crates/revaer-ui/src/features/media/view.rs",
+        "M  crates/revaer-ui/src/models.rs",
+        "A  crates/revaer-ui/src/models/media_configuration.rs",
+        "M  crates/revaer-ui/src/services/api.rs",
+        "MM docs/SUMMARY.md",
+        "M  docs/adr/589-hash-helper-registration-deadline.md",
+        "A  docs/adr/590-profile-version-wire-completion.md",
+        "A  docs/adr/591-outside-in-first-release-path.md",
+        "A  docs/adr/592-python-tooling.md",
+        "M  docs/adr/index.md",
+        " M docs/api/index.md",
+        "MM docs/api/openapi.json",
+        "AD docs/api/readme.md",
+        "M  docs/llm/manifest.json",
+        "M  docs/llm/summaries.json",
+        "M  docs/media-approval-register.md",
+        "M  just/database.just",
+        "A  pyproject.toml",
+        "A  release/README.md",
+        "M  release/media-compliance/media-runtime-inventory.spdx.json",
+        "A  release/semantic-release.toml",
+        "M  rust-toolchain.toml",
+        "M  scripts/database_rebaseline/contract.rb",
+        "A  scripts/test-database-init.sh",
+        "A  scripts/tests/database-e2e-create.sql",
+        "A  scripts/tests/database-e2e-drop.sql",
+        "A  scripts/tests/database-e2e-roles.sql",
+        "A  scripts/tests/database-e2e-seal.sql",
+        "M  scripts/tests/database-rebaseline-test.rb",
+        "A  scripts/tests/database-root-catalog-digest-fixture.sql",
+        "A  scripts/tests/database-root-catalog-reader-fixture.sql",
+        "A  scripts/tests/database-root-catalog-reconcile-fixture.sql",
+        "A  scripts/tests/database-runtime-fixture-cleanup.sql",
+        "A  scripts/tests/database-runtime-fixture-owner-disable.sql",
+        "A  scripts/tests/database-runtime-fixture-roles.sql",
+        "A  setup.sh",
+        "M  sonar-project.properties",
+        "A  tests/MIGRATION.md",
+        "M  tests/README.md",
+        "A  tests/__init__.py",
+        "A  tests/conftest.py",
+        "AM tests/e2e.toml",
+        "M  tests/fixtures/api.ts",
+        "M  tests/global-setup.ts",
+        "A  tests/pages/__init__.py",
+        "A  tests/pages/app_shell.py",
+        "A  tests/pages/logs.py",
+        "A  tests/pages/overview.py",
+        "A  tests/pages/settings.py",
+        "A  tests/pages/torrents.py",
+        "A  tests/specs/__init__.py",
+        "A  tests/specs/api/__init__.py",
+        "M  tests/specs/api/media-profile-create.spec.ts",
+        "A  tests/specs/api/media-root-readiness.spec.ts",
+        "M  tests/specs/api/media.spec.ts",
+        "A  tests/specs/api/test_auth.py",
+        "A  tests/specs/api/test_config.py",
+        "A  tests/specs/api/test_events.py",
+        "A  tests/specs/api/test_indexer_catalog.py",
+        "A  tests/specs/api/test_indexer_categories.py",
+        "A  tests/specs/api/test_indexer_connectivity.py",
+        "A  tests/specs/api/test_indexer_imports.py",
+        "A  tests/specs/api/test_indexer_policies.py",
+        "A  tests/specs/api/test_indexer_profiles.py",
+        "A  tests/specs/api/test_indexer_search.py",
+        "A  tests/specs/api/test_indexer_secrets_tags.py",
+        "A  tests/specs/api/test_indexer_torznab.py",
+        "A  tests/specs/api/test_public.py",
+        "A  tests/specs/api/test_torrents.py",
+        "A  tests/specs/ui/__init__.py",
+        "A  tests/specs/ui/media-association.spec.ts",
+        "A  tests/specs/ui/media-root-readiness.spec.ts",
+        "A  tests/specs/ui/test_indexers.py",
+        "A  tests/specs/ui/test_logs.py",
+        "A  tests/specs/ui/test_navigation.py",
+        "A  tests/specs/ui/test_torrents.py",
+        "A  tests/support/__init__.py",
+        "M  tests/support/api/client.ts",
+        "A  tests/support/api_assertions.py",
+        "M  tests/support/e2e-cleanup.ts",
+        "A  tests/support/e2e-database.ts",
+        "M  tests/support/e2e-state.ts",
+        "A  tests/support/indexers.py",
+        "A  tests/support/polling.py",
+        "M  tests/unit/e2e-bootstrap.test.ts",
+        "AM tools/README.md",
+        "A  tools/coverage-report.toml",
+        "A  tools/launcher/README.md",
+        "A  tools/launcher/pyproject.toml",
+        "A  tools/launcher/src/revaer_launcher/__init__.py",
+        "AM tools/migration.md",
+        "A  tools/src/revaer_tooling/__init__.py",
+        "A  tools/src/revaer_tooling/artifacts.py",
+        "A  tools/src/revaer_tooling/assignments.py",
+        "A  tools/src/revaer_tooling/automation/README.md",
+        "A  tools/src/revaer_tooling/automation/__init__.py",
+        "A  tools/src/revaer_tooling/automation/files.py",
+        "A  tools/src/revaer_tooling/automation/settings.py",
+        "A  tools/src/revaer_tooling/bootstrap/README.md",
+        "A  tools/src/revaer_tooling/bootstrap/__init__.py",
+        "A  tools/src/revaer_tooling/bootstrap/coverage.py",
+        "A  tools/src/revaer_tooling/bootstrap/install.py",
+        "A  tools/src/revaer_tooling/bootstrap/selection.py",
+        "A  tools/src/revaer_tooling/bootstrap/settings.py",
+        "AM tools/src/revaer_tooling/cli.py",
+        "AM tools/src/revaer_tooling/context.py",
+        "A  tools/src/revaer_tooling/database/README.md",
+        "A  tools/src/revaer_tooling/database/__init__.py",
+        "A  tools/src/revaer_tooling/database/asset_history.py",
+        "A  tools/src/revaer_tooling/database/assets.py",
+        "A  tools/src/revaer_tooling/database/baseline.py",
+        "A  tools/src/revaer_tooling/database/candidate.py",
+        "A  tools/src/revaer_tooling/database/changed_lines.py",
+        "A  tools/src/revaer_tooling/database/contract.py",
+        "A  tools/src/revaer_tooling/database/extensions.py",
+        "A  tools/src/revaer_tooling/database/final_sql.py",
+        "A  tools/src/revaer_tooling/database/ingestion/README.md",
+        "A  tools/src/revaer_tooling/database/ingestion/__init__.py",
+        "A  tools/src/revaer_tooling/database/ingestion/corrections.py",
+        "A  tools/src/revaer_tooling/database/ingestion/evidence.py",
+        "A  tools/src/revaer_tooling/database/ingestion/inventory.py",
+        "A  tools/src/revaer_tooling/database/ingestion/isolated.py",
+        "A  tools/src/revaer_tooling/database/ingestion/matrix.py",
+        "A  tools/src/revaer_tooling/database/ingestion/sessions.py",
+        "A  tools/src/revaer_tooling/database/parity.py",
+        "A  tools/src/revaer_tooling/database/postgres.py",
+        "A  tools/src/revaer_tooling/database/pristine/README.md",
+        "A  tools/src/revaer_tooling/database/pristine/__init__.py",
+        "A  tools/src/revaer_tooling/database/pristine/query.py",
+        "A  tools/src/revaer_tooling/database/pristine/snapshot.py",
+        "A  tools/src/revaer_tooling/database/pristine/spec.json",
+        "A  tools/src/revaer_tooling/database/pristine/spec.py",
+        "A  tools/src/revaer_tooling/database/pristine/workspace.py",
+        "A  tools/src/revaer_tooling/database/reset_timeout.py",
+        "A  tools/src/revaer_tooling/database/statements.py",
+        "A  tools/src/revaer_tooling/development/README.md",
+        "A  tools/src/revaer_tooling/development/__init__.py",
+        "A  tools/src/revaer_tooling/development/loop.py",
+        "A  tools/src/revaer_tooling/development/processes.py",
+        "A  tools/src/revaer_tooling/development/session.py",
+        "A  tools/src/revaer_tooling/development/settings.py",
+        "A  tools/src/revaer_tooling/development/watching.py",
+        "A  tools/src/revaer_tooling/e2e/README.md",
+        "A  tools/src/revaer_tooling/e2e/__init__.py",
+        "A  tools/src/revaer_tooling/e2e/api.py",
+        "A  tools/src/revaer_tooling/e2e/coverage.py",
+        "A  tools/src/revaer_tooling/e2e/javascript.py",
+        "A  tools/src/revaer_tooling/e2e/settings.py",
+        "A  tools/src/revaer_tooling/e2e/shards.py",
+        "A  tools/src/revaer_tooling/e2e/v8.py",
+        "A  tools/src/revaer_tooling/errors.py",
+        "A  tools/src/revaer_tooling/external/__init__.py",
+        "A  tools/src/revaer_tooling/external/accounts.py",
+        "A  tools/src/revaer_tooling/external/base.py",
+        "A  tools/src/revaer_tooling/external/bash.py",
+        "A  tools/src/revaer_tooling/external/charts.py",
+        "A  tools/src/revaer_tooling/external/cmake.py",
+        "A  tools/src/revaer_tooling/external/cosign.py",
+        "A  tools/src/revaer_tooling/external/coverage.py",
+        "A  tools/src/revaer_tooling/external/curl.py",
+        "A  tools/src/revaer_tooling/external/database.py",
+        "A  tools/src/revaer_tooling/external/docker.py",
+        "A  tools/src/revaer_tooling/external/git.py",
+        "A  tools/src/revaer_tooling/external/github.py",
+        "A  tools/src/revaer_tooling/external/http.py",
+        "A  tools/src/revaer_tooling/external/images.py",
+        "A  tools/src/revaer_tooling/external/media.py",
+        "A  tools/src/revaer_tooling/external/packages.py",
+        "A  tools/src/revaer_tooling/external/postgres.py",
+        "AM tools/src/revaer_tooling/external/python.py",
+        "A  tools/src/revaer_tooling/external/release.py",
+        "AM tools/src/revaer_tooling/external/rust.py",
+        "A  tools/src/revaer_tooling/external/serving.py",
+        "A  tools/src/revaer_tooling/external/sonar.py",
+        "A  tools/src/revaer_tooling/filesystem.py",
+        "A  tools/src/revaer_tooling/images/README.md",
+        "A  tools/src/revaer_tooling/images/__init__.py",
+        "A  tools/src/revaer_tooling/images/compliance.py",
+        "AM tools/src/revaer_tooling/images/inputs.py",
+        "A  tools/src/revaer_tooling/images/model.py",
+        "A  tools/src/revaer_tooling/images/policy.py",
+        "A  tools/src/revaer_tooling/images/settings.py",
+        "A  tools/src/revaer_tooling/images/validation.py",
+        "A  tools/src/revaer_tooling/json_data.py",
+        "A  tools/src/revaer_tooling/media/README.md",
+        "A  tools/src/revaer_tooling/media/__init__.py",
+        "A  tools/src/revaer_tooling/media/acquire.py",
+        "A  tools/src/revaer_tooling/media/catalog.py",
+        "A  tools/src/revaer_tooling/media/diagnostics.py",
+        "A  tools/src/revaer_tooling/media/generate.py",
+        "A  tools/src/revaer_tooling/media/model.py",
+        "A  tools/src/revaer_tooling/media/probes.py",
+        "A  tools/src/revaer_tooling/media/settings.py",
+        "A  tools/src/revaer_tooling/policy/README.md",
+        "A  tools/src/revaer_tooling/policy/__init__.py",
+        "A  tools/src/revaer_tooling/policy/advisories.py",
+        "A  tools/src/revaer_tooling/policy/contracts.py",
+        "A  tools/src/revaer_tooling/policy/formats.py",
+        "A  tools/src/revaer_tooling/policy/image_workflows.py",
+        "A  tools/src/revaer_tooling/policy/release_workflows.py",
+        "A  tools/src/revaer_tooling/policy/required_checks.py",
+        "A  tools/src/revaer_tooling/policy/scanner_workflows.py",
+        "A  tools/src/revaer_tooling/policy/setup_workflows.py",
+        "A  tools/src/revaer_tooling/policy/sonar.py",
+        "A  tools/src/revaer_tooling/policy/workflows.py",
+        "A  tools/src/revaer_tooling/process.py",
+        "A  tools/src/revaer_tooling/py.typed",
+        "A  tools/src/revaer_tooling/repository.py",
+        "AM tools/src/revaer_tooling/settings.py",
+        "A  tools/src/revaer_tooling/sonar/README.md",
+        "A  tools/src/revaer_tooling/sonar/__init__.py",
+        "A  tools/src/revaer_tooling/sonar/inputs.py",
+        "A  tools/src/revaer_tooling/sonar/install.py",
+        "A  tools/src/revaer_tooling/sonar/results.py",
+        "A  tools/src/revaer_tooling/sonar/settings.py",
+        "A  tools/src/revaer_tooling/tasks/README.md",
+        "A  tools/src/revaer_tooling/tasks/__init__.py",
+        "A  tools/src/revaer_tooling/tasks/automation.py",
+        "A  tools/src/revaer_tooling/tasks/base.py",
+        "A  tools/src/revaer_tooling/tasks/bootstrap.py",
+        "A  tools/src/revaer_tooling/tasks/build.py",
+        "A  tools/src/revaer_tooling/tasks/charts.py",
+        "A  tools/src/revaer_tooling/tasks/compliance.py",
+        "A  tools/src/revaer_tooling/tasks/containers.py",
+        "A  tools/src/revaer_tooling/tasks/coverage.py",
+        "A  tools/src/revaer_tooling/tasks/database.py",
+        "A  tools/src/revaer_tooling/tasks/database_probes.py",
+        "A  tools/src/revaer_tooling/tasks/database_rebaseline.py",
+        "A  tools/src/revaer_tooling/tasks/development.py",
+        "A  tools/src/revaer_tooling/tasks/docs.py",
+        "AM tools/src/revaer_tooling/tasks/e2e.py",
+        "A  tools/src/revaer_tooling/tasks/image_release.py",
+        "A  tools/src/revaer_tooling/tasks/images.py",
+        "A  tools/src/revaer_tooling/tasks/javascript_coverage.py",
+        "A  tools/src/revaer_tooling/tasks/media.py",
+        "A  tools/src/revaer_tooling/tasks/native.py",
+        "A  tools/src/revaer_tooling/tasks/policy.py",
+        "A  tools/src/revaer_tooling/tasks/pristine.py",
+        "A  tools/src/revaer_tooling/tasks/python_coverage.py",
+        "A  tools/src/revaer_tooling/tasks/quality.py",
+        "A  tools/src/revaer_tooling/tasks/release.py",
+        "A  tools/src/revaer_tooling/tasks/setup.py",
+        "A  tools/src/revaer_tooling/tasks/sonar.py",
+        "AM tools/src/revaer_tooling/tasks/testing.py",
+        "A  tools/src/revaer_tooling/tasks/workflows.py",
+        "AM tools/tests/README.md",
+        "A  tools/tests/fixtures/__init__.py",
+        "A  tools/tests/fixtures/alpine_core.py",
+        "A  tools/tests/fixtures/assets/README.md",
+        "A  tools/tests/fixtures/assets/docs/adr/588-first-release-decision-package.md",
+        "A  tools/tests/fixtures/assets/docs/adr/support/585-binary-deletions.json",
+        "A  tools/tests/fixtures/assets/docs/adr/support/588-decision-details.md",
+        "A  tools/tests/fixtures/browser_failures.py",
+        "A  tools/tests/fixtures/browser_javascript.py",
+        "A  tools/tests/fixtures/browser_javascript_failure.py",
+        "A  tools/tests/fixtures/browser_scenarios.py",
+        "A  tools/tests/fixtures/database.py",
+        "A  tools/tests/fixtures/downloads.py",
+        "A  tools/tests/fixtures/ingestion-corrections.json",
+        "A  tools/tests/fixtures/ingestion-corrections.md",
+        "A  tools/tests/fixtures/linux_setup.py",
+        "A  tools/tests/fixtures/media-chart/README.md",
+        "A  tools/tests/fixtures/media-chart/revaer/.helmignore",
+        "A  tools/tests/fixtures/media-chart/revaer/Chart.yaml",
+        "A  tools/tests/fixtures/media-chart/revaer/README.md",
+        "A  tools/tests/fixtures/media-chart/revaer/artifacthub-repo.yml",
+        "A  tools/tests/fixtures/media-chart/revaer/templates/NOTES.txt",
+        "A  tools/tests/fixtures/media-chart/revaer/templates/_helpers.tpl",
+        "A  tools/tests/fixtures/media-chart/revaer/templates/deployment.yaml",
+        "A  tools/tests/fixtures/media-chart/revaer/templates/ingress.yaml",
+        "A  tools/tests/fixtures/media-chart/revaer/templates/pvc-config.yaml",
+        "A  tools/tests/fixtures/media-chart/revaer/templates/pvc-data.yaml",
+        "A  tools/tests/fixtures/media-chart/revaer/templates/secret.yaml",
+        "A  tools/tests/fixtures/media-chart/revaer/templates/service.yaml",
+        "A  tools/tests/fixtures/media-chart/revaer/templates/serviceaccount.yaml",
+        "A  tools/tests/fixtures/media-chart/revaer/values.schema.json",
+        "A  tools/tests/fixtures/media-chart/revaer/values.yaml",
+        "A  tools/tests/fixtures/media.py",
+        "A  tools/tests/fixtures/media/README.md",
+        "A  tools/tests/fixtures/media/f1-host-version.txt",
+        "A  tools/tests/fixtures/media/f1-linux-version.txt",
+        "A  tools/tests/fixtures/media/lock.json",
+        "A  tools/tests/fixtures/media/manifest.json",
+        "A  tools/tests/fixtures/media/probe/audio-only-m4a.json",
+        "A  tools/tests/fixtures/media/probe/bbb-av1-mp4.json",
+        "A  tools/tests/fixtures/media/probe/bbb-h264-mkv.json",
+        "A  tools/tests/fixtures/media/probe/bbb-h264-mp4.json",
+        "A  tools/tests/fixtures/media/probe/bbb-h265-mp4.json",
+        "A  tools/tests/fixtures/media/probe/bbb-vp8-webm.json",
+        "A  tools/tests/fixtures/media/probe/bbb-vp9-webm.json",
+        "A  tools/tests/fixtures/media/probe/chromium-bbb-2video-2audio-mp4.json",
+        "A  tools/tests/fixtures/media/probe/chromium-bear-1280x720-aac-he-ts.json",
+        "A  tools/tests/fixtures/media/probe/chromium-bear-1280x720-av-frag-mp4.json",
+        "A  tools/tests/fixtures/media/probe/chromium-bear-320x180-hi10p-mp4.json",
+        "A  tools/tests/fixtures/media/probe/chromium-bear-320x240-webm.json",
+        "A  tools/tests/fixtures/media/probe/chromium-bear-v-frag-hevc-mp4.json",
+        "A  tools/tests/fixtures/media/probe/chromium-bear-vp8-webvtt-webm.json",
+        "A  tools/tests/fixtures/media/probe/chromium-bear-vp9-opus-webm.json",
+        "A  tools/tests/fixtures/media/probe/chromium-bear-vp9-profile2-webm.json",
+        "A  tools/tests/fixtures/media/probe/chromium-multitrack-3video-2audio-webm.json",
+        "A  tools/tests/fixtures/media/probe/h264-aac-mov.json",
+        "A  tools/tests/fixtures/media/probe/h264-aac-ts.json",
+        "A  tools/tests/fixtures/media/probe/mkv-audio-gap.json",
+        "A  tools/tests/fixtures/media/probe/mkv-basic-divx-mp3.json",
+        "A  tools/tests/fixtures/media/probe/mkv-h264-aac-weird-timecode.json",
+        "A  tools/tests/fixtures/media/probe/mkv-h264-mp3-header-stripping.json",
+        "A  tools/tests/fixtures/media/probe/mkv-multi-audio-multi-subtitles.json",
+        "A  tools/tests/fixtures/media/probe/mkv-theora-vorbis-live-style.json",
+        "A  tools/tests/fixtures/media/probe/mpeg4-mp3-avi.json",
+        "A  tools/tests/fixtures/media/probe/multi-audio-mkv.json",
+        "A  tools/tests/fixtures/media/probe/silent-audio-mp4.json",
+        "A  tools/tests/fixtures/media/probe/subtitles-mkv.json",
+        "A  tools/tests/fixtures/media/probe/video-only-mp4.json",
+        "A  tools/tests/fixtures/pristine/cases.json",
+        "A  tools/tests/fixtures/registry.py",
+        "A  tools/tests/fixtures/scanner_process.py",
+        "A  tools/tests/fixtures/sonar.py",
+        "A  tools/tests/fixtures/workflow-contracts.json",
+        "A  tools/tests/test_asset_history.py",
+        "A  tools/tests/test_automation_tasks.py",
+        "A  tools/tests/test_bootstrap.py",
+        "A  tools/tests/test_bootstrap_coverage.py",
+        "AM tools/tests/test_build_inputs.py",
+        "A  tools/tests/test_build_tasks.py",
+        "A  tools/tests/test_changed_lines.py",
+        "A  tools/tests/test_chart_annotations.py",
+        "A  tools/tests/test_chart_compliance.py",
+        "A  tools/tests/test_chart_tasks.py",
+        "A  tools/tests/test_chart_versions.py",
+        "AM tools/tests/test_charts.py",
+        "A  tools/tests/test_container_image.py",
+        "A  tools/tests/test_container_tasks.py",
+        "A  tools/tests/test_coverage_tasks.py",
+        "A  tools/tests/test_database.py",
+        "A  tools/tests/test_database_baseline.py",
+        "A  tools/tests/test_database_candidate.py",
+        "A  tools/tests/test_database_contract.py",
+        "A  tools/tests/test_database_extensions.py",
+        "A  tools/tests/test_database_final_sql.py",
+        "A  tools/tests/test_database_parity.py",
+        "A  tools/tests/test_database_postgres.py",
+        "A  tools/tests/test_database_probes.py",
+        "A  tools/tests/test_database_reset_timeout.py",
+        "A  tools/tests/test_database_routine_permissions.py",
+        "A  tools/tests/test_database_statements.py",
+        "A  tools/tests/test_dependency_groups.py",
+        "A  tools/tests/test_development_loop.py",
+        "A  tools/tests/test_development_native.py",
+        "A  tools/tests/test_development_processes.py",
+        "A  tools/tests/test_development_watching.py",
+        "A  tools/tests/test_dispatch.py",
+        "A  tools/tests/test_docs_tasks.py",
+        "A  tools/tests/test_e2e_client.py",
+        "A  tools/tests/test_e2e_coordinator.py",
+        "A  tools/tests/test_e2e_fixtures.py",
+        "A  tools/tests/test_e2e_serving.py",
+        "A  tools/tests/test_e2e_settings.py",
+        "A  tools/tests/test_e2e_shards.py",
+        "A  tools/tests/test_external.py",
+        "A  tools/tests/test_git.py",
+        "A  tools/tests/test_image_compliance.py",
+        "A  tools/tests/test_image_release.py",
+        "A  tools/tests/test_images.py",
+        "A  tools/tests/test_ingestion_corrections.py",
+        "A  tools/tests/test_ingestion_evidence.py",
+        "A  tools/tests/test_ingestion_inventory.py",
+        "A  tools/tests/test_ingestion_isolation.py",
+        "A  tools/tests/test_ingestion_matrix.py",
+        "A  tools/tests/test_ingestion_sessions.py",
+        "A  tools/tests/test_javascript_coverage.py",
+        "A  tools/tests/test_kcov_install.py",
+        "A  tools/tests/test_kcov_process.py",
+        "A  tools/tests/test_launcher.py",
+        "A  tools/tests/test_media_generation.py",
+        "A  tools/tests/test_media_probes.py",
+        "A  tools/tests/test_media_sources.py",
+        "A  tools/tests/test_media_tasks.py",
+        "A  tools/tests/test_native_inputs.py",
+        "A  tools/tests/test_policy.py",
+        "A  tools/tests/test_policy_formats.py",
+        "A  tools/tests/test_policy_tasks.py",
+        "A  tools/tests/test_pristine.py",
+        "A  tools/tests/test_process.py",
+        "A  tools/tests/test_python_coverage_merge.py",
+        "A  tools/tests/test_python_tasks.py",
+        "A  tools/tests/test_quality_tasks.py",
+        "A  tools/tests/test_release.py",
+        "A  tools/tests/test_release_publish.py",
+        "A  tools/tests/test_release_workflow.py",
+        "A  tools/tests/test_rust_testing.py",
+        "A  tools/tests/test_settings.py",
+        "A  tools/tests/test_setup_selection.py",
+        "A  tools/tests/test_setup_workflows.py",
+        "A  tools/tests/test_sonar_inputs.py",
+        "A  tools/tests/test_sonar_install.py",
+        "A  tools/tests/test_sonar_policy.py",
+        "A  tools/tests/test_sonar_preparation.py",
+        "A  tools/tests/test_sonar_results.py",
+        "A  tools/tests/test_sonar_scm.py",
+        "A  tools/tests/test_sonar_tasks.py",
+        "A  tools/tests/test_workflow_contracts.py",
+        "A  tools/tests/test_workflow_files.py",
+        "A  tools/tests/test_workflow_structure.py",
+        "A  tools/versions.toml",
+        "A  uv.lock",
+        "?? crates/revaer-test-support/README.md",
+        "?? docs/api/contract.md",
+        "?? scripts/tests/database-runtime-fixture-failing-init.sql",
+        "?? tests/specs/media/",
+        "?? tools/src/revaer_tooling/database/lifecycle_settings.py",
+        "?? tools/src/revaer_tooling/e2e/database.py",
+        "?? tools/src/revaer_tooling/external/database_lifecycle.py",
+        "?? tools/src/revaer_tooling/tasks/database_lifecycle.py",
+        "?? tools/tests/test_database_lifecycle.py",
+        "?? tools/tests/test_e2e_database.py"
+      ],
+      "tracked_delta_sha256": "1cd9bbbe0b7a9b1051814e310d4061a2bafbc6e46ff47bb6f164ec76398708d1"
+    }
+  ],
+  "preserved_recovery_refs": [
+    {
+      "ref": "backup/rv-rebase-20261002-integration",
+      "head": "f4b80bf76043c03091a1860c5c4b3de33ed256fe"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-operator",
+      "head": "71596802cb0cb8c05b73ff00d1e3e00f4bba4caf"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-100",
+      "head": "82690bc9728882e0ba27b606c32115891afeaa22"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-101",
+      "head": "d43dc682e05ae1d03bd554eb493af2168e2aad9a"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-102",
+      "head": "aad4c8f96f69ee7c90c287904b98ee1401c79102"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-103",
+      "head": "986000d5d5612e2347e578499f713c3458c714ae"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-104",
+      "head": "38be0aa735b1def2eca57fb71ceb13825fd2103d"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-105",
+      "head": "f1e3e3dab5a594302c8b39d42e26ad3e845329d0"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-106",
+      "head": "4a759ba66f6b5b23e58b4343e530fa4666135e07"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-108",
+      "head": "53b2e6c90bf9a254156abdbb8bac5b3ef36fffd0"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-109",
+      "head": "fbec0583152eabddd59aab0938dcc485fada4cbc"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-110",
+      "head": "193538f03d89f3c688ce733d5bdc8087eb37d1fc"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-111",
+      "head": "f7f23c6c29e1359911ed373c82e27fa62b308850"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-112",
+      "head": "7b160aa1fe1c1a89c8a278ddef76ad7654aacda7"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-113",
+      "head": "66d2362f103d465809f29b863afef8030ba4a2a1"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-114",
+      "head": "a86491441bd259a51f4900de2b3105902e73c2c0"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-115",
+      "head": "06fe08a2596fd4409041496472175277f6de5a5e"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-116",
+      "head": "19cc8370600ab08b93102bf882523888e90cf2e1"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-117",
+      "head": "d5ffb0367c2d7073f477a689033f549dbae583a0"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-118",
+      "head": "f042e233ca1e86c91e21dba117d91a71e40d1a19"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-119",
+      "head": "024fb27f970d466f3036d77f3c216034ea618ca6"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-120",
+      "head": "4afca0db69edeea8761a6fd9967379829b87c97e"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-122",
+      "head": "23100f8a44bb57d8deef04378bb2cd0e98185c5e"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-123",
+      "head": "051a4bc7bf1e8032d9743b5e11f40c4b9ac62b4f"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-124",
+      "head": "a27a2ea80d0acc23f3164514b5803c4d32f19b91"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-126",
+      "head": "a492f1cfc71327facd07dd9d36560a64ef250bcb"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-127",
+      "head": "e448a5eb887932f2421dd857da49f5fd86585e76"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-128",
+      "head": "f15d0bf4e736314db6c89d10a2f96f260a56b4f5"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-129",
+      "head": "cd288ff9ce67eaa8bbac71ea0bc40f92e909cd62"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-130",
+      "head": "a379717455aae39f005e4120fb59b1f5247bbc95"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-131",
+      "head": "4681b5c4a94d324c41cb3aa516d6f7edbe83a7d4"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-132",
+      "head": "ad0b3137103ce6911163d75e02d75d6e7cc4f441"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-133",
+      "head": "8270010e677187e78393be8ae0f598e78e0cd31d"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-134",
+      "head": "1c45df9dc502669dbb68a8656d50f415d3c85763"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-135",
+      "head": "a8533744366088f935cc6878e0284b72f78b0666"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-137",
+      "head": "8af55c43a83bdeb0c514a4ba9e91e2933fd123a0"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-138",
+      "head": "66f7ee12bda7d26276b7fc7c48730c21e13f4978"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-139",
+      "head": "44f76ee071a37149f0be64c3cf801b0b093921a8"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-141",
+      "head": "958de5d815eb97579e21dcfb2e2de437c0695a51"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-142",
+      "head": "089c324581b5f3e4dc5876216db9e5484cc1a351"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-143",
+      "head": "d27ab997062df3223241211d7e68fc20a855fb04"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-145",
+      "head": "6471074ea4da6a41b1c59b4450a2f0249a7dc467"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-148",
+      "head": "ba74b3b2349025215e2c4d9b196f58cdf0a7aa67"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-149",
+      "head": "f923eb0b6eae65aaad92c7fbe44759b0349ebfcb"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-150",
+      "head": "95108c8044a2cb55c9111603779f8571237fa9a1"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-156",
+      "head": "1030f17272e43677303dbd0acfd7ab1b3a31f4a5"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-157",
+      "head": "a8e7e4d401080eddf55fbdf4ffc558df2381a7dd"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-158",
+      "head": "8de017176dcc6e2ac9534ef076348927b4c3c40d"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-159",
+      "head": "c4777b9588c029196365d404e55fba7e408f2068"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-162",
+      "head": "1d29c1b05c36435e1fc76833949dbeee950f3b02"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-164",
+      "head": "d3d96523872ba05e4da77b60a37ce4970984c497"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-165",
+      "head": "ce6a8cc5df74218226fc38e083eafa63680d8200"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-166",
+      "head": "d84c1ea63b38d163718ea05f418e28f9237bb6e7"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-167",
+      "head": "bd1bfb7bbca06b394a0e720882efad0d4d24c69a"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-168",
+      "head": "68af9e4796eaab9ea7c042a045382ee216e68c52"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-169",
+      "head": "4116c8ffd9f62d3424ae873b67a61c2ebe1491b4"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-170",
+      "head": "959d99ec31db9c3e40942811b295f23becd7550f"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-171",
+      "head": "dc4dcc9e1f690536c7b7012cd9f65d5dbe813db9"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-173",
+      "head": "576f4602ea08a0e657921792e3f4ab3801db27d2"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-174",
+      "head": "2f8ea25abf535aa8a0b031b8efe8ee5bdaf8a6f1"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-175",
+      "head": "a2a30d99507a48220e91979a1eaa5606d864c35c"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-176",
+      "head": "1446a8c814d1536db390d74e1c0171176a77cdbb"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-177",
+      "head": "67cae88c7b955ea577a30e9a9ddb864b3ce9c88b"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-178",
+      "head": "e2c01210f96ddd15d367ffb82f7dd7e14bbe4562"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-179",
+      "head": "f5e28a8e85678f3c680713efdbadba1d4e0ab8ee"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-180",
+      "head": "217e444d2a045b84af70f05f8529f1306c6cd272"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-181",
+      "head": "3e3687da87f97f750288d777c0d5e1ebe511de5e"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-182",
+      "head": "ffa8d01048ea156927afb6ea295c91344e568d88"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-183",
+      "head": "1ade5ca2ecdd1f6815afdeabde7f6f61a0308969"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-184",
+      "head": "a6e9ff504ad1103cff5e33d54517e43133ba21af"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-185",
+      "head": "6eb56bc28f31589445b38bf1a0d507ab839dd382"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-186",
+      "head": "adb64ca5964ddc75ecffc2089f072ccda7a7a251"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-187",
+      "head": "e58b25d82b1b410177197928808a6a71b609e464"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-189",
+      "head": "536c8fe5292323608c45d6e9d8863fb6ed92cc4e"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-190",
+      "head": "8a7e0cdd03d7e2aa957170a519c936c99beed461"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-191",
+      "head": "011fb2bd65512cdaf0ebfd8bbb9f0e00967ccf33"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-193",
+      "head": "7cd14eb217d5284a5642ca956c667b916425e665"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-194",
+      "head": "cfed91f82a07a909ac1b96d9129e9eabeaddbf1c"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-195",
+      "head": "370622664f2024537f3f8a3ab8efc247626daa49"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-197",
+      "head": "ebddb420accd81c2756fcf427e103b548290f9a9"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-198",
+      "head": "294adb463ed7c2c96e97b3e4aa8aaf5ed992c368"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-199",
+      "head": "851022ca2c66afc179cbcb2402d3af721d7c1100"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-200",
+      "head": "8ab54c8de3e0ac34fdfaff221a85bdc42a493d25"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-203",
+      "head": "d62f6c98f58b95e6c9626a46e43aeb5a64ad930c"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-72",
+      "head": "95da4b46bb5df4f8c03df66e8e0fe48ec5236cf3"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-73",
+      "head": "7ada27ae4818f70e1ae1151cedc7009201e1fcdb"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-74",
+      "head": "279a260215308ad5f9b6b62e11582cd7e5ced27c"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-75",
+      "head": "1cd08aaeec1ee3af3e1e5a7d04ebbb9c9cac69cd"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-76",
+      "head": "5a4e1b109c5b7377c85a3a56a93b9870d355835c"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-77",
+      "head": "c3ee57334fbbfdbcf7470f1d96124a8a1ecad3a7"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-78",
+      "head": "549f6015c1d3f6dfebf6e4cd6d55248e189f9a82"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-79",
+      "head": "e624890a729c1811a6ba6b1add5a91f2c99adf71"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-81",
+      "head": "b900df62e54c26a116ec8e952c7548dbe4ad0ce6"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-82",
+      "head": "fc6b3d87c04a21a7b2e614a543112c30227e8faf"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-83",
+      "head": "3b78f740a586a8e2777d1b9659068f637491ee04"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-84",
+      "head": "8d5a35aa2a90bd21fd68374b0b64c5d741b3d2b2"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-85",
+      "head": "21d98ce1df38567a2660fcde3387aec56050d477"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-87",
+      "head": "1920de09d1ab6f1bea023cc86877fe2731159e99"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-88",
+      "head": "254f951b8d67c856ab94e6b34e2ed139d2db26fe"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-90",
+      "head": "f5f22fa1d0e3660f4d3610503f62264a953cfb64"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-91",
+      "head": "d76875f97c5df3944786b90e0c52b6bf82529909"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-92",
+      "head": "6d1d8473a345eee498f0957b710ee536ffa6b80d"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-93",
+      "head": "beeb297843cde7bf266f0458a9122d74b7e9ad58"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-97",
+      "head": "54157ef8ea77770d76b47efe78b71bea25765a37"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-98",
+      "head": "7ed723d58529332217a30adf25498b6d84efc5ec"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-pr-99",
+      "head": "8c985b4bf004c64677b0a49523d448680a3191e6"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-shared",
+      "head": "d35320cfd807457462b7466f9bcbe27c7e098907"
+    },
+    {
+      "ref": "backup/rv-rebase-20261002-tooling",
+      "head": "ec8adc14b8b931113ddcfe1c6b4aef88357507de"
+    }
+  ],
+  "qualification": "integration checkpoint; required gates not passing; do not retire recovery refs",
+  "unfinished_local_work_refs": [
+    {
+      "ref": "work/audio-verification-rebuild",
+      "head": "1b11124b09eac7e89ede03cf7453ea7b474bfdd1"
+    },
+    {
+      "ref": "work/broker-env-evidence-20260910",
+      "head": "df35b47c37b499f6de2e0d15eda2c11107760adf"
+    },
+    {
+      "ref": "work/ci-db-coherence-built",
+      "head": "f7b4d4f679aa787dfa515ba196cdd14e1de1dac8"
+    },
+    {
+      "ref": "work/coverage-database-backed",
+      "head": "a63d78a89835c38b14bc876f6b87d356753e74d1"
+    },
+    {
+      "ref": "work/helm-annotation-portability",
+      "head": "f571d858a96d397cf1904e90eee80f331226d029"
+    },
+    {
+      "ref": "work/libtorrent-21-compatibility",
+      "head": "0f331f0b4c7befdfc2355af4995b264cdd35eb92"
+    },
+    {
+      "ref": "work/media-bootstrap-di-conformance",
+      "head": "3a2e3c279b89a6ed0247c0d66920dc6408a04f7a"
+    },
+    {
+      "ref": "work/media-fixture-gate-20260910",
+      "head": "57482367d0e15770ad8d59f0b1a44762a5b34aeb"
+    },
+    {
+      "ref": "work/media-fixture-pinned-probe-20260910",
+      "head": "02de83942c38ea08433f68b31feded8f86740ea0"
+    },
+    {
+      "ref": "work/media-fixture-source-trace-20260910",
+      "head": "02de83942c38ea08433f68b31feded8f86740ea0"
+    },
+    {
+      "ref": "work/media-profile-wire",
+      "head": "363108a661d656bd231f7773f4354f6f0aed3abc"
+    },
+    {
+      "ref": "work/media-root-catalog-contract",
+      "head": "139b6c6410d2a627e133ab3790615cc94fcd68ba"
+    },
+    {
+      "ref": "work/media-root-contract-review-20260910",
+      "head": "d19563c3aa787b011dab68bd21203d67c2e5ef72"
+    },
+    {
+      "ref": "work/media-root-contract-tests-20260910",
+      "head": "74eab7186d0543102a948bf23d4f1cd63b57be74"
+    },
+    {
+      "ref": "work/media-root-readers",
+      "head": "8ecc3ab3160f39d5803aea6e9aad896b24e8bad0"
+    },
+    {
+      "ref": "work/media-v1-capability-planning",
+      "head": "03d977b27c1d951d3ef80d1c9864ef1ea2c84b86"
+    },
+    {
+      "ref": "work/media-v1-dry-run-no-workspace",
+      "head": "fa71d1aa343721ea7f553eaf27ddca1ce604fd2c"
+    },
+    {
+      "ref": "work/media3-adr-review-20260909",
+      "head": "e8be2459f2f16dc210da1a28570358d4500b5423"
+    },
+    {
+      "ref": "work/media3-adr443-fix",
+      "head": "7f37920c37a55bcab4e5798dd7913f25f4a62fb3"
+    },
+    {
+      "ref": "work/media3-adr501-current-port",
+      "head": "3462b207616ce44d622b4072a550aa9f4cc523e7"
+    },
+    {
+      "ref": "work/media3-adr501-process-envelope",
+      "head": "8e50ff1b3c411e6b8080774fdc7e948991f101bf"
+    },
+    {
+      "ref": "work/media3-adr501-supervisor-hardening",
+      "head": "a58e1048b4bf61666a08fa7f5fb7da7cba367eef"
+    },
+    {
+      "ref": "work/media3-advisory-baseline-20260910",
+      "head": "a1c70e0b82cfc5d324f270415a70aa62bd237af2"
+    },
+    {
+      "ref": "work/media3-api-partition-review-20260910",
+      "head": "d540f67ce45186f5392583df5e768fd00ee161a2"
+    },
+    {
+      "ref": "work/media3-approved-adrs",
+      "head": "d34505ff857a187f4221eedb0b272b843085d27d"
+    },
+    {
+      "ref": "work/media3-approved-decisions-20260910",
+      "head": "2fb206a72e0330fad812f1f2f24a7e696db9463d"
+    },
+    {
+      "ref": "work/media3-approved-decisions-stack",
+      "head": "570420bf4f0fbfacdd9f06863ab5633611ef170c"
+    },
+    {
+      "ref": "work/media3-approved-delivery-20260910",
+      "head": "d09daa34cc52afd748aba56f8276280377fc12aa"
+    },
+    {
+      "ref": "work/media3-approved-fixture-diagnostic-20260910",
+      "head": "b65c5d93f10f42d1a732ee79bb557c9e9bac84c2"
+    },
+    {
+      "ref": "work/media3-approved-integration",
+      "head": "f4b80bf76043c03091a1860c5c4b3de33ed256fe"
+    },
+    {
+      "ref": "work/media3-approved-shutdown-events-20260910",
+      "head": "a0af6712e759dfcabe8f8ba8d667c4c4f0b624fc"
+    },
+    {
+      "ref": "work/media3-architecture-followups",
+      "head": "08255791c09555c79b3a1141f6ca4519e2e3fb6a"
+    },
+    {
+      "ref": "work/media3-architecture-proposals",
+      "head": "1c25e3f7bcad380418a1f4b6868c9aef2caa5de1"
+    },
+    {
+      "ref": "work/media3-asset-checkpoint-20260910",
+      "head": "b2059f4750e2a52967e03a5ac42562dc0ebdfe91"
+    },
+    {
+      "ref": "work/media3-asset-coverage-20260910",
+      "head": "4903693609e98d16b646c8244d54d63497d751ed"
+    },
+    {
+      "ref": "work/media3-asset-descendants-20260910",
+      "head": "100a3d7565ca3dda3f17dffaf6c71e8e53201b8b"
+    },
+    {
+      "ref": "work/media3-asset-owner-20260910",
+      "head": "0d725dce044bea934ec36ca96dc7863bbed2526b"
+    },
+    {
+      "ref": "work/media3-baseline-finalization-20260910",
+      "head": "d451169c50c69a0c0d0fe153bf470c61e52bb3fd"
+    },
+    {
+      "ref": "work/media3-binary-deletion-review-20260910",
+      "head": "06d7af51fac948c77086204a81408349d6f5de08"
+    },
+    {
+      "ref": "work/media3-bit-depth-live",
+      "head": "bf8dc44907d48df8900cf3a93d497d46d01a02f8"
+    },
+    {
+      "ref": "work/media3-bit-depth-range",
+      "head": "9f96f3c76a089773cf70e2a8cdf0bfab685d2a30"
+    },
+    {
+      "ref": "work/media3-broker-review-20260909",
+      "head": "7fd5df307d54911edbdcd2dfdfce71aa4b9a7a2a"
+    },
+    {
+      "ref": "work/media3-broker-review-20260910",
+      "head": "2fb206a72e0330fad812f1f2f24a7e696db9463d"
+    },
+    {
+      "ref": "work/media3-c1-coverage-proof",
+      "head": "7b84dfa07f07182af8e24157c8f888de01601a87"
+    },
+    {
+      "ref": "work/media3-c1-e2e-bootstrap",
+      "head": "bee0756052273be753381b77b46e7eed002ccb48"
+    },
+    {
+      "ref": "work/media3-capability-provider-20260911",
+      "head": "3de017e093a32c2b5c267713934f35a29f630568"
+    },
+    {
+      "ref": "work/media3-chapter-hardening",
+      "head": "9b7d5929e847ac85f8c65afdbb42b7b2fd5253ad"
+    },
+    {
+      "ref": "work/media3-compliance-chart",
+      "head": "cad195b6828a135565492419869aa1e9fdc8ee05"
+    },
+    {
+      "ref": "work/media3-compliance-failure-decision-20260911",
+      "head": "c30d27670ccbe28e0f6a2a3172e12e997464daba"
+    },
+    {
+      "ref": "work/media3-config-ack",
+      "head": "c74e142028cc5a265338b543bcdb65889041ca60"
+    },
+    {
+      "ref": "work/media3-config-owned-shutdown",
+      "head": "8c4b95be2cbf5ab169e4ec9cbfbd5206aadacce0"
+    },
+    {
+      "ref": "work/media3-config-publication",
+      "head": "396c87fc48ccdad4df20edb85bc2114c0cb1116d"
+    },
+    {
+      "ref": "work/media3-config-schema-20260911",
+      "head": "72f894ae56fea4fef0d68ab5e9b31006145ff6a5"
+    },
+    {
+      "ref": "work/media3-d3-attributes",
+      "head": "90a3c37bcabf8266a2e56f9fead3385334556bfa"
+    },
+    {
+      "ref": "work/media3-d3-callback-evidence",
+      "head": "bbf50836af4e5b32d69d2d5d99132c558dea1dc3"
+    },
+    {
+      "ref": "work/media3-d3-native-proof",
+      "head": "7f7b91c936a64f16237d55b13a5bcccd84734ba0"
+    },
+    {
+      "ref": "work/media3-d3-policy-proof",
+      "head": "a3657b3b08dcf5cd7875381868d190140df62c1d"
+    },
+    {
+      "ref": "work/media3-d3-settings-review",
+      "head": "af67cfce6b92bc37f84ca003126ec8c29898ca73"
+    },
+    {
+      "ref": "work/media3-d3-trigger-plans",
+      "head": "36abef44da610fcd48bada9aa9cacaeb7fa1dace"
+    },
+    {
+      "ref": "work/media3-d3-validation-proof",
+      "head": "13ee74afd49c69d31fb8da7f0a0e8393fc33591c"
+    },
+    {
+      "ref": "work/media3-delivery-governance-20260911",
+      "head": "d56629415f9b0499cabdba10c2f44b3e7aec2794"
+    },
+    {
+      "ref": "work/media3-dependency-checkpoint-20260910",
+      "head": "da5e06b176ae58b00b28bf94e5cc24b5ab23a139"
+    },
+    {
+      "ref": "work/media3-dependency-propagation-20260910",
+      "head": "bef72ac98fc0707998cd9ea61d0073a8152a390e"
+    },
+    {
+      "ref": "work/media3-disposition-review-fixes",
+      "head": "23497d4964cb46b83eecebbb1c446709b996572a"
+    },
+    {
+      "ref": "work/media3-docker-sonar",
+      "head": "54641c63bd43a72a209ee5eea990f55676428eff"
+    },
+    {
+      "ref": "work/media3-e2e-closeout-20260910",
+      "head": "3e2d8e5de035815bf4fcb163f71be225df4a3900"
+    },
+    {
+      "ref": "work/media3-e2e-exit-owner-20260910",
+      "head": "cee9c6672b50408156b5bf5d7ded1ea344008a5e"
+    },
+    {
+      "ref": "work/media3-e2e-exit-stack-fold-20260910",
+      "head": "d540f67ce45186f5392583df5e768fd00ee161a2"
+    },
+    {
+      "ref": "work/media3-exact-tool-path",
+      "head": "b22b7b81870f062c5d4bf9fd6b5b5c8fbe215c95"
+    },
+    {
+      "ref": "work/media3-execution-checkpoint-20260910",
+      "head": "a970da0deb98e582a920bd864286f7371283ca1d"
+    },
+    {
+      "ref": "work/media3-execution-owner-20260910",
+      "head": "13da9c5945acbf6b857fe8940b505d095a859b1f"
+    },
+    {
+      "ref": "work/media3-factory-reset-retry",
+      "head": "5c174f253c7b8e67411aa240801215fc5bc047cc"
+    },
+    {
+      "ref": "work/media3-ffprobe-frame-robustness",
+      "head": "2738f18846c54b71f9510126f832cb1b7c234c0b"
+    },
+    {
+      "ref": "work/media3-foundation-checkpoint-20260910",
+      "head": "c4904a8ce5d92807dd32096fb877a5501d981c6e"
+    },
+    {
+      "ref": "work/media3-foundation-dependencies-20260910",
+      "head": "15e47d6ef7885f4c95f85fcb0e0becfd9bdafe5d"
+    },
+    {
+      "ref": "work/media3-foundation-descendants-20260910",
+      "head": "79f23836b5ee6cc59075fcd5892b8480d92830ef"
+    },
+    {
+      "ref": "work/media3-foundation-evidence-20260911",
+      "head": "e4d7b9e1b6f2c37fb996b33f5827bd1cc3d6098a"
+    },
+    {
+      "ref": "work/media3-foundation-linux-20260910",
+      "head": "15e47d6ef7885f4c95f85fcb0e0becfd9bdafe5d"
+    },
+    {
+      "ref": "work/media3-foundation-linux-descendants-20260910",
+      "head": "27130e90ceb0ac90355ff45a659096596242b0ce"
+    },
+    {
+      "ref": "work/media3-foundation-validation-20260910",
+      "head": "15e47d6ef7885f4c95f85fcb0e0becfd9bdafe5d"
+    },
+    {
+      "ref": "work/media3-governance-reconcile-20260911",
+      "head": "059cca9d7af584c14fd78c1b920ac821fcb7762d"
+    },
+    {
+      "ref": "work/media3-hash-register-deadline",
+      "head": "f4b80bf76043c03091a1860c5c4b3de33ed256fe"
+    },
+    {
+      "ref": "work/media3-hdr10-geometry-exact",
+      "head": "166ca8185578fdce2d3ed24c1abccaaafd6130e8"
+    },
+    {
+      "ref": "work/media3-helper-order-review",
+      "head": "119ec59923546185a4871d6f7a85eead38685a1e"
+    },
+    {
+      "ref": "work/media3-ingestion-existing-20260910",
+      "head": "4c16d77590f6e78f98deb9bee23c412e719371b3"
+    },
+    {
+      "ref": "work/media3-ingestion-metadata",
+      "head": "a6fb4bcccb7a995089d8a250ef433e0e892abded"
+    },
+    {
+      "ref": "work/media3-ingestion-parity-proof-20260910",
+      "head": "19ca4e65f36b6e5b608fd7d535cec02982072703"
+    },
+    {
+      "ref": "work/media3-init-current",
+      "head": "a198bc83b83f0ba7d44a27bf2267f1ac477d6476"
+    },
+    {
+      "ref": "work/media3-init-freeze",
+      "head": "26a949280bb4eb23469016040976ac9b95e3a3d5"
+    },
+    {
+      "ref": "work/media3-init-schema-stability",
+      "head": "2cd18b71ee83b9d866284aec17a22c0cf0d04cc9"
+    },
+    {
+      "ref": "work/media3-init-slice-01",
+      "head": "7f05f41b12feec660bff0be2fbd07624dce4cdff"
+    },
+    {
+      "ref": "work/media3-init-slice-02",
+      "head": "f8e119d7fb6cee57010521956c93b6a0ee3b22fa"
+    },
+    {
+      "ref": "work/media3-init-slice-03",
+      "head": "83c0e6576293cd292a43725434b10b63b5097be4"
+    },
+    {
+      "ref": "work/media3-init-slice-04",
+      "head": "00bfbdd1ef0e44a4d5c35b46bf59e173b69870b0"
+    },
+    {
+      "ref": "work/media3-init-slice-05",
+      "head": "34a6832795205771e303a8b1ede6f376a59c0f4b"
+    },
+    {
+      "ref": "work/media3-init-slice-06",
+      "head": "72b09d16efc9c05f65517c9b2bffa6019765367d"
+    },
+    {
+      "ref": "work/media3-job-schema-20260911",
+      "head": "3de017e093a32c2b5c267713934f35a29f630568"
+    },
+    {
+      "ref": "work/media3-job-stack-segment-20260910",
+      "head": "232a81ea93bb5fc49c5b82724623c5caf9d3e5af"
+    },
+    {
+      "ref": "work/media3-job-stack-segment-20260910-before-doc",
+      "head": "34064818473a078d11e18ef7799f2642f49dc19b"
+    },
+    {
+      "ref": "work/media3-job-stack-segment-20260910-before-e2e-doc",
+      "head": "a81ffd50a4bf02f54144f3fe34da2431f612346b"
+    },
+    {
+      "ref": "work/media3-js-audit-20260910",
+      "head": "91f1f2bc3ed43464d324118111eedc812a9891e6"
+    },
+    {
+      "ref": "work/media3-live-review-audit-20260911",
+      "head": "f38e6a791f7a28c98fd7dfdc87155271f69bec9a"
+    },
+    {
+      "ref": "work/media3-lock-integrity",
+      "head": "11a506bc4ce17f2dc230b33b510e25324618d2c4"
+    },
+    {
+      "ref": "work/media3-managed-workspaces",
+      "head": "d1d150f923883b3b712732b8fb9016aeeee085e2"
+    },
+    {
+      "ref": "work/media3-metadata-review",
+      "head": "9d055ac793c6e634d04ac04c87c814c4a8672f41"
+    },
+    {
+      "ref": "work/media3-native-broker-contract",
+      "head": "db7a8d828b386a818babfedc2d66dd218b067bbc"
+    },
+    {
+      "ref": "work/media3-native-broker-implementation",
+      "head": "fb0f6eba40041a66cf1d4831bcda3ce4fac71b58"
+    },
+    {
+      "ref": "work/media3-native-node-rebuild",
+      "head": "7090a91410742a4bad72fb43beb740a9fcf4b7e8"
+    },
+    {
+      "ref": "work/media3-native-sonar",
+      "head": "805072d02a41357018fa969a3067a17b9640014d"
+    },
+    {
+      "ref": "work/media3-native-supervisor-port",
+      "head": "2f0396858b395379fa5fe3ab66ad0e3e765f3f5f"
+    },
+    {
+      "ref": "work/media3-native-trim-evidence",
+      "head": "ef3b17efc7c1dcadde724bc6b1fbb7d6ff5411ff"
+    },
+    {
+      "ref": "work/media3-new-safety-adrs",
+      "head": "6da03602bbea8c3ba4f836200a91534ff5ba1fd2"
+    },
+    {
+      "ref": "work/media3-next-stack-pre-asset-tests-20260910",
+      "head": "0600aed3a1a8c06e9d9a0a64dc53ad463a2c0d3d"
+    },
+    {
+      "ref": "work/media3-next-stack-pre-coverage-fix-20260910",
+      "head": "e1520a458359b10219f0c4061ac1a7a887ea1c6f"
+    },
+    {
+      "ref": "work/media3-next-stack-pre-rebase-20260910",
+      "head": "b54083fa788e1d9446283cb1d370eac7d669a9b5"
+    },
+    {
+      "ref": "work/media3-next-stack-pre-service-fix-20260910",
+      "head": "a85eda92e02125dccc185ccc9029831b9c7f03a2"
+    },
+    {
+      "ref": "work/media3-next-stack-segment-20260910",
+      "head": "cd39407f6ee85e640de100562e7a46602aa9ea18"
+    },
+    {
+      "ref": "work/media3-operator-workflow",
+      "head": "71596802cb0cb8c05b73ff00d1e3e00f4bba4caf"
+    },
+    {
+      "ref": "work/media3-outside-in-reconstruction",
+      "head": "6bbc54fe3c95883c3f13412b65e8ba2df9460c69"
+    },
+    {
+      "ref": "work/media3-packaged-baseline-adr",
+      "head": "abf56737b8a51e277630bab1183aa20f3e5e070f"
+    },
+    {
+      "ref": "work/media3-packaged-db-bootstrap-adr",
+      "head": "7e739aef2e84f10e883dc6223a4947f26f23aee3"
+    },
+    {
+      "ref": "work/media3-pending-architecture",
+      "head": "15cd0e36fd11a38c7100363faf83b242d9d09992"
+    },
+    {
+      "ref": "work/media3-phase-boundary-20260910",
+      "head": "ef84c95434a33164ad81d22dad851c642ccff94d"
+    },
+    {
+      "ref": "work/media3-phase-checkpoint-20260910",
+      "head": "88cefa0ed76b98c86a8f6be8c387361dd8bdf58c"
+    },
+    {
+      "ref": "work/media3-playwright-report-path",
+      "head": "654ed33b30ccad3eda5a6d643111be49ea4144fc"
+    },
+    {
+      "ref": "work/media3-postgres-pristine-catalog",
+      "head": "7fd5df307d54911edbdcd2dfdfce71aa4b9a7a2a"
+    },
+    {
+      "ref": "work/media3-pr102-recovery-manifest",
+      "head": "54157ef8ea77770d76b47efe78b71bea25765a37"
+    },
+    {
+      "ref": "work/media3-pr111-fingerprint",
+      "head": "03f1b3cceaa8995a2afbd253023da2f00fec2e28"
+    },
+    {
+      "ref": "work/media3-pr116-doc-tools",
+      "head": "35be7d98f7a38612a7528cf1e1d042d14c8d46e8"
+    },
+    {
+      "ref": "work/media3-pr123-fix-v2",
+      "head": "ada6aa3e07972e386df6ef60cf63208a44b4099c"
+    },
+    {
+      "ref": "work/media3-pr124-metadata",
+      "head": "1f37baffc9e3c20198f12eaf79720b06dc637f88"
+    },
+    {
+      "ref": "work/media3-pr126-chapters",
+      "head": "ea22122822824fa53f97fc861f00a9ed41851453"
+    },
+    {
+      "ref": "work/media3-pr133-fix",
+      "head": "04d2f210a0268dbd6b109ec2e7103b3e421fd4b1"
+    },
+    {
+      "ref": "work/media3-pr134-fix",
+      "head": "7f61b43b4bbf6007a003ee67e548f1aca59ce52b"
+    },
+    {
+      "ref": "work/media3-pr135-fix",
+      "head": "a6e058b5cc67fb726e3c58e210bbee3397b8122d"
+    },
+    {
+      "ref": "work/media3-pr136-fix",
+      "head": "e645061079d251c77b72f3e6e3f589e0886c2022"
+    },
+    {
+      "ref": "work/media3-pr136-repair",
+      "head": "31092fbd8ae3c50aa7947eefe2cad080972e4b42"
+    },
+    {
+      "ref": "work/media3-pr137-fix",
+      "head": "bbd9db1ce9f8ecd1f22e332891ffed9e5f802d4e"
+    },
+    {
+      "ref": "work/media3-pr137-nvm",
+      "head": "76acbd8ff3e9b962af74f55fd0ce618b707a5404"
+    },
+    {
+      "ref": "work/media3-pr137-repair",
+      "head": "a9bbb7d25d898275ea97a8ffe0b3a04dfd3888ef"
+    },
+    {
+      "ref": "work/media3-pr137-yaml-fixtures",
+      "head": "16bd6a938a6a542f68d5dafe068ec7aa2749bba0"
+    },
+    {
+      "ref": "work/media3-pr138-check-closeout",
+      "head": "b111a0ad0d4bab32249b3c8b61672c275fbbfedd"
+    },
+    {
+      "ref": "work/media3-pr138-nvm",
+      "head": "42b4bc14a603238231e071f07d32e23d02ca2795"
+    },
+    {
+      "ref": "work/media3-pr138-rebuild",
+      "head": "d1c770735e63307aa625889279f9fdc4a344d73c"
+    },
+    {
+      "ref": "work/media3-pr138-repair",
+      "head": "765daab709c643b8acec2aafd164119af2535b14"
+    },
+    {
+      "ref": "work/media3-pr139-nvm",
+      "head": "1137724b5b30da149583e57bfea1182be6880001"
+    },
+    {
+      "ref": "work/media3-pr141-nvm",
+      "head": "c42f920c7c2ee4c0650dd0737b362f793b83e367"
+    },
+    {
+      "ref": "work/media3-pr141-rebuild",
+      "head": "3796d869973b2b65467a5d6033330659c8f08c59"
+    },
+    {
+      "ref": "work/media3-pr142-nvm",
+      "head": "792a1f604563f5984c54815fe9724962a6031831"
+    },
+    {
+      "ref": "work/media3-pr143-nvm",
+      "head": "ebcf5740b170bc9e51ed7d297071a655f0d9b875"
+    },
+    {
+      "ref": "work/media3-pr157-nvm",
+      "head": "c12ac92f7d72e0a099c57afeacc7eabbcb7660a5"
+    },
+    {
+      "ref": "work/media3-pr159-nvm",
+      "head": "afdd2ae018e57043acac1abe28233e78d4dbe4f4"
+    },
+    {
+      "ref": "work/media3-pr195-sonar-coverage",
+      "head": "370622664f2024537f3f8a3ab8efc247626daa49"
+    },
+    {
+      "ref": "work/media3-pr71-repair",
+      "head": "a67358338dcd2af36eeccdbcdae12843a794b8db"
+    },
+    {
+      "ref": "work/media3-pr71-replay",
+      "head": "d34507de0e186d9cd695a449b4bc831643b38e20"
+    },
+    {
+      "ref": "work/media3-pr72-repair",
+      "head": "fcff2bfb1413eecfa2e3d242e2d1e9dc8caa802e"
+    },
+    {
+      "ref": "work/media3-pr73-descendants-restack",
+      "head": "31323d1f5e7154bc88b6b0f7d2cccf763483d232"
+    },
+    {
+      "ref": "work/media3-pr73-node-ci",
+      "head": "b417b748fbe5ad20f438c4d18d79a116b0b7506b"
+    },
+    {
+      "ref": "work/media3-pr75-stable-file-identities",
+      "head": "ce6bdf7ee98c241c8bf3eb77d2dd8b0985bd3241"
+    },
+    {
+      "ref": "work/media3-pr76-data-review",
+      "head": "d752dd5b8c95a2b0ffe2055e4871502dff7ad9c2"
+    },
+    {
+      "ref": "work/media3-pr77-profile-fix",
+      "head": "70d4079e7677ea99de9bd9e81e4e33906b4fe99d"
+    },
+    {
+      "ref": "work/media3-pr78-runtime",
+      "head": "536a120bc14acee4bb51a475f1bca49b206b1f45"
+    },
+    {
+      "ref": "work/media3-pr79-input-contract",
+      "head": "1074c04d8b22efea51d8f4872563211e3a0a88bc"
+    },
+    {
+      "ref": "work/media3-pr81-discovery-runtime",
+      "head": "e0d541e5fb4680109d12536eaaa1dd240791e1de"
+    },
+    {
+      "ref": "work/media3-pr81-discovery-scan",
+      "head": "0be6100ed81e2518aa09b866fb56bff6df3bac68"
+    },
+    {
+      "ref": "work/media3-pr81-job-runtime",
+      "head": "78a1ade52c7142af6b34bd7520f4cf36ec511be2"
+    },
+    {
+      "ref": "work/media3-pr82-discovery",
+      "head": "afbf2400c9eefc7ffc81485c07cb9b9861b3f6ee"
+    },
+    {
+      "ref": "work/media3-pr82-instruction-drift",
+      "head": "f70d64642fe7992c4d9f6ac26f331e680ec313fd"
+    },
+    {
+      "ref": "work/media3-pr82-review",
+      "head": "cbe846e4cdfb619d73dca6b477a554dd4cda2b9b"
+    },
+    {
+      "ref": "work/media3-pr87-ui-summary",
+      "head": "96d0c3bf636978b77f1040e5ded70c56a4a30aec"
+    },
+    {
+      "ref": "work/media3-pr88-fixture-diagnostics",
+      "head": "c2602cf87765d0193999ed377903f8740ea7682a"
+    },
+    {
+      "ref": "work/media3-pr90-sonar-scope",
+      "head": "69b28f12fb3c651a93ba5547cb586747c3a2881d"
+    },
+    {
+      "ref": "work/media3-pr92-libtorrent-build",
+      "head": "7d2b9293adb35c7c2bc021fef78b5c73106f3ceb"
+    },
+    {
+      "ref": "work/media3-pr99-reconcile-20260910",
+      "head": "377a082eed0466aa7c9c9cdfb09ad727a50fc383"
+    },
+    {
+      "ref": "work/media3-pr99-stream-limit",
+      "head": "59a1284bd11ff53e46527d2e5c87ea97c97c4973"
+    },
+    {
+      "ref": "work/media3-pristine-catalog-20260910",
+      "head": "ec7ea4ffff03dc94391877e6508468d85e138810"
+    },
+    {
+      "ref": "work/media3-profile-response",
+      "head": "f4b80bf76043c03091a1860c5c4b3de33ed256fe"
+    },
+    {
+      "ref": "work/media3-provider-wiring-20260911",
+      "head": "a5ec680cb647376a5de59b182332e887e3f50f32"
+    },
+    {
+      "ref": "work/media3-quality-owner-20260910",
+      "head": "0fc991d5f866ed80f9d9519d5a0f817bdba77a9b"
+    },
+    {
+      "ref": "work/media3-quality-owner-20260910-before-retention",
+      "head": "0e54cd16ab3aba1c6b160d3d019ef62124726557"
+    },
+    {
+      "ref": "work/media3-recovery-manifest-validation",
+      "head": "67a8968e362bc2abc6c2f369b852fa4048cbf86d"
+    },
+    {
+      "ref": "work/media3-release-logo-sync",
+      "head": "dc5cf46aee9a1f6043cb00ab0489a5019ec9e32a"
+    },
+    {
+      "ref": "work/media3-requirement-ledger-20260910",
+      "head": "850c0458c6039b30f4b30af3ba84b8a8a63f677e"
+    },
+    {
+      "ref": "work/media3-restack",
+      "head": "974902e718307dc3576946b7c65b4ad9a9628e84"
+    },
+    {
+      "ref": "work/media3-restack-integrated",
+      "head": "b900df62e54c26a116ec8e952c7548dbe4ad0ce6"
+    },
+    {
+      "ref": "work/media3-retired-route-contract",
+      "head": "91ea0f9dd712cf5b5d29ae17d0628192ab0ac00b"
+    },
+    {
+      "ref": "work/media3-root-attestation-identity-20260910",
+      "head": "8b5f64135e3e45e46e252a58b57b6c4c7e84f1b5"
+    },
+    {
+      "ref": "work/media3-root-canonical-path-20260910",
+      "head": "b9198e14240550202dae64faa03b721cdd9a843f"
+    },
+    {
+      "ref": "work/media3-root-catalog-source",
+      "head": "b1311cc21e0d18d4390f08ac9f6c0dd3991d98a0"
+    },
+    {
+      "ref": "work/media3-root-catalog-source-adr",
+      "head": "40ad2ae5d4cbaeb1e2caed96b9417bd85e468cfc"
+    },
+    {
+      "ref": "work/media3-root-mode-portability-20260911",
+      "head": "bb302c03dfd944d788c3bf9b27c843d59bbf0b30"
+    },
+    {
+      "ref": "work/media3-root-persistence-contract",
+      "head": "bfb68bfafd43c61fe5586fde2bb243724246c578"
+    },
+    {
+      "ref": "work/media3-root-readiness-contract-20260911",
+      "head": "d3d663cd8a4012e46d28eaf19179ec847ede5f28"
+    },
+    {
+      "ref": "work/media3-root-source-delivery-20260910",
+      "head": "88a43ec35653a6dc7ee88d17190c6700b50f8614"
+    },
+    {
+      "ref": "work/media3-runtime-capabilities",
+      "head": "d1d150f923883b3b712732b8fb9016aeeee085e2"
+    },
+    {
+      "ref": "work/media3-runtime-descendants",
+      "head": "54157ef8ea77770d76b47efe78b71bea25765a37"
+    },
+    {
+      "ref": "work/media3-runtime-foundation",
+      "head": "213aa21415be6784dacd1533c2e48b5e2edb63a4"
+    },
+    {
+      "ref": "work/media3-runtime-fs",
+      "head": "539ebcb61aacf061fb35c427cb6336fac185b9d2"
+    },
+    {
+      "ref": "work/media3-runtime-stack-recipe-fold-20260910",
+      "head": "011da3175763b82231c57949560434f7e456edcb"
+    },
+    {
+      "ref": "work/media3-runtime-stack-segment-20260910",
+      "head": "c629ec11a03e01ba4856bf7a848f1d52468bbbbf"
+    },
+    {
+      "ref": "work/media3-s1-foundation-20260911",
+      "head": "a98269f3322604209810cabe8fa471eb5dee5249"
+    },
+    {
+      "ref": "work/media3-s1-wired-20260911",
+      "head": "348a70fc8fadc2abd291ca8f522f1618e856fd03"
+    },
+    {
+      "ref": "work/media3-schema-evidence-20260911",
+      "head": "65dbefb71d2d71c1694525c9913fa54032caad8a"
+    },
+    {
+      "ref": "work/media3-schema-generated",
+      "head": "7dab7c38e405fe3da0c1da8157cc15c9c8eb8118"
+    },
+    {
+      "ref": "work/media3-schema-verify-20260911",
+      "head": "3de017e093a32c2b5c267713934f35a29f630568"
+    },
+    {
+      "ref": "work/media3-second-rebuild",
+      "head": "6fc531dd0d9af1666be1097287b63303f6f878c8"
+    },
+    {
+      "ref": "work/media3-service-foundation-verify-20260911",
+      "head": "004974ecd364488fe9aa38b6701914f44e09c11c"
+    },
+    {
+      "ref": "work/media3-shared-service-foundation-20260910",
+      "head": "004974ecd364488fe9aa38b6701914f44e09c11c"
+    },
+    {
+      "ref": "work/media3-sonar-assets",
+      "head": "bcf447aac887425a4f36235c3813eaeab3311bcd"
+    },
+    {
+      "ref": "work/media3-sonar-backend-remediation",
+      "head": "9c3b697bb7f46da0807cb59c937dc5fca97c4403"
+    },
+    {
+      "ref": "work/media3-sonar-mechanics",
+      "head": "847587a2e87b98c73120b7870fc3dbe04156c981"
+    },
+    {
+      "ref": "work/media3-sonar-strict-integrated",
+      "head": "40eb7022e661dd5863de6b0c165237462a5bfdaa"
+    },
+    {
+      "ref": "work/media3-sonar-ui-remediation",
+      "head": "37a73b6f40f178f94c0f025119efefdeb90ac8ec"
+    },
+    {
+      "ref": "work/media3-source-fingerprint-review-fixes",
+      "head": "26e763977dce35fe7d12153199bf67798ed347f2"
+    },
+    {
+      "ref": "work/media3-stack-audit-20260910",
+      "head": "b3c0afba1e376bed768d522b2da7703fd5353ec1"
+    },
+    {
+      "ref": "work/media3-stack-rebuild",
+      "head": "7fd5df307d54911edbdcd2dfdfce71aa4b9a7a2a"
+    },
+    {
+      "ref": "work/media3-stack-reconstruction-20260910",
+      "head": "eb31c3f561d2dda1d5637829536c90fbc8d57bea"
+    },
+    {
+      "ref": "work/media3-stack-replay-approved",
+      "head": "ea5c5938a61081305091e8f538adcc063dc1679e"
+    },
+    {
+      "ref": "work/media3-strict-foundation-integration",
+      "head": "e059612af6b830fe06e5dd3677e5a06204d67582"
+    },
+    {
+      "ref": "work/media3-supervisor-review-fixes",
+      "head": "3a4bced930888c349cffe2dcb151aaa7739e37a7"
+    },
+    {
+      "ref": "work/media3-test-database-inputs",
+      "head": "7ae86f2e85d51f47dc5051c44b3aeb4e29334537"
+    },
+    {
+      "ref": "work/media3-ui-asset-canonicalization",
+      "head": "49d97284f93f37bca9d548bca2ba09f5a48d8987"
+    },
+    {
+      "ref": "work/media3-ui-root-regression",
+      "head": "94c691fe8b16fbf3cde51abcad315a4c1301de8a"
+    },
+    {
+      "ref": "work/media3-ui-schedule-proof",
+      "head": "416023b5faf98a49c81a62500c43d73d24d98997"
+    },
+    {
+      "ref": "work/media3-video-contracts-v2",
+      "head": "928331e5ff59eaa6d48c382d485d0bcbe0200fc0"
+    },
+    {
+      "ref": "work/media3-video-technical-clean",
+      "head": "31a488a77e76be177a24ab23e5061c9a19bcb322"
+    },
+    {
+      "ref": "work/media3-watcher-graceful-stop",
+      "head": "fde90174363e54dcff2d910eaa9e325fb5c69ecb"
+    },
+    {
+      "ref": "work/media3-watcher-native-events",
+      "head": "97843023dc5a67852da039b83543956b76906091"
+    },
+    {
+      "ref": "work/media3-wired-evidence-20260910",
+      "head": "9c0cd1700d98b0817f659c78a195fa314e0c5dc9"
+    },
+    {
+      "ref": "work/media3-wired-owner-20260910",
+      "head": "822c5819fd1c37afe2ec3ec25ef72f9c52b9227a"
+    },
+    {
+      "ref": "work/media3-workspace-checkpoint-20260910",
+      "head": "d6fbf99d0d3f9123b5c9e168ef27616d358400c4"
+    },
+    {
+      "ref": "work/media3-workspace-owner-20260910",
+      "head": "b5ab8eecf9a8ab23348dae6915520a553bdd2793"
+    },
+    {
+      "ref": "work/pr73-feedback",
+      "head": "2afca5a8d23ae7bdd2d800481527da5131079a04"
+    },
+    {
+      "ref": "work/pr74-replay",
+      "head": "37e83f9baa52dd2f727bd250981eb3e921cb4661"
+    },
+    {
+      "ref": "work/pr88-feedback",
+      "head": "f871ca08c6e90d2752902fd1aff515539c35ac39"
+    },
+    {
+      "ref": "work/python-tooling",
+      "head": "15aa7492130cc50bbc5c94fd5378bf46973260fb"
+    },
+    {
+      "ref": "work/rebase-75",
+      "head": "59247b214da18769fe8e36bd5e8902a496d04a1d"
+    },
+    {
+      "ref": "work/runtime-hardening-built",
+      "head": "971d33c2095c89a21dbe34812c322e17e8dcc0e6"
+    },
+    {
+      "ref": "work/runtime-shutdown-review-20260910",
+      "head": "27770554abbce17838109b85bb42fdcf9311d657"
+    },
+    {
+      "ref": "work/runtime-shutdown-tests-20260910",
+      "head": "27770554abbce17838109b85bb42fdcf9311d657"
+    },
+    {
+      "ref": "work/rvb1-vectors-20260910",
+      "head": "65d4f5b9c17c92c097f93bd27e1e9934a15a97a8"
+    },
+    {
+      "ref": "work/sonar-asset-prune-lower",
+      "head": "f050cbb02ca9eb1f561a0b78c1938212f55d77c2"
+    },
+    {
+      "ref": "work/sonar-vendor-image-lower",
+      "head": "ce9dbafdd9c2f6251db77831d53e5b1b2178ab44"
+    },
+    {
+      "ref": "work/torrent-author-single-file-20260910",
+      "head": "b6db66678b12cde73bfc9086f5d2a1c1b434ddb6"
+    }
+  ],
+  "reproduce_pr_paths": "git diff --name-only <baseRefOid> <headRefOid>; hashes bind the captured path inventory without duplicating reconstructible source lists"
+}

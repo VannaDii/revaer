@@ -2597,20 +2597,17 @@ mod tests {
         Ok(())
     }
 
-    async fn runtime_store() -> TestResult<Option<(TestDatabase, PersistedRuntimeStore)>> {
-        let postgres = match start_postgres() {
-            Ok(database) => database,
-            Err(err) => {
-                eprintln!("skipping fsops runtime test: {err}");
-                return Ok(None);
-            }
-        };
+    async fn runtime_store() -> TestResult<(TestDatabase, PersistedRuntimeStore)> {
+        let mut postgres = start_postgres()?;
+        postgres
+            .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+            .await?;
         let pool = PgPoolOptions::new()
             .max_connections(5)
             .connect(postgres.connection_string())
             .await?;
         let store = PersistedRuntimeStore::new(pool);
-        Ok(Some((postgres, store)))
+        Ok((postgres, store))
     }
 
     fn sample_status(torrent_id: Uuid) -> TorrentStatus {
@@ -4331,10 +4328,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_with_runtime_records_started_and_completed_job_state() -> TestResult<()> {
-        let Some((postgres, store)) = runtime_store().await? else {
-            return Ok(());
-        };
-        let _keep_db_alive = postgres;
+        let (postgres, store) = runtime_store().await?;
 
         let bus = EventBus::with_capacity(8);
         let metrics = Metrics::new()?;
@@ -4375,15 +4369,13 @@ mod tests {
                 Event::FsopsCompleted { torrent_id: id } if id == torrent_id
             )
         }));
+        postgres.close()?;
         Ok(())
     }
 
     #[tokio::test]
     async fn apply_with_runtime_records_failed_job_state() -> TestResult<()> {
-        let Some((postgres, store)) = runtime_store().await? else {
-            return Ok(());
-        };
-        let _keep_db_alive = postgres;
+        let (postgres, store) = runtime_store().await?;
 
         let bus = EventBus::with_capacity(8);
         let metrics = Metrics::new()?;
@@ -4429,15 +4421,13 @@ mod tests {
                 Event::FsopsFailed { torrent_id: id, .. } if id == torrent_id
             )
         }));
+        postgres.close()?;
         Ok(())
     }
 
     #[tokio::test]
     async fn apply_succeeds_when_runtime_pool_is_closed() -> TestResult<()> {
-        let Some((postgres, store)) = runtime_store().await? else {
-            return Ok(());
-        };
-        let _keep_db_alive = postgres;
+        let (postgres, store) = runtime_store().await?;
 
         let bus = EventBus::with_capacity(8);
         let metrics = Metrics::new()?;
@@ -4463,15 +4453,13 @@ mod tests {
                 Event::FsopsCompleted { torrent_id: id } if id == torrent_id
             )
         }));
+        postgres.close()?;
         Ok(())
     }
 
     #[tokio::test]
     async fn apply_failure_is_preserved_when_runtime_pool_is_closed() -> TestResult<()> {
-        let Some((postgres, store)) = runtime_store().await? else {
-            return Ok(());
-        };
-        let _keep_db_alive = postgres;
+        let (postgres, store) = runtime_store().await?;
 
         let bus = EventBus::with_capacity(8);
         let metrics = Metrics::new()?;
@@ -4505,15 +4493,13 @@ mod tests {
                 Event::FsopsFailed { torrent_id: id, .. } if id == torrent_id
             )
         }));
+        postgres.close()?;
         Ok(())
     }
 
     #[tokio::test]
     async fn record_job_completed_marks_job_failed_when_source_is_missing() -> TestResult<()> {
-        let Some((postgres, store)) = runtime_store().await? else {
-            return Ok(());
-        };
-        let _keep_db_alive = postgres;
+        let (postgres, store) = runtime_store().await?;
 
         let metrics = Metrics::new()?;
         let service =
@@ -4539,15 +4525,13 @@ mod tests {
             last_error.as_deref(),
             Some("fsops completed without recorded source path")
         );
+        postgres.close()?;
         Ok(())
     }
 
     #[tokio::test]
     async fn record_job_completed_marks_job_failed_when_artifact_is_missing() -> TestResult<()> {
-        let Some((postgres, store)) = runtime_store().await? else {
-            return Ok(());
-        };
-        let _keep_db_alive = postgres;
+        let (postgres, store) = runtime_store().await?;
 
         let metrics = Metrics::new()?;
         let service =
@@ -4571,6 +4555,7 @@ mod tests {
             last_error.as_deref(),
             Some("fsops completed without artifact")
         );
+        postgres.close()?;
         Ok(())
     }
 

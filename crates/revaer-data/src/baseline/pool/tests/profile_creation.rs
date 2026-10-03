@@ -98,8 +98,7 @@ pub(super) async fn check(admin: &mut PgConnection, runtime: &PgPool) -> anyhow:
         "duplicate create changed existing version"
     );
     check_pages(runtime, first.media_profile_public_id).await?;
-    let frozen = sqlx::query("UPDATE public.media_policy_output SET quarantine_enabled = true WHERE media_policy_profile_id = (SELECT media_policy_profile_id FROM public.media_policy_profile WHERE policy_key = 'profile-save-policy')")
-        .execute(&mut *admin).await.err().ok_or_else(|| anyhow::anyhow!("referenced policy component mutated"))?;
+    let frozen = super::attempt_referenced_policy_mutation(admin).await?;
     anyhow::ensure!(
         frozen
             .as_database_error()

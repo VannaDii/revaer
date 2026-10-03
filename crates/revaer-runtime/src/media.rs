@@ -1423,6 +1423,7 @@ mod tests {
         assert!(
             store
                 .upsert_policy_profile(UpsertMediaPolicyProfileInput {
+                    output: revaer_data::media::configuration::MediaPolicyOutputRow::default(),
                     actor_public_id: actor_id,
                     policy_key: "balanced",
                     version: 1,

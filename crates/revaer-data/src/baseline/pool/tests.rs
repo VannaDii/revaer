@@ -463,3 +463,10 @@ async fn baseline_pool_rejects_uninitialized_database_without_returning_connecti
     assert_eq!(remaining, 0);
     Ok(())
 }
+
+async fn attempt_referenced_policy_mutation(
+    admin: &mut sqlx::PgConnection,
+) -> anyhow::Result<sqlx::Error> {
+    sqlx::query("UPDATE public.media_policy_output SET quarantine_enabled = true WHERE media_policy_profile_id = (SELECT media_policy_profile_id FROM public.media_policy_profile WHERE policy_key = 'profile-save-policy')")
+        .execute(admin).await.err().ok_or_else(|| anyhow::anyhow!("referenced policy component mutated"))
+}

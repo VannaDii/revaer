@@ -39,12 +39,12 @@ class SourceCurl(Curl):
 def test_both_reviewed_catalogs_validate_without_fixed_counts(media_context: Context) -> None:
     root = Path(__file__).parents[2]
     settings = load_fixture_settings({})
-    foundation = load_catalog(root, settings)
+    current = load_catalog(root, settings)
     media = load_catalog(
         DATA.parent.parent.parent.parent,
         replace(settings, lock=DATA / "lock.json", manifest=DATA / "manifest.json"),
     )
-    assert (len(foundation.sources), len(foundation.fixtures)) == (2, 3)
+    assert (len(current.sources), len(current.fixtures)) == (22, 30)
     assert (len(media.sources), len(media.fixtures)) == (22, 30)
     assert sum(item.exact_diagnostic for item in media.fixtures) == 1
 

@@ -203,7 +203,11 @@ def native_proof_values() -> dict[str, str]:
 def append_native_proof(context: Context, values: dict[str, str]) -> None:
     path = context.root / ".github/build-inputs.env"
     path.write_text(
-        path.read_text()
+        "\n".join(
+            line
+            for line in path.read_text().splitlines()
+            if line.split("=", 1)[0] not in NATIVE_PROOF_FIELDS
+        )
         + "\n"
         + "\n".join(f'{name}="{value}"' for name, value in values.items())
         + "\n"

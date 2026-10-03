@@ -55,3 +55,10 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 - Run `rv tooling-check`, `rv tooling-cov` and `rv tooling-audit` as applicable
   to the change. Keep the full project acceptance gates and migration inventory
   current; Python checks alone do not complete a tooling migration.
+
+## Media continuation integration
+
+- ADR 595 records the combined checkpoint/main source and retained comparison work. Keep `just` aliases as direct rv dispatch, with no duplicate gate bodies.
+- `rv cargo-lock` reconciles workspace metadata offline with `cargo update --workspace --offline`; it does not authorize registry upgrades.
+- In accepted feature-development mode, composed CI uses the existing owned single-init lifecycle. Verify the selected runtime baseline before the other validation steps; tests retain their explicit administrative endpoint. Reject legacy migration/reset/seed operations in that mode.
+- New source/YAML inventory entries remain inside Sonar scope. Preserve malformed-phase, wrong-endpoint, failed-initialization, cleanup and early-gate-failure checks.

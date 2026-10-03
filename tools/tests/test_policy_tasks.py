@@ -35,7 +35,11 @@ def test_workflow_task_reads_real_contract_inputs(
     WorkflowPolicy.run(context)
     # Adding the media configuration tightens this same foundation task; it
     # does not require a second implementation on the branch rebased onto it.
-    (tmp_path / "config/database-rebaseline.env").touch()
+    phase = tmp_path / "config/database-rebaseline.env"
+    phase.touch()
+    with pytest.raises(ToolingError, match="recognized transition phase"):
+        WorkflowPolicy.run(context)
+    phase.write_text("TRANSITION_PHASE=finalization\n")
     WorkflowPolicy.run(context)
     contexts.write_text("only-one-context\n")
     with pytest.raises(ToolingError, match=r"required.*check|context"):

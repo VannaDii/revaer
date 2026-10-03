@@ -26243,22 +26243,22 @@ BEGIN
     END IF;
 
     IF identity_strategy_value = 'infohash_v2' THEN
-        SELECT canonical_torrent_id, canonical_torrent_public_id
+        SELECT canonical_torrent_id, canonical_torrent.canonical_torrent_public_id
         INTO canonical_id, canonical_public_id
         FROM canonical_torrent
         WHERE infohash_v2 = infohash_v2_value;
     ELSIF identity_strategy_value = 'infohash_v1' THEN
-        SELECT canonical_torrent_id, canonical_torrent_public_id
+        SELECT canonical_torrent_id, canonical_torrent.canonical_torrent_public_id
         INTO canonical_id, canonical_public_id
         FROM canonical_torrent
         WHERE infohash_v1 = infohash_v1_value;
     ELSIF identity_strategy_value = 'magnet_hash' THEN
-        SELECT canonical_torrent_id, canonical_torrent_public_id
+        SELECT canonical_torrent_id, canonical_torrent.canonical_torrent_public_id
         INTO canonical_id, canonical_public_id
         FROM canonical_torrent
         WHERE magnet_hash = magnet_hash_value;
     ELSE
-        SELECT canonical_torrent_id, canonical_torrent_public_id
+        SELECT canonical_torrent_id, canonical_torrent.canonical_torrent_public_id
         INTO canonical_id, canonical_public_id
         FROM canonical_torrent
         WHERE title_size_hash = title_size_hash_value;
@@ -26329,7 +26329,7 @@ BEGIN
     WHERE canonical_torrent_id = canonical_id;
 
     IF source_guid_value IS NOT NULL THEN
-        SELECT canonical_torrent_source_id, canonical_torrent_source_public_id
+        SELECT canonical_torrent_source_id, canonical_torrent_source.canonical_torrent_source_public_id
         INTO source_id, source_public_id
         FROM canonical_torrent_source
         WHERE indexer_instance_id = instance_id
@@ -26337,7 +26337,7 @@ BEGIN
     END IF;
 
     IF source_id IS NULL AND infohash_v2_value IS NOT NULL THEN
-        SELECT canonical_torrent_source_id, canonical_torrent_source_public_id
+        SELECT canonical_torrent_source_id, canonical_torrent_source.canonical_torrent_source_public_id
         INTO source_id, source_public_id
         FROM canonical_torrent_source
         WHERE indexer_instance_id = instance_id
@@ -26346,7 +26346,7 @@ BEGIN
     END IF;
 
     IF source_id IS NULL AND infohash_v1_value IS NOT NULL THEN
-        SELECT canonical_torrent_source_id, canonical_torrent_source_public_id
+        SELECT canonical_torrent_source_id, canonical_torrent_source.canonical_torrent_source_public_id
         INTO source_id, source_public_id
         FROM canonical_torrent_source
         WHERE indexer_instance_id = instance_id
@@ -26356,7 +26356,7 @@ BEGIN
     END IF;
 
     IF source_id IS NULL AND magnet_hash_value IS NOT NULL THEN
-        SELECT canonical_torrent_source_id, canonical_torrent_source_public_id
+        SELECT canonical_torrent_source_id, canonical_torrent_source.canonical_torrent_source_public_id
         INTO source_id, source_public_id
         FROM canonical_torrent_source
         WHERE indexer_instance_id = instance_id
@@ -26367,7 +26367,7 @@ BEGIN
     END IF;
 
     IF source_id IS NULL AND size_bytes_input IS NOT NULL THEN
-        SELECT canonical_torrent_source_id, canonical_torrent_source_public_id
+        SELECT canonical_torrent_source_id, canonical_torrent_source.canonical_torrent_source_public_id
         INTO source_id, source_public_id
         FROM canonical_torrent_source
         WHERE indexer_instance_id = instance_id
@@ -26434,7 +26434,7 @@ BEGIN
                       AND source_guid = source_guid_value
                       AND canonical_torrent_source_id <> source_id
                 ) THEN
-                    SELECT canonical_torrent_source_public_id
+                    SELECT canonical_torrent_source.canonical_torrent_source_public_id
                     INTO existing_source_guid
                     FROM canonical_torrent_source
                     WHERE indexer_instance_id = instance_id
@@ -27328,13 +27328,13 @@ BEGIN
         computed_at = EXCLUDED.computed_at;
 
     IF NOT dropped_canonical AND NOT dropped_source THEN
-        SELECT score_total_context, canonical_torrent_source_id
+        SELECT context_score.score_total_context, context_score.canonical_torrent_source_id
         INTO best_context_score, best_context_source
-        FROM canonical_torrent_source_context_score
-        WHERE context_key_type = 'search_request'
-          AND context_key_id = request_id
-          AND canonical_torrent_id = canonical_id
-        ORDER BY score_total_context DESC, canonical_torrent_source_id ASC
+        FROM canonical_torrent_source_context_score AS context_score
+        WHERE context_score.context_key_type = 'search_request'
+          AND context_score.context_key_id = request_id
+          AND context_score.canonical_torrent_id = canonical_id
+        ORDER BY context_score.score_total_context DESC, context_score.canonical_torrent_source_id ASC
         LIMIT 1;
 
         should_update_best := FALSE;

@@ -22,8 +22,13 @@ from revaer_tooling.tasks.database import DatabaseStart
 
 @pytest.mark.parametrize("failure", [None, "start", "gate", "build"])
 @pytest.mark.parametrize("explicit", [False, True])
+@pytest.mark.parametrize("single_init", [False, True])
 def test_ci_holds_connection_until_gates_finish_and_never_builds_after_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str | None, explicit: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str | None,
+    explicit: bool,
+    single_init: bool,
 ) -> None:
     context = make_context(Options())
     database = replace(
@@ -43,6 +48,10 @@ def test_ci_holds_connection_until_gates_finish_and_never_builds_after_failure(
 
     @contextmanager
     def connection(active: Context) -> Iterator[str]:
+        if single_init:
+            calls.append("start")
+            if failure == "start":
+                raise ToolingError("start failure")
         with active.fs.lock(lock):
             yield normalized
 
@@ -68,6 +77,8 @@ def test_ci_holds_connection_until_gates_finish_and_never_builds_after_failure(
                 raise ToolingError("build failure")
         return TaskResult()
 
+    monkeypatch.setattr(quality, "uses_single_init", lambda active: single_init)
+    monkeypatch.setattr(quality, "single_init_database", connection)
     monkeypatch.setattr(DatabaseStart, "run", start)
     monkeypatch.setattr(quality, "database_connection", connection)
     monkeypatch.setattr(quality, "VALIDATION_STEPS", {"first": gate, "second": gate})

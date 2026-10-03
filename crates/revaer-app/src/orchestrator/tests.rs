@@ -544,13 +544,11 @@ mod orchestrator_tests {
 
     #[tokio::test]
     async fn handle_event_persists_runtime_status_updates() -> TestResult<()> {
-        let postgres = match start_postgres() {
-            Ok(database) => database,
-            Err(err) => {
-                eprintln!("skipping handle_event_persists_runtime_status_updates: {err}");
-                return Ok(());
-            }
-        };
+        // Exercise the runtime boundary with a sealed, least-privilege fixture.
+        let mut postgres = start_postgres()?;
+        postgres
+            .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+            .await?;
         let temp = temp_dir()?;
         let config = ConfigService::new(postgres.connection_string().to_string()).await?;
         let runtime = RuntimeStore::new(config.pool().clone());
@@ -580,20 +578,17 @@ mod orchestrator_tests {
         assert_eq!(statuses[0].id, torrent_id);
         assert_eq!(statuses[0].name.as_deref(), Some("runtime-demo"));
         assert_eq!(statuses[0].state, TorrentState::Queued);
+        postgres.close()?;
         Ok(())
     }
 
     #[tokio::test]
     async fn handle_event_removes_runtime_status_after_torrent_removed() -> TestResult<()> {
-        let postgres = match start_postgres() {
-            Ok(database) => database,
-            Err(err) => {
-                eprintln!(
-                    "skipping handle_event_removes_runtime_status_after_torrent_removed: {err}"
-                );
-                return Ok(());
-            }
-        };
+        // Exercise the runtime boundary with a sealed, least-privilege fixture.
+        let mut postgres = start_postgres()?;
+        postgres
+            .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+            .await?;
         let temp = temp_dir()?;
         let config = ConfigService::new(postgres.connection_string().to_string()).await?;
         let runtime = RuntimeStore::new(config.pool().clone());
@@ -626,6 +621,7 @@ mod orchestrator_tests {
             statuses.iter().all(|status| status.id != torrent_id),
             "removed torrents should not remain in the runtime store"
         );
+        postgres.close()?;
         Ok(())
     }
 }

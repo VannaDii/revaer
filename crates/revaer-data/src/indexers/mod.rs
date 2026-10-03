@@ -48,7 +48,7 @@ use sqlx::postgres::PgPoolOptions;
 /// Shared test database handle for indexer stored-procedure tests.
 #[cfg(test)]
 pub(crate) struct IndexerTestDb {
-    _db: revaer_test_support::postgres::TestDatabase,
+    database: revaer_test_support::postgres::TestDatabase,
     pool: PgPool,
     now: DateTime<Utc>,
 }
@@ -103,7 +103,7 @@ pub(crate) async fn setup_indexer_db(label: &str) -> anyhow::Result<IndexerTestD
     let now = sqlx::query_scalar("SELECT now()").fetch_one(&pool).await?;
 
     Ok(IndexerTestDb {
-        _db: postgres,
+        database: postgres,
         pool,
         now,
     })

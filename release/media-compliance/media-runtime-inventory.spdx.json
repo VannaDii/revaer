@@ -30,17 +30,17 @@
       "name": "ca-certificates",
       "SPDXID": "SPDXRef-Package-ca-certificates",
       "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=ca-certificates&branch=v3.23",
-      "versionInfo": "20260611-r0",
+      "versionInfo": "20260909-r0",
       "licenseConcluded": "MPL-2.0 AND MIT",
       "licenseDeclared": "MPL-2.0 AND MIT",
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "07dc4d7c68b6bdc804176475178b0575951d32b0ebff3bb5fa5d324cb3704e37"
+          "checksumValue": "66ed7ee7ef784bc5bd1052d673e6b569496cb5ca42d72f2f0c984b3762e5dfdd"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "c252273ee146f2b20737fda0ff2e6a5a77b478e7cf15387c255d19362f2a7c07"
+          "checksumValue": "68ee230255f291fcc7539bacd1cc38cb15debda9cff66e57e9ff022a2c38816c"
         }
       ],
       "copyrightText": "See Alpine package source metadata."
@@ -49,20 +49,21 @@
       "name": "curl",
       "SPDXID": "SPDXRef-Package-curl",
       "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=curl&branch=v3.23",
-      "versionInfo": "8.20.0-r0",
+      "versionInfo": "8.22.0-r0",
       "licenseConcluded": "curl",
       "licenseDeclared": "curl",
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "3f17be3f1110863109b2163ee47b2edbcbedfc1fdb2138b2f152fbd8e58d9ba4"
+          "checksumValue": "78829ae535239009c2dd615d0d2f58ecc0abd07855e38c1eea389fc68993f5b1"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "dc9f2b821e2ce3c578dc6e68dd79ff802d2eb05a390fb15164ad6288c815099c"
+          "checksumValue": "27674b4f5a4a9b51db6673bf7e75e247b51c711294a4fff638fe9a67ae21ed48"
         }
       ],
-      "copyrightText": "See Alpine package source metadata."
+      "copyrightText": "See Alpine package source metadata.",
+      "comment": "SHA-256 checksums correspond, in order, to these official Alpine APK archives: https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/curl-8.22.0-r0.apk; https://dl-cdn.alpinelinux.org/alpine/v3.23/main/aarch64/curl-8.22.0-r0.apk"
     },
     {
       "name": "exiftool",
@@ -278,20 +279,21 @@
       "name": "openssl",
       "SPDXID": "SPDXRef-Package-openssl",
       "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=openssl&branch=v3.23",
-      "versionInfo": "3.5.7-r0",
+      "versionInfo": "3.5.9-r0",
       "licenseConcluded": "Apache-2.0",
       "licenseDeclared": "Apache-2.0",
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "db755c8abf09f640e188f7933a6af90ac88642f03a2f1bc57e5037cb429190ae"
+          "checksumValue": "80332be2dcd7a9a0408a1eeca8efd4b66adf8f79d1e99d7022d3be4a34433c4a"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "f8f607e5327576cd64ec2346ed55ab3a4a33a6f8a01c05e15caa57bd3f15e994"
+          "checksumValue": "b7e30bda67ab5eeadf45ebb1e745f3ca685a84b89477ae8b487bc7c5275fd27e"
         }
       ],
-      "copyrightText": "See Alpine package source metadata."
+      "copyrightText": "See Alpine package source metadata.",
+      "comment": "SHA-256 checksums correspond, in order, to these official Alpine APK archives: https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/openssl-3.5.9-r0.apk; https://dl-cdn.alpinelinux.org/alpine/v3.23/main/aarch64/openssl-3.5.9-r0.apk"
     },
     {
       "name": "opus",

@@ -68,13 +68,10 @@ fn engine_update_from_row(row: &EngineProfileRow) -> EngineProfileUpdate<'_> {
 
 #[tokio::test]
 async fn config_wrappers_round_trip() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping config_wrappers_round_trip: {err}");
-            return Ok(());
-        }
-    };
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../init.sql"))
+        .await?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(postgres.connection_string())
@@ -302,20 +299,16 @@ async fn config_wrappers_round_trip() -> anyhow::Result<()> {
     let deleted = delete_api_key(&pool, key_id).await?;
     assert_eq!(deleted, 1);
 
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn config_factory_reset_clears_auth_material_and_restores_defaults() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!(
-                "skipping config_factory_reset_clears_auth_material_and_restores_defaults: {err}"
-            );
-            return Ok(());
-        }
-    };
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../init.sql"))
+        .await?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(postgres.connection_string())
@@ -355,20 +348,16 @@ async fn config_factory_reset_clears_auth_material_and_restores_defaults() -> an
     assert!(fetch_secret_by_name(&pool, "reset-secret").await?.is_none());
     assert!(fetch_api_keys(&pool).await?.is_empty());
 
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn config_setup_token_and_api_key_helpers_track_state_transitions() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!(
-                "skipping config_setup_token_and_api_key_helpers_track_state_transitions: {err}"
-            );
-            return Ok(());
-        }
-    };
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../init.sql"))
+        .await?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(postgres.connection_string())
@@ -462,18 +451,16 @@ async fn config_setup_token_and_api_key_helpers_track_state_transitions() -> any
     assert_eq!(delete_api_key(&pool, "stateful-key").await?, 1);
     assert!(fetch_api_key_auth(&pool, "stateful-key").await?.is_none());
 
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn config_fs_and_tracker_helpers_round_trip_full_state() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping config_fs_and_tracker_helpers_round_trip_full_state: {err}");
-            return Ok(());
-        }
-    };
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../init.sql"))
+        .await?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(postgres.connection_string())
@@ -645,5 +632,6 @@ async fn config_fs_and_tracker_helpers_round_trip_full_state() -> anyhow::Result
     assert_eq!(engine_row.peer_class_ids, vec![1, 2]);
     assert_eq!(engine_row.peer_class_default_ids, vec![1, 2]);
 
+    postgres.close()?;
     Ok(())
 }

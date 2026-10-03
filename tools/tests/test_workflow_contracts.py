@@ -379,3 +379,36 @@ def test_media_cleanup_cannot_precede_report_upload(fixture: Fixture) -> None:
 def test_release_build_cannot_skip_pull_requests(fixture: Fixture) -> None:
     fixture.job("pr", "build-release")["if"] = "github.ref == 'refs/heads/main'"
     assert required_check_findings(fixture.documents, fixture.contexts, True)
+
+
+def test_single_init_workflow_requires_fixture_gate_and_rejects_migration(fixture: Fixture) -> None:
+    feature = fixture.job("pr", "feature-matrix")
+    feature["steps"] = [
+        step
+        for step in steps(feature)
+        if step.get("name") not in ("Database rebaseline contract", "Run migrations")
+    ]
+    feature_steps = steps(feature)
+    index = next(
+        index
+        for index, step in enumerate(feature_steps)
+        if step.get("name") == "Feature matrix tests (no default features)"
+    )
+    feature_steps.insert(
+        index,
+        {
+            "name": "Single-init application fixtures",
+            "run": "uv run --locked -- rv ui-e2e-app-test",
+        },
+    )
+    feature["steps"] = list[Value](feature_steps)
+    for job in mapping(fixture.documents[".github/workflows/pr.yml"].get("jobs")).values():
+        selected = mapping(job)
+        selected["steps"] = [step for step in steps(selected) if not runs(step, "db-migrate")]
+    assert not required_check_findings(fixture.documents, fixture.contexts, True, single_init=True)
+    fixture.step("pr", "feature-matrix", "Single-init application fixtures")["run"] = (
+        "rv db-migrate"
+    )
+    findings = required_check_findings(fixture.documents, fixture.contexts, True, single_init=True)
+    assert any("initialized application fixtures" in item for item in findings)
+    assert any("historical migrations" in item for item in findings)

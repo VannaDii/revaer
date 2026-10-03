@@ -62,8 +62,11 @@ fn e2e_serving_entry() -> Result<()> {
 async fn e2e_serving_preserves_setup_configuration() -> Result<()> {
     let _guard = bootstrap_test_guard().await;
     if std::env::var_os("REVAER_BOOTSTRAP_CHILD_E2E_SETUP").is_none() {
-        let postgres = start_postgres()?;
-        return run_bootstrap_child(
+        let mut postgres = start_postgres()?;
+        postgres
+            .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+            .await?;
+        let result = run_bootstrap_child(
             "e2e_serving_preserves_setup_configuration",
             &[
                 ("REVAER_BOOTSTRAP_CHILD_E2E_SETUP", "1"),
@@ -71,6 +74,8 @@ async fn e2e_serving_preserves_setup_configuration() -> Result<()> {
             ],
             &[],
         );
+        postgres.close()?;
+        return result;
     }
 
     let database_url = std::env::var("DATABASE_URL")?;
@@ -144,23 +149,33 @@ async fn bootstrap_test_guard() -> MutexGuard<'static, ()> {
     BOOTSTRAP_TEST_MUTEX.lock().await
 }
 
+// The parent owns fixture setup and cleanup; the child exercises real serving.
+async fn run_compliance_success_child() -> Result<()> {
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
+    let result = run_bootstrap_child(
+        "injected_compliance_reaches_serving_and_persisted_capabilities",
+        &[
+            ("REVAER_BOOTSTRAP_CHILD_COMPLIANCE_SUCCESS", "1"),
+            ("DATABASE_URL", postgres.connection_string()),
+        ],
+        &[
+            "REVAER_ENABLE_OTEL",
+            "REVAER_SECRET_KEY_ID",
+            "REVAER_SECRET_KEY",
+        ],
+    );
+    postgres.close()?;
+    result
+}
+
 #[tokio::test]
 async fn injected_compliance_reaches_serving_and_persisted_capabilities() -> Result<()> {
     let _guard = bootstrap_test_guard().await;
     if std::env::var_os("REVAER_BOOTSTRAP_CHILD_COMPLIANCE_SUCCESS").is_none() {
-        let postgres = start_postgres()?;
-        return run_bootstrap_child(
-            "injected_compliance_reaches_serving_and_persisted_capabilities",
-            &[
-                ("REVAER_BOOTSTRAP_CHILD_COMPLIANCE_SUCCESS", "1"),
-                ("DATABASE_URL", postgres.connection_string()),
-            ],
-            &[
-                "REVAER_ENABLE_OTEL",
-                "REVAER_SECRET_KEY_ID",
-                "REVAER_SECRET_KEY",
-            ],
-        );
+        return run_compliance_success_child().await;
     }
 
     let database_url = std::env::var("DATABASE_URL")?;
@@ -428,15 +443,13 @@ async fn run_app_reads_env_database_url_and_surfaces_bind_failures() -> Result<(
         return Ok(());
     }
 
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!("skipping run_app_reads_env_database_url_and_surfaces_bind_failures: {err}");
-            return Ok(());
-        }
-    };
+    // Exercise the runtime boundary with a sealed, least-privilege fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
-    run_bootstrap_child(
+    let result = run_bootstrap_child(
         "run_app_reads_env_database_url_and_surfaces_bind_failures",
         &[
             ("REVAER_BOOTSTRAP_CHILD_ENV_BIND_CONFLICT", "1"),
@@ -447,7 +460,9 @@ async fn run_app_reads_env_database_url_and_surfaces_bind_failures() -> Result<(
             "REVAER_OTEL_SERVICE_NAME",
             "REVAER_OTEL_EXPORTER",
         ],
-    )
+    );
+    postgres.close()?;
+    result
 }
 
 #[tokio::test]
@@ -484,17 +499,13 @@ async fn run_app_reads_secret_session_env_and_surfaces_bind_failures() -> Result
         return Ok(());
     }
 
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!(
-                "skipping run_app_reads_secret_session_env_and_surfaces_bind_failures: {err}"
-            );
-            return Ok(());
-        }
-    };
+    // Exercise the runtime boundary with a sealed, least-privilege fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
-    run_bootstrap_child(
+    let result = run_bootstrap_child(
         "run_app_reads_secret_session_env_and_surfaces_bind_failures",
         &[
             ("REVAER_BOOTSTRAP_CHILD_SECRET_ENV_BIND_CONFLICT", "1"),
@@ -503,7 +514,9 @@ async fn run_app_reads_secret_session_env_and_surfaces_bind_failures() -> Result
             ("REVAER_SECRET_KEY", "  test-secret  "),
         ],
         &[],
-    )
+    );
+    postgres.close()?;
+    result
 }
 
 #[tokio::test]
@@ -552,24 +565,22 @@ async fn run_app_with_database_url_rejects_public_setup_bind_from_persisted_conf
         return Ok(());
     }
 
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!(
-                "skipping run_app_with_database_url_rejects_public_setup_bind_from_persisted_config: {err}"
-            );
-            return Ok(());
-        }
-    };
+    // Exercise the runtime boundary with a sealed, least-privilege fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
-    run_bootstrap_child(
+    let result = run_bootstrap_child(
         "run_app_with_database_url_rejects_public_setup_bind_from_persisted_config",
         &[
             ("REVAER_BOOTSTRAP_CHILD_PUBLIC_SETUP_BIND", "1"),
             ("DATABASE_URL", postgres.connection_string()),
         ],
         &[],
-    )
+    );
+    postgres.close()?;
+    result
 }
 
 #[tokio::test]
@@ -609,38 +620,32 @@ async fn run_app_with_database_url_surfaces_bind_failures_without_child_process(
         return Ok(());
     }
 
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!(
-                "skipping run_app_with_database_url_surfaces_bind_failures_without_child_process: {err}"
-            );
-            return Ok(());
-        }
-    };
+    // Exercise the runtime boundary with a sealed, least-privilege fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
-    run_bootstrap_child(
+    let result = run_bootstrap_child(
         "run_app_with_database_url_surfaces_bind_failures_without_child_process",
         &[
             ("REVAER_BOOTSTRAP_CHILD_DIRECT_BIND_CONFLICT", "1"),
             ("DATABASE_URL", postgres.connection_string()),
         ],
         &[],
-    )
+    );
+    postgres.close()?;
+    result
 }
 
 #[tokio::test]
 async fn run_app_with_database_url_rejects_zero_http_port_from_persisted_config() -> Result<()> {
     let _guard = bootstrap_test_guard().await;
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!(
-                "skipping run_app_with_database_url_rejects_zero_http_port_from_persisted_config: {err}"
-            );
-            return Ok(());
-        }
-    };
+    // Exercise the runtime boundary with a sealed, least-privilege fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
     let service = ConfigService::new(postgres.connection_string()).await?;
     let mut app_profile = service.get_app_profile().await?;
@@ -668,6 +673,7 @@ async fn run_app_with_database_url_rejects_zero_http_port_from_persisted_config(
             ..
         } if field == "http_port" && value.as_deref() == Some("0") && reason == "must be between 1 and 65535"
     ));
+    postgres.close()?;
     Ok(())
 }
 
@@ -709,17 +715,13 @@ async fn run_app_with_database_url_surfaces_bind_failures_for_valid_persisted_co
         return Ok(());
     }
 
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!(
-                "skipping run_app_with_database_url_surfaces_bind_failures_for_valid_persisted_config: {err}"
-            );
-            return Ok(());
-        }
-    };
+    // Exercise the runtime boundary with a sealed, least-privilege fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
-    run_bootstrap_child(
+    let result = run_bootstrap_child(
         "run_app_with_database_url_surfaces_bind_failures_for_valid_persisted_config",
         &[
             ("DATABASE_URL", postgres.connection_string()),
@@ -727,22 +729,20 @@ async fn run_app_with_database_url_surfaces_bind_failures_for_valid_persisted_co
             ("REVAER_BOOTSTRAP_CHILD_BIND_CONFLICT", "1"),
         ],
         &[],
-    )
+    );
+    postgres.close()?;
+    result
 }
 
 #[tokio::test]
 async fn run_app_with_database_url_rejects_out_of_range_http_port_changes_before_bootstrap()
 -> Result<()> {
     let _guard = bootstrap_test_guard().await;
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!(
-                "skipping run_app_with_database_url_rejects_out_of_range_http_port_changes_before_bootstrap: {err}"
-            );
-            return Ok(());
-        }
-    };
+    // Exercise the runtime boundary with a sealed, least-privilege fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
     let service = ConfigService::new(postgres.connection_string()).await?;
     let mut app_profile = service.get_app_profile().await?;
@@ -770,5 +770,6 @@ async fn run_app_with_database_url_rejects_out_of_range_http_port_changes_before
             ..
         } if field == "http_port" && value.as_deref() == Some("70000") && reason == "must be between 1 and 65535"
     ));
+    postgres.close()?;
     Ok(())
 }
