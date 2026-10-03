@@ -1972,3 +1972,9 @@ The initializer success test passed in the full workspace run. Scanner browser
 selection now lives at job scope, ensuring execution and both coverage merges
 expect the same five phases. Two workflow regressions load the actual settings
 for execution and merge contexts; all 79 workflow-contract tests pass.
+
+The real exporter/startup checks regenerate both checked-in OpenAPI documents.
+The root document changes only JSON ordering; its schema remains semantically
+identical. The app-local copy was stale at 91 paths and now matches the same
+101-path generated contract used by the API tests. Retained the generated
+documents so analysis and source attribution use the committed contract.

@@ -3016,6 +3016,11 @@
         "type": "object"
       },
       "TorrentDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TorrentSummary"
+          }
+        ],
         "properties": {
           "files": {
             "items": {
@@ -3037,12 +3042,7 @@
             ]
           }
         },
-        "type": "object",
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/TorrentSummary"
-          }
-        ]
+        "type": "object"
       },
       "TorrentFileView": {
         "properties": {
@@ -6723,92 +6723,6 @@
       }
     },
     "/v1/indexers/instances": {
-      "post": {
-        "operationId": "createIndexerInstance",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/IndexerInstanceCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/IndexerInstanceResponse"
-                }
-              }
-            },
-            "description": "Instance created"
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Referenced resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "State conflict",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Rate limit exceeded",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Create indexer instance"
-      },
       "get": {
         "responses": {
           "200": {
@@ -6861,6 +6775,92 @@
         "tags": [
           "indexers"
         ]
+      },
+      "post": {
+        "operationId": "createIndexerInstance",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexerInstanceCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexerInstanceResponse"
+                }
+              }
+            },
+            "description": "Instance created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Referenced resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "State conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Create indexer instance"
       }
     },
     "/v1/indexers/instances/{indexer_instance_public_id}": {
@@ -6899,64 +6899,64 @@
             "description": "Instance updated"
           },
           "400": {
-            "description": "Invalid request",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Invalid request"
           },
           "401": {
-            "description": "Authentication failed",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Authentication failed"
           },
           "404": {
-            "description": "Referenced resource not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Referenced resource not found"
           },
           "409": {
-            "description": "State conflict",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "State conflict"
           },
           "429": {
-            "description": "Rate limit exceeded",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Rate limit exceeded"
           },
           "500": {
-            "description": "Server error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Server error"
           }
         },
         "summary": "Update indexer instance"
@@ -7282,64 +7282,64 @@
             "description": "Updated"
           },
           "400": {
-            "description": "Invalid request",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Invalid request"
           },
           "401": {
-            "description": "Authentication failed",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Authentication failed"
           },
           "404": {
-            "description": "Referenced resource not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Referenced resource not found"
           },
           "409": {
-            "description": "State conflict",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "State conflict"
           },
           "429": {
-            "description": "Rate limit exceeded",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Rate limit exceeded"
           },
           "500": {
-            "description": "Server error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Server error"
           }
         },
         "summary": "Bind indexer field secret"
@@ -7374,64 +7374,64 @@
             "description": "Updated"
           },
           "400": {
-            "description": "Invalid request",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Invalid request"
           },
           "401": {
-            "description": "Authentication failed",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Authentication failed"
           },
           "404": {
-            "description": "Referenced resource not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Referenced resource not found"
           },
           "409": {
-            "description": "State conflict",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "State conflict"
           },
           "429": {
-            "description": "Rate limit exceeded",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Rate limit exceeded"
           },
           "500": {
-            "description": "Server error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Server error"
           }
         },
         "summary": "Set indexer field value"
@@ -7571,64 +7571,64 @@
             "description": "Updated"
           },
           "400": {
-            "description": "Invalid request",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Invalid request"
           },
           "401": {
-            "description": "Authentication failed",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Authentication failed"
           },
           "404": {
-            "description": "Referenced resource not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Referenced resource not found"
           },
           "409": {
-            "description": "State conflict",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "State conflict"
           },
           "429": {
-            "description": "Rate limit exceeded",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Rate limit exceeded"
           },
           "500": {
-            "description": "Server error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Server error"
           }
         },
         "summary": "Set indexer media domains"
@@ -7662,64 +7662,64 @@
             "description": "Indexer instance rate limit updated"
           },
           "400": {
-            "description": "Invalid request",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Invalid request"
           },
           "401": {
-            "description": "Authentication failed",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Authentication failed"
           },
           "404": {
-            "description": "Referenced resource not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Referenced resource not found"
           },
           "409": {
-            "description": "State conflict",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "State conflict"
           },
           "429": {
-            "description": "Rate limit exceeded",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Rate limit exceeded"
           },
           "500": {
-            "description": "Server error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Server error"
           }
         },
         "summary": "Set indexer instance rate limit"
@@ -8276,70 +8276,123 @@
             "description": "Updated"
           },
           "400": {
-            "description": "Invalid request",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Invalid request"
           },
           "401": {
-            "description": "Authentication failed",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Authentication failed"
           },
           "404": {
-            "description": "Referenced resource not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Referenced resource not found"
           },
           "409": {
-            "description": "State conflict",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "State conflict"
           },
           "429": {
-            "description": "Rate limit exceeded",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Rate limit exceeded"
           },
           "500": {
-            "description": "Server error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
-            }
+            },
+            "description": "Server error"
           }
         },
         "summary": "Set indexer tags"
       }
     },
     "/v1/indexers/policies": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicySetListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List policies",
+        "tags": [
+          "indexers"
+        ]
+      },
       "post": {
         "operationId": "createPolicySet",
         "requestBody": {
@@ -8420,59 +8473,6 @@
           }
         ],
         "summary": "Create a policy set"
-      },
-      "get": {
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PolicySetListResponse"
-                }
-              }
-            },
-            "description": "Successful response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Authentication failed"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Rate limit exceeded"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Server error"
-          }
-        },
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ],
-        "summary": "List policies",
-        "tags": [
-          "indexers"
-        ]
       }
     },
     "/v1/indexers/policies/reorder": {
@@ -9175,6 +9175,59 @@
       }
     },
     "/v1/indexers/rate-limits": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitPolicyListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List rate-limits",
+        "tags": [
+          "indexers"
+        ]
+      },
       "post": {
         "requestBody": {
           "content": {
@@ -9254,59 +9307,6 @@
           }
         ],
         "summary": "Create a rate limit policy"
-      },
-      "get": {
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RateLimitPolicyListResponse"
-                }
-              }
-            },
-            "description": "Successful response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Authentication failed"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Rate limit exceeded"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Server error"
-          }
-        },
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ],
-        "summary": "List rate-limits",
-        "tags": [
-          "indexers"
-        ]
       }
     },
     "/v1/indexers/rate-limits/{rate_limit_policy_public_id}": {
@@ -9480,6 +9480,59 @@
       }
     },
     "/v1/indexers/routing-policies": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutingPolicyListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List routing-policies",
+        "tags": [
+          "indexers"
+        ]
+      },
       "post": {
         "requestBody": {
           "content": {
@@ -9559,59 +9612,6 @@
           }
         ],
         "summary": "Create a routing policy"
-      },
-      "get": {
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RoutingPolicyListResponse"
-                }
-              }
-            },
-            "description": "Successful response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Authentication failed"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Rate limit exceeded"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Server error"
-          }
-        },
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ],
-        "summary": "List routing-policies",
-        "tags": [
-          "indexers"
-        ]
       }
     },
     "/v1/indexers/routing-policies/{routing_policy_public_id}/params": {
@@ -9903,6 +9903,59 @@
       }
     },
     "/v1/indexers/search-profiles": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchProfileListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List search-profiles",
+        "tags": [
+          "indexers"
+        ]
+      },
       "post": {
         "requestBody": {
           "content": {
@@ -9992,59 +10045,6 @@
           }
         ],
         "summary": "Create a search profile"
-      },
-      "get": {
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchProfileListResponse"
-                }
-              }
-            },
-            "description": "Successful response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Authentication failed"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Rate limit exceeded"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Server error"
-          }
-        },
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ],
-        "summary": "List search-profiles",
-        "tags": [
-          "indexers"
-        ]
       }
     },
     "/v1/indexers/search-profiles/{search_profile_public_id}": {
@@ -11515,6 +11515,59 @@
         ],
         "summary": "Revoke a secret"
       },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretMetadataListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List secrets",
+        "tags": [
+          "indexers"
+        ]
+      },
       "patch": {
         "requestBody": {
           "content": {
@@ -11664,59 +11717,6 @@
           }
         ],
         "summary": "Create a secret"
-      },
-      "get": {
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SecretMetadataListResponse"
-                }
-              }
-            },
-            "description": "Successful response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Authentication failed"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Rate limit exceeded"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Server error"
-          }
-        },
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ],
-        "summary": "List secrets",
-        "tags": [
-          "indexers"
-        ]
       }
     },
     "/v1/indexers/tags": {
@@ -11802,6 +11802,59 @@
           }
         ],
         "summary": "Delete an indexer tag"
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List tags",
+        "tags": [
+          "indexers"
+        ]
       },
       "patch": {
         "requestBody": {
@@ -11972,59 +12025,6 @@
           }
         ],
         "summary": "Create an indexer tag"
-      },
-      "get": {
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TagListResponse"
-                }
-              }
-            },
-            "description": "Successful response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Authentication failed"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Rate limit exceeded"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Server error"
-          }
-        },
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ],
-        "summary": "List tags",
-        "tags": [
-          "indexers"
-        ]
       }
     },
     "/v1/indexers/tags/{tag_key}": {
@@ -12116,6 +12116,59 @@
       }
     },
     "/v1/indexers/torznab-instances": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorznabInstanceListResponse"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List torznab-instances",
+        "tags": [
+          "indexers"
+        ]
+      },
       "post": {
         "requestBody": {
           "content": {
@@ -12205,59 +12258,6 @@
           }
         ],
         "summary": "Create a torznab instance"
-      },
-      "get": {
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TorznabInstanceListResponse"
-                }
-              }
-            },
-            "description": "Successful response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Authentication failed"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Rate limit exceeded"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Server error"
-          }
-        },
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ],
-        "summary": "List torznab-instances",
-        "tags": [
-          "indexers"
-        ]
       }
     },
     "/v1/indexers/torznab-instances/{torznab_instance_public_id}": {
