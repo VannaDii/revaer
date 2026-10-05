@@ -39,7 +39,7 @@ def test_routing_credentials(api: ApiClient, public_api: ApiClient, session: Api
             {"secret_type": "password", "secret_value": "routing-secret-" + suffix},
         )
     )
-    assert secret.status == 201
+    assert secret.status == 201, secret.object().get("context")
     secret_id = string_value(secret.object()["secret_public_id"])
     bind = ApiRequest(
         Method.POST,

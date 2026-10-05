@@ -27,10 +27,77 @@ impl AssociationSource for RetainedRootCatalog {
         self.generation
     }
 
+    fn watch_directory(
+        &self,
+        logical_key: &str,
+        relative_prefix: &std::path::Path,
+    ) -> Result<std::os::fd::OwnedFd, crate::media_discovery_fingerprint::FingerprintError> {
+        let index = self
+            .source
+            .catalog()
+            .slots()
+            .iter()
+            .position(|slot| {
+                slot.key() == logical_key && slot.allowed_kinds().contains(&RootKind::Source)
+            })
+            .ok_or(RootDirectoryError::InvalidPath)?;
+        self.roots
+            .open_read_directory(index, relative_prefix)
+            .map_err(Into::into)
+    }
+
+    fn scan(
+        &self,
+        logical_key: &str,
+        relative_prefix: &std::path::Path,
+        budget: &crate::media_discovery_scan::ScanBudget,
+        cursor: Option<crate::media_discovery_scan::ScanCursor>,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<crate::media_discovery_scan::ScanBatch, crate::media_discovery_scan::ScanError>
+    {
+        use crate::media_discovery_fingerprint::{FingerprintError, read_media_directory_at};
+        let index = self
+            .source
+            .catalog()
+            .slots()
+            .iter()
+            .position(|slot| {
+                slot.key() == logical_key && slot.allowed_kinds().contains(&RootKind::Source)
+            })
+            .ok_or(FingerprintError::Root(RootDirectoryError::InvalidPath))?;
+        crate::media_discovery_scan::scan_retained_media_source_paths(
+            relative_prefix,
+            budget,
+            cursor,
+            cancelled,
+            |path, entry_limit| {
+                let directory = self.roots.open_read_directory(index, path)?;
+                let entries = read_media_directory_at(&directory, entry_limit)?;
+                let current = self.roots.open_read_directory(index, path)?;
+                let observe = |descriptor: &std::os::fd::OwnedFd| {
+                    rustix::fs::fstat(descriptor).map_err(|source| FingerprintError::Io {
+                        path: path.to_path_buf(),
+                        source: std::io::Error::from(source),
+                    })
+                };
+                let after = observe(&current)?;
+                if !crate::media_discovery_fingerprint::directory_observations_match(
+                    &entries.observation,
+                    &after,
+                ) {
+                    return Err(FingerprintError::DirectoryChanged);
+                }
+                Ok(entries)
+            },
+        )
+    }
+
     fn fingerprint(
         &self,
         logical_key: &str,
         relative_path: &std::path::Path,
+        cancelled: &dyn Fn() -> bool,
+        hash_elapsed: &mut std::time::Duration,
     ) -> Result<
         Option<crate::media_discovery_fingerprint::MediaAggregateFingerprint>,
         crate::media_discovery_fingerprint::FingerprintError,
@@ -51,11 +118,14 @@ impl AssociationSource for RetainedRootCatalog {
             Err(error) => return Err(error.into()),
         };
         let root = std::path::Path::new(slot.path());
-        let fingerprint = crate::media_discovery_fingerprint::fingerprint_media_aggregate_at(
-            &root.join(relative_path),
-            root,
-            parent,
-        )?;
+        let fingerprint =
+            crate::media_discovery_fingerprint::fingerprint_media_aggregate_at_measured(
+                &root.join(relative_path),
+                root,
+                parent,
+                cancelled,
+                hash_elapsed,
+            )?;
         match self.roots.open_read_parent(index, relative_path) {
             Ok(_) => {}
             Err(RootDirectoryError::CandidateMissing) => return Ok(None),

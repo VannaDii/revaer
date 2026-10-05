@@ -41,7 +41,6 @@ use revaer_media_runtime::execute::{
     AudioStreamConstraints, CommandRunner, ExecuteSequenceError, ExecuteStepError,
     ExecutionControl, ExecutionStep, MaxBitrateBps, ProcessCommandRunner, VideoStreamConstraints,
     VideoTranscodeIntent, VideoTranscodePolicy, execute_filesystem_step,
-    execute_step_sequence_controlled,
 };
 use revaer_media_runtime::inspect::{
     ChapterInspection, FfprobeInspectAdapter, InspectAdapter, InspectCancellation, InspectError,
@@ -64,7 +63,7 @@ use revaer_media_runtime::verification::{
 };
 use revaer_media_runtime::workspace::{
     ManagedWorkspaceError, TerminalWorkspaceCleanupPolicy, TerminalWorkspaceState, WorkspacePaths,
-    WorkspacePolicy, cleanup_terminal_workspace, create_managed_workspace,
+    WorkspacePolicy, cleanup_terminal_workspace, create_or_resume_managed_workspace,
     project_managed_workspace,
 };
 use revaer_runtime::media::MediaStore;
@@ -78,7 +77,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::media_discovery_fingerprint::{
-    FingerprintError, MediaAggregateFingerprint, fingerprint_media_aggregate,
+    FingerprintError, MediaAggregateFingerprint, fingerprint_media_aggregate_cancellable,
 };
 use crate::runtime_shutdown::{self, RuntimeShutdownReceiver};
 
@@ -90,7 +89,6 @@ const FAILURE_CHECK_INDEX: i32 = 99;
 const CANCELLATION_PHASE_INDEX: i32 = 98;
 const CANCELLATION_CHECK_INDEX: i32 = 98;
 const CONTROL_POLL_INTERVAL: Duration = Duration::from_millis(250);
-const STALE_WORKER_RECOVERY_AFTER_SECONDS: i32 = 60 * 60;
 const DIALOG_NORMALIZED_TARGET_LUFS: f64 = -16.0;
 const DIALOG_NORMALIZED_LUFS_TOLERANCE: f64 = 1.0;
 const DIALOG_NORMALIZED_TRUE_PEAK_MAX_DBFS: f64 = -1.0;
@@ -142,6 +140,7 @@ struct PreflightReadyContext<'a> {
     shutdown: Option<&'a RuntimeShutdownReceiver>,
 }
 
+mod checkpoints;
 #[cfg(test)]
 mod fixtures;
 mod policy;
@@ -191,9 +190,15 @@ struct ReplacementExecutionContext<'a> {
 #[derive(Debug, Default)]
 struct CancellationSignal {
     requested: AtomicBool,
+    interrupted: AtomicBool,
 }
 
 impl CancellationSignal {
+    fn interrupt(&self) {
+        self.interrupted.store(true, Ordering::Release);
+        self.request();
+    }
+
     fn request(&self) {
         self.requested.store(true, Ordering::Release);
     }
@@ -229,6 +234,7 @@ trait SourceFingerprintProbe {
         &self,
         media_path: &Path,
         source_root: &Path,
+        cancelled: &dyn Fn() -> bool,
     ) -> Result<Option<MediaAggregateFingerprint>, FingerprintError>;
 }
 
@@ -240,8 +246,9 @@ impl SourceFingerprintProbe for SystemSourceFingerprintProbe {
         &self,
         media_path: &Path,
         source_root: &Path,
+        cancelled: &dyn Fn() -> bool,
     ) -> Result<Option<MediaAggregateFingerprint>, FingerprintError> {
-        fingerprint_media_aggregate(media_path, source_root)
+        fingerprint_media_aggregate_cancellable(media_path, source_root, cancelled)
     }
 }
 
@@ -489,17 +496,17 @@ impl MediaJobRuntime {
         if runtime_shutdown::requested(&shutdown) {
             return;
         }
-        while let Err(error) = self.recover_interrupted_replacements().await {
+        while let Err(error) = self.recover_interrupted_replacements(Some(&shutdown)).await {
+            if runtime_shutdown::requested(&shutdown) {
+                return;
+            }
             warn!(error = %error, "media job replacement recovery failed; worker remains paused");
             if runtime_shutdown::sleep_or_requested(self.tick_interval, &mut shutdown).await {
                 return;
             }
         }
-        while let Err(error) = self
-            .recover_stale_worker_jobs(STALE_WORKER_RECOVERY_AFTER_SECONDS)
-            .await
-        {
-            warn!(error = %error, "media job stale-worker recovery failed; worker remains paused");
+        while let Err(error) = self.resume_interrupted_jobs().await {
+            warn!(error = %error, "media job interruption recovery failed; worker remains paused");
             if runtime_shutdown::sleep_or_requested(self.tick_interval, &mut shutdown).await {
                 return;
             }
@@ -521,7 +528,13 @@ impl MediaJobRuntime {
         }
     }
 
-    async fn recover_interrupted_replacements(&self) -> Result<(), MediaJobRuntimeError> {
+    async fn recover_interrupted_replacements(
+        &self,
+        shutdown: Option<&RuntimeShutdownReceiver>,
+    ) -> Result<(), MediaJobRuntimeError> {
+        if shutdown.is_some_and(runtime_shutdown::requested) {
+            return Err(MediaJobRuntimeError::Interrupted);
+        }
         let terminal_events = self.store.list_unpublished_terminal_events().await?;
         let mut cursor = 0;
         loop {
@@ -533,21 +546,30 @@ impl MediaJobRuntime {
                 break;
             }
             for candidate in candidates {
+                if shutdown.is_some_and(runtime_shutdown::requested) {
+                    return Err(MediaJobRuntimeError::Interrupted);
+                }
                 cursor = candidate.attempt_id;
                 let source_root = PathBuf::from(candidate.source_root);
+                let recovery_root = source_root.clone();
                 let replacement_backend = Arc::clone(&self.replacement_committer);
                 let job_key =
                     replacement_job_key(candidate.media_job_public_id, candidate.claim_generation);
                 let recovered = tokio::task::spawn_blocking(move || {
                     replacement_backend.recover_job(
-                        &source_root,
+                        &recovery_root,
                         &job_key,
                         candidate.terminal_committed,
                     )
                 })
                 .await
                 .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
-                if let Some(transaction) = recovered {
+                if let Some(mut transaction) = recovered {
+                    if transaction.action == ReplacementRecoveryAction::Quarantined {
+                        return Err(MediaJobRuntimeError::Verification(
+                            "media_job_replacement_recovery_unresolved",
+                        ));
+                    }
                     if transaction.action == ReplacementRecoveryAction::Finalized {
                         info!(
                             media_job_public_id = transaction.job_key,
@@ -558,29 +580,33 @@ impl MediaJobRuntime {
                     }
                     let (media_job_public_id, claim_generation) =
                         parse_replacement_job_key(&transaction.job_key)?;
-                    let detail = "media_job_recovered_interrupted_replacement";
-                    self.store
-                        .mark_job_status(
-                            media_job_public_id,
-                            claim_generation,
-                            "failed",
-                            Some(detail),
-                        )
+                    self.finish_recovered_rollback(&mut transaction, &source_root, shutdown)
                         .await?;
-                    self.publish_event(Event::MediaJobFailed {
-                        media_job_public_id,
-                        error_code: detail.to_string(),
-                    });
-                    warn!(
+                    let job = self.store.get_job(media_job_public_id).await?.ok_or(
+                        MediaJobRuntimeError::Verification("media_job_recovery_job_missing"),
+                    )?;
+                    let resumed = if matches!(job.status_text.as_str(), "running" | "verifying") {
+                        !self
+                            .store
+                            .interrupt_job(media_job_public_id, claim_generation)
+                            .await?
+                    } else {
+                        false
+                    };
+                    info!(
                         %media_job_public_id,
                         source_path = %transaction.source_path.display(),
                         recovery_action = ?transaction.action,
-                        "media job replacement recovery marked interrupted job failed"
+                        resumed,
+                        "media job replacement reconciled before interrupted work resumes"
                     );
                 }
             }
         }
         for event in terminal_events {
+            if shutdown.is_some_and(runtime_shutdown::requested) {
+                return Err(MediaJobRuntimeError::Interrupted);
+            }
             if event.event_kind != "completed" {
                 return Err(MediaJobRuntimeError::InvalidTerminalEventKind(
                     event.event_kind,
@@ -594,8 +620,6 @@ impl MediaJobRuntime {
 
     #[cfg(test)]
     async fn run_tick(&self) -> Result<(), MediaJobRuntimeError> {
-        self.recover_stale_worker_jobs(STALE_WORKER_RECOVERY_AFTER_SECONDS)
-            .await?;
         let claimed = self.store.claim_next_job().await?;
         if let Some(job) = claimed {
             self.process_job(job, None).await;
@@ -607,8 +631,6 @@ impl MediaJobRuntime {
         &self,
         shutdown: RuntimeShutdownReceiver,
     ) -> Result<(), MediaJobRuntimeError> {
-        self.recover_stale_worker_jobs(STALE_WORKER_RECOVERY_AFTER_SECONDS)
-            .await?;
         if runtime_shutdown::requested(&shutdown) {
             return Ok(());
         }
@@ -620,38 +642,23 @@ impl MediaJobRuntime {
         Ok(())
     }
 
-    async fn recover_stale_worker_jobs(
-        &self,
-        stale_after_seconds: i32,
-    ) -> Result<(), MediaJobRuntimeError> {
-        let recovered = self.store.recover_stale_jobs(stale_after_seconds).await?;
-        for job in recovered {
-            match job.status_text.as_str() {
-                "failed" => {
-                    let error_code = job
-                        .last_error
-                        .as_deref()
-                        .unwrap_or("media_job_worker_heartbeat_stale");
-                    self.publish_event(Event::MediaJobFailed {
-                        media_job_public_id: job.media_job_public_id,
-                        error_code: error_code.to_string(),
-                    });
-                    warn!(
-                        media_job_public_id = %job.media_job_public_id,
-                        error_code,
-                        "media job stale-worker recovery marked job failed"
-                    );
-                }
-                "cancelled" => {
-                    info!(
-                        media_job_public_id = %job.media_job_public_id,
-                        "media job stale-worker recovery acknowledged pending cancellation"
-                    );
-                }
-                _ => {}
+    async fn resume_interrupted_jobs(&self) -> Result<(), MediaJobRuntimeError> {
+        let workspace_root =
+            self.workspace_root
+                .to_str()
+                .ok_or(MediaJobRuntimeError::InvalidPath(
+                    "media_job_workspace_path_invalid",
+                ))?;
+        loop {
+            let resumed = self.store.resume_interrupted_jobs(workspace_root).await?;
+            if resumed.is_empty() {
+                return Ok(());
+            }
+            for job in resumed {
+                info!(media_job_public_id = %job.media_job_public_id, outcome = %job.status_text,
+                    "media job startup reconciled interruption without a failure retry");
             }
         }
-        Ok(())
     }
 
     async fn validate_claimed_roots(
@@ -704,7 +711,7 @@ impl MediaJobRuntime {
             project_managed_workspace(&self.workspace_root, &workspace_key)
                 .map(|paths| (paths, None))
         } else {
-            create_managed_workspace(&self.workspace_root, &workspace_key)
+            create_or_resume_managed_workspace(&self.workspace_root, &workspace_key)
                 .map(|workspace| (workspace.paths.clone(), Some(workspace)))
         };
         let (workspace_paths, managed_workspace) = match workspace {
@@ -737,6 +744,25 @@ impl MediaJobRuntime {
                 info!(media_job_public_id = %job.media_job_public_id, "media job runtime processed job");
                 state
             }
+            Err(MediaJobRuntimeError::Interrupted) => {
+                match self
+                    .store
+                    .interrupt_job(job.media_job_public_id, job.claim_generation)
+                    .await
+                {
+                    Ok(false) => {
+                        self.telemetry
+                            .inc_media_job_outcome("interrupted", job.dry_run);
+                        info!(media_job_public_id = %job.media_job_public_id, "stopped media job remains resumable on its current attempt");
+                        return;
+                    }
+                    Ok(true) => TerminalWorkspaceState::Cancelled,
+                    Err(error) => {
+                        warn!(media_job_public_id = %job.media_job_public_id, error = %error, "stopped media job could not persist interruption; retained for startup recovery");
+                        return;
+                    }
+                }
+            }
             Err(MediaJobRuntimeError::Cancelled) => {
                 info!(media_job_public_id = %job.media_job_public_id, "media job runtime acknowledged cancellation");
                 match self.persist_cancellation(&job).await {
@@ -762,18 +788,27 @@ impl MediaJobRuntime {
             .observe_media_job_duration(outcome, job.dry_run, started_at.elapsed());
 
         if let Some(workspace) = managed_workspace {
-            if let Err(error) = cleanup_terminal_workspace(
-                &workspace,
-                terminal_state,
-                TerminalWorkspaceCleanupPolicy {
-                    retain_diagnostics: terminal_state != TerminalWorkspaceState::Completed,
-                },
-            ) {
-                warn!(media_job_public_id = %job.media_job_public_id, error = %error, "media job runtime failed workspace cleanup");
-                self.telemetry.inc_media_workspace_cleanup("failed");
-            } else {
-                self.telemetry.inc_media_workspace_cleanup("completed");
-            }
+            self.cleanup_job_workspace(&job, &workspace, terminal_state);
+        }
+    }
+
+    fn cleanup_job_workspace(
+        &self,
+        job: &ClaimedMediaJobRow,
+        workspace: &revaer_media_runtime::workspace::ManagedWorkspace,
+        terminal_state: TerminalWorkspaceState,
+    ) {
+        if let Err(error) = cleanup_terminal_workspace(
+            workspace,
+            terminal_state,
+            TerminalWorkspaceCleanupPolicy {
+                retain_diagnostics: terminal_state != TerminalWorkspaceState::Completed,
+            },
+        ) {
+            warn!(media_job_public_id = %job.media_job_public_id, error = %error, "media job runtime failed workspace cleanup");
+            self.telemetry.inc_media_workspace_cleanup("failed");
+        } else {
+            self.telemetry.inc_media_workspace_cleanup("completed");
         }
     }
 
@@ -783,28 +818,28 @@ impl MediaJobRuntime {
         shutdown: RuntimeShutdownReceiver,
     ) -> Result<(), MediaJobRuntimeError> {
         if runtime_shutdown::requested(&shutdown) {
-            self.cancel_claimed_job_for_shutdown(&job).await?;
+            self.interrupt_claimed_job_for_shutdown(&job).await?;
         } else {
             self.process_job(job, Some(shutdown)).await;
         }
         Ok(())
     }
 
-    async fn cancel_claimed_job_for_shutdown(
+    async fn interrupt_claimed_job_for_shutdown(
         &self,
         job: &ClaimedMediaJobRow,
     ) -> Result<(), MediaJobRuntimeError> {
-        let started_at = Instant::now();
-        self.store.cancel_job(job.media_job_public_id).await?;
-        self.persist_cancellation(job).await?;
-        self.telemetry
-            .inc_media_job_outcome("cancelled", job.dry_run);
-        self.telemetry
-            .observe_media_job_duration("cancelled", job.dry_run, started_at.elapsed());
-        info!(
-            media_job_public_id = %job.media_job_public_id,
-            "media job runtime cancelled claimed job before shutdown"
-        );
+        let cancelled = self
+            .store
+            .interrupt_job(job.media_job_public_id, job.claim_generation)
+            .await?;
+        let outcome = if cancelled {
+            "cancelled"
+        } else {
+            "interrupted"
+        };
+        self.telemetry.inc_media_job_outcome(outcome, job.dry_run);
+        info!(media_job_public_id = %job.media_job_public_id, outcome, "media job stopped before shutdown");
         Ok(())
     }
 
@@ -816,7 +851,7 @@ impl MediaJobRuntime {
         shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<TerminalWorkspaceState, MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
-        let source_fingerprint = self.capture_source_fingerprint(job).await?;
+        let source_fingerprint = self.capture_source_fingerprint(job, shutdown).await?;
         self.append_phase(job, 0, "inspect_plan", "running", None)
             .await?;
 
@@ -923,7 +958,9 @@ impl MediaJobRuntime {
             dry_run: job.dry_run,
         });
         if job.dry_run {
-            return self.complete_dry_run(job, context.source_fingerprint).await;
+            return self
+                .complete_dry_run(job, context.source_fingerprint, context.shutdown)
+                .await;
         }
         let managed_workspace =
             context
@@ -984,15 +1021,8 @@ impl MediaJobRuntime {
             )
             .await?;
         if cancelled {
-            let replacement_backend = Arc::clone(&self.replacement_committer);
-            let rollback =
-                tokio::task::spawn_blocking(move || replacement_backend.rollback(committed))
-                    .await
-                    .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
-            if rollback.is_err() {
-                self.recover_replacement_job(job).await?;
-            }
-            rollback.map_err(MediaJobRuntimeError::ReplacementRollback)?;
+            drop(committed);
+            self.recover_replacement_job(job, context.shutdown).await?;
             return Ok(TerminalWorkspaceState::Cancelled);
         }
         let replacement_backend = Arc::clone(&self.replacement_committer);
@@ -1007,6 +1037,7 @@ impl MediaJobRuntime {
         &self,
         job: &ClaimedMediaJobRow,
         source_fingerprint: &MediaAggregateFingerprint,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<TerminalWorkspaceState, MediaJobRuntimeError> {
         self.append_verification_check(
             job,
@@ -1022,7 +1053,7 @@ impl MediaJobRuntime {
         )
         .await?;
         self.ensure_not_cancelled(job).await?;
-        self.revalidate_source_fingerprint(job, source_fingerprint)
+        self.revalidate_source_fingerprint(job, source_fingerprint, shutdown)
             .await?;
         if self.complete_or_cancel(job).await? {
             return Ok(TerminalWorkspaceState::Cancelled);
@@ -1055,7 +1086,7 @@ impl MediaJobRuntime {
         source_fingerprint: &MediaAggregateFingerprint,
         shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<TerminalWorkspaceState, MediaJobRuntimeError> {
-        self.revalidate_source_fingerprint(job, source_fingerprint)
+        self.revalidate_source_fingerprint(job, source_fingerprint, shutdown)
             .await?;
         self.store
             .mark_job_status(
@@ -1079,7 +1110,7 @@ impl MediaJobRuntime {
         self.append_phase(job, 1, "verify_noop", "completed", None)
             .await?;
         self.ensure_not_cancelled(job).await?;
-        self.revalidate_source_fingerprint(job, source_fingerprint)
+        self.revalidate_source_fingerprint(job, source_fingerprint, shutdown)
             .await?;
         if self.complete_or_cancel(job).await? {
             return Ok(TerminalWorkspaceState::Cancelled);
@@ -1093,8 +1124,9 @@ impl MediaJobRuntime {
     async fn capture_source_fingerprint(
         &self,
         job: &ClaimedMediaJobRow,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<MediaAggregateFingerprint, MediaJobRuntimeError> {
-        let observed = self.observe_source_fingerprint(job).await?;
+        let observed = self.observe_source_fingerprint(job, shutdown).await?;
         validate_claimed_source_fingerprint(job, observed)
     }
 
@@ -1102,8 +1134,9 @@ impl MediaJobRuntime {
         &self,
         job: &ClaimedMediaJobRow,
         expected: &MediaAggregateFingerprint,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<(), MediaJobRuntimeError> {
-        match self.observe_source_fingerprint(job).await? {
+        match self.observe_source_fingerprint(job, shutdown).await? {
             Some(observed) if observed == *expected => Ok(()),
             Some(_) | None => Err(MediaJobRuntimeError::SourceFingerprint(
                 "media_job_source_fingerprint_changed",
@@ -1111,17 +1144,128 @@ impl MediaJobRuntime {
         }
     }
 
+    async fn finish_recovered_rollback(
+        &self,
+        transaction: &mut revaer_media_runtime::replacement::RecoveredReplacement,
+        source_root: &Path,
+        shutdown: Option<&RuntimeShutdownReceiver>,
+    ) -> Result<(), MediaJobRuntimeError> {
+        if transaction.action != ReplacementRecoveryAction::RolledBack {
+            return Ok(());
+        }
+        let (job_id, generation) = parse_replacement_job_key(&transaction.job_key)?;
+        let cleanup =
+            transaction
+                .pending_cleanup
+                .take()
+                .ok_or(MediaJobRuntimeError::Verification(
+                    "media_job_recovery_backup_not_retained",
+                ))?;
+        self.refresh_rolled_back_source(
+            job_id,
+            generation,
+            &transaction.source_path,
+            source_root,
+            shutdown,
+        )
+        .await?;
+        let backend = Arc::clone(&self.replacement_committer);
+        tokio::task::spawn_blocking(move || backend.discard_prepared(cleanup))
+            .await
+            .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
+        Ok(())
+    }
+
+    async fn refresh_rolled_back_source(
+        &self,
+        job_id: Uuid,
+        generation: i64,
+        source_path: &Path,
+        source_root: &Path,
+        shutdown: Option<&RuntimeShutdownReceiver>,
+    ) -> Result<(), MediaJobRuntimeError> {
+        let probe = Arc::clone(&self.source_fingerprint_probe);
+        let media = source_path.to_path_buf();
+        let root = source_root.to_path_buf();
+        let reader_shutdown = shutdown.cloned();
+        let observed = tokio::task::spawn_blocking(move || {
+            probe.fingerprint(&media, &root, &|| {
+                reader_shutdown
+                    .as_ref()
+                    .is_some_and(runtime_shutdown::requested)
+            })
+        })
+        .await
+        .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?
+        .map_err(|error| match error {
+            FingerprintError::Cancelled => MediaJobRuntimeError::Interrupted,
+            other => MediaJobRuntimeError::Fingerprint(other),
+        })?
+        .ok_or(MediaJobRuntimeError::SourceFingerprint(
+            "media_job_source_fingerprint_unavailable",
+        ))?;
+        if shutdown.is_some_and(runtime_shutdown::requested) {
+            return Err(MediaJobRuntimeError::Interrupted);
+        }
+        self.store
+            .refresh_restored_source(&revaer_data::media::job_roots::RestoredSourceInput {
+                job_id,
+                generation,
+                source_path: source_path
+                    .to_str()
+                    .ok_or(MediaJobRuntimeError::InvalidPath(
+                        "media_job_recovery_source_encoding",
+                    ))?,
+                identity: &observed.identity,
+                size_bytes: observed.size_bytes,
+                modified_ns: observed.modified_ns,
+                changed_ns: observed.changed_ns,
+                sha256: &observed.sha256,
+            })
+            .await?;
+        Ok(())
+    }
+
     async fn observe_source_fingerprint(
         &self,
         job: &ClaimedMediaJobRow,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<Option<MediaAggregateFingerprint>, MediaJobRuntimeError> {
         let probe = Arc::clone(&self.source_fingerprint_probe);
         let media_path = PathBuf::from(&job.source_path);
         let source_root = PathBuf::from(&job.source_root);
-        tokio::task::spawn_blocking(move || probe.fingerprint(&media_path, &source_root))
+        let signal = Arc::new(CancellationSignal::default());
+        let read_signal = Arc::clone(&signal);
+        let (stop_tx, stop_rx) = watch::channel(false);
+        let monitor = tokio::spawn(monitor_job_control(
+            self.store.clone(),
+            job.media_job_public_id,
+            job.claim_generation,
+            job.cancel_generation,
+            Arc::clone(&signal),
+            stop_rx,
+            shutdown.cloned(),
+        ));
+        let observed = tokio::task::spawn_blocking(move || {
+            probe.fingerprint(&media_path, &source_root, &|| {
+                read_signal.requested.load(Ordering::Acquire)
+            })
+        })
+        .await;
+        drop(stop_tx);
+        let cancellation_requested = monitor
             .await
-            .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?
-            .map_err(MediaJobRuntimeError::Fingerprint)
+            .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
+        let observed = observed.map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
+        if signal.interrupted.load(Ordering::Acquire)
+            && matches!(observed, Ok(_) | Err(FingerprintError::Cancelled))
+        {
+            return Err(MediaJobRuntimeError::Interrupted);
+        }
+        if cancellation_requested || matches!(observed, Err(FingerprintError::Cancelled)) {
+            return Err(MediaJobRuntimeError::Cancelled);
+        }
+        observed.map_err(MediaJobRuntimeError::Fingerprint)
     }
 
     async fn build_preflight_evaluation(
@@ -1181,11 +1325,9 @@ impl MediaJobRuntime {
     ) -> Result<(), MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
         workspace.validate()?;
-        self.revalidate_source_fingerprint(job, source_fingerprint)
+        self.revalidate_source_fingerprint(job, source_fingerprint, shutdown)
             .await?;
-        let runner = Arc::clone(&self.command_runner);
         let signal = Arc::new(CancellationSignal::default());
-        let execution_signal = Arc::clone(&signal);
         let monitor_store = self.store.clone();
         let media_job_public_id = job.media_job_public_id;
         let observed_cancel_generation = job.cancel_generation;
@@ -1199,26 +1341,33 @@ impl MediaJobRuntime {
             stop_rx,
             shutdown.cloned(),
         ));
-        let execution = tokio::task::spawn_blocking(move || {
-            execute_step_sequence_controlled(&steps, &*runner, &*execution_signal)
-        })
-        .await
-        .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
+        let execution = self
+            .execute_checkpointed_steps(
+                job,
+                &steps,
+                workspace,
+                source_fingerprint,
+                Arc::clone(&signal),
+                shutdown,
+            )
+            .await;
         drop(stop_tx);
         let cancellation_requested = monitor
             .await
             .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
+        if signal.interrupted.load(Ordering::Acquire) {
+            return match execution {
+                Ok(()) | Err(MediaJobRuntimeError::Cancelled) => {
+                    Err(MediaJobRuntimeError::Interrupted)
+                }
+                Err(error) => Err(error),
+            };
+        }
         if cancellation_requested {
             return Err(MediaJobRuntimeError::Cancelled);
         }
-        let result = match execution {
-            Err(error) if matches!(error.failed, ExecuteStepError::Cancelled) => {
-                Err(MediaJobRuntimeError::Cancelled)
-            }
-            result => result.map_err(MediaJobRuntimeError::Execute),
-        };
         workspace.validate()?;
-        result
+        execution
     }
 
     async fn execute_filesystem_step_direct(
@@ -1280,11 +1429,11 @@ impl MediaJobRuntime {
         let committed = self
             .prepare_and_commit_replacement(
                 job,
-                source_path,
                 output_path,
                 sidecars.outputs,
                 sidecars.removals,
                 source_fingerprint,
+                shutdown,
             )
             .await?;
         let verification = self
@@ -1295,15 +1444,8 @@ impl MediaJobRuntime {
             Err(error) => Err(error),
         };
         if let Err(error) = verification {
-            let replacement_backend = Arc::clone(&self.replacement_committer);
-            let rollback =
-                tokio::task::spawn_blocking(move || replacement_backend.rollback(committed))
-                    .await
-                    .map_err(|join_error| MediaJobRuntimeError::Join(join_error.to_string()))?;
-            if rollback.is_err() {
-                self.recover_replacement_job(job).await?;
-            }
-            rollback.map_err(MediaJobRuntimeError::ReplacementRollback)?;
+            drop(committed);
+            self.recover_replacement_job(job, shutdown).await?;
             return Err(error);
         }
         Ok(committed)
@@ -1319,7 +1461,7 @@ impl MediaJobRuntime {
         shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<String, MediaJobRuntimeError> {
         let candidate_output_path = replacement_output_path(steps)?;
-        self.revalidate_source_fingerprint(job, source_fingerprint)
+        self.revalidate_source_fingerprint(job, source_fingerprint, shutdown)
             .await?;
         let source_inspection = self
             .inspect_media(job, job.source_path.clone(), shutdown)
@@ -1423,6 +1565,18 @@ impl MediaJobRuntime {
         let cancellation_requested = monitor
             .await
             .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
+        if signal.interrupted.load(Ordering::Acquire) {
+            return match verification {
+                Ok(_) | Err(VerificationExecutionError::Cancelled) => {
+                    Err(MediaJobRuntimeError::Interrupted)
+                }
+                Err(VerificationExecutionError::Failed(_)) => {
+                    Err(MediaJobRuntimeError::Verification(
+                        "media_job_candidate_verification_executor_failed",
+                    ))
+                }
+            };
+        }
         if cancellation_requested
             || matches!(verification, Err(VerificationExecutionError::Cancelled))
         {
@@ -1439,19 +1593,19 @@ impl MediaJobRuntime {
     async fn prepare_and_commit_replacement(
         &self,
         job: &ClaimedMediaJobRow,
-        source_path: &str,
         candidate_path: &str,
         sidecar_outputs: &[DesiredSidecarOutput],
         sidecar_removals: &[String],
         source_fingerprint: &MediaAggregateFingerprint,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<CommittedReplacement, MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
-        self.revalidate_source_fingerprint(job, source_fingerprint)
+        self.revalidate_source_fingerprint(job, source_fingerprint, shutdown)
             .await?;
         let replacement_backend = Arc::clone(&self.replacement_committer);
         let job_key = replacement_job_key(job.media_job_public_id, job.claim_generation);
         let source_root = PathBuf::from(&job.source_root);
-        let source = PathBuf::from(source_path);
+        let source = PathBuf::from(&job.source_path);
         let candidate = PathBuf::from(candidate_path);
         let artifact_paths = replacement_artifact_paths(sidecar_outputs, sidecar_removals);
         let preparation = tokio::task::spawn_blocking(move || {
@@ -1475,7 +1629,7 @@ impl MediaJobRuntime {
         let prepared = preparation?;
         let pre_commit_gate = match self.ensure_not_cancelled(job).await {
             Ok(()) => {
-                self.revalidate_source_fingerprint(job, source_fingerprint)
+                self.revalidate_source_fingerprint(job, source_fingerprint, shutdown)
                     .await
             }
             Err(error) => Err(error),
@@ -1494,7 +1648,7 @@ impl MediaJobRuntime {
         match commit {
             Ok(value) => Ok(value),
             Err(error) => {
-                self.recover_replacement_job(job).await?;
+                self.recover_replacement_job(job, shutdown).await?;
                 Err(MediaJobRuntimeError::Replacement(error))
             }
         }
@@ -1503,6 +1657,7 @@ impl MediaJobRuntime {
     async fn recover_replacement_job(
         &self,
         job: &ClaimedMediaJobRow,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<(), MediaJobRuntimeError> {
         let source_root = PathBuf::from(&job.source_root);
         let job_key = replacement_job_key(job.media_job_public_id, job.claim_generation);
@@ -1516,14 +1671,18 @@ impl MediaJobRuntime {
                     && event.claim_generation == job.claim_generation
             });
         let replacement_backend = Arc::clone(&self.replacement_committer);
+        let recovery_root = source_root.clone();
         let recovery = tokio::task::spawn_blocking(move || {
-            replacement_backend.recover_job(&source_root, &job_key, terminal_committed)
+            replacement_backend.recover_job(&recovery_root, &job_key, terminal_committed)
         })
         .await
         .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
         match recovery {
             Ok(recovered) => {
-                drop(recovered);
+                if let Some(mut transaction) = recovered {
+                    self.finish_recovered_rollback(&mut transaction, &source_root, shutdown)
+                        .await?;
+                }
                 Ok(())
             }
             Err(error) => Err(MediaJobRuntimeError::ReplacementRollback(error)),
@@ -1905,6 +2064,17 @@ impl MediaJobRuntime {
             .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
         let inspection =
             inspection.map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
+        if signal.interrupted.load(Ordering::Acquire) && monitor.is_ok() {
+            match &inspection {
+                Ok(_) => return Err(MediaJobRuntimeError::Interrupted),
+                Err(InspectError::Cancelled { secondary_evidence })
+                    if secondary_evidence.is_empty() =>
+                {
+                    return Err(MediaJobRuntimeError::Interrupted);
+                }
+                Err(_) => {}
+            }
+        }
         resolve_monitored_inspection_outcome(inspection, monitor)
     }
 
@@ -2149,14 +2319,38 @@ impl MediaJobRuntime {
         &self,
         job: &ClaimedMediaJobRow,
         evaluation: &JobPreflightEvaluation,
-    ) -> Result<(), DataError> {
+    ) -> Result<(), MediaJobRuntimeError> {
+        let observations = self
+            .store
+            .list_job_compact_audits(job.media_job_public_id)
+            .await?;
+        if observations.len() >= 1025 {
+            return Err(MediaJobRuntimeError::IndexTooLarge(
+                "media_job_preflight_audit_limit",
+            ));
+        }
+        let next_index = observations
+            .iter()
+            .filter(|row| row.is_current && row.attempt_number == job.attempt_number)
+            .map(|row| row.audit_index)
+            .max()
+            .map_or(Ok(0), |index| {
+                index
+                    .checked_add(1)
+                    .ok_or(MediaJobRuntimeError::IndexTooLarge(
+                        "media_job_preflight_audit_index_overflow",
+                    ))
+            })?;
         for fact in preflight_compact_audit_facts(evaluation) {
+            let audit_index = next_index.checked_add(fact.audit_index).ok_or(
+                MediaJobRuntimeError::IndexTooLarge("media_job_preflight_audit_index_overflow"),
+            )?;
             self.store
                 .append_job_compact_audit(
                     job.claim_generation,
                     &AppendMediaJobCompactAuditInput {
                         media_job_public_id: job.media_job_public_id,
-                        audit_index: fact.audit_index,
+                        audit_index,
                         fact_kind: fact.fact_kind,
                         fact_text: &fact.fact_text,
                     },
@@ -2459,8 +2653,7 @@ async fn monitor_job_control(
                 }
             }
             () = monitor_runtime_shutdown(&mut shutdown), if shutdown.is_some() => {
-                store.cancel_job(media_job_public_id).await?;
-                signal.request();
+                signal.interrupt();
                 return Ok(true);
             }
         }
@@ -2513,6 +2706,8 @@ enum MediaJobRuntimeError {
     Data(#[from] DataError),
     #[error("media job runtime cancelled by operator")]
     Cancelled,
+    #[error("media job runtime interrupted by shutdown")]
+    Interrupted,
     #[error("media job runtime join error: {0}")]
     Join(String),
     #[error("media job runtime inspect error: {0}")]
@@ -2544,6 +2739,8 @@ enum MediaJobRuntimeError {
     ReplacementRollback(ReplacementError),
     #[error("media job runtime workspace error: {0}")]
     Workspace(#[from] ManagedWorkspaceError),
+    #[error("media job runtime checkpoint I/O failed: {0}")]
+    CheckpointIo(std::io::Error),
     #[error("media job runtime capacity probe error: {0}")]
     Capacity(String),
     #[error("media job runtime invalid path: {0}")]
@@ -2569,6 +2766,7 @@ impl MediaJobRuntimeError {
         match self {
             Self::Data(_) | Self::InspectionControl { .. } => "media_job_runtime_storage_failed",
             Self::Cancelled => "media_job_cancelled_by_operator",
+            Self::Interrupted => "media_job_shutdown_interrupted",
             Self::Join(_) => "media_job_runtime_join_failed",
             Self::Inspect(_) => "media_job_runtime_inspect_failed",
             Self::SourceMetadata { .. } => "media_job_runtime_source_metadata_failed",
@@ -2578,6 +2776,7 @@ impl MediaJobRuntimeError {
             Self::Replacement(_) => "media_job_runtime_replacement_failed",
             Self::ReplacementRollback(_) => "media_job_runtime_replacement_rollback_failed",
             Self::Workspace(_) => "media_job_runtime_workspace_failed",
+            Self::CheckpointIo(_) => "media_job_runtime_checkpoint_io_failed",
             Self::Capacity(_) => "media_job_runtime_capacity_probe_failed",
             Self::SourceFingerprint(code)
             | Self::InvalidPath(code)
@@ -2595,6 +2794,7 @@ impl MediaJobRuntimeError {
         match self {
             Self::Data(_) | Self::InspectionControl { .. } => "storage",
             Self::Cancelled => "cancellation",
+            Self::Interrupted => "interruption",
             Self::Join(_) => "join",
             Self::Inspect(_)
             | Self::SourceMetadata { .. }
@@ -2606,7 +2806,7 @@ impl MediaJobRuntimeError {
             | Self::InvalidRecoveryJobKey(_)
             | Self::InvalidTerminalEventKind(_) => "replacement",
             Self::EventPublish(_) => "event",
-            Self::Workspace(_) => "workspace",
+            Self::Workspace(_) | Self::CheckpointIo(_) => "workspace",
             Self::Capacity(_) => "disk_reserve",
             Self::InvalidPath(_) | Self::InvalidDesiredGraph(_) | Self::IndexTooLarge(_) => {
                 "planning"
@@ -4707,6 +4907,67 @@ const fn filesystem_step_kind(step: &ExecutionStep) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    mod checkpoint_replay;
+    mod fingerprint_cancellation;
+
+    #[tokio::test]
+    async fn media_job_runtime_shutdown_during_rollback_hash_retains_backup_for_restart()
+    -> anyhow::Result<()> {
+        fingerprint_cancellation::stop_recovery().await
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_shutdown_joins_source_fingerprint_before_requeue()
+    -> anyhow::Result<()> {
+        fingerprint_cancellation::stop(false).await
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_explicit_cancel_joins_source_fingerprint_without_replay()
+    -> anyhow::Result<()> {
+        fingerprint_cancellation::stop(true).await
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_explicit_cancellation_stops_real_ffmpeg_without_replay()
+    -> anyhow::Result<()> {
+        checkpoint_replay::real_process_cancel().await
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_checkpoint_restarts_interrupted_real_ffmpeg_step()
+    -> anyhow::Result<()> {
+        checkpoint_replay::real_process_replay().await
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_checkpoint_reuses_final_without_obsolete_intermediate()
+    -> anyhow::Result<()> {
+        checkpoint_replay::replay(checkpoint_replay::ReplayFault::ObsoleteMissing).await
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_checkpoint_rebuilds_missing_final_and_corrupt_intermediate()
+    -> anyhow::Result<()> {
+        checkpoint_replay::replay(checkpoint_replay::ReplayFault::RequiredCorrupt).await
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_checkpoint_rebuilds_missing_required_intermediate()
+    -> anyhow::Result<()> {
+        checkpoint_replay::replay(checkpoint_replay::ReplayFault::RequiredMissing).await
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_checkpoint_rejects_changed_source() -> anyhow::Result<()> {
+        checkpoint_replay::source_changed(false).await
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_checkpoint_rejects_missing_source() -> anyhow::Result<()> {
+        checkpoint_replay::source_changed(true).await
+    }
+    use super::SourceFingerprintProbe;
     use super::{
         AUDIO_ANALYSIS_TRUNCATION_MARKER, AudioAnalysisAdapter, AudioMeasurement,
         AudioStreamConstraints, DesiredTargetSnapshot, FilesystemCapacityProbe,
@@ -4724,6 +4985,7 @@ mod tests {
     };
     use crate::media_discovery_fingerprint::MediaAggregateFingerprint;
     use crate::runtime_shutdown;
+    use anyhow::Context;
     use revaer_data::DataError;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
     use revaer_data::media::capabilities::{
@@ -6096,6 +6358,23 @@ mod tests {
         job_target: RuntimeJobTarget,
         include_costs: bool,
     ) -> anyhow::Result<RuntimeFixture> {
+        setup_runtime_with_source(
+            dry_run,
+            record_capability,
+            job_target,
+            include_costs,
+            b"source",
+        )
+        .await
+    }
+
+    async fn setup_runtime_with_source(
+        dry_run: bool,
+        record_capability: bool,
+        job_target: RuntimeJobTarget,
+        include_costs: bool,
+        source_bytes: &[u8],
+    ) -> anyhow::Result<RuntimeFixture> {
         let mut postgres = start_postgres()?;
         postgres
             .initialize_runtime(include_str!("../../revaer-data/init.sql"))
@@ -6107,12 +6386,15 @@ mod tests {
         let store = MediaStore::new(pool);
 
         let temp = tempfile::tempdir()?;
-        let input_root = temp.path().join("input");
-        let workspace_root = temp.path().join("workspace");
+        // Match the canonical roots required by real catalog admission, including
+        // macOS temporary-directory aliases.
+        let fixture_root = fs::canonicalize(temp.path())?;
+        let input_root = fixture_root.join("input");
+        let workspace_root = fixture_root.join("workspace");
         fs::create_dir_all(&input_root)?;
         let source_path = input_root.join("movie.mkv");
         fs::DirBuilder::new().mode(0o700).create(&workspace_root)?;
-        fs::write(&source_path, b"source")?;
+        fs::write(&source_path, source_bytes)?;
         let email = format!("media-worker-{}@example.invalid", Uuid::new_v4());
         let actor = app_user_create(store.pool(), &email, "Media Worker").await?;
         app_user_verify_email(store.pool(), actor).await?;
@@ -6532,6 +6814,36 @@ mod tests {
                 })
         );
         Ok(())
+    }
+
+    async fn assert_runtime_interrupted(
+        store: &MediaStore,
+        job_id: Uuid,
+        source_path: &Path,
+    ) -> anyhow::Result<super::ClaimedMediaJobRow> {
+        let job = store
+            .get_job(job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("interrupted job missing"))?;
+        assert_eq!(job.status_text, "queued");
+        assert_eq!(job.last_error, None);
+        assert_eq!(fs::read(source_path)?, b"source");
+        assert!(
+            store
+                .list_job_verification_checks(job_id)
+                .await?
+                .iter()
+                .all(|check| check.check_kind != "cancellation")
+        );
+        let resumed = store
+            .claim_next_job()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("interrupted job was not resumable"))?;
+        assert_eq!(resumed.media_job_public_id, job_id);
+        assert_eq!(resumed.attempt_number, 1);
+        assert_eq!(resumed.claim_generation, 1);
+        assert_eq!(resumed.cancel_generation, 0);
+        Ok(resumed)
     }
 
     fn assert_single_hevc_command(
@@ -7059,8 +7371,8 @@ Integrated loudness:
     }
 
     #[tokio::test]
-    async fn media_job_runtime_shutdown_after_claim_cancels_without_workspace() -> anyhow::Result<()>
-    {
+    async fn media_job_runtime_shutdown_after_claim_requeues_without_workspace()
+    -> anyhow::Result<()> {
         let fixture = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await?;
         let claimed = fixture
             .store
@@ -7086,14 +7398,244 @@ Integrated loudness:
             .process_claimed_job_with_shutdown(claimed, shutdown_rx)
             .await?;
 
-        assert_runtime_cancelled(
-            &fixture.store,
-            fixture.job_id,
-            &source_path,
-            &workspace_output,
-        )
-        .await?;
+        assert_runtime_interrupted(&fixture.store, fixture.job_id, &source_path).await?;
         assert!(!workspace_output.parent().is_some_and(Path::exists));
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_startup_reconciles_prepared_filesystem_replacement()
+    -> anyhow::Result<()> {
+        assert_filesystem_replacement_interruption(false, false).await
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_startup_restores_committed_filesystem_replacement()
+    -> anyhow::Result<()> {
+        assert_filesystem_replacement_interruption(true, false).await
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_restoration_retains_backup_after_persistence_failure()
+    -> anyhow::Result<()> {
+        assert_filesystem_replacement_interruption(true, true).await
+    }
+
+    async fn assert_filesystem_replacement_interruption(
+        commit: bool,
+        fail_refresh: bool,
+    ) -> anyhow::Result<()> {
+        let fixture = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await?;
+        let old = fixture
+            .store
+            .claim_next_job()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("job was not claimed"))?;
+        let candidate = fixture.temp.path().join("interrupted-candidate.mkv");
+        fs::write(&candidate, b"replacement")?;
+        let source = PathBuf::from(&old.source_path);
+        let key = replacement_job_key(old.media_job_public_id, old.claim_generation);
+        let prepared = SystemReplacementCommitter.prepare(ReplacementRequest {
+            job_key: &key,
+            source_root: Path::new(&old.source_root),
+            source_path: &source,
+            candidate_path: &candidate,
+        })?;
+        let backup = prepared.recovery_path().to_path_buf();
+        if commit {
+            let committed = SystemReplacementCommitter.commit(prepared)?;
+            assert_eq!(fs::read(&source)?, b"replacement");
+            let changed = SystemSourceFingerprintProbe
+                .fingerprint(&source, Path::new(&old.source_root), &|| false)?
+                .context("replacement fingerprint")?;
+            let rejected = fixture
+                .store
+                .refresh_restored_source(&revaer_data::media::job_roots::RestoredSourceInput {
+                    job_id: old.media_job_public_id,
+                    generation: old.claim_generation,
+                    source_path: &old.source_path,
+                    identity: &changed.identity,
+                    size_bytes: old.source_size_bytes,
+                    modified_ns: changed.modified_ns,
+                    changed_ns: changed.changed_ns,
+                    sha256: &changed.sha256,
+                })
+                .await
+                .err()
+                .context("changed content must be rejected")?;
+            assert_eq!(
+                rejected.database_detail(),
+                Some("media_job_source_fingerprint_mismatch")
+            );
+            drop(committed);
+        } else {
+            drop(prepared);
+        }
+        // Drop the in-memory transaction as a stopped service would. Recovery
+        // reads its on-disk manifest and original backup, not an injected receipt.
+        if fail_refresh {
+            assert_failed_refresh_retains_backup(&fixture, &source, &backup).await?;
+        }
+        fixture
+            .runtime
+            .recover_interrupted_replacements(None)
+            .await?;
+        fixture.runtime.resume_interrupted_jobs().await?;
+        assert_eq!(fs::read(&source)?, b"source");
+        let resumed = fixture
+            .store
+            .claim_next_job()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("reconciled job was not resumable"))?;
+        assert_eq!(resumed.attempt_number, old.attempt_number);
+        assert_eq!(resumed.claim_generation, old.claim_generation);
+        assert_eq!(resumed.source_sha256, old.source_sha256);
+        assert_eq!(resumed.source_size_bytes, old.source_size_bytes);
+        let restored = SystemSourceFingerprintProbe
+            .fingerprint(&source, Path::new(&old.source_root), &|| false)?
+            .context("restored fingerprint")?;
+        assert_eq!(resumed.source_identity, restored.identity);
+        assert_eq!(resumed.source_modified_ns, restored.modified_ns);
+        assert_eq!(resumed.source_changed_ns, restored.changed_ns);
+        assert!(
+            SystemReplacementCommitter
+                .recover_job(Path::new(&old.source_root), &key, false)?
+                .is_none()
+        );
+        fixture.runtime.process_job(resumed, None).await;
+        let completed = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("recovered job missing"))?;
+        assert_eq!(
+            completed.status_text, "completed",
+            "{:?}",
+            completed.last_error
+        );
+        assert_eq!(fs::read(&source)?, b"source");
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
+    }
+
+    async fn assert_failed_refresh_retains_backup(
+        fixture: &RuntimeFixture,
+        source: &Path,
+        backup: &Path,
+    ) -> anyhow::Result<()> {
+        fixture
+            .postgres
+            .apply_fixture_script(
+                include_str!("../../../scripts/tests/media-runtime-restoration-failure.sql"),
+                &[],
+            )
+            .await?;
+        let error = fixture
+            .runtime
+            .recover_interrupted_replacements(None)
+            .await
+            .err()
+            .context("injected refresh must fail")?;
+        let super::MediaJobRuntimeError::Data(error) = error else {
+            anyhow::bail!("expected restoration persistence failure: {error}");
+        };
+        assert_eq!(
+            error.database_detail(),
+            Some("fixture_restoration_persistence_failed")
+        );
+        assert_eq!(fs::read(source)?, b"source");
+        assert_eq!(fs::read(backup)?, b"source");
+        fixture
+            .postgres
+            .apply_fixture_script(
+                include_str!("../../../scripts/tests/media-runtime-restoration-failure-clear.sql"),
+                &[],
+            )
+            .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_startup_resumes_only_its_stopped_workspace() -> anyhow::Result<()> {
+        let fixture = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await?;
+        let old = fixture
+            .store
+            .claim_next_job()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("job was not claimed"))?;
+        assert!(
+            fixture
+                .store
+                .resume_interrupted_jobs("/another/workspace")
+                .await?
+                .is_empty()
+        );
+        let active = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("job missing"))?;
+        assert_eq!(active.status_text, "running");
+        fixture.runtime.resume_interrupted_jobs().await?;
+        let resumed = fixture
+            .store
+            .claim_next_job()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("job was not resumable"))?;
+        assert_eq!(resumed.attempt_number, old.attempt_number);
+        assert_eq!(resumed.claim_generation, old.claim_generation);
+        assert_eq!(resumed.cancel_generation, old.cancel_generation);
+        assert_eq!(fs::read(&old.source_path)?, b"source");
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_startup_preserves_explicit_cancellation() -> anyhow::Result<()> {
+        let fixture = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await?;
+        fixture
+            .store
+            .claim_next_job()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("job was not claimed"))?;
+        fixture.store.cancel_job(fixture.job_id).await?;
+        fixture.runtime.resume_interrupted_jobs().await?;
+        let cancelled = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("job missing"))?;
+        assert_eq!(cancelled.status_text, "cancelled");
+        assert!(cancelled.last_error.is_none());
+        assert!(fixture.store.claim_next_job().await?.is_none());
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_explicit_cancel_wins_shutdown_race() -> anyhow::Result<()> {
+        let fixture = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await?;
+        let claimed = fixture
+            .store
+            .claim_next_job()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("job was not claimed"))?;
+        fixture.store.cancel_job(fixture.job_id).await?;
+        let (shutdown_tx, shutdown_rx) = runtime_shutdown::channel();
+        assert!(runtime_shutdown::request(&shutdown_tx));
+        fixture
+            .runtime
+            .process_claimed_job_with_shutdown(claimed, shutdown_rx)
+            .await?;
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("job missing"))?;
+        assert_eq!(job.status_text, "cancelled");
+        assert_eq!(job.last_error, None);
+        assert!(fixture.store.claim_next_job().await?.is_none());
         fixture.store.pool().close().await;
         fixture.postgres.close()
     }
@@ -7139,7 +7681,7 @@ Integrated loudness:
     }
 
     #[tokio::test]
-    async fn media_job_runtime_shutdown_cancels_active_transcode_and_removes_candidate()
+    async fn media_job_runtime_shutdown_stops_active_transcode_and_requeues_same_attempt()
     -> anyhow::Result<()> {
         let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
@@ -7172,7 +7714,8 @@ Integrated loudness:
         tokio::time::timeout(Duration::from_secs(5), runtime_task).await??;
 
         assert!(runner.cancellation_observed.load(Ordering::Acquire));
-        assert_runtime_cancelled(&store, job_id, &source_path, &workspace_output).await?;
+        assert_runtime_interrupted(&store, job_id, &source_path).await?;
+        assert!(workspace_output.exists());
         fixture.store.pool().close().await;
         fixture.postgres.close()
     }
@@ -7219,7 +7762,7 @@ Integrated loudness:
     }
 
     #[tokio::test]
-    async fn media_job_runtime_shutdown_cancels_active_verification_before_replacement()
+    async fn media_job_runtime_shutdown_stops_active_verification_and_requeues_same_attempt()
     -> anyhow::Result<()> {
         let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
@@ -7246,6 +7789,14 @@ Integrated loudness:
         let store = fixture.store.clone();
         let job_id = fixture.job_id;
         let (shutdown_tx, shutdown_rx) = runtime_shutdown::channel();
+        let mut resumed_runtime = test_runtime(
+            store.clone(),
+            Arc::clone(&fixture.command_runner),
+            fixture.events.clone(),
+            fixture.telemetry.clone(),
+            fixture.runtime.workspace_root.clone(),
+        );
+        resumed_runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let runtime_task = fixture.runtime.spawn(shutdown_rx);
 
         wait_for_flag(&verifier.started, "verification start").await?;
@@ -7253,7 +7804,28 @@ Integrated loudness:
         tokio::time::timeout(Duration::from_secs(5), runtime_task).await??;
 
         assert!(verifier.cancellation_observed.load(Ordering::Acquire));
-        assert_runtime_cancelled(&store, job_id, &source_path, &workspace_output).await?;
+        let resumed = assert_runtime_interrupted(&store, job_id, &source_path).await?;
+        assert!(workspace_output.exists());
+        resumed_runtime.process_job(resumed, None).await;
+        let completed = store
+            .get_job(job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("resumed job missing"))?;
+        assert_eq!(
+            completed.status_text, "completed",
+            "{:?}",
+            completed.last_error
+        );
+        let command_count = fixture
+            .command_runner
+            .commands
+            .lock()
+            .map_err(|error| anyhow::anyhow!("command lock poisoned: {error}"))?
+            .len();
+        assert_eq!(
+            command_count, 1,
+            "completed transcode was rerun after verification interruption"
+        );
         fixture.store.pool().close().await;
         fixture.postgres.close()
     }
@@ -7755,7 +8327,7 @@ Integrated loudness:
     }
 
     #[tokio::test]
-    async fn media_job_runtime_preserves_finalized_replacement_before_stale_recovery()
+    async fn media_job_runtime_preserves_finalized_replacement_before_startup_resume()
     -> anyhow::Result<()> {
         let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         let claimed = fixture
@@ -7781,13 +8353,15 @@ Integrated loudness:
                 source_path: PathBuf::from(&claimed.source_path),
                 action: ReplacementRecoveryAction::Finalized,
                 error: None,
+                pending_cleanup: None,
             },
         }) as Arc<RuntimeReplacementCommitter>;
 
-        fixture.runtime.recover_interrupted_replacements().await?;
-        let recovered = fixture.store.recover_stale_jobs(0).await?;
-
-        assert!(recovered.is_empty());
+        fixture
+            .runtime
+            .recover_interrupted_replacements(None)
+            .await?;
+        fixture.runtime.resume_interrupted_jobs().await?;
         let job = fixture
             .store
             .get_job(fixture.job_id)
@@ -7800,45 +8374,35 @@ Integrated loudness:
     }
 
     #[tokio::test]
-    async fn media_job_runtime_publishes_stale_worker_failure_event() -> anyhow::Result<()> {
+    async fn media_job_runtime_startup_resume_does_not_publish_failure_event() -> anyhow::Result<()>
+    {
         let fixture = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await?;
         let claimed = fixture
             .store
             .claim_next_job()
             .await?
-            .ok_or_else(|| anyhow::anyhow!("media job was not claimed"))?;
-        assert_eq!(claimed.media_job_public_id, fixture.job_id);
+            .ok_or_else(|| anyhow::anyhow!("job was not claimed"))?;
         let mut stream = fixture.events.subscribe(None);
-
-        fixture.runtime.recover_stale_worker_jobs(0).await?;
-
-        let envelope = tokio::time::timeout(Duration::from_secs(1), stream.next())
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("event stream closed"))??;
-        assert!(matches!(
-            envelope.event,
-            CoreEvent::MediaJobFailed {
-                media_job_public_id,
-                ref error_code,
-            } if media_job_public_id == fixture.job_id
-                && error_code == "media_job_worker_heartbeat_stale"
-        ));
-        let job = fixture
+        fixture.runtime.resume_interrupted_jobs().await?;
+        let resumed = fixture
             .store
-            .get_job(fixture.job_id)
+            .claim_next_job()
             .await?
-            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
-        assert_eq!(job.status_text, "failed");
-        assert_eq!(
-            job.last_error.as_deref(),
-            Some("media_job_worker_heartbeat_stale")
+            .ok_or_else(|| anyhow::anyhow!("job was not resumed"))?;
+        assert_eq!(resumed.attempt_number, claimed.attempt_number);
+        assert_eq!(resumed.claim_generation, claimed.claim_generation);
+        assert_eq!(resumed.cancel_generation, 0);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), stream.next())
+                .await
+                .is_err()
         );
         fixture.store.pool().close().await;
         fixture.postgres.close()
     }
 
     #[tokio::test]
-    async fn media_job_runtime_recovers_stale_cancelled_job_without_failure_event()
+    async fn media_job_runtime_startup_acknowledges_cancel_without_failure_event()
     -> anyhow::Result<()> {
         let fixture = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await?;
         let claimed = fixture
@@ -7850,7 +8414,7 @@ Integrated loudness:
         fixture.store.cancel_job(fixture.job_id).await?;
         let mut stream = fixture.events.subscribe(None);
 
-        fixture.runtime.recover_stale_worker_jobs(0).await?;
+        fixture.runtime.resume_interrupted_jobs().await?;
 
         let job = fixture
             .store

@@ -1,15 +1,52 @@
 """Real media catalog writes through the management page."""
 
+import tempfile
 import uuid
+from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import Page, Response, expect
+from revaer_tooling.e2e.api import ApiClient, ApiRequest, Method
+from revaer_tooling.json_data import JsonObject, string_value
 
 from tests.pages.app_shell import AppShell
+from tests.support.media_profiles import native_profile_request
+
+
+@pytest.fixture
+def management_profile(api: ApiClient, fs_root: Path) -> Iterator[tuple[JsonObject, str]]:
+    body = native_profile_request(api, uuid.uuid4().hex)
+    with tempfile.TemporaryDirectory(prefix="ui-management-", dir=fs_root / "source") as directory:
+        created = api.request(
+            ApiRequest(Method.POST, "/v1/media/profiles", body, headers={"If-None-Match": "*"})
+        )
+        assert created.status == 201
+        association = api.request(
+            ApiRequest(
+                Method.POST,
+                "/v1/media/discovery-associations",
+                {
+                    "association_key": f"management-{uuid.uuid4().hex}",
+                    "media_profile_public_id": created.object()["media_profile_public_id"],
+                    "profile_version": created.object()["latest_version"],
+                    "source_root_key": "ui-source",
+                    "root_relative_path": Path(directory).name,
+                    "manual_enabled": False,
+                    "watcher_enabled": False,
+                    "schedule_enabled": False,
+                },
+                headers={"If-None-Match": "*"},
+            )
+        )
+        assert association.status == 201
+        yield body, string_value(association.object()["media_discovery_association_public_id"])
 
 
 @pytest.mark.timeout(60)
-def test_media_management_catalogs_and_controls(app: AppShell, page: Page) -> None:
+def test_media_management_catalogs_and_controls(
+    app: AppShell, page: Page, management_profile: tuple[JsonObject, str]
+) -> None:
     app.goto("/media")
     expect(page.get_by_role("heading", name="Media", exact=True)).to_be_visible()
     refresh = page.get_by_role("button", name="Refresh", exact=True)
@@ -27,13 +64,20 @@ def test_media_management_catalogs_and_controls(app: AppShell, page: Page) -> No
     ):
         expect(page.get_by_role("heading", name=title, exact=True)).to_be_visible()
         expect(page.get_by_test_id(test_id)).to_be_attached()
-    profile = page.get_by_test_id("media-profile-form")
+    body, association_id = management_profile
+    profile = page.get_by_test_id("media-profile-root-editor")
     expect(profile).to_be_visible()
-    for label in ("compatibility_target_key", "policy_key"):
+    for label in ("Desired target key", "Desired target version", "Policy key", "Policy version"):
         expect(profile.get_by_label(label)).to_be_visible()
-    expect(page.get_by_placeholder("schedule_interval_minutes")).to_be_visible()
-    for label in ("Enable watcher", "Enable schedule"):
-        expect(profile.get_by_text(label)).to_be_visible()
+    association = page.get_by_test_id("media-association-editor")
+    for label in ("Watcher", "Schedule"):
+        expect(association.get_by_label(label, exact=True)).to_be_visible()
+    page.get_by_label("Schedule association", exact=True).select_option(association_id)
+    cadence = page.get_by_test_id("media-schedule-authoring")
+    expect(cadence.get_by_label("Schedule interval")).to_be_visible()
+    expect(cadence.get_by_label("Interval unit")).to_be_visible()
+    expect(cadence.get_by_label("Schedule interval")).to_have_value("")
+    expect(cadence.get_by_label("Interval unit")).to_have_value("")
     expect(profile.get_by_role("button", name="Create profile", exact=True)).to_be_visible()
 
     suffix = uuid.uuid4().hex
@@ -86,9 +130,14 @@ def test_media_management_catalogs_and_controls(app: AppShell, page: Page) -> No
     expect(
         page.get_by_test_id("media-policy-catalog").get_by_text(policy_key, exact=True)
     ).to_be_visible(timeout=10000)
-    for label, value in (("compatibility_target_key", target_key), ("policy_key", policy_key)):
+    for label, value in (
+        ("Desired target key", string_value(body["desired_target_key"])),
+        ("Desired target version", "1"),
+        ("Policy key", policy_key),
+        ("Policy version", "1"),
+    ):
         field = profile.get_by_label(label)
-        field.select_option(value)
+        field.fill(value)
         expect(field).to_have_value(value)
     expect(page.get_by_role("heading", name="YAML import/export", exact=True)).to_be_visible()
     for label in ("Validate YAML", "Apply YAML"):

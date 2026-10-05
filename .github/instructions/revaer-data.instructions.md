@@ -34,7 +34,8 @@ applyTo:
   as generation/version fences, fingerprint de-duplication and job creation.
   Enabling another mode is not authority for the requested trigger. Route-level
   validation never replaces that stored-procedure check; native automation
-  activation remains held until its background runtime is integrated and tested.
+  uses the integrated bounded background loop. Preserve ordinary operator-mode
+  activation checks alongside actual loop, generation and mode-fence checks.
 - DISC-1 schedule cadence is explicitly selected in minutes or hours, with no
   default. Persist it against the exact immutable association version; the
   conditional create procedure locks the root-catalog fence before the association
@@ -43,7 +44,7 @@ applyTo:
   holding the same fences; retain pending due/coalescing evidence and advance the
   revision monotonically. Runtime cannot call the shared private writer or touch
   tables. Grant only its guarded create/read/replace procedures. Configuration persistence
-  does not qualify durable background claims, recovery or automatic activation.
+  does not qualify background scheduling, recovery or automatic activation.
 - Portable export reads complete native heads, association-pinned immutable
   versions and catalogs in one bounded read-only repeatable-read snapshot.
   Keep overflow lookahead and reject oversized output instead of truncating it.
@@ -88,14 +89,48 @@ applyTo:
   checkpoints and outcomes. Preserve binding authority and configured local
   concurrency; do not recreate a distributed coordination schema. The single
   service/root lock owns execution, and cleanup acknowledges actual removal.
+  Heartbeat-expiry failure/takeover procedures are retired. Startup resumes the
+  stopped current attempt through the immutable workspace scope; ordinary explicit
+  failure retries remain separate and retain their prior-attempt evidence.
+
+- ADR 596 records the 2026-10-04 approval for verified rollback to refresh only
+  the existing job's physical source identity and timestamps. The guarded stored
+  procedure locks the current claimed attempt and rejects changed aggregate size,
+  digest, path or bindings. Its transaction-local job marker permits that update
+  through the immutability trigger and is cleared before return; runtime roles
+  still have no direct table-update authority. Keep the original backup and
+  manifest until the refresh succeeds; retries restore from the retained backup.
 
 - Native association activation publishes a coalesced DISC-1 rescan request in
   the same transaction. The private publisher has no runtime grant. Keep one
   request row per immutable association version and at most the seven closed
   reason rows; checked sequence overflow must roll back both writes. Reading or
   processing a candidate must never satisfy a clean-census high-water mark.
-  Worker claim/finish fencing and configuration-activation identity remain
-  required before automatic admission can be qualified.
+  Preserve configuration-activation identity and exact association/catalog fences.
+  Under ADR 594 the existing single-service root lock owns scanning; do not use
+  scanner leases, distributed capacity slots or worker registration. A complete
+  clean scan may acknowledge only its captured request sequence; interruption
+  requires another scan. Automatic admission uses the integrated bounded background loop;
+  preserve its retained file/aggregate, batch/run, traversal and metadata bounds.
+  The single init must not install the superseded discovery execution-slot table
+  or its claim/renew/release procedures and runtime grants. Retain the normalized
+  request and closed reason rows independently of any scanner owner or lease.
+  Runtime publishes through the guarded request wrapper, which rechecks the
+  retained generation/digest, locked latest/active association and selected mode.
+  Its shared fence and the underlying publisher remain private. Clean completion
+  uses the guarded satisfy wrapper: it advances only the captured sequence,
+  rejects a future sequence, never regresses satisfaction, and preserves newer
+  reason sequences. Synthetic procedure fixtures may model automated mode in an
+  owned disposable database; they do not qualify native activation. Ordinary
+  create/import writers preserve explicitly selected modes and publish an
+  activation rescan in the same transaction when the immutable body is active.
+  Known source presence is recorded through the guarded, bounded observation
+  procedure without acknowledging the scan. Only completion of the latest
+  captured request may establish absence: require two clean passes at least one
+  second apart under the same active generation. Preserve a pending confirmation
+  rescan after the first pass; reset absence on uncertainty or positive presence.
+  Replayed acknowledgements cannot count twice. Diagnostics read one exact path
+  and cannot authorize deletion or change immutable job snapshots.
 
 - The baseline-verification command is thin wiring around `verify_runtime_pool`.
   It reads only an injected database endpoint, applies the existing statement
@@ -197,3 +232,9 @@ applyTo:
   private. Injected unit fixtures may prepare explicitly synthetic catalog rows
   in their owned database, with values bound as `revaer_test.*` transaction-local
   settings; those rows never establish filesystem or package qualification.
+
+- Native due observation uses `media_discovery_schedule_observe_due_v1` with the
+  same exact active association, enabled schedule and retained-generation fence.
+  Coalesce overdue explicit cadence intervals and advance the due state in the
+  same transaction as rescan publication; failed publication must roll back both.
+  Missing cadence or future due time is legitimate absence, never inferred cadence.

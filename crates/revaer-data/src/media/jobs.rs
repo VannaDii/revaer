@@ -20,7 +20,8 @@ const MEDIA_JOB_VERIFICATION_CHECK_LIST_V1: &str = "SELECT check_index, check_ki
 const MEDIA_JOB_ARTIFACT_APPEND_V1: &str = "SELECT media_job_artifact_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, artifact_index_input => $3, artifact_kind_input => $4, artifact_path_input => $5, size_bytes_input => $6, content_type_input => $7)";
 const MEDIA_JOB_ARTIFACT_LIST_V1: &str = "SELECT artifact_index, artifact_kind, artifact_path, size_bytes, content_type, created_at FROM media_job_artifact_list_v1(media_job_public_id_input => $1) LIMIT 1025";
 const MEDIA_JOB_COMPACT_AUDIT_APPEND_V1: &str = "SELECT media_job_compact_audit_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, audit_index_input => $3, fact_kind_input => $4, fact_text_input => $5)";
-const MEDIA_JOB_COMPACT_AUDIT_LIST_V1: &str = "SELECT audit_index, fact_kind, fact_text, created_at FROM media_job_compact_audit_list_v1(media_job_public_id_input => $1) LIMIT 1025";
+const MEDIA_JOB_ATTEMPT_IDENTITY_LIST_V1: &str = "SELECT attempt_number, claim_generation, is_current FROM media_job_attempt_list_v1(media_job_public_id_input => $1) LIMIT 1025";
+const MEDIA_JOB_COMPACT_AUDIT_LIST_V1: &str = "SELECT attempt_number, is_current, audit_index, fact_kind, fact_text, created_at FROM media_job_compact_audit_list_v1(media_job_public_id_input => $1) LIMIT 1025";
 const MEDIA_JOB_LIST_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_list_v1(media_profile_public_id_input => $1, status_input => $2::media_job_status)";
 const MEDIA_JOB_GET_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_get_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_RECENT_PAGE_V1: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, status_text, dry_run, queued_at, started_at, completed_at, last_error, operation_count, violation_count, plan_reason_count, verification_check_count, artifact_count, compact_audit_count FROM media_job_recent_page_v1(limit_input => $1, cursor_queued_at_input => $2, cursor_public_id_input => $3, media_profile_public_id_input => $4)";
@@ -32,8 +33,9 @@ const MEDIA_JOB_RETENTION_RUN_V1: &str = "SELECT completed_jobs_deleted, failed_
 const MEDIA_JOB_WORKER_CLAIM_NEXT_V4: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, source_identity, source_size_bytes, source_modified_ns, source_changed_ns, source_sha256, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, attempt_number, claim_generation, cancel_generation FROM media_job_worker_claim_next_v4()";
 const MEDIA_WORKSPACE_RETENTION_SNAPSHOT_V1: &str = "SELECT media_job_public_id, attempt_number, claim_generation, workspace_retention_seconds, diagnostic_workspace_retention_seconds, max_entries_per_tick FROM media_workspace_retention_snapshot_v1()";
 const MEDIA_JOB_WORKER_HEARTBEAT_V1: &str = "SELECT media_job_worker_heartbeat_v1(media_job_public_id_input => $1, claim_generation_input => $2)";
+const MEDIA_JOB_WORKER_RESUME_INTERRUPTED_V1: &str = "SELECT media_job_public_id, status::text AS status_text, last_error FROM media_job_worker_resume_interrupted_v1(workspace_root_input => $1)";
+const MEDIA_JOB_WORKER_INTERRUPT_V1: &str = "SELECT media_job_worker_interrupt_v1(media_job_public_id_input => $1, claim_generation_input => $2)";
 const MEDIA_JOB_WORKER_MARK_STATUS_V1: &str = "SELECT media_job_worker_mark_status_v1(media_job_public_id_input => $1, claim_generation_input => $2, status_input => $3::media_job_status, last_error_input => $4)";
-const MEDIA_JOB_WORKER_RECOVER_STALE_V1: &str = "SELECT media_job_public_id, status::text AS status_text, last_error FROM media_job_worker_recover_stale_v1(stale_after_seconds_input => $1)";
 const MEDIA_JOB_WORKER_POLL_CONTROL_V1: &str = "SELECT cancel_requested, cancel_generation FROM media_job_worker_poll_control_v1(media_job_public_id_input => $1, claim_generation_input => $2, observed_cancel_generation_input => $3)";
 const MEDIA_JOB_WORKER_ACKNOWLEDGE_CANCEL_V1: &str = "SELECT media_job_worker_acknowledge_cancel_v1(media_job_public_id_input => $1, claim_generation_input => $2, observed_cancel_generation_input => $3)";
 const MEDIA_JOB_WORKER_COMPLETE_V1: &str = "SELECT media_job_worker_complete_v1(media_job_public_id_input => $1, claim_generation_input => $2, observed_cancel_generation_input => $3)";
@@ -372,9 +374,24 @@ pub struct MediaJobArtifactRow {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Persisted identity of one media job attempt, including terminal attempts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaJobAttemptIdentityRow {
+    /// Attempt number within the job.
+    pub attempt_number: i32,
+    /// Stable identity allocated when the attempt is created.
+    pub claim_generation: i64,
+    /// Whether this is the job's current attempt.
+    pub is_current: bool,
+}
+
 /// Media job compact audit fact row.
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct MediaJobCompactAuditRow {
+    /// Attempt that recorded this observation.
+    pub attempt_number: i32,
+    /// Whether this observation belongs to the current attempt.
+    pub is_current: bool,
     /// Audit fact ordering index.
     pub audit_index: i32,
     /// Audit fact kind.
@@ -917,6 +934,22 @@ pub async fn list_media_job_artifacts(
         .map_err(try_op("media job artifact list"))
 }
 
+/// List persisted attempt identities for one job, including terminal outcomes.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn list_media_job_attempt_identities(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+) -> Result<Vec<MediaJobAttemptIdentityRow>> {
+    sqlx::query_as::<_, MediaJobAttemptIdentityRow>(MEDIA_JOB_ATTEMPT_IDENTITY_LIST_V1)
+        .bind(media_job_public_id)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media job attempt identity list"))
+}
+
 /// List media job compact audit facts for one job.
 ///
 /// # Errors
@@ -1210,22 +1243,38 @@ pub async fn media_job_worker_heartbeat(
     Ok(())
 }
 
-/// Mark stale running/verifying media jobs terminal after their worker heartbeat expires.
-///
-/// Jobs with a pending cancellation become `cancelled`; other stale jobs become `failed`.
+/// Resume a bounded startup batch after root admission and replacement reconciliation.
 ///
 /// # Errors
-///
-/// Returns an error when stored-procedure execution fails.
-pub async fn media_job_worker_recover_stale(
+/// Returns persistence errors. This is never a live-worker takeover operation.
+pub async fn media_job_worker_resume_interrupted(
     pool: &PgPool,
-    stale_after_seconds: i32,
+    workspace_root: &str,
 ) -> Result<Vec<RecoveredMediaJobRow>> {
-    sqlx::query_as::<_, RecoveredMediaJobRow>(MEDIA_JOB_WORKER_RECOVER_STALE_V1)
-        .bind(stale_after_seconds)
+    sqlx::query_as(MEDIA_JOB_WORKER_RESUME_INTERRUPTED_V1)
+        .bind(workspace_root)
         .fetch_all(pool)
         .await
-        .map_err(try_op("media job worker recover stale"))
+        .map_err(try_op("media job worker resume interrupted"))
+}
+
+/// Requeue stopped work on the same attempt, acknowledging pending cancellation instead.
+///
+/// Call only after the local worker and its children have stopped.
+///
+/// # Errors
+/// Returns stale-claim or persistence errors. The returned flag is true for cancellation.
+pub async fn media_job_worker_interrupt(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+    claim_generation: i64,
+) -> Result<bool> {
+    sqlx::query_scalar(MEDIA_JOB_WORKER_INTERRUPT_V1)
+        .bind(media_job_public_id)
+        .bind(claim_generation)
+        .fetch_one(pool)
+        .await
+        .map_err(try_op("media job worker interrupt"))
 }
 
 /// Mark a claimed media job with the next worker-visible status.
@@ -1268,19 +1317,20 @@ mod tests {
         load_media_workspace_retention_snapshot, mark_media_job_completed,
         mark_media_job_terminal_outbox_published, media_job_worker_acknowledge_cancel,
         media_job_worker_claim_next, media_job_worker_commit_replacement_terminal,
-        media_job_worker_mark_status, media_job_worker_poll_control,
-        media_job_worker_recover_stale, retry_media_job, run_media_job_retention,
+        media_job_worker_mark_status, media_job_worker_poll_control, run_media_job_retention,
     };
     use crate::DataError;
+    use crate::media::association_jobs::{
+        AssociationFingerprint, AssociationJobInput, enqueue_association_job,
+    };
     use crate::media::configuration::{
-        UpdateMediaJobRetentionPolicyInput, UpsertMediaCompatibilityTargetInput,
-        UpsertMediaPolicyProfileInput, update_media_job_retention_policy,
-        upsert_media_compatibility_target, upsert_media_policy_profile,
+        AppendMediaDesiredTargetStreamInput, CreateMediaDesiredTargetInput, MediaPolicyOutputRow,
+        UpdateMediaJobRetentionPolicyInput, UpsertMediaPolicyProfileInput,
+        append_media_desired_target_stream, create_media_desired_target,
+        update_media_job_retention_policy, upsert_media_policy_profile,
     };
-    use crate::media::profiles::{
-        UpdateMediaProfileInput, UpsertMediaProfileInput, update_media_profile,
-        upsert_media_profile,
-    };
+    use crate::media::profile_versions::{CreateProfileVersionInput, replace_profile_version};
+    use crate::media::profiles::{UpsertMediaProfileInput, upsert_media_profile};
     use crate::media::schema_tests::{MediaTestDb, setup_media_db};
     use chrono::{Duration, Utc};
     use sqlx::{
@@ -1354,41 +1404,6 @@ mod tests {
             ));
         }
         Ok(claimed)
-    }
-
-    async fn create_claimed_tv_job(
-        db: &MediaTestDb,
-    ) -> anyhow::Result<(Uuid, Uuid, ClaimedMediaJobRow)> {
-        let profile_id = upsert_media_profile(
-            db.pool(),
-            &UpsertMediaProfileInput {
-                actor_public_id: db.system_user_public_id,
-                profile_key: "tv-jobs",
-                source_root: "/input/tv",
-                output_root: "/output/tv",
-                dry_run_only: true,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            },
-        )
-        .await?;
-        let job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/tv/show.mkv",
-                output_path: Some("/output/tv/show.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
-        let claimed = claim_job(db.pool(), job_id).await?;
-        Ok((profile_id, job_id, claimed))
     }
 
     async fn append_and_assert_phase_transition(
@@ -1606,25 +1621,7 @@ mod tests {
         Ok(profile_id)
     }
 
-    async fn create_cancelled_job_with_audit(
-        db: &MediaTestDb,
-        profile_id: Uuid,
-        root: &str,
-        file_name: &str,
-    ) -> anyhow::Result<Uuid> {
-        let source_path = format!("/input/{root}/{file_name}");
-        let output_path = format!("/output/{root}/{file_name}");
-        let job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: &source_path,
-                output_path: Some(&output_path),
-                dry_run: true,
-            },
-        )
-        .await?;
+    async fn cancel_job_with_audit(db: &MediaTestDb, job_id: Uuid) -> anyhow::Result<()> {
         let claimed = claim_job(db.pool(), job_id).await?;
         append_and_assert_artifact_and_audit(db.pool(), job_id, claimed.claim_generation).await?;
         cancel_media_job(db.pool(), job_id).await?;
@@ -1635,42 +1632,10 @@ mod tests {
             claimed.cancel_generation,
         )
         .await?;
-        Ok(job_id)
+        Ok(())
     }
 
-    async fn create_retention_job(
-        db: &MediaTestDb,
-        profile_id: Uuid,
-        name: &str,
-    ) -> anyhow::Result<Uuid> {
-        create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: &format!("/input/count/{name}.mkv"),
-                output_path: Some(&format!("/output/count/{name}.mkv")),
-                dry_run: true,
-            },
-        )
-        .await
-    }
-
-    async fn create_cancelled_diagnostic_job(
-        db: &MediaTestDb,
-        profile_id: Uuid,
-    ) -> anyhow::Result<Uuid> {
-        let job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/diagnostics/cancelled.mkv",
-                output_path: Some("/output/diagnostics/cancelled.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
+    async fn cancel_diagnostic_job(db: &MediaTestDb, job_id: Uuid) -> anyhow::Result<()> {
         let claim = claim_job(db.pool(), job_id).await?;
         append_media_job_violation(
             db.pool(),
@@ -1693,29 +1658,15 @@ mod tests {
             claim.cancel_generation,
         )
         .await?;
-        Ok(job_id)
+        Ok(())
     }
 
-    async fn create_completed_diagnostic_job(
-        db: &MediaTestDb,
-        profile_id: Uuid,
-    ) -> anyhow::Result<Uuid> {
-        let job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/diagnostics/completed.mkv",
-                output_path: Some("/output/diagnostics/completed.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
+    async fn complete_diagnostic_job(db: &MediaTestDb, job_id: Uuid) -> anyhow::Result<()> {
         let claim = claim_job(db.pool(), job_id).await?;
         append_and_assert_artifact_and_audit(db.pool(), job_id, claim.claim_generation).await?;
         media_job_worker_mark_status(db.pool(), job_id, claim.claim_generation, "completed", None)
             .await?;
-        Ok(job_id)
+        Ok(())
     }
 
     async fn assert_create_job_path_rejected(
@@ -1745,14 +1696,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_media_job_rejects_paths_outside_profile_roots() -> anyhow::Result<()> {
-        let db = match setup_media_db("create_media_job_rejects_paths_outside_profile_roots").await
-        {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
+        let db = setup_media_db().await?;
         let profile_id = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -1903,13 +1847,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_media_job_requires_persisted_source_fingerprint() -> anyhow::Result<()> {
-        let db = match setup_media_db("create_media_job_requires_source_fingerprint").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
+        let db = setup_media_db().await?;
 
         let profile_id =
             upsert_retention_profile(&db, "fingerprint-required", "fingerprint-required").await?;
@@ -1936,14 +1874,11 @@ mod tests {
 
     #[tokio::test]
     async fn create_and_list_media_job() -> anyhow::Result<()> {
-        let db = match setup_media_db("create_and_list_media_job").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
-        let (profile_id, job_id, claimed) = create_claimed_tv_job(&db).await?;
+        let db = setup_media_db().await?;
+        let (_roots, job_id) =
+            crate::media::tests::native_job(db.database(), db.pool(), "tv-jobs", true).await?;
+        let claimed = claim_job(db.pool(), job_id).await?;
+        let profile_id = claimed.media_profile_public_id;
         append_and_assert_phase_transition(db.pool(), job_id, claimed.claim_generation).await?;
 
         append_media_job_operation(
@@ -1957,7 +1892,7 @@ mod tests {
                 command_bin: "ffmpeg",
                 args: [
                     Some("-i"),
-                    Some("/input/tv/show.mkv"),
+                    Some(&claimed.source_path),
                     Some("-c"),
                     Some("copy"),
                     None,
@@ -2017,38 +1952,18 @@ mod tests {
     #[tokio::test]
     async fn recent_job_page_is_keyset_bounded_and_counts_diagnostics_set_wise()
     -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("recent_job_page").await? else {
-            return Ok(());
-        };
-        let profile_id = upsert_media_profile(
-            db.pool(),
-            &UpsertMediaProfileInput {
-                actor_public_id: db.system_user_public_id,
-                profile_key: "recent-jobs",
-                source_root: "/input/recent",
-                output_root: "/output/recent",
-                dry_run_only: true,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            },
-        )
-        .await?;
-        let mut ids = Vec::new();
-        for index in 0..12 {
+        let db = setup_media_db().await?;
+        let key = "recent-jobs";
+        let (_roots, first_job) =
+            crate::media::tests::native_job(db.database(), db.pool(), key, true).await?;
+        let mut ids = vec![first_job];
+        for index in 1..12 {
             ids.push(
-                create_media_job(
+                crate::media::tests::additional_native_job(
                     db.pool(),
-                    &CreateMediaJobInput {
-                        actor_public_id: db.system_user_public_id,
-                        media_profile_public_id: profile_id,
-                        source_path: &format!("/input/recent/{index}.mkv"),
-                        output_path: Some(&format!("/output/recent/{index}.mkv")),
-                        dry_run: true,
-                    },
+                    key,
+                    &format!("{index}.mkv"),
+                    true,
                 )
                 .await?,
             );
@@ -2075,6 +1990,7 @@ mod tests {
             },
         )
         .await?;
+        let profile_id = latest_claim.media_profile_public_id;
         let first = list_recent_media_jobs(db.pool(), 10, None, Some(profile_id)).await?;
         assert_eq!(first.len(), 11);
         assert_eq!(first[0].operation_count, 1);
@@ -2098,42 +2014,10 @@ mod tests {
 
     #[tokio::test]
     async fn running_job_cancellation_is_durable_and_worker_acknowledged() -> anyhow::Result<()> {
-        let db = match setup_media_db("running_job_cancellation_is_durable").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
-        let profile_id = upsert_media_profile(
-            db.pool(),
-            &UpsertMediaProfileInput {
-                actor_public_id: db.system_user_public_id,
-                profile_key: "cancel-running",
-                source_root: "/input/cancel-running",
-                output_root: "/output/cancel-running",
-                dry_run_only: true,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            },
-        )
-        .await?;
-        let job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/cancel-running/movie.mkv",
-                output_path: Some("/output/cancel-running/movie.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
-
+        let db = setup_media_db().await?;
+        let (_roots, job_id) =
+            crate::media::tests::native_job(db.database(), db.pool(), "cancel-running", true)
+                .await?;
         let claimed = media_job_worker_claim_next(db.pool()).await?;
         let Some(claimed) = claimed else {
             return Err(anyhow::anyhow!("worker did not claim queued job"));
@@ -2185,35 +2069,12 @@ mod tests {
 
     #[tokio::test]
     async fn replacement_terminal_commit_is_atomic_idempotent_and_outboxed() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("replacement_terminal_commit").await? else {
-            return Ok(());
-        };
-        let profile_id = upsert_media_profile(
+        let db = setup_media_db().await?;
+        let (_roots, job_id) = crate::media::tests::native_job(
+            db.database(),
             db.pool(),
-            &UpsertMediaProfileInput {
-                actor_public_id: db.system_user_public_id,
-                profile_key: "replacement-terminal",
-                source_root: "/input/replacement-terminal",
-                output_root: "/output/replacement-terminal",
-                dry_run_only: false,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            },
-        )
-        .await?;
-        let job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/replacement-terminal/movie.mkv",
-                output_path: Some("/output/replacement-terminal/movie.mkv"),
-                dry_run: false,
-            },
+            "replacement-terminal",
+            false,
         )
         .await?;
         let Some(claimed) = media_job_worker_claim_next(db.pool()).await? else {
@@ -2266,35 +2127,12 @@ mod tests {
     #[tokio::test]
     async fn replacement_terminal_commit_honors_cancellation_and_fences_terminal_attempt()
     -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("replacement_terminal_cancel").await? else {
-            return Ok(());
-        };
-        let profile_id = upsert_media_profile(
+        let db = setup_media_db().await?;
+        let (_roots, job_id) = crate::media::tests::native_job(
+            db.database(),
             db.pool(),
-            &UpsertMediaProfileInput {
-                actor_public_id: db.system_user_public_id,
-                profile_key: "replacement-terminal-cancel",
-                source_root: "/input/replacement-terminal-cancel",
-                output_root: "/output/replacement-terminal-cancel",
-                dry_run_only: false,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            },
-        )
-        .await?;
-        let job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/replacement-terminal-cancel/movie.mkv",
-                output_path: Some("/output/replacement-terminal-cancel/movie.mkv"),
-                dry_run: false,
-            },
+            "replacement-terminal-cancel",
+            false,
         )
         .await?;
         let Some(claimed) = media_job_worker_claim_next(db.pool()).await? else {
@@ -2345,35 +2183,12 @@ mod tests {
     #[tokio::test]
     async fn replacement_terminal_commit_rejects_late_cancel_and_remains_completed()
     -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("replacement_terminal_late_cancel").await? else {
-            return Ok(());
-        };
-        let profile_id = upsert_media_profile(
+        let db = setup_media_db().await?;
+        let (_roots, job_id) = crate::media::tests::native_job(
+            db.database(),
             db.pool(),
-            &UpsertMediaProfileInput {
-                actor_public_id: db.system_user_public_id,
-                profile_key: "replacement-terminal-late-cancel",
-                source_root: "/input/replacement-terminal-late-cancel",
-                output_root: "/output/replacement-terminal-late-cancel",
-                dry_run_only: false,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            },
-        )
-        .await?;
-        let job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/replacement-terminal-late-cancel/movie.mkv",
-                output_path: Some("/output/replacement-terminal-late-cancel/movie.mkv"),
-                dry_run: false,
-            },
+            "replacement-terminal-late-cancel",
+            false,
         )
         .await?;
         let claimed = media_job_worker_claim_next(db.pool())
@@ -2414,102 +2229,6 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn stale_worker_recovery_marks_abandoned_jobs_terminal() -> anyhow::Result<()> {
-        let Some(db) =
-            setup_media_db("stale_worker_recovery_marks_abandoned_jobs_terminal").await?
-        else {
-            return Ok(());
-        };
-        let profile_id = upsert_media_profile(
-            db.pool(),
-            &UpsertMediaProfileInput {
-                actor_public_id: db.system_user_public_id,
-                profile_key: "stale-worker",
-                source_root: "/input/stale-worker",
-                output_root: "/output/stale-worker",
-                dry_run_only: true,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            },
-        )
-        .await?;
-        let failed_job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/stale-worker/failed.mkv",
-                output_path: Some("/output/stale-worker/failed.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
-        let cancelled_job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/stale-worker/cancelled.mkv",
-                output_path: Some("/output/stale-worker/cancelled.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
-
-        let first_claim = media_job_worker_claim_next(db.pool())
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("first stale job was not claimed"))?;
-        assert_eq!(first_claim.media_job_public_id, failed_job_id);
-        let second_claim = media_job_worker_claim_next(db.pool())
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("second stale job was not claimed"))?;
-        assert_eq!(second_claim.media_job_public_id, cancelled_job_id);
-        cancel_media_job(db.pool(), cancelled_job_id).await?;
-
-        let recovered = media_job_worker_recover_stale(db.pool(), 0).await?;
-        assert_eq!(recovered.len(), 2);
-        assert!(recovered.iter().any(|job| {
-            job.media_job_public_id == failed_job_id
-                && job.status_text == "failed"
-                && job.last_error.as_deref() == Some("media_job_worker_heartbeat_stale")
-        }));
-        assert!(recovered.iter().any(|job| {
-            job.media_job_public_id == cancelled_job_id
-                && job.status_text == "cancelled"
-                && job.last_error.is_none()
-        }));
-        let inconsistent_attempts = sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM media_job job \
-             JOIN media_job_attempt attempt ON attempt.media_job_attempt_id=job.current_attempt_id \
-             WHERE job.media_job_public_id=ANY($1) AND attempt.status<>job.status",
-        )
-        .bind(&[failed_job_id, cancelled_job_id][..])
-        .fetch_one(db.pool())
-        .await?;
-        assert_eq!(inconsistent_attempts, 0);
-
-        let failed_job = get_media_job(db.pool(), failed_job_id)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("failed stale job missing"))?;
-        assert_eq!(failed_job.status_text, "failed");
-        assert_eq!(
-            failed_job.last_error.as_deref(),
-            Some("media_job_worker_heartbeat_stale")
-        );
-        retry_media_job(db.pool(), failed_job_id).await?;
-        let retried_job = get_media_job(db.pool(), failed_job_id)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("retried stale job missing"))?;
-        assert_eq!(retried_job.status_text, "queued");
-        assert_eq!(retried_job.last_error, None);
-        Ok(())
-    }
-
     async fn upsert_strict_snapshot_policy(
         pool: &sqlx::PgPool,
         actor_public_id: uuid::Uuid,
@@ -2517,7 +2236,12 @@ mod tests {
         upsert_media_policy_profile(
             pool,
             UpsertMediaPolicyProfileInput {
-                output: crate::media::configuration::MediaPolicyOutputRow::default(),
+                output: MediaPolicyOutputRow {
+                    dry_run: true,
+                    replacement_mode: "disabled".to_string(),
+                    quarantine_enabled: false,
+                    ..MediaPolicyOutputRow::default()
+                },
                 actor_public_id,
                 policy_key: "snapshot-policy",
                 version: 1,
@@ -2542,7 +2266,12 @@ mod tests {
         upsert_media_policy_profile(
             pool,
             UpsertMediaPolicyProfileInput {
-                output: crate::media::configuration::MediaPolicyOutputRow::default(),
+                output: MediaPolicyOutputRow {
+                    dry_run: true,
+                    replacement_mode: "disabled".to_string(),
+                    quarantine_enabled: false,
+                    ..MediaPolicyOutputRow::default()
+                },
                 actor_public_id,
                 policy_key: "snapshot-policy",
                 version: 2,
@@ -2560,100 +2289,138 @@ mod tests {
         Ok(())
     }
 
+    async fn create_snapshot_target(db: &MediaTestDb, version: i32) -> anyhow::Result<()> {
+        let target = create_media_desired_target(
+            db.pool(),
+            CreateMediaDesiredTargetInput {
+                actor_public_id: db.system_user_public_id,
+                target_key: "intent-stereo",
+                version,
+                display_name: "Intent stereo",
+                container_format: "matroska",
+            },
+        )
+        .await?;
+        let video = AppendMediaDesiredTargetStreamInput {
+            media_desired_target_profile_public_id: target,
+            stream_key: "video-main",
+            stream_kind: "video",
+            semantic_role: None,
+            language_code: None,
+            optional: false,
+            sort_order: 0,
+            codec: if version == 1 { "hevc" } else { "h264" },
+            channel_count: None,
+            channel_layout: None,
+            audio_bitrate_bps: None,
+            audio_sample_rate_hz: None,
+            audio_loudness_profile: None,
+            audio_dynamic_range: None,
+            video_profile: None,
+            video_level: None,
+            video_bitrate_bps: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: None,
+            title: None,
+            default_disposition: false,
+            forced_disposition: false,
+            subtitle_placement: None,
+            image_subtitle_action: None,
+        };
+        for stream in [
+            video,
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "audio-main",
+                stream_kind: "audio",
+                sort_order: 1,
+                codec: if version == 1 { "aac" } else { "opus" },
+                channel_count: Some(2),
+                channel_layout: Some("stereo"),
+                ..video
+            },
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "subtitle-selected",
+                stream_kind: "subtitle",
+                sort_order: 2,
+                optional: true,
+                codec: "webvtt",
+                subtitle_placement: Some("embedded"),
+                image_subtitle_action: Some("preserve"),
+                ..video
+            },
+        ] {
+            append_media_desired_target_stream(db.pool(), stream).await?;
+        }
+        Ok(())
+    }
+
     #[tokio::test]
     async fn worker_claim_uses_enqueue_time_profile_intent() -> anyhow::Result<()> {
-        let db = match setup_media_db("worker_claim_uses_enqueue_time_profile_intent").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
-        upsert_media_compatibility_target(
-            db.pool(),
-            UpsertMediaCompatibilityTargetInput {
-                actor_public_id: db.system_user_public_id,
-                compatibility_target_key: "intent-stereo",
-                version: 1,
-                display_name: "Intent Stereo",
-                video_codec: "hevc",
-                audio_codec: "aac",
-                audio_channels: Some(2),
-                audio_channel_layout: Some("stereo"),
-                subtitle_policy: "selected",
-            },
-        )
-        .await?;
+        let db = setup_media_db().await?;
+        create_snapshot_target(&db, 1).await?;
         upsert_strict_snapshot_policy(db.pool(), db.system_user_public_id).await?;
-        let profile_id = upsert_media_profile(
-            db.pool(),
-            &UpsertMediaProfileInput {
-                actor_public_id: db.system_user_public_id,
-                profile_key: "intent-snapshot",
-                source_root: "/input/original",
-                output_root: "/output/original",
-                dry_run_only: true,
-                retention_days: 30,
-                compatibility_target_key: Some("intent-stereo"),
-                policy_key: "snapshot-policy",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            },
-        )
-        .await?;
-        let job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/original/movie.mkv",
-                output_path: Some("/output/original/movie.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
-
+        let input = CreateProfileVersionInput {
+            actor_public_id: db.system_user_public_id,
+            profile_key: "intent-snapshot",
+            display_name: "Intent snapshot",
+            description: "Synthetic native admission",
+            enabled: true,
+            dry_run_only: true,
+            desired_target_key: "intent-stereo",
+            desired_target_version: 1,
+            policy_key: "snapshot-policy",
+            policy_version: 1,
+            output_root_key: "worker-source",
+            workspace_root_key: "worker-workspace",
+            backup_root_key: None,
+            quarantine_root_key: None,
+        };
+        let (_roots, profile_id, job_id) =
+            crate::media::tests::native_configured_job(db.database(), db.pool(), &input).await?;
+        let admitted = get_media_job(db.pool(), job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("admitted job missing"))?;
+        let (original_root, _) = admitted
+            .source_path
+            .rsplit_once('/')
+            .ok_or_else(|| anyhow::anyhow!("admitted source root missing"))?;
+        create_snapshot_target(&db, 2).await?;
         replace_with_fast_policy(db.pool(), db.system_user_public_id).await?;
-
-        update_media_profile(
-            db.pool(),
-            &UpdateMediaProfileInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_root: None,
-                output_root: None,
-                dry_run_only: None,
-                retention_days: None,
-                compatibility_target_key: Some("plex-general-hevc-aac"),
-                policy_key: Some("archival"),
-                watcher_enabled: None,
-                schedule_enabled: None,
-                schedule_interval_minutes: None,
-            },
-        )
-        .await?;
+        let replacement = CreateProfileVersionInput {
+            desired_target_version: 2,
+            policy_version: 2,
+            ..input
+        };
+        let heads = replace_profile_version(db.pool(), &replacement, profile_id, 1).await?;
+        assert!(
+            heads
+                .iter()
+                .all(|row| row.latest_version == 2 && row.active_version == Some(2))
+        );
 
         let claimed = media_job_worker_claim_next(db.pool()).await?;
         let Some(claimed) = claimed else {
             return Err(anyhow::anyhow!("expected queued job to be claimed"));
         };
         assert_eq!(claimed.media_job_public_id, job_id);
-        assert_eq!(claimed.source_root, "/input/original");
-        assert_eq!(claimed.output_root, "/output/original");
-        assert_eq!(
-            claimed.compatibility_target_key.as_deref(),
-            Some("intent-stereo")
-        );
+        assert_eq!(claimed.source_path, admitted.source_path);
+        assert_eq!(claimed.output_path, admitted.output_path);
+        assert_eq!(claimed.source_root, original_root);
+        assert_eq!(claimed.output_root, original_root);
+        assert_eq!(claimed.desired_target_key.as_deref(), Some("intent-stereo"));
+        assert_eq!(claimed.desired_target_version, Some(1));
         assert_eq!(claimed.policy_key, "snapshot-policy");
-        assert_eq!(claimed.target_video_codec.as_deref(), Some("hevc"));
-        assert_eq!(claimed.target_audio_codec.as_deref(), Some("aac"));
-        assert_eq!(claimed.target_audio_channels, Some(2));
-        assert_eq!(
-            claimed.target_audio_channel_layout.as_deref(),
-            Some("stereo")
-        );
-        assert_eq!(claimed.target_subtitle_policy.as_deref(), Some("selected"));
+        let streams = super::list_media_job_desired_target_streams(db.pool(), job_id).await?;
+        assert_eq!(streams.len(), 3);
+        assert_eq!(streams[0].codec, "hevc");
+        assert_eq!(streams[1].codec, "aac");
+        assert_eq!(streams[1].channel_count, Some(2));
+        assert_eq!(streams[1].channel_layout.as_deref(), Some("stereo"));
+        assert_eq!(streams[2].stream_key, "subtitle-selected");
+        assert!(streams[2].optional);
+        assert_eq!(streams[2].subtitle_placement.as_deref(), Some("embedded"));
         assert_eq!(claimed.policy_video_intent.as_deref(), Some("general"));
         assert_eq!(claimed.verification_strictness, "strict");
         assert_eq!(claimed.verification_duration_tolerance_millis, 25);
@@ -2667,31 +2434,22 @@ mod tests {
     #[tokio::test]
     async fn retention_count_mode_deletes_only_completed_jobs_beyond_limit_and_preserves_audit()
     -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("cleanup_completed_media_jobs").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db().await?;
 
-        let profile_id = upsert_media_profile(
-            db.pool(),
-            &UpsertMediaProfileInput {
-                actor_public_id: db.system_user_public_id,
-                profile_key: "count-retention",
-                source_root: "/input/count",
-                output_root: "/output/count",
-                dry_run_only: true,
-                retention_days: 1,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            },
-        )
-        .await?;
-        let expired_job_id = create_retention_job(&db, profile_id, "older").await?;
-        let retained_completed_job_id = create_retention_job(&db, profile_id, "newer").await?;
-        let queued_job_id = create_retention_job(&db, profile_id, "queued").await?;
+        let key = "count-retention";
+        let (_roots, expired_job_id) =
+            crate::media::tests::native_job(db.database(), db.pool(), key, true).await?;
+        let retained_completed_job_id =
+            crate::media::tests::additional_native_job(db.pool(), key, "newer.mkv", true).await?;
+        let queued_job_id =
+            crate::media::tests::additional_native_job(db.pool(), key, "queued.mkv", true).await?;
 
+        db.database()
+            .apply_fixture_script(
+                include_str!("../../../../scripts/tests/media-root-snapshot-retention-guard.sql"),
+                &[("revaer_test.job_id", &expired_job_id.to_string())],
+            )
+            .await?;
         let expired_claim = claim_job(db.pool(), expired_job_id).await?;
         append_media_job_compact_audit(
             db.pool(),
@@ -2750,13 +2508,22 @@ mod tests {
     #[tokio::test]
     async fn cleanup_failed_terminal_media_diagnostics_removes_only_expired_diagnostics()
     -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("cleanup_failed_terminal_media_diagnostics").await? else {
-            return Ok(());
-        };
-        let profile_id =
-            upsert_retention_profile(&db, "diagnostic-retention", "diagnostics").await?;
-        let cancelled_job_id = create_cancelled_diagnostic_job(&db, profile_id).await?;
-        let completed_job_id = create_completed_diagnostic_job(&db, profile_id).await?;
+        let db = setup_media_db().await?;
+        let key = "diagnostic-retention";
+        let (_roots, cancelled_job_id) =
+            crate::media::tests::native_job(db.database(), db.pool(), key, true).await?;
+        cancel_diagnostic_job(&db, cancelled_job_id).await?;
+        let completed_job_id =
+            crate::media::tests::additional_native_job(db.pool(), key, "completed.mkv", true)
+                .await?;
+        complete_diagnostic_job(&db, completed_job_id).await?;
+
+        assert_eq!(
+            super::list_media_job_desired_target_streams(db.pool(), cancelled_job_id)
+                .await?
+                .len(),
+            1
+        );
 
         update_media_job_retention_policy(
             db.pool(),
@@ -2775,7 +2542,7 @@ mod tests {
 
         assert_eq!(outcome.completed_jobs_deleted, 0);
         assert_eq!(outcome.failed_jobs_pruned, 1);
-        assert_eq!(outcome.failed_detail_rows_deleted, 4);
+        assert_eq!(outcome.failed_detail_rows_deleted, 5);
         assert!(get_media_job(db.pool(), cancelled_job_id).await?.is_some());
         assert!(
             list_media_job_violations(db.pool(), cancelled_job_id)
@@ -2820,59 +2587,15 @@ mod tests {
 
     #[tokio::test]
     async fn workspace_retention_snapshot_includes_queued_and_claimed_jobs() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("workspace_retention_snapshot_active_jobs").await? else {
-            return Ok(());
-        };
-        let profile_id = upsert_media_profile(
-            db.pool(),
-            &UpsertMediaProfileInput {
-                actor_public_id: db.system_user_public_id,
-                profile_key: "workspace-retention-snapshot",
-                source_root: "/input/workspace-retention",
-                output_root: "/output/workspace-retention",
-                dry_run_only: true,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            },
-        )
-        .await?;
-        let running_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/workspace-retention/running.mkv",
-                output_path: Some("/output/workspace-retention/running.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
-        let queued_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/workspace-retention/queued.mkv",
-                output_path: Some("/output/workspace-retention/queued.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
-        let completed_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/workspace-retention/completed.mkv",
-                output_path: Some("/output/workspace-retention/completed.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
+        let db = setup_media_db().await?;
+        let key = "workspace-retention-snapshot";
+        let (_roots, running_id) =
+            crate::media::tests::native_job(db.database(), db.pool(), key, true).await?;
+        let queued_id =
+            crate::media::tests::additional_native_job(db.pool(), key, "queued.mkv", true).await?;
+        let completed_id =
+            crate::media::tests::additional_native_job(db.pool(), key, "completed.mkv", true)
+                .await?;
         let claimed = media_job_worker_claim_next(db.pool())
             .await?
             .ok_or_else(|| anyhow::anyhow!("expected a claimed media job"))?;
@@ -2892,21 +2615,49 @@ mod tests {
                 && row.diagnostic_workspace_retention_seconds == 2_592_000
                 && row.max_entries_per_tick == 128
         }));
+        let protected = snapshot
+            .iter()
+            .find(|row| row.media_job_public_id == Some(running_id))
+            .ok_or_else(|| anyhow::anyhow!("claimed workspace missing"))?;
+        assert_eq!(protected.attempt_number, Some(claimed.attempt_number));
+        assert_eq!(protected.claim_generation, Some(claimed.claim_generation));
+        assert!(
+            !super::media_job_worker_interrupt(db.pool(), running_id, claimed.claim_generation)
+                .await?
+        );
+        let interrupted_snapshot = load_media_workspace_retention_snapshot(db.pool()).await?;
+        let interrupted = interrupted_snapshot
+            .iter()
+            .find(|row| row.media_job_public_id == Some(running_id))
+            .ok_or_else(|| anyhow::anyhow!("interrupted workspace missing"))?;
+        assert_eq!(interrupted.attempt_number, protected.attempt_number);
+        assert_eq!(interrupted.claim_generation, protected.claim_generation);
+        let interrupted_ids = interrupted_snapshot
+            .iter()
+            .filter_map(|row| row.media_job_public_id)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(interrupted_ids, active_ids);
         Ok(())
     }
 
     #[tokio::test]
     async fn retention_disabled_is_a_noop_and_failed_count_mode_prunes_only_excess_diagnostics()
     -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("retention_disabled_and_failed_count").await? else {
-            return Ok(());
-        };
-        let profile_id =
-            upsert_retention_profile(&db, "failed-count-retention", "failed-count").await?;
-        let older_job_id =
-            create_cancelled_job_with_audit(&db, profile_id, "failed-count", "older.mkv").await?;
+        let db = setup_media_db().await?;
+        let key = "failed-count-retention";
+        let (_roots, older_job_id) =
+            crate::media::tests::native_job(db.database(), db.pool(), key, true).await?;
+        cancel_job_with_audit(&db, older_job_id).await?;
         let newer_job_id =
-            create_cancelled_job_with_audit(&db, profile_id, "failed-count", "newer.mkv").await?;
+            crate::media::tests::additional_native_job(db.pool(), key, "newer.mkv", true).await?;
+        cancel_job_with_audit(&db, newer_job_id).await?;
+
+        assert_eq!(
+            super::list_media_job_desired_target_streams(db.pool(), older_job_id)
+                .await?
+                .len(),
+            1
+        );
 
         update_media_job_retention_policy(
             db.pool(),
@@ -2954,7 +2705,7 @@ mod tests {
         let count_outcome = run_media_job_retention(db.pool(), Utc::now()).await?;
         assert_eq!(count_outcome.completed_jobs_deleted, 0);
         assert_eq!(count_outcome.failed_jobs_pruned, 1);
-        assert_eq!(count_outcome.failed_detail_rows_deleted, 1);
+        assert_eq!(count_outcome.failed_detail_rows_deleted, 2);
         assert!(
             list_media_job_artifacts(db.pool(), older_job_id)
                 .await?
@@ -3092,94 +2843,92 @@ mod tests {
     #[tokio::test]
     async fn discovery_fingerprints_are_atomic_durable_and_change_sensitive() -> anyhow::Result<()>
     {
-        let Some(db) = setup_media_db("discovery_fingerprints").await? else {
-            return Ok(());
+        let db = setup_media_db().await?;
+        let digest_a = "a".repeat(64);
+        let digest_b = "b".repeat(64);
+        let key = "fingerprint-profile";
+        let fingerprint = AssociationFingerprint {
+            identity: "000000000000000a:000000000000000a",
+            size_bytes: 10,
+            modified_ns: 100,
+            changed_ns: 100,
+            sha256: &digest_a,
         };
-        let profile_id = upsert_media_profile(
+        let (_roots, first_job_id) = crate::media::tests::native_job_fingerprint(
+            db.database(),
             db.pool(),
-            &UpsertMediaProfileInput {
-                actor_public_id: db.system_user_public_id,
-                profile_key: "fingerprint-profile",
-                source_root: "/input/fingerprint",
-                output_root: "/output/fingerprint",
-                dry_run_only: true,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            },
+            key,
+            true,
+            fingerprint,
         )
         .await?;
-        let source_path = "/input/fingerprint/movie.webm";
-        let output_path = "/output/fingerprint/movie.webm";
-        let first = EnqueueDiscoveredMediaJobInput {
-            actor_public_id: db.system_user_public_id,
-            media_profile_public_id: profile_id,
-            source_path,
-            output_path: Some(output_path),
-            dry_run: true,
-            source_identity: "000000000000000a:000000000000000a",
-            source_size_bytes: 10,
-            source_modified_ns: 100,
-            source_changed_ns: 100,
-            source_sha256: &"a".repeat(64),
-        };
-
-        let first_job_id = enqueue_discovered_media_job(db.pool(), &first)
+        let association =
+            crate::media::associations::read_association_page(db.pool(), 100, None, None)
+                .await?
+                .into_iter()
+                .find(|row| row.association_key == key)
+                .ok_or_else(|| anyhow::anyhow!("native association missing"))?;
+        let generation = crate::media::root_catalog::read_root_catalog_readiness(db.pool())
             .await?
-            .map(|job| job.media_job_public_id)
-            .ok_or_else(|| anyhow::anyhow!("first discovery did not enqueue"))?;
+            .first()
+            .and_then(|row| row.attestation_generation)
+            .ok_or_else(|| anyhow::anyhow!("native generation missing"))?;
+        let profile_id = association.media_profile_public_id;
+        let mut input = AssociationJobInput {
+            actor_public_id: db.system_user_public_id,
+            association_public_id: association.media_discovery_association_public_id,
+            association_version: association.latest_version,
+            relative_path: "source.mkv",
+            dry_run: true,
+            trigger: "manual",
+            generation,
+            generation_sha256: [0x33; 32],
+            fingerprint: AssociationFingerprint {
+                identity: "000000000000000a:000000000000000a",
+                size_bytes: 10,
+                modified_ns: 100,
+                changed_ns: 100,
+                sha256: &digest_a,
+            },
+        };
         let claimed = media_job_worker_claim_next(db.pool())
             .await?
             .ok_or_else(|| anyhow::anyhow!("discovered job was not claimable"))?;
         assert_eq!(claimed.media_job_public_id, first_job_id);
         assert_eq!(claimed.source_size_bytes, 10);
         assert_eq!(claimed.source_modified_ns, 100);
-        assert_eq!(claimed.source_sha256, first.source_sha256);
-        assert_eq!(enqueue_discovered_media_job(db.pool(), &first).await?, None);
+        assert_eq!(claimed.source_sha256, digest_a);
+        assert_eq!(enqueue_association_job(db.pool(), &input).await?, None);
 
-        let modified_time = EnqueueDiscoveredMediaJobInput {
-            source_modified_ns: 101,
-            source_changed_ns: 101,
-            ..first.clone()
-        };
-        assert!(
-            enqueue_discovered_media_job(db.pool(), &modified_time)
-                .await?
-                .is_some()
-        );
-        let modified_content = EnqueueDiscoveredMediaJobInput {
-            source_sha256: &"b".repeat(64),
-            ..modified_time
-        };
-        assert!(
-            enqueue_discovered_media_job(db.pool(), &modified_content)
-                .await?
-                .is_some()
-        );
+        input.fingerprint.modified_ns = 101;
+        input.fingerprint.changed_ns = 101;
+        assert!(enqueue_association_job(db.pool(), &input).await?.is_some());
+        input.fingerprint.sha256 = &digest_b;
+        assert!(enqueue_association_job(db.pool(), &input).await?.is_some());
 
-        let failed_claim = EnqueueDiscoveredMediaJobInput {
-            source_modified_ns: 102,
-            source_changed_ns: 102,
-            output_path: Some("/outside/movie.webm"),
-            ..modified_content.clone()
-        };
-        assert!(
-            enqueue_discovered_media_job(db.pool(), &failed_claim)
-                .await
-                .is_err()
-        );
-        let retry = EnqueueDiscoveredMediaJobInput {
-            output_path: Some(output_path),
-            ..failed_claim
-        };
-        assert!(
-            enqueue_discovered_media_job(db.pool(), &retry)
-                .await?
-                .is_some()
-        );
+        // Reject the job INSERT after its fingerprint update, inside this owned database.
+        db.database()
+            .apply_fixture_script(
+                include_str!("../../../../scripts/tests/media-fingerprint-inject-failure.sql"),
+                &[],
+            )
+            .await?;
+        input.fingerprint.modified_ns = 102;
+        input.fingerprint.changed_ns = 102;
+        let failure = enqueue_association_job(db.pool(), &input).await;
+        match failure {
+            Err(error) => assert_eq!(error.database_code().as_deref(), Some("23514")),
+            Ok(_) => return Err(anyhow::anyhow!("injected admission failure was accepted")),
+        }
+        assert_eq!(list_media_jobs(db.pool(), profile_id, None).await?.len(), 3);
+        db.database()
+            .apply_fixture_script(
+                include_str!("../../../../scripts/tests/media-fingerprint-clear-failure.sql"),
+                &[],
+            )
+            .await?;
+        assert!(enqueue_association_job(db.pool(), &input).await?.is_some());
+        assert_eq!(enqueue_association_job(db.pool(), &input).await?, None);
 
         let jobs = list_media_jobs(db.pool(), profile_id, None).await?;
         assert_eq!(jobs.len(), 4);
@@ -3189,53 +2938,34 @@ mod tests {
 
     #[tokio::test]
     async fn claimed_job_returns_immutable_source_fingerprint_snapshot() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("claimed_source_fingerprint_snapshot").await? else {
-            return Ok(());
+        let db = setup_media_db().await?;
+        let source_sha256 = "c".repeat(64);
+        let input = crate::media::association_jobs::AssociationFingerprint {
+            identity: "000000000000000c:000000000000001c",
+            size_bytes: 4_096,
+            modified_ns: 5_000,
+            changed_ns: 6_000,
+            sha256: &source_sha256,
         };
-        let profile_id = upsert_media_profile(
+        let (_roots, job_id) = crate::media::tests::native_job_fingerprint(
+            db.database(),
             db.pool(),
-            &UpsertMediaProfileInput {
-                actor_public_id: db.system_user_public_id,
-                profile_key: "claim-fingerprint-profile",
-                source_root: "/input/claim-fingerprint",
-                output_root: "/output/claim-fingerprint",
-                dry_run_only: true,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            },
+            "claim-fingerprint-profile",
+            true,
+            input,
         )
         .await?;
-        let source_sha256 = "c".repeat(64);
-        let input = EnqueueDiscoveredMediaJobInput {
-            actor_public_id: db.system_user_public_id,
-            media_profile_public_id: profile_id,
-            source_path: "/input/claim-fingerprint/movie.webm",
-            output_path: Some("/output/claim-fingerprint/movie.webm"),
-            dry_run: true,
-            source_identity: "000000000000000c:000000000000001c",
-            source_size_bytes: 4_096,
-            source_modified_ns: 5_000,
-            source_changed_ns: 6_000,
-            source_sha256: &source_sha256,
-        };
-        let queued = enqueue_discovered_media_job(db.pool(), &input)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("fingerprinted job should be queued"))?;
 
         let claimed = media_job_worker_claim_next(db.pool())
             .await?
             .ok_or_else(|| anyhow::anyhow!("fingerprinted job should be claimable"))?;
 
-        assert_eq!(claimed.media_job_public_id, queued.media_job_public_id);
-        assert_eq!(claimed.source_identity, input.source_identity);
-        assert_eq!(claimed.source_size_bytes, input.source_size_bytes);
-        assert_eq!(claimed.source_modified_ns, input.source_modified_ns);
-        assert_eq!(claimed.source_changed_ns, input.source_changed_ns);
-        assert_eq!(claimed.source_sha256, input.source_sha256);
+        assert_eq!(claimed.media_job_public_id, job_id);
+        assert_eq!(claimed.source_identity, "000000000000000c:000000000000001c");
+        assert_eq!(claimed.source_size_bytes, 4_096);
+        assert_eq!(claimed.source_modified_ns, 5_000);
+        assert_eq!(claimed.source_changed_ns, 6_000);
+        assert_eq!(claimed.source_sha256, source_sha256);
         Ok(())
     }
 }

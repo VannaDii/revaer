@@ -125,6 +125,62 @@ fn retained_candidate_parent_is_read_only_bounded_and_symlink_safe() -> anyhow::
 }
 
 #[test]
+fn retained_directory_inventory_rejects_escape_and_replaced_roots() -> anyhow::Result<()> {
+    let directory = fixture()?;
+    let root = directory.path().join("root");
+    let nested = root.join("Movies");
+    std::fs::create_dir_all(&nested)?;
+    std::fs::write(nested.join("original.mkv"), b"preserve")?;
+    let opened = OpenedRootDirectory::open_descriptors(
+        &declaration(&root, false)?,
+        rustix::process::geteuid().as_raw(),
+    )?;
+    let root_reader = opened.open_read_directory(std::path::Path::new(""))?;
+    let reader = opened.open_read_directory(std::path::Path::new("Movies"))?;
+    assert_eq!(fs::fstat(&reader)?.st_ino, fs::stat(&nested)?.st_ino);
+    assert_eq!(fs::fstat(&root_reader)?.st_ino, fs::stat(&root)?.st_ino);
+    for invalid in [
+        "/outside",
+        "../outside",
+        ".",
+        "Movies/..",
+        "Movies/",
+        "Movies//child",
+        "Movies\\child",
+    ] {
+        assert!(matches!(
+            opened.open_read_directory(std::path::Path::new(invalid)),
+            Err(RootDirectoryError::InvalidPath)
+        ));
+    }
+    assert!(matches!(
+        opened.open_read_directory(std::path::Path::new("missing")),
+        Err(RootDirectoryError::CandidateMissing)
+    ));
+    symlink(&nested, root.join("alias"))?;
+    assert!(
+        opened
+            .open_read_directory(std::path::Path::new("alias"))
+            .is_err()
+    );
+    std::fs::rename(&root, directory.path().join("moved"))?;
+    std::fs::create_dir(&root)?;
+    assert!(matches!(
+        opened.open_read_directory(std::path::Path::new("Movies")),
+        Err(RootDirectoryError::IdentityChanged)
+    ));
+    assert_eq!(
+        std::fs::read(directory.path().join("moved/Movies/original.mkv"))?,
+        b"preserve"
+    );
+    drop(reader);
+    drop(root_reader);
+    drop(opened);
+    directory.close()?;
+    Ok(())
+}
+
+#[test]
 fn read_probe_preserves_source_and_rejects_replacement() -> anyhow::Result<()> {
     let directory = fixture()?;
     let child = directory.path().join("root");
@@ -247,6 +303,9 @@ fn physical_overlap_rejects_equal_and_nested_roots_but_accepts_siblings() -> any
 
 #[test]
 fn root_lock_is_exclusive_across_processes() -> anyhow::Result<()> {
+    if std::env::var_os("REVAER_ROOT_LOCK_ISOLATED").is_none() {
+        return run_isolated_lock_test("root_lock_is_exclusive_across_processes");
+    }
     let directory = fixture()?;
     let slot = declaration(directory.path(), true)?;
     let owner = OpenedRootDirectory::open_descriptors(&slot, rustix::process::geteuid().as_raw())?;
@@ -357,6 +416,9 @@ fn exclusive_source_declaration_holds_lock_without_enabling_writes() -> anyhow::
 
 #[test]
 fn root_lock_blocks_competitor_and_releases_with_owner() -> anyhow::Result<()> {
+    if std::env::var_os("REVAER_ROOT_LOCK_ISOLATED").is_none() {
+        return run_isolated_lock_test("root_lock_blocks_competitor_and_releases_with_owner");
+    }
     let directory = fixture()?;
     let slot = declaration(directory.path(), true)?;
     let uid = rustix::process::geteuid().as_raw();
@@ -498,4 +560,127 @@ fn noncanonical_components_fail_without_normalization() {
     }
     assert!(components(&format!("/{}", "x".repeat(4096))).is_err());
     assert_eq!(components("/root/child").ok(), Some(vec!["root", "child"]));
+}
+
+#[test]
+fn root_lock_remains_held_until_inherited_child_stops() -> anyhow::Result<()> {
+    if std::env::var_os("REVAER_ROOT_LOCK_ISOLATED").is_none() {
+        return run_isolated_lock_test("root_lock_remains_held_until_inherited_child_stops");
+    }
+    let directory = fixture()?;
+    let slot = declaration(directory.path(), true)?;
+    let uid = rustix::process::geteuid().as_raw();
+    let owner = OpenedRootDirectory::open_descriptors(&slot, uid)?;
+    let mut child = std::process::Command::new("/bin/sleep").arg("30").spawn()?;
+    drop(owner);
+    let admitted_while_child_active = OpenedRootDirectory::open_descriptors(&slot, uid).is_ok();
+    let kill = child.kill();
+    let wait = child.wait();
+    kill?;
+    wait?;
+    anyhow::ensure!(
+        !admitted_while_child_active,
+        "root admitted replay while old child remained active"
+    );
+    let restarted = OpenedRootDirectory::open_descriptors(&slot, uid)?;
+    drop(restarted);
+    directory.close()?;
+    Ok(())
+}
+
+fn run_isolated_lock_test(name: &str) -> anyhow::Result<()> {
+    // Descriptor inheritance is process-wide. A dedicated test process keeps
+    // unrelated parallel fixtures from extending this root's lock lifetime.
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command
+        .args([
+            "--exact",
+            &format!("root_catalog::directory::tests::{name}"),
+            "--test-threads=1",
+        ])
+        .env_clear()
+        .env("REVAER_ROOT_LOCK_ISOLATED", "1")
+        .stdin(std::process::Stdio::null());
+    if let Some(path) = std::env::var_os("PATH") {
+        command.env("PATH", path);
+    }
+    if let Some(profile) = std::env::var_os("LLVM_PROFILE_FILE") {
+        command.env("LLVM_PROFILE_FILE", profile);
+    }
+    let output = command.output()?;
+    anyhow::ensure!(
+        output.status.success(),
+        "isolated root-lock test failed: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    anyhow::ensure!(
+        String::from_utf8(output.stdout)?.contains("1 passed"),
+        "isolated root-lock test did not execute"
+    );
+    Ok(())
+}
+
+#[test]
+fn root_lock_blocks_replay_until_actual_ffmpeg_stops() -> anyhow::Result<()> {
+    use std::io::BufRead;
+
+    if std::env::var_os("REVAER_ROOT_LOCK_ISOLATED").is_none() {
+        return run_isolated_lock_test("root_lock_blocks_replay_until_actual_ffmpeg_stops");
+    }
+    let directory = fixture()?;
+    let slot = declaration(directory.path(), true)?;
+    let uid = rustix::process::geteuid().as_raw();
+    let owner = OpenedRootDirectory::open_descriptors(&slot, uid)?;
+    let mut child = std::process::Command::new("ffmpeg")
+        .args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-re",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=s=64x64:r=1",
+            "-t",
+            "30",
+            "-progress",
+            "pipe:1",
+            "-f",
+            "null",
+            "-",
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .spawn()?;
+    let observed = (|| -> anyhow::Result<bool> {
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("FFmpeg progress pipe missing"))?;
+        let mut progress = String::new();
+        std::io::BufReader::new(stdout).read_line(&mut progress)?;
+        anyhow::ensure!(
+            progress.starts_with("frame="),
+            "FFmpeg did not begin media work"
+        );
+        anyhow::ensure!(
+            child.try_wait()?.is_none(),
+            "FFmpeg stopped before admission proof"
+        );
+        drop(owner);
+        Ok(OpenedRootDirectory::open_descriptors(&slot, uid).is_ok())
+    })();
+    let kill = child.kill();
+    let wait = child.wait();
+    kill?;
+    wait?;
+    anyhow::ensure!(
+        !observed?,
+        "root admitted replay while FFmpeg remained active"
+    );
+    let restarted = OpenedRootDirectory::open_descriptors(&slot, uid)?;
+    drop(restarted);
+    directory.close()?;
+    Ok(())
 }

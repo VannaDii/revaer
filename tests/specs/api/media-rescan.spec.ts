@@ -1,6 +1,5 @@
 import { test, expect } from '../../fixtures/media';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 
 test('activation retains a bounded coalesced rescan across real service restart', async ({ api, mediaService, profileFixture: fixture }) => {
   const profile = await api.POST('/v1/media/profiles', {
@@ -69,46 +68,10 @@ test('activation retains a bounded coalesced rescan across real service restart'
   await expect.poll(async () => (await api.GET('/health')).response.status, { timeout: 20000 }).toBe(200);
   expect(read()).toBe(beforeRestart);
   expect(fixture.readSource()).toEqual(fixture.sourceBytes);
-  const owner = randomUUID();
-  const replacement = randomUUID();
-  const instance = randomUUID();
-  const asRuntime = (input: string) => sql(`SELECT runtime_role FROM revaer_system.database_baseline \u005cgset
-    SET ROLE :runtime_role; ${input}`);
-  // The generation inputs are bootstrap evidence, not runtime table grants.
-  const generation = sql(`SELECT s.active_media_root_catalog_generation_id, encode(g.generation_sha256, 'hex')
-    FROM public.media_root_catalog_state s JOIN public.media_root_catalog_generation g
-    ON g.media_root_catalog_generation_id = s.active_media_root_catalog_generation_id;`).split('|');
-  expect(generation[0]).toMatch(/^[1-9][0-9]*$/);
-  expect(generation[1]).toMatch(/^[a-f0-9]{64}$/);
-  const runtimeClaim = (who: string) => `SELECT slot_id, claim_generation, captured_sequence
-    FROM public.media_discovery_execution_claim_v1(
-      '00000000-0000-0000-0000-000000000000', '${id}', 1,
-      ${generation[0]}, decode('${generation[1]}', 'hex'), '${instance}', '${who}');`;
-  expect(asRuntime(runtimeClaim(owner))).toBe('1|1|8');
-  expect(sql(`SELECT public.media_discovery_rescan_publish_v1((${version}), 'overflow');`)).toBe('9');
-  expect(asRuntime(runtimeClaim(owner))).toBe('1|1|8');
-  expect(asRuntime(runtimeClaim(replacement))).toBe('');
-  expect(asRuntime(`SELECT public.media_discovery_execution_renew_v1(1::smallint, 1, '${owner}') > clock_timestamp();`)).toBe('t');
-  expect(sql(`UPDATE public.media_discovery_execution_slot SET lease_expires_at = clock_timestamp() - interval '1 second'
-    WHERE owner_public_id = '${owner}';`)).toBe('');
-  expect(asRuntime(runtimeClaim(replacement))).toBe('');
-  expect(asRuntime(`DO $$ BEGIN
-    BEGIN
-      PERFORM public.media_discovery_execution_renew_v1(1::smallint, 1, '${owner}');
-      RAISE EXCEPTION 'expired owner was renewed';
-    EXCEPTION WHEN SQLSTATE 'P0001' THEN
-      IF SQLERRM <> 'media_discovery_claim_expired' THEN RAISE; END IF;
-    END;
-  END $$;`)).toBe('');
-  expect(asRuntime(`SELECT public.media_discovery_execution_release_v1(1::smallint, 1, '${owner}');`)).toBe('');
-  expect(asRuntime(runtimeClaim(replacement))).toBe('1|2|9');
-  expect(asRuntime(`DO $$ BEGIN
-    BEGIN
-      PERFORM public.media_discovery_execution_release_v1(1::smallint, 1, '${owner}');
-      RAISE EXCEPTION 'stale owner released replacement';
-    EXCEPTION WHEN SQLSTATE 'P0001' THEN
-      IF SQLERRM <> 'media_discovery_claim_conflict' THEN RAISE; END IF;
-    END;
-  END $$;
-  SELECT public.media_discovery_execution_release_v1(1::smallint, 2, '${replacement}');`)).toBe('');
+  // ADR 594 retains rescan requests under the service's existing root lock.
+  // No scanner owner, lease expiry or takeover slot is part of this workflow.
+  expect(sql(`SELECT to_regclass('public.media_discovery_execution_slot') IS NULL;
+    SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname IN ('media_discovery_execution_claim_v1',
+      'media_discovery_execution_renew_v1', 'media_discovery_execution_release_v1');`)).toBe('t\n0');
 });

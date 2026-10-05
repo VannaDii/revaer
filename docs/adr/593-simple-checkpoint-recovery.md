@@ -9,8 +9,10 @@
 - Supersedes: ADR 588's S2/LIFE-1 custom supervisor and recovery machinery,
   dependent ADR 589 registration protocol, and parallel-agent execution direction.
   Retains ADR 588's unrelated decisions and transfer scopes as listed below.
-- Implementation status: Decision recorded; product code has not been rolled back
-  or qualified under this decision.
+- Implementation status: Custom supervisor detour removed. Cancellation and
+  checkpoint recovery are implemented with real native failure-path evidence
+  recorded in [ADR 596](596-cancellation-checkpoint-recovery.md). Full workflow
+  and release qualification remain incomplete; this is not a release-ready claim.
 
 ## Context
 

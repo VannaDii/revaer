@@ -15,6 +15,89 @@ const BOOTSTRAP_BIND_FAILURE_TIMEOUT: Duration = Duration::from_secs(30);
 const E2E_SERVING_ENTRY: &str = "bootstrap::runtime_tests::e2e_serving_entry";
 const E2E_SERVING_ENV: &str = "REVAER_E2E_SERVING_ENTRY";
 
+#[cfg(unix)]
+#[tokio::test]
+async fn e2e_serving_joins_runtime_on_unix_shutdown_signals() -> Result<()> {
+    let _guard = bootstrap_test_guard().await;
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
+    let service = ConfigService::new(postgres.connection_string()).await?;
+    for signal in [rustix::process::Signal::TERM, rustix::process::Signal::INT] {
+        let workspace = tempfile::TempDir::new()?;
+        let reserved = TcpListener::bind(("127.0.0.1", 0))?;
+        let address = reserved.local_addr()?;
+        let mut profile = service.get_app_profile().await?;
+        profile.http_port = i32::from(address.port());
+        service
+            .apply_changeset(
+                "tester",
+                "signal-shutdown-listener",
+                SettingsChangeset {
+                    app_profile: Some(profile),
+                    ..SettingsChangeset::default()
+                },
+            )
+            .await?;
+        drop(reserved);
+        let child = tokio::process::Command::new(std::env::current_exe()?)
+            .args(["--exact", E2E_SERVING_ENTRY, "--nocapture"])
+            .env(E2E_SERVING_ENV, "1")
+            .env("DATABASE_URL", postgres.connection_string())
+            .env("REVAER_MEDIA_WORKSPACE_ROOT", workspace.path())
+            .env("RUST_LOG", "info")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()?;
+        timeout(BOOTSTRAP_BIND_FAILURE_TIMEOUT, async {
+            let client = reqwest::Client::new();
+            loop {
+                match client.get(format!("http://{address}/health")).send().await {
+                    Ok(response) => {
+                        assert_eq!(response.status(), reqwest::StatusCode::OK);
+                        break;
+                    }
+                    Err(error) if error.is_connect() => tokio::task::yield_now().await,
+                    Err(error) => return Err(error.into()),
+                }
+            }
+            anyhow::Ok(())
+        })
+        .await??;
+        let pid = child
+            .id()
+            .ok_or_else(|| anyhow::anyhow!("serving child exited"))?;
+        let pid = rustix::process::Pid::from_raw(i32::try_from(pid)?)
+            .ok_or_else(|| anyhow::anyhow!("invalid serving child PID"))?;
+        rustix::process::kill_process(pid, signal)?;
+        let output = timeout(BOOTSTRAP_BIND_FAILURE_TIMEOUT, child.wait_with_output()).await??;
+        let diagnostic = format!(
+            "{}{}",
+            String::from_utf8(output.stdout)?,
+            String::from_utf8(output.stderr)?
+        );
+        assert!(output.status.success(), "{diagnostic}");
+        assert!(
+            diagnostic.contains("process shutdown requested"),
+            "{diagnostic}"
+        );
+        assert!(
+            diagnostic.contains("media runtime shutdown requested"),
+            "{diagnostic}"
+        );
+        assert!(
+            diagnostic.contains("API server shutdown complete"),
+            "{diagnostic}"
+        );
+        workspace.close()?;
+    }
+    drop(service);
+    postgres.close()?;
+    Ok(())
+}
+
 #[test]
 fn e2e_serving_entry() -> Result<()> {
     let selection = std::env::var_os(E2E_SERVING_ENV);

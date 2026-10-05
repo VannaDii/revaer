@@ -49,9 +49,11 @@ one of the four reviewed Linux/macOS architectures.
 Every setup verifies cached archive bytes and their detached signature, then
 recreates the extracted tree. GnuPG uses a private, temporary home with the
 committed fingerprint as its explicit trust anchor. No live keyserver or user
-keyring is used. A valid signature from another primary key fails. Traversal,
-links, special files, duplicate archive entries, and oversized downloads fail
-before an executable is published. Failed installation preserves the previous
+keyring is used. A valid signature from another primary key fails. Internal JRE
+license links are copied from regular members of the same archive into regular
+files; filesystem links are never created. Traversal, escaping or chained links,
+missing targets, special files, duplicate entries, and excessive materialized
+bytes fail before an executable is published. Failed installation preserves the previous
 installed tree and retains the failing cached bytes for diagnosis.
 
 ## Analysis sequence

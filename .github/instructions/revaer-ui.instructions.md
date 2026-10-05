@@ -197,5 +197,22 @@ applyTo:
 
 ## Continuation fixture reconciliation
 
+- Single-init media E2E retains missing-catalog cases as separate anonymous and
+  authenticated phases. Each authentication reset runs on an owned service with
+  an absent catalog source; join it before starting the scenario service. Native
+  positive cases require that restart to attest the configured real Linux catalog
+  after reset. Preserve all five default phase summaries, selections, raw coverage
+  and separate setup/scenario logs. Never reseed attestation or add runtime catalog
+  reloads to compensate for factory reset clearing the catalog tables.
+
 - ADR 595 retains the old media E2E failures while porting to complete immutable-profile requests and logical catalog bindings. Preserve source-integrity, conditional-write, unavailable-root, association, schedule/watcher and cleanup assertions; adapting payloads does not authorize accepting automation before its approved runtime is integrated.
+- Rejection of retired path/automation profile bodies is a request-schema guard:
+  require `media_configuration_invalid`, no persisted profile and unchanged source
+  bytes. It does not prove disabled association admission or native root readiness;
+  positive persistence/discovery scenarios require the real active Linux catalog.
 - Controlled root selects must restore the exact draft after catalog/render changes without dropping existing edit/authentication fences.
+
+- Ordinary association creation preserves explicitly selected schedule/watcher
+  modes after the bounded native loop integration. Keep normal positive activation,
+  unchanged-source and disabled-mode assertions; synthetic mode edits never
+  substitute for operator configuration through the API and UI.

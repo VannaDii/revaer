@@ -242,7 +242,9 @@ class Cargo(ExternalTool):
         ).stdout
         return select_executable(output, self.root, kind)
 
-    def execute(self, args: CargoArgs, env: Mapping[str, str] | None = None) -> Completed:
+    def execute(
+        self, args: CargoArgs, env: Mapping[str, str] | None = None, *, capture: bool = False
+    ) -> Completed:
         selectors = (args.test_binary, args.test_filter)
         if (
             any(value is not None for value in selectors) or args.include_ignored
@@ -280,7 +282,7 @@ class Cargo(ExternalTool):
             harness.append(f"--test-threads={args.test_threads}")
         if harness:
             command.extend(("--", *harness))
-        return self._invoke(tuple(command), env=env)
+        return self._invoke(tuple(command), env=env, capture=capture)
 
     def fmt(self, fix: bool = False) -> Completed:
         return self._invoke(("fmt", "--all") + (() if fix else ("--check",)))

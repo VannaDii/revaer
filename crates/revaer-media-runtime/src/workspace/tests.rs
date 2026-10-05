@@ -734,3 +734,42 @@ fn bounded_janitor_continues_after_partial_removal_failure()
     fs::remove_dir_all(root)?;
     Ok(())
 }
+
+#[test]
+fn stopped_workspace_reopens_without_replacing_completed_outputs()
+-> Result<(), Box<dyn std::error::Error>> {
+    let root = temp_workspace_root()?;
+    let workspace = super::create_or_resume_managed_workspace(&root, "stopped-job")?;
+    let output = workspace.output_path.join("completed.mkv");
+    fs::write(&output, b"completed")?;
+    drop(workspace);
+    let resumed = super::create_or_resume_managed_workspace(&root, "stopped-job")?;
+    resumed.validate()?;
+    assert_eq!(fs::read(output)?, b"completed");
+    teardown_managed_workspace(&resumed)?;
+    fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
+fn stopped_workspace_rejects_symlink_and_unsafe_directory_replacement()
+-> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let root = temp_workspace_root()?;
+    let outside = temp_workspace_root()?;
+    let workspace = super::create_or_resume_managed_workspace(&root, "stopped-unsafe")?;
+    fs::remove_dir(&workspace.output_path)?;
+    symlink(&outside, &workspace.output_path)?;
+    assert!(super::create_or_resume_managed_workspace(&root, "stopped-unsafe").is_err());
+    assert_eq!(fs::read_dir(&outside)?.count(), 0);
+    fs::remove_file(&workspace.output_path)?;
+    fs::create_dir(&workspace.output_path)?;
+    fs::set_permissions(&workspace.output_path, fs::Permissions::from_mode(0o755))?;
+    assert!(matches!(
+        super::create_or_resume_managed_workspace(&root, "stopped-unsafe"),
+        Err(ManagedWorkspaceError::UnsafeDirectoryPolicy(_))
+    ));
+    fs::remove_dir_all(root)?;
+    fs::remove_dir_all(outside)?;
+    Ok(())
+}

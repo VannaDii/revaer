@@ -20,13 +20,46 @@ pub(crate) const SCAN_MAX_ELAPSED: Duration = Duration::from_secs(30);
 #[derive(Clone)]
 pub(crate) struct ScanCursor {
     pending: VecDeque<DirectoryCursor>,
+    #[cfg(any(target_os = "linux", test))]
+    progress: ScanProgress,
 }
+
+#[cfg(any(target_os = "linux", test))]
+#[derive(Clone)]
+struct ScanProgress {
+    examined: usize,
+    visits: usize,
+    selected: usize,
+    primary_bytes: u64,
+    metadata_elapsed: Duration,
+}
+
+#[cfg(any(target_os = "linux", test))]
+#[derive(Clone, Copy)]
+pub(crate) struct ScanRunLimits {
+    pub(crate) examined: usize,
+    pub(crate) visits: usize,
+    pub(crate) selected: usize,
+    pub(crate) primary_bytes: u64,
+    pub(crate) metadata_elapsed: Duration,
+}
+
+#[cfg(any(target_os = "linux", test))]
+pub(crate) const SCAN_RUN_LIMITS: ScanRunLimits = ScanRunLimits {
+    examined: 65_536,
+    visits: 4_096,
+    selected: 16_384,
+    primary_bytes: 16 * 1024 * 1024 * 1024 * 1024,
+    metadata_elapsed: Duration::from_hours(6),
+};
 
 #[derive(Clone)]
 struct DirectoryCursor {
     path: PathBuf,
     depth: usize,
     after: Option<OsString>,
+    #[cfg(any(target_os = "linux", test))]
+    observation: Option<rustix::fs::Stat>,
 }
 
 pub(crate) struct ScanBudget {
@@ -35,6 +68,8 @@ pub(crate) struct ScanBudget {
     pub(crate) files: usize,
     pub(crate) bytes: u64,
     pub(crate) elapsed: Duration,
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) run: ScanRunLimits,
 }
 
 impl Default for ScanBudget {
@@ -45,6 +80,8 @@ impl Default for ScanBudget {
             files: SCAN_MAX_FILES,
             bytes: SCAN_MAX_BYTES,
             elapsed: SCAN_MAX_ELAPSED,
+            #[cfg(any(target_os = "linux", test))]
+            run: SCAN_RUN_LIMITS,
         }
     }
 }
@@ -67,10 +104,248 @@ pub(crate) enum ScanLimit {
 
 #[derive(Debug, Error)]
 pub(crate) enum ScanError {
+    #[error(transparent)]
+    Inventory(#[from] crate::media_discovery_fingerprint::FingerprintError),
     #[error("media discovery scan io error for {path}: {source}")]
     Io { path: PathBuf, source: io::Error },
     #[error("media discovery scan path is not unicode: {0}")]
     NonUnicodePath(PathBuf),
+}
+
+#[cfg(any(target_os = "linux", test))]
+impl Default for ScanProgress {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+impl ScanProgress {
+    const fn empty() -> Self {
+        Self {
+            examined: 0,
+            visits: 0,
+            selected: 0,
+            primary_bytes: 0,
+            metadata_elapsed: Duration::ZERO,
+        }
+    }
+
+    fn remaining(&self, limits: &ScanRunLimits, started: Instant) -> Result<usize, ScanError> {
+        let remaining = limits.examined.saturating_sub(self.examined);
+        if remaining == 0 || self.visits >= limits.visits {
+            return Err(
+                crate::media_discovery_fingerprint::FingerprintError::ResourceLimit(
+                    "scan run traversal",
+                )
+                .into(),
+            );
+        }
+        if self.metadata_elapsed.saturating_add(started.elapsed()) >= limits.metadata_elapsed {
+            return Err(
+                crate::media_discovery_fingerprint::FingerprintError::ResourceLimit(
+                    "scan run metadata time",
+                )
+                .into(),
+            );
+        }
+        Ok(remaining)
+    }
+
+    fn observe(&mut self, count: usize, remaining: usize) -> Result<(), ScanError> {
+        if count > remaining {
+            return Err(
+                crate::media_discovery_fingerprint::FingerprintError::ResourceLimit(
+                    "scan run examined entries",
+                )
+                .into(),
+            );
+        }
+        self.examined += count;
+        self.visits += 1;
+        Ok(())
+    }
+
+    fn select(&mut self, size: u64, limits: &ScanRunLimits) -> Result<(), ScanError> {
+        if self.selected >= limits.selected
+            || size > limits.primary_bytes.saturating_sub(self.primary_bytes)
+        {
+            return Err(
+                crate::media_discovery_fingerprint::FingerprintError::ResourceLimit(
+                    "scan run selected media",
+                )
+                .into(),
+            );
+        }
+        self.selected += 1;
+        self.primary_bytes += size;
+        Ok(())
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn selected_batch_limit(
+    budget: &ScanBudget,
+    size: u64,
+    files: usize,
+    bytes: u64,
+) -> Result<Option<ScanLimit>, ScanError> {
+    if size > budget.bytes {
+        return Err(
+            crate::media_discovery_fingerprint::FingerprintError::ResourceLimit(
+                "scan primary bytes",
+            )
+            .into(),
+        );
+    }
+    if files >= budget.files {
+        return Ok(Some(ScanLimit::Files));
+    }
+    if bytes.saturating_add(size) > budget.bytes {
+        return Ok(Some(ScanLimit::Bytes));
+    }
+    Ok(None)
+}
+
+/// Traverse one bounded inventory at a time, retaining only ancestor positions.
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn scan_retained_media_source_paths(
+    root: &Path,
+    budget: &ScanBudget,
+    cursor: Option<ScanCursor>,
+    cancelled: &dyn Fn() -> bool,
+    inventory: impl Fn(
+        &Path,
+        usize,
+    ) -> Result<
+        crate::media_discovery_fingerprint::MediaDirectoryInventory,
+        crate::media_discovery_fingerprint::FingerprintError,
+    >,
+) -> Result<ScanBatch, ScanError> {
+    use crate::media_discovery_fingerprint::MediaDirectoryEntryKind;
+    let started = Instant::now();
+    let mut progress = cursor
+        .as_ref()
+        .map(|value| value.progress.clone())
+        .unwrap_or_default();
+    let mut pending = initial_pending(root, cursor);
+    let mut paths = Vec::new();
+    let mut entries_seen = 0_usize;
+    let mut bytes_selected = 0_u64;
+    while let Some(mut directory) = pending.pop_front() {
+        let run_remaining = progress.remaining(&budget.run, started)?;
+        let remaining = budget.entries.saturating_sub(entries_seen);
+        let limit = if cancelled() {
+            Some(ScanLimit::Cancelled)
+        } else if started.elapsed() >= budget.elapsed {
+            Some(ScanLimit::Elapsed)
+        } else if remaining == 0 {
+            Some(ScanLimit::Entries)
+        } else {
+            None
+        };
+        if let Some(limit) = limit {
+            pending.push_front(directory);
+            return Ok(finish_retained(paths, pending, limit, progress, started));
+        }
+        let observed = inventory(&directory.path, run_remaining)?;
+        progress.observe(observed.entries.len(), run_remaining)?;
+        let entries = retained_entries_after(&mut directory, observed)?;
+        let has_more = entries.len() > remaining;
+        let mut descended = false;
+        for entry in entries.into_iter().take(remaining) {
+            let path = directory.path.join(&entry.name);
+            entries_seen += 1;
+            match entry.kind {
+                MediaDirectoryEntryKind::Directory => {
+                    directory.after = Some(entry.name);
+                    if directory.depth >= budget.depth {
+                        pending.push_front(directory);
+                        return Ok(finish_retained(
+                            paths,
+                            pending,
+                            ScanLimit::Depth,
+                            progress,
+                            started,
+                        ));
+                    }
+                    descend(&mut pending, &directory, path, true);
+                    descended = true;
+                    break;
+                }
+                MediaDirectoryEntryKind::File(size) if is_media_file(&path) => {
+                    if let Some(limit) =
+                        selected_batch_limit(budget, size, paths.len(), bytes_selected)?
+                    {
+                        pending.push_front(directory);
+                        return Ok(finish_retained(paths, pending, limit, progress, started));
+                    }
+                    progress.select(size, &budget.run)?;
+                    bytes_selected += size;
+                    paths.push(
+                        path.to_str()
+                            .map(str::to_owned)
+                            .ok_or_else(|| ScanError::NonUnicodePath(path.clone()))?,
+                    );
+                    directory.after = Some(entry.name);
+                }
+                _ => directory.after = Some(entry.name),
+            }
+            let stopped = cancelled();
+            if stopped || started.elapsed() >= budget.elapsed {
+                let limit = if stopped {
+                    ScanLimit::Cancelled
+                } else {
+                    ScanLimit::Elapsed
+                };
+                pending.push_front(directory);
+                return Ok(finish_retained(paths, pending, limit, progress, started));
+            }
+        }
+        if !descended && has_more {
+            pending.push_front(directory);
+        }
+    }
+    if progress.metadata_elapsed.saturating_add(started.elapsed()) >= budget.run.metadata_elapsed {
+        return Err(
+            crate::media_discovery_fingerprint::FingerprintError::ResourceLimit(
+                "scan run metadata time",
+            )
+            .into(),
+        );
+    }
+    paths.sort();
+    Ok(ScanBatch {
+        paths,
+        cursor: None,
+        limit: None,
+    })
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn retained_entries_after(
+    directory: &mut DirectoryCursor,
+    inventory: crate::media_discovery_fingerprint::MediaDirectoryInventory,
+) -> Result<Vec<crate::media_discovery_fingerprint::MediaDirectoryEntry>, ScanError> {
+    use crate::media_discovery_fingerprint::{FingerprintError, directory_observations_match};
+    if directory
+        .observation
+        .as_ref()
+        .is_some_and(|before| !directory_observations_match(before, &inventory.observation))
+    {
+        return Err(FingerprintError::DirectoryChanged.into());
+    }
+    directory.observation = Some(inventory.observation);
+    Ok(inventory
+        .entries
+        .into_iter()
+        .filter(|entry| {
+            directory
+                .after
+                .as_ref()
+                .is_none_or(|after| entry.name > *after)
+        })
+        .collect())
 }
 
 pub(crate) fn scan_media_source_paths(
@@ -119,25 +394,26 @@ pub(crate) fn scan_media_source_paths(
                 has_more = true;
             }
         }
-        for (name, entry_path) in entries {
+        let mut descended = false;
+        let entry_count = entries.len();
+        for (entry_index, (name, entry_path)) in entries.into_iter().enumerate() {
             entries_seen += 1;
-            let file_type = fs::symlink_metadata(&entry_path)
-                .map_err(|source| ScanError::Io {
-                    path: entry_path.clone(),
-                    source,
-                })?
-                .file_type();
+            let file_type = entry_file_type(&entry_path)?;
             if file_type.is_dir() {
                 if directory.depth >= budget.depth {
                     directory.after = Some(name);
                     pending.push_front(directory);
                     return Ok(finish(paths, pending, ScanLimit::Depth));
                 }
-                pending.push_back(DirectoryCursor {
-                    path: entry_path,
-                    depth: directory.depth + 1,
-                    after: None,
-                });
+                directory.after = Some(name);
+                descend(
+                    &mut pending,
+                    &directory,
+                    entry_path,
+                    has_more || entry_index < entry_count.saturating_sub(1),
+                );
+                descended = true;
+                break;
             } else if file_type.is_file() && is_media_file(&entry_path) {
                 let size = fs::metadata(&entry_path)
                     .map_err(|source| ScanError::Io {
@@ -168,7 +444,7 @@ pub(crate) fn scan_media_source_paths(
             }
             directory.after = Some(name);
         }
-        if has_more {
+        if !descended && has_more {
             pending.push_front(directory);
         }
     }
@@ -180,6 +456,35 @@ pub(crate) fn scan_media_source_paths(
     })
 }
 
+fn entry_file_type(path: &Path) -> Result<fs::FileType, ScanError> {
+    fs::symlink_metadata(path)
+        .map(|metadata| metadata.file_type())
+        .map_err(|source| ScanError::Io {
+            path: path.to_path_buf(),
+            source,
+        })
+}
+
+fn descend(
+    pending: &mut VecDeque<DirectoryCursor>,
+    parent: &DirectoryCursor,
+    path: PathBuf,
+    retain_parent: bool,
+) {
+    // Retain only the ancestor chain; queuing every child lets the frontier
+    // grow with the total directory count across bounded batches.
+    if retain_parent {
+        pending.push_front(parent.clone());
+    }
+    pending.push_front(DirectoryCursor {
+        path,
+        depth: parent.depth + 1,
+        after: None,
+        #[cfg(any(target_os = "linux", test))]
+        observation: None,
+    });
+}
+
 fn initial_pending(root: &Path, cursor: Option<ScanCursor>) -> VecDeque<DirectoryCursor> {
     cursor.map_or_else(
         || {
@@ -187,6 +492,8 @@ fn initial_pending(root: &Path, cursor: Option<ScanCursor>) -> VecDeque<Director
                 path: root.into(),
                 depth: 0,
                 after: None,
+                #[cfg(any(target_os = "linux", test))]
+                observation: None,
             }])
         },
         |value| value.pending,
@@ -200,7 +507,27 @@ const fn finish(
 ) -> ScanBatch {
     ScanBatch {
         paths,
-        cursor: Some(ScanCursor { pending }),
+        cursor: Some(ScanCursor {
+            pending,
+            #[cfg(any(target_os = "linux", test))]
+            progress: ScanProgress::empty(),
+        }),
+        limit: Some(limit),
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn finish_retained(
+    paths: Vec<String>,
+    pending: VecDeque<DirectoryCursor>,
+    limit: ScanLimit,
+    mut progress: ScanProgress,
+    started: Instant,
+) -> ScanBatch {
+    progress.metadata_elapsed = progress.metadata_elapsed.saturating_add(started.elapsed());
+    ScanBatch {
+        paths,
+        cursor: Some(ScanCursor { pending, progress }),
         limit: Some(limit),
     }
 }
@@ -225,6 +552,7 @@ mod tests {
             files: 64,
             bytes: 64,
             elapsed: Duration::from_secs(1),
+            run: super::SCAN_RUN_LIMITS,
         }
     }
 
@@ -257,6 +585,40 @@ mod tests {
         );
         paths.sort();
         Ok((paths, limits))
+    }
+
+    #[test]
+    fn scan_resumes_with_a_depth_bounded_frontier_in_a_wide_tree() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let mut expected = std::collections::BTreeSet::new();
+        for index in 0..64 {
+            let nested = temp.path().join(format!("{index:03}")).join("nested");
+            fs::create_dir_all(&nested)?;
+            let media = nested.join("movie.mkv");
+            fs::write(&media, b"m")?;
+            expected.insert(path_string(&media));
+        }
+        let mut budget = test_budget();
+        budget.depth = 3;
+        budget.files = 1;
+        let mut cursor = None;
+        let mut discovered = std::collections::BTreeSet::new();
+        let mut count = 0;
+        for _ in 0..128 {
+            let batch = scan_media_source_paths(temp.path(), &budget, cursor, || false)?;
+            count += batch.paths.len();
+            discovered.extend(batch.paths);
+            cursor = batch.cursor;
+            if let Some(pending) = &cursor {
+                assert!(pending.pending.len() <= budget.depth + 1);
+            } else {
+                break;
+            }
+        }
+        assert!(cursor.is_none(), "wide-tree scan did not finish");
+        assert_eq!(discovered, expected);
+        assert_eq!(count, expected.len(), "scan emitted a duplicate candidate");
+        Ok(())
     }
 
     #[test]
@@ -519,6 +881,147 @@ mod tests {
             result,
             Err(ScanError::NonUnicodePath(path)) if path == media
         ));
+        Ok(())
+    }
+    #[cfg(unix)]
+    fn bounded_inventory(
+        path: &Path,
+        remaining: usize,
+    ) -> Result<
+        crate::media_discovery_fingerprint::MediaDirectoryInventory,
+        crate::media_discovery_fingerprint::FingerprintError,
+    > {
+        let directory = rustix::fs::open(
+            path,
+            rustix::fs::OFlags::RDONLY
+                | rustix::fs::OFlags::DIRECTORY
+                | rustix::fs::OFlags::NOFOLLOW,
+            rustix::fs::Mode::empty(),
+        )
+        .map_err(
+            |source| crate::media_discovery_fingerprint::FingerprintError::Io {
+                path: path.into(),
+                source: source.into(),
+            },
+        )?;
+        crate::media_discovery_fingerprint::read_media_directory_at(&directory, remaining)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retained_scan_run_limits_count_rereads_and_preserve_incomplete_state() -> anyhow::Result<()>
+    {
+        let root = tempfile::tempdir()?;
+        for name in ["a.mkv", "b.mkv", "c.mkv"] {
+            fs::write(root.path().join(name), b"x")?;
+        }
+
+        for kind in 0..4 {
+            let mut budget = test_budget();
+            budget.files = 1;
+            match kind {
+                0 => budget.run.examined = 6,
+                1 => budget.run.visits = 2,
+                2 => budget.run.selected = 1,
+                _ => budget.run.primary_bytes = 1,
+            }
+            let first = super::scan_retained_media_source_paths(
+                root.path(),
+                &budget,
+                None,
+                &|| false,
+                bounded_inventory,
+            )?;
+            assert_eq!(first.paths.len(), 1);
+            let first_cursor = first
+                .cursor
+                .ok_or_else(|| anyhow::anyhow!("expected unfinished scan"))?;
+            assert_eq!(first_cursor.progress.examined, 3);
+            let second = super::scan_retained_media_source_paths(
+                root.path(),
+                &budget,
+                Some(first_cursor),
+                &|| false,
+                bounded_inventory,
+            );
+            if kind < 2 {
+                let second_cursor = second?
+                    .cursor
+                    .ok_or_else(|| anyhow::anyhow!("expected unfinished second batch"))?;
+                assert_eq!(second_cursor.progress.examined, 6);
+                assert_eq!(second_cursor.progress.visits, 2);
+                assert!(matches!(
+                    super::scan_retained_media_source_paths(
+                        root.path(),
+                        &budget,
+                        Some(second_cursor),
+                        &|| false,
+                        bounded_inventory
+                    ),
+                    Err(ScanError::Inventory(
+                        crate::media_discovery_fingerprint::FingerprintError::ResourceLimit(_)
+                    ))
+                ));
+            } else {
+                assert!(matches!(
+                    second,
+                    Err(ScanError::Inventory(
+                        crate::media_discovery_fingerprint::FingerprintError::ResourceLimit(_)
+                    ))
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retained_scan_run_limit_allows_exact_clean_eof_and_rejects_overflow() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        for name in ["a.mkv", "b.mkv", "c.mkv"] {
+            fs::write(root.path().join(name), b"x")?;
+        }
+        let mut exact = test_budget();
+        exact.run = super::ScanRunLimits {
+            examined: 3,
+            visits: 1,
+            selected: 3,
+            primary_bytes: 3,
+            metadata_elapsed: Duration::from_secs(1),
+        };
+        let complete = super::scan_retained_media_source_paths(
+            root.path(),
+            &exact,
+            None,
+            &|| false,
+            bounded_inventory,
+        )?;
+        assert_eq!(complete.paths.len(), 3);
+        assert!(complete.cursor.is_none());
+        assert!(complete.limit.is_none());
+        exact.run.examined = 2;
+        assert!(
+            super::scan_retained_media_source_paths(
+                root.path(),
+                &exact,
+                None,
+                &|| false,
+                bounded_inventory
+            )
+            .is_err()
+        );
+        exact.run = super::SCAN_RUN_LIMITS;
+        exact.run.metadata_elapsed = Duration::ZERO;
+        assert!(
+            super::scan_retained_media_source_paths(
+                root.path(),
+                &exact,
+                None,
+                &|| false,
+                bounded_inventory
+            )
+            .is_err()
+        );
         Ok(())
     }
 }

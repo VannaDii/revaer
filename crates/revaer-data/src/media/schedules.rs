@@ -98,3 +98,23 @@ pub async fn replace_schedule_configuration(
     .await
     .map_err(try_op("replace native schedule configuration"))
 }
+
+/// Observe overdue intervals once and publish one coalesced rescan transactionally.
+///
+/// # Errors
+/// Rejects stale authority or disabled schedule mode and propagates storage failures.
+/// `None` means no configured cadence or no due interval.
+pub async fn observe_schedule_due(
+    pool: &PgPool,
+    fence: &super::rescan::RescanFence<'_>,
+) -> Result<Option<i64>> {
+    sqlx::query_scalar("SELECT media_discovery_schedule_observe_due_v1($1,$2,$3,$4,$5)")
+        .bind(fence.association)
+        .bind(fence.version)
+        .bind(fence.generation)
+        .bind(fence.generation_sha256.as_slice())
+        .bind(fence.trigger)
+        .fetch_one(pool)
+        .await
+        .map_err(try_op("observe fenced native schedule due intervals"))
+}

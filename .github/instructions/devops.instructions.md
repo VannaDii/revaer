@@ -15,6 +15,11 @@ applyTo:
 
 # Workflow And Release Rules
 
+- `rv test-media-recovery` retains runtime, media-data and app restart selections.
+  Linux also executes the real retained native catalog/inventory tests serially;
+  the positive-test check applies to every selection. Its CLI fixture proves
+  selection/feature behavior only, not native filesystem qualification.
+
 - An audit exit code of zero is insufficient when packages were skipped. Source
   dependencies must retain uv provenance/hash verification and complete advisory
   coverage; URL requirements must not silently escape the dependency gate.
@@ -101,6 +106,14 @@ applyTo:
   test serialization. cargo-udeps uses the compiler/tool pins in
   `tools/versions.toml`; analysis must retain compiler evidence and reject
   conflicting overrides instead of falling back to another toolchain.
+- The active-service recovery recipe uses the caller's owned Linux persistent
+  mount and explicit disposable database endpoint. Retain the ignored-test
+  selection and positive one-test proof; never infer successful qualification
+  from Cargo selecting zero tests or an unsupported host.
+- Media browser qualification restarts the owned API after authentication reset
+  so startup attestation sees the real Linux catalog. Keep missing-catalog and
+  qualified-catalog API runs separate under both authentication modes, retain each
+  phase's evidence, and reap every owned service before reset or database cleanup.
 - Preserve existing release branch eligibility, opt-in Helm release assets,
   credentials precedence, artifacts, and failure behavior during migration.
   A release preview must use the same configured branch rules as publication.
@@ -384,3 +397,11 @@ merge tasks validate the same completed phase set.
 - In accepted ADR 591 feature-development mode, PR/native/scanner application fixtures initialize the complete single initializer and sealed runtime role. Historical migration replay is forbidden in those jobs. The feature matrix fixture gate must precede minimal-feature tests.
 - Composed CI provisions an explicitly selected owned disposable single-init database, verifies the constrained runtime baseline, preserves the administrative test endpoint and drops only owned resources after every outcome. Existing databases are verified without initialization or repair.
 - Exact Sonar source/YAML inventories include all retained comparison fixtures and newly authored tooling. Preserve every strict property and issue/coverage criterion; scope regeneration may add authored entries, never hide them.
+
+- `just test-media-recovery` is the focused local cancellation/replacement
+  regression recipe. It preserves the complete CI and UI handoff gates.
+
+- Verified scanner archives may contain internal JRE license links. Materialize
+  them from regular members of that same archive without creating filesystem
+  links. Reject escaping, missing and chained targets; count materialized bytes
+  against the existing extraction limit. Preserve signature and hash checks.

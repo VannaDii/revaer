@@ -377,8 +377,9 @@ class BaselineProof:
                 "0",
             ),
             (
-                "runtime media recovery read",
-                "SELECT count(*) FROM public.media_job_worker_recover_stale_v1(60)",
+                "runtime bounded startup recovery on empty owned fixture",
+                "SELECT count(*) FROM public.media_job_worker_resume_interrupted_v1("
+                "workspace_root_input => '/revaer-baseline-proof')",
                 "0",
             ),
         ):

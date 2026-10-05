@@ -124,7 +124,7 @@ pub enum ReplacementRecoveryAction {
 }
 
 /// Result of recovering one deterministic replacement transaction.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct RecoveredReplacement {
     /// Stable job identity recorded in the transaction manifest.
     pub job_key: String,
@@ -134,6 +134,8 @@ pub struct RecoveredReplacement {
     pub action: ReplacementRecoveryAction,
     /// Bounded recovery failure detail for quarantined entries.
     pub error: Option<String>,
+    /// Retained rollback artifacts; discard only after the source fingerprint is saved.
+    pub pending_cleanup: Option<PreparedReplacement>,
 }
 
 /// Durable replacement failure.
@@ -233,7 +235,7 @@ pub trait ReplacementCommitter {
         prepared: PreparedReplacement,
     ) -> Result<CommittedReplacement, ReplacementError>;
 
-    /// Remove a prepared but uncommitted transaction without modifying the source.
+    /// Remove uncommitted or acknowledged restored artifacts without modifying the source.
     ///
     /// # Errors
     ///
@@ -262,7 +264,9 @@ pub trait ReplacementCommitter {
     fn recover(&self, source_root: &Path) -> Result<Vec<RecoveredReplacement>, ReplacementError>;
 
     /// Recover only the named journal after the caller validates its job authority.
-    /// An absent journal is an expected idempotent outcome.
+    /// An absent journal is an expected idempotent outcome. Rolled-back journals
+    /// retain their backup in `pending_cleanup` until the caller saves the verified
+    /// source fingerprint and discards those artifacts.
     ///
     /// # Errors
     /// Propagates invalid ownership, manifests and recovery failures unchanged.
@@ -324,7 +328,7 @@ impl ReplacementCommitter for SystemReplacementCommitter {
 
     fn rollback(&self, committed: CommittedReplacement) -> Result<(), ReplacementError> {
         let prepared = committed.prepared;
-        rollback_entries(&prepared.transaction_handle, &prepared.entries)?;
+        rollback_entries(&prepared.transaction_handle, &prepared.entries, false)?;
         remove_transaction(&prepared.transaction_dir)
     }
 
@@ -379,7 +383,7 @@ impl ReplacementCommitter for SystemReplacementCommitter {
         } else {
             BTreeSet::new()
         };
-        let recovered = recover_transaction(&source_root, &transaction, &terminal)?;
+        let recovered = recover_transaction(&source_root, &transaction, &terminal, true)?;
         sync_directory(&root, "replacement.recovery_job_sync")?;
         Ok(Some(recovered))
     }
@@ -405,7 +409,7 @@ impl ReplacementCommitter for SystemReplacementCommitter {
                 source,
             })?;
             let transaction_path = entry.path();
-            match recover_transaction(&source_root, &transaction_path, terminal_job_keys) {
+            match recover_transaction(&source_root, &transaction_path, terminal_job_keys, false) {
                 Ok(result) => recovered.push(result),
                 Err(error) => recovered.push(quarantine_invalid_transaction(
                     &source_root.path,
@@ -651,21 +655,110 @@ fn commit_entries(prepared: &PreparedReplacement) -> Result<(), ReplacementError
     Ok(())
 }
 
+fn restore_original(
+    transaction: &Arc<OwnedFd>,
+    recovery: &Path,
+    destination: &PinnedDestination,
+    retain_backup: bool,
+) -> Result<(), ReplacementError> {
+    if !retain_backup {
+        return rename_from_transaction(
+            transaction,
+            recovery,
+            destination,
+            "replacement.rollback_rename",
+        );
+    }
+    let name = recovery
+        .file_name()
+        .ok_or_else(|| ReplacementError::InvalidManifest(recovery.into()))?;
+    let stage = recovery.with_extension("restore");
+    let stage_name = stage
+        .file_name()
+        .ok_or_else(|| ReplacementError::InvalidManifest(stage.clone()))?;
+    let io_error = |source: rustix::io::Errno| ReplacementError::Io {
+        operation: "replacement.restore_copy",
+        path: recovery.into(),
+        source: rustix_error(source),
+    };
+    // A crash may leave only this private, deterministic temporary copy. The
+    // original backup remains intact and is copied again before atomic publication.
+    match rustix::fs::unlinkat(
+        transaction.as_ref(),
+        stage_name,
+        rustix::fs::AtFlags::empty(),
+    ) {
+        Ok(()) | Err(rustix::io::Errno::NOENT) => {}
+        Err(error) => return Err(io_error(error)),
+    }
+    let mut input = File::from(
+        rustix::fs::openat(
+            transaction.as_ref(),
+            name,
+            rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::empty(),
+        )
+        .map_err(io_error)?,
+    );
+    let metadata = input.metadata().map_err(|source| ReplacementError::Io {
+        operation: "replacement.restore_metadata",
+        path: recovery.into(),
+        source,
+    })?;
+    if !metadata.is_file() {
+        return Err(ReplacementError::InvalidManifest(recovery.into()));
+    }
+    let mut output = File::from(
+        rustix::fs::openat(
+            transaction.as_ref(),
+            stage_name,
+            rustix::fs::OFlags::WRONLY
+                | rustix::fs::OFlags::CREATE
+                | rustix::fs::OFlags::EXCL
+                | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+        )
+        .map_err(io_error)?,
+    );
+    io::copy(&mut input, &mut output)
+        .and_then(|_| output.set_permissions(metadata.permissions()))
+        .and_then(|()| output.sync_all())
+        .map_err(|source| ReplacementError::Io {
+            operation: "replacement.restore_copy_sync",
+            path: stage.clone(),
+            source,
+        })?;
+    rename_from_transaction(
+        transaction,
+        &stage,
+        destination,
+        "replacement.restore_publish",
+    )
+}
+
 fn rollback_entries(
     transaction_handle: &Arc<OwnedFd>,
     entries: &[PreparedEntry],
-) -> Result<(), ReplacementError> {
+    retain_backup: bool,
+) -> Result<bool, ReplacementError> {
+    let mut changed = false;
     for entry in entries.iter().rev() {
+        if !entry_was_applied(transaction_handle, entry)? {
+            continue;
+        }
+
         if let Some(recovery) = &entry.recovery {
             if !transaction_entry_exists(transaction_handle, recovery)? {
                 return Err(ReplacementError::RecoveryMissing(recovery.clone()));
             }
-            rename_from_transaction(
+            restore_original(
                 transaction_handle,
                 recovery,
                 &entry.pinned_destination,
-                "replacement.rollback_rename",
+                retain_backup,
             )?;
+            changed = true;
             sync_destination_file(&entry.pinned_destination, "replacement.rollback_file_sync")?;
             sync_pinned_directory(
                 &entry.pinned_destination.parent,
@@ -680,6 +773,7 @@ fn rollback_entries(
                 &entry.pinned_destination,
                 "replacement.rollback_remove_created",
             )?;
+            changed = true;
             sync_pinned_directory(
                 &entry.pinned_destination.parent,
                 &entry.destination,
@@ -687,7 +781,17 @@ fn rollback_entries(
             )?;
         }
     }
-    Ok(())
+    Ok(changed)
+}
+
+fn entry_was_applied(
+    transaction_handle: &Arc<OwnedFd>,
+    entry: &PreparedEntry,
+) -> Result<bool, ReplacementError> {
+    match &entry.staged {
+        Some(staged) => Ok(!transaction_entry_exists(transaction_handle, staged)?),
+        None => Ok(!destination_exists(&entry.pinned_destination)?),
+    }
 }
 
 fn remove_recovery_files(entries: &[PreparedEntry]) -> Result<(), ReplacementError> {
@@ -703,6 +807,7 @@ fn recover_transaction(
     source_root: &PinnedSourceRoot,
     transaction_path: &Path,
     terminal_job_keys: &BTreeSet<String>,
+    retain_rollback: bool,
 ) -> Result<RecoveredReplacement, ReplacementError> {
     let transaction_metadata =
         fs::symlink_metadata(transaction_path).map_err(|source| ReplacementError::Io {
@@ -747,13 +852,27 @@ fn recover_transaction(
         &source_path,
         &manifest,
         terminal_job_keys.contains(&manifest.job_key),
+        retain_rollback,
     )?;
-    remove_transaction(transaction_path)?;
+    let pending_cleanup = if retain_rollback && action == ReplacementRecoveryAction::RolledBack {
+        Some(PreparedReplacement {
+            transaction_dir: transaction_path.to_path_buf(),
+            transaction_handle,
+            source: source_path.clone(),
+            staged: transaction_path.join(STAGED_FILE_NAME),
+            recovery: transaction_path.join(RECOVERY_FILE_NAME),
+            entries: Vec::new(),
+        })
+    } else {
+        remove_transaction(transaction_path)?;
+        None
+    };
     Ok(RecoveredReplacement {
         job_key: manifest.job_key,
         source_path,
         action,
         error: None,
+        pending_cleanup,
     })
 }
 
@@ -764,6 +883,7 @@ fn recover_transaction_state(
     source_path: &Path,
     manifest: &ReplacementManifest,
     terminal_committed: bool,
+    retain_rollback: bool,
 ) -> Result<ReplacementRecoveryAction, ReplacementError> {
     if !manifest.entries.is_empty() {
         let entries =
@@ -776,11 +896,11 @@ fn recover_transaction_state(
             )?;
             return Ok(ReplacementRecoveryAction::Finalized);
         }
-        rollback_entries(transaction_handle, &entries)?;
-        return Ok(if manifest.committed_entries == 0 {
-            ReplacementRecoveryAction::DiscardedPrepared
-        } else {
+        let changed = rollback_entries(transaction_handle, &entries, retain_rollback)?;
+        return Ok(if changed {
             ReplacementRecoveryAction::RolledBack
+        } else {
+            ReplacementRecoveryAction::DiscardedPrepared
         });
     }
     let recovery_path = transaction_path.join(RECOVERY_FILE_NAME);
@@ -804,11 +924,11 @@ fn recover_transaction_state(
     }
     if recovery_path.is_file() {
         let destination = pin_destination(source_root, source_path)?;
-        rename_from_transaction(
+        restore_original(
             transaction_handle,
             &recovery_path,
             &destination,
-            "replacement.recovery_rollback",
+            retain_rollback,
         )?;
         sync_destination_file(&destination, "replacement.recovery_file_sync")?;
         sync_pinned_directory(
@@ -1279,6 +1399,7 @@ fn quarantine_invalid_transaction(
         source_path: transaction_path.to_path_buf(),
         action: ReplacementRecoveryAction::Quarantined,
         error: Some(detail),
+        pending_cleanup: None,
     })
 }
 
@@ -1521,6 +1642,7 @@ mod tests {
         ReplacementRecoveryAction, ReplacementRequest, SystemReplacementCommitter,
         manifest_entries, transaction_job_key, write_manifest,
     };
+    use anyhow::Context;
     use std::collections::BTreeSet;
     use std::fs;
     use std::os::unix::fs::symlink;
@@ -1740,8 +1862,19 @@ mod tests {
         let sibling = super::replacement_root(root.path()).join("second-job");
         let sibling_manifest = fs::read(sibling.join(super::MANIFEST_FILE_NAME))?;
         let recovered = committer.recover_job(root.path(), "first-job", false)?;
-        assert!(recovered.is_some_and(|result| result.job_key == "first-job"
-            && result.action == ReplacementRecoveryAction::RolledBack));
+        let recovered = recovered.context("first recovery")?;
+        assert_eq!(recovered.job_key, "first-job");
+        assert_eq!(recovered.action, ReplacementRecoveryAction::RolledBack);
+        let retained = recovered.pending_cleanup.context("retained recovery")?;
+        assert_eq!(fs::read(retained.recovery_path())?, b"original");
+        // Simulate interruption before the database acknowledgement: recovery
+        // must still be repeatable with the original backup and manifest intact.
+        drop(retained);
+        let repeated = committer
+            .recover_job(root.path(), "first-job", false)?
+            .context("repeat recovery")?;
+        assert_eq!(fs::read(root.path().join("first-job.mkv"))?, b"original");
+        committer.discard_prepared(repeated.pending_cleanup.context("repeat backup")?)?;
         assert_eq!(fs::read(root.path().join("first-job.mkv"))?, b"original");
         assert_eq!(
             fs::read(root.path().join("second-job.mkv"))?,

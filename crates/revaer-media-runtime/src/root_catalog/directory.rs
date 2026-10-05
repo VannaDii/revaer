@@ -77,7 +77,8 @@ struct DirectoryLink {
 /// This is not a complete root attestation: callers still must prove trusted
 /// declaration provenance, deployment ownership, mount identity/aliases and
 /// durability, and retain this value while any bound operation is admitted.
-/// No clone or descriptor export can accidentally extend the public lock lifetime.
+/// Ordinary children inherit the locked descriptor, so losing the parent cannot
+/// admit replay while its child still operates on the root.
 pub struct OpenedRootDirectory {
     links: Vec<DirectoryLink>,
     service_uid: u32,
@@ -150,6 +151,11 @@ impl OpenedRootDirectory {
                 FlockOperation::NonBlockingLockExclusive,
             )
             .map_err(|error| failure("acquire exclusive root lock", error))?;
+            // flock is held by the open file description. Keeping this one
+            // descriptor across exec extends exclusion until old children exit,
+            // including when the service itself is killed before joining them.
+            rustix::io::fcntl_setfd(&opened.last()?.file, rustix::io::FdFlags::empty())
+                .map_err(|error| failure("retain root lock in child", error))?;
         }
         opened.revalidate()?;
         Ok(opened)
@@ -235,30 +241,38 @@ impl OpenedRootDirectory {
         &self,
         relative_candidate: &std::path::Path,
     ) -> Result<std::os::fd::OwnedFd, RootDirectoryError> {
-        let relative = relative_candidate
-            .to_str()
+        let components = relative_components(relative_candidate, false)?;
+        let (_, parents) = components
+            .split_last()
             .ok_or(RootDirectoryError::InvalidPath)?;
-        if relative.is_empty() || relative.len() > 4096 || relative.contains(['\\', '\0']) {
-            return Err(RootDirectoryError::InvalidPath);
-        }
-        let components = relative.split('/').collect::<Vec<_>>();
-        if components
-            .iter()
-            .any(|part| matches!(*part, "" | "." | ".."))
-        {
-            return Err(RootDirectoryError::InvalidPath);
-        }
+        let parent = parents.join("/");
+        self.open_read_directory(std::path::Path::new(&parent))
+    }
+
+    /// Open a read-only directory beneath this retained root without symlinks.
+    /// An empty relative path selects the root itself. The descriptor has its
+    /// own open-file description; retain the catalog and repeat its generation
+    /// fence while using it.
+    ///
+    /// # Errors
+    /// Rejects invalid components, changed root links and missing, symlinked or
+    /// unreadable descendants. Never creates files or normalizes a relative path.
+    pub fn open_read_directory(
+        &self,
+        relative_directory: &std::path::Path,
+    ) -> Result<std::os::fd::OwnedFd, RootDirectoryError> {
+        let components = relative_components(relative_directory, true)?;
         self.revalidate()?;
         let mut parent = fs::openat(&self.last()?.file, ".", DIRECTORY_FLAGS, Mode::empty())
             .map_err(|error| failure("open retained root traversal", error))?;
-        for component in &components[..components.len() - 1] {
-            parent = match fs::openat(&parent, *component, DIRECTORY_FLAGS, Mode::empty()) {
+        for component in components {
+            parent = match fs::openat(&parent, component, DIRECTORY_FLAGS, Mode::empty()) {
                 Ok(parent) => parent,
                 Err(error) if error == rustix::io::Errno::NOENT => {
                     self.revalidate()?;
                     return Err(RootDirectoryError::CandidateMissing);
                 }
-                Err(error) => return Err(failure("open candidate parent", error)),
+                Err(error) => return Err(failure("open retained descendant directory", error)),
             };
         }
         self.revalidate()?;
@@ -447,6 +461,27 @@ const fn same_identity(expected: &Stat, actual: &Stat) -> Result<(), RootDirecto
         return Err(RootDirectoryError::IdentityChanged);
     }
     Ok(())
+}
+
+fn relative_components(
+    path: &std::path::Path,
+    root_allowed: bool,
+) -> Result<Vec<&str>, RootDirectoryError> {
+    let relative = path.to_str().ok_or(RootDirectoryError::InvalidPath)?;
+    if relative.is_empty() && root_allowed {
+        return Ok(Vec::new());
+    }
+    if relative.is_empty() || relative.len() > 4096 || relative.contains(['\\', '\0']) {
+        return Err(RootDirectoryError::InvalidPath);
+    }
+    let components = relative.split('/').collect::<Vec<_>>();
+    if components
+        .iter()
+        .any(|part| matches!(*part, "" | "." | ".."))
+    {
+        return Err(RootDirectoryError::InvalidPath);
+    }
+    Ok(components)
 }
 
 fn failure(operation: &'static str, source: impl Into<io::Error>) -> RootDirectoryError {

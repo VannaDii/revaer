@@ -35,7 +35,16 @@ def test_ci_holds_connection_until_gates_finish_and_never_builds_after_failure(
         context.settings.database,
         test_url="postgres://tests@disposable/postgres" if explicit else None,
     )
-    context = replace(context, settings=replace(context.settings, database=database))
+    # This matrix supplies its own database selection; the caller's E2E admin
+    # endpoint must not supply a different fallback in the unit fixture.
+    context = replace(
+        context,
+        settings=replace(
+            context.settings,
+            database=database,
+            e2e=replace(context.settings.e2e, admin_url=None),
+        ),
+    )
     calls: list[str] = []
     lock = tmp_path / "database.lock"
     normalized = "postgres://local@127.0.0.1:5441/revaer?sslmode=disable"

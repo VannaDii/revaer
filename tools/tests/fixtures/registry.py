@@ -5,6 +5,7 @@ to the client invocation; no machine trust store or Docker daemon policy changes
 """
 
 import base64
+import hashlib
 import json
 import secrets
 import ssl
@@ -56,6 +57,14 @@ class LocalRegistry:
 
 @contextmanager
 def registry(root: Path) -> Iterator[LocalRegistry]:
+    # Each test owns distinct certificate/authentication files and registry state.
+    # Their path distinguishes concurrent fixtures without reusing another test.
+    name = "revaer-chart-registry-" + hashlib.sha256(str(root).encode()).hexdigest()[:12]
+    existing = execute(
+        "docker", "ps", "--all", "--filter", f"name=^/{name}$", "--format", "{{.Names}}"
+    )
+    if existing:
+        raise RuntimeError(f"Chart registry fixture already exists: {name}")
     root.mkdir(mode=0o700)
     certificate, private = root / "tls.crt", root / "tls.key"
     execute(
@@ -85,6 +94,12 @@ def registry(root: Path) -> Iterator[LocalRegistry]:
     identifier = execute(
         "docker",
         "create",
+        "--name",
+        name,
+        "--label",
+        "project=revaer",
+        "--label",
+        "purpose=chart-registry-qualification",
         "--read-only",
         "--publish",
         "127.0.0.1::5000",

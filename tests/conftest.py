@@ -56,7 +56,15 @@ class E2eRuntime:
 
 def phase() -> str:
     value = os.environ.get("REVAER_E2E_PHASE", "")
-    if value not in ("api-none", "api-api-key", "ui-chromium", "ui-firefox", "ui-webkit"):
+    if value not in (
+        "api-none-missing-catalog",
+        "api-none",
+        "api-api-key-missing-catalog",
+        "api-api-key",
+        "ui-chromium",
+        "ui-firefox",
+        "ui-webkit",
+    ):
         raise pytest.UsageError("Run application tests with rv ui-e2e to provision their services")
     return value
 
@@ -159,7 +167,7 @@ def pytest_runtest_makereport(
 def runtime(pytestconfig: pytest.Config) -> E2eRuntime:
     name = phase()
     settings = load_e2e_settings(os.environ)
-    mode = "none" if name == "api-none" else "api_key"
+    mode = "none" if name.startswith("api-none") else "api_key"
     key = os.environ.get("REVAER_E2E_API_KEY") or None
     if mode == "api_key" and key is None:
         raise pytest.UsageError("The rv runner did not supply the authenticated API session")

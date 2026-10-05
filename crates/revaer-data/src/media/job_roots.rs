@@ -138,6 +138,51 @@ fn ordered_complete(rows: &[JobRootSnapshotRow]) -> bool {
         })
 }
 
+/// Verified restored content and its current physical metadata, scoped to one attempt.
+pub struct RestoredSourceInput<'a> {
+    /// Owning job.
+    pub job_id: Uuid,
+    /// Existing attempt generation.
+    pub generation: i64,
+    /// Exact sealed source path.
+    pub source_path: &'a str,
+    /// Observed device/inode pair.
+    pub identity: &'a str,
+    /// Aggregate byte count; must equal admission.
+    pub size_bytes: i64,
+    /// Observed modification time.
+    pub modified_ns: i64,
+    /// Observed change time.
+    pub changed_ns: i64,
+    /// Aggregate content digest; must equal admission.
+    pub sha256: &'a str,
+}
+
+/// Refresh only physical metadata after the caller verifies an owned rollback.
+///
+/// # Errors
+/// Rejects stale attempts, foreign paths, changed content and invalid metadata.
+pub async fn refresh_restored_source(pool: &PgPool, input: &RestoredSourceInput<'_>) -> Result<()> {
+    sqlx::query(
+        "SELECT media_job_restored_source_refresh_v1(
+            job_public_id_input => $1, generation_input => $2, source_path_input => $3,
+            identity_input => $4, size_input => $5, modified_ns_input => $6,
+            changed_ns_input => $7, sha256_input => $8)",
+    )
+    .bind(input.job_id)
+    .bind(input.generation)
+    .bind(input.source_path)
+    .bind(input.identity)
+    .bind(input.size_bytes)
+    .bind(input.modified_ns)
+    .bind(input.changed_ns)
+    .bind(input.sha256)
+    .execute(pool)
+    .await
+    .map_err(try_op("refresh verified rollback source metadata"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

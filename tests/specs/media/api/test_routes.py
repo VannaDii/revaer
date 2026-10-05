@@ -10,11 +10,18 @@ from revaer_tooling.json_data import JsonObject
 from tests.support.api_assertions import rows
 
 MISSING = "00000000-0000-0000-0000-000000000001"
+PROFILE_ITEM = "/v1/media/profiles/{media_profile_public_id}"
 OPERATIONS = (
     (Method.GET, "/v1/media/capabilities"),
     (Method.GET, "/v1/media/capabilities/readiness"),
     (Method.GET, "/v1/media/compatibility-targets"),
     (Method.GET, "/v1/media/compliance"),
+    (Method.GET, "/v1/media/discovery-associations"),
+    (Method.GET, "/v1/media/discovery-associations/{media_discovery_association_public_id}"),
+    (
+        Method.GET,
+        "/v1/media/discovery-associations/{media_discovery_association_public_id}/schedule",
+    ),
     (Method.GET, "/v1/media/discovery/schedules"),
     (Method.GET, "/v1/media/discovery/watchers"),
     (Method.GET, "/v1/media/export"),
@@ -32,10 +39,21 @@ OPERATIONS = (
     (Method.GET, "/v1/media/policies"),
     (Method.GET, "/v1/media/profiles"),
     (Method.GET, "/v1/media/profiles/{media_profile_public_id}"),
+    (Method.GET, "/v1/media/profiles/{media_profile_public_id}/readiness"),
+    (Method.GET, "/v1/media/root-catalog"),
+    (Method.GET, "/v1/media/root-catalog/readiness"),
     (Method.GET, "/v1/media/targets"),
     (Method.PATCH, "/v1/media/job-retention"),
-    (Method.PATCH, "/v1/media/profiles/{media_profile_public_id}"),
-    (Method.PATCH, "/v1/media/profiles/{media_profile_public_id}/desired-target"),
+    (Method.PUT, "/v1/media/profiles/{media_profile_public_id}"),
+    (Method.POST, "/v1/media/discovery-associations"),
+    (
+        Method.POST,
+        "/v1/media/discovery-associations/{media_discovery_association_public_id}/schedule",
+    ),
+    (
+        Method.PUT,
+        "/v1/media/discovery-associations/{media_discovery_association_public_id}/schedule",
+    ),
     (Method.POST, "/v1/media/capabilities/refresh"),
     (Method.POST, "/v1/media/compatibility-targets"),
     (Method.POST, "/v1/media/discovery/preview"),
@@ -106,3 +124,8 @@ def test_bounded_empty_requests_do_not_produce_server_errors(api: ApiClient) -> 
 def test_worker_owned_media_writes_remain_unavailable(api: ApiClient) -> None:
     for route in ("/v1/media/jobs", "/v1/media/jobs/{media_job_public_id}/phases"):
         assert raw_status(api, Method.POST, route) == 405
+
+
+def test_retired_profile_patch_writes_remain_unavailable(api: ApiClient) -> None:
+    assert raw_status(api, Method.PATCH, PROFILE_ITEM) == 405
+    assert raw_status(api, Method.PATCH, PROFILE_ITEM + "/desired-target") == 404

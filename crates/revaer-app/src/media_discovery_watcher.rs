@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use thiserror::Error;
 use tracing::warn;
 use uuid::Uuid;
@@ -26,11 +26,13 @@ pub(crate) struct MediaWatchEventBuffer {
 struct MediaWatchEventBufferState {
     events: BTreeMap<(Uuid, PathBuf), MediaWatchEvent>,
     overflowed_profiles: BTreeSet<Uuid>,
+    uncertain_profiles: BTreeSet<Uuid>,
 }
 
 pub(crate) struct DrainedMediaWatchEvents {
     pub(crate) events: Vec<MediaWatchEvent>,
     pub(crate) overflowed_profiles: BTreeSet<Uuid>,
+    pub(crate) uncertain_profiles: BTreeSet<Uuid>,
 }
 
 impl MediaWatchEventBuffer {
@@ -47,14 +49,49 @@ impl MediaWatchEventBuffer {
             .state
             .lock()
             .map_err(|error| MediaWatcherError::EventBuffer(error.to_string()))?;
+        // Retained DISC watch limits apply before cloning a callback path.
+        let path_bytes = event.path.as_os_str().len();
+        if path_bytes > 2 * 1024 * 1024 {
+            state
+                .overflowed_profiles
+                .insert(event.registration_public_id);
+            return Ok(());
+        }
         let key = (event.registration_public_id, event.path.clone());
-        if state.events.contains_key(&key) || state.events.len() < self.capacity {
+        let per_root = state
+            .events
+            .values()
+            .filter(|pending| pending.registration_public_id == event.registration_public_id)
+            .fold((0_usize, 0_usize), |(count, bytes), pending| {
+                (count + 1, bytes + pending.path.as_os_str().len())
+            });
+        let total_bytes: usize = state
+            .events
+            .values()
+            .map(|pending| pending.path.as_os_str().len())
+            .sum();
+        if state.events.contains_key(&key)
+            || (state.events.len() < self.capacity
+                && per_root.0 < 256
+                && per_root.1 + path_bytes <= 2 * 1024 * 1024
+                && total_bytes + path_bytes <= 8 * 1024 * 1024)
+        {
             state.events.insert(key, event);
         } else {
             state
                 .overflowed_profiles
                 .insert(event.registration_public_id);
         }
+        drop(state);
+        Ok(())
+    }
+
+    fn record_uncertainty(&self, id: Uuid) -> Result<(), MediaWatcherError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|error| MediaWatcherError::EventBuffer(error.to_string()))?;
+        state.uncertain_profiles.insert(id);
         drop(state);
         Ok(())
     }
@@ -67,6 +104,7 @@ impl MediaWatchEventBuffer {
         Ok(DrainedMediaWatchEvents {
             events: std::mem::take(&mut state.events).into_values().collect(),
             overflowed_profiles: std::mem::take(&mut state.overflowed_profiles),
+            uncertain_profiles: std::mem::take(&mut state.uncertain_profiles),
         })
     }
 }
@@ -103,9 +141,12 @@ impl NotifyMediaWatcher {
         }
 
         let sender = self.events.clone();
-        let mut watcher = notify::recommended_watcher(move |result: notify::Result<Event>| {
-            forward_watch_result(profile_id, &sender, result);
-        })
+        let mut watcher = RecommendedWatcher::new(
+            move |result: notify::Result<Event>| {
+                forward_watch_result(profile_id, &sender, result);
+            },
+            Config::default().with_follow_symlinks(false),
+        )
         .map_err(|source| MediaWatcherError::Create {
             path: source_root.clone(),
             source,
@@ -127,12 +168,18 @@ impl NotifyMediaWatcher {
     }
 }
 
-fn forward_watch_result(
+pub(crate) fn forward_watch_result(
     profile_id: Uuid,
     events: &MediaWatchEventBuffer,
     result: notify::Result<Event>,
 ) {
     match result {
+        Ok(event)
+            if event.need_rescan()
+                || (event_can_change_media(event.kind) && event.paths.is_empty()) =>
+        {
+            record_watch_uncertainty(profile_id, events);
+        }
         Ok(event) if event_can_change_media(event.kind) => {
             for path in event.paths {
                 if let Err(error) = events.record(MediaWatchEvent {
@@ -145,12 +192,19 @@ fn forward_watch_result(
         }
         Ok(_) => {}
         Err(error) => {
+            record_watch_uncertainty(profile_id, events);
             warn!(
                 registration_public_id = %profile_id,
                 error = %error,
                 "media filesystem watcher event failed"
             );
         }
+    }
+}
+
+fn record_watch_uncertainty(id: Uuid, events: &MediaWatchEventBuffer) {
+    if let Err(error) = events.record_uncertainty(id) {
+        warn!(error = %error, "media watcher uncertainty buffer failed");
     }
 }
 
@@ -303,6 +357,95 @@ mod tests {
         let drained = events.drain()?;
         assert_eq!(drained.events.len(), 4);
         assert_eq!(drained.overflowed_profiles, BTreeSet::from([profile_id]));
+        Ok(())
+    }
+    #[test]
+    fn watcher_uncertainty_is_not_lost_without_a_path() -> anyhow::Result<()> {
+        let id = Uuid::new_v4();
+        let events = MediaWatchEventBuffer::new(4);
+        for result in [
+            Ok(Event::new(EventKind::Other).set_flag(notify::event::Flag::Rescan)),
+            Ok(Event::new(EventKind::Any)),
+            Err(notify::Error::generic("owned backend uncertainty")),
+        ] {
+            forward_watch_result(id, &events, result);
+            let drained = events.drain()?;
+            assert!(drained.events.is_empty());
+            assert_eq!(drained.uncertain_profiles, BTreeSet::from([id]));
+            assert!(drained.overflowed_profiles.is_empty());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn event_buffer_enforces_root_record_and_byte_limits() -> anyhow::Result<()> {
+        let id = Uuid::new_v4();
+        let events = MediaWatchEventBuffer::new(1024);
+        for index in 0..257 {
+            events.record(MediaWatchEvent {
+                registration_public_id: id,
+                path: PathBuf::from(format!("movie-{index}.mkv")),
+            })?;
+        }
+        let drained = events.drain()?;
+        assert_eq!(drained.events.len(), 256);
+        assert_eq!(drained.overflowed_profiles, BTreeSet::from([id]));
+        events.record(MediaWatchEvent {
+            registration_public_id: id,
+            path: PathBuf::from("x".repeat(2 * 1024 * 1024 + 1)),
+        })?;
+        let drained = events.drain()?;
+        assert!(drained.events.is_empty());
+        assert_eq!(drained.overflowed_profiles, BTreeSet::from([id]));
+        Ok(())
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn retained_descriptor_watcher_detects_nested_changes_without_following_symlinks()
+    -> anyhow::Result<()> {
+        use std::os::fd::AsRawFd;
+        let root = tempfile::tempdir()?;
+        let outside = tempfile::tempdir()?;
+        std::fs::create_dir(root.path().join("nested"))?;
+        std::os::unix::fs::symlink(outside.path(), root.path().join("alias"))?;
+        let directory = std::fs::File::open(root.path())?;
+        let id = Uuid::new_v4();
+        let events = Arc::new(MediaWatchEventBuffer::new(32));
+        let mut watcher = NotifyMediaWatcher::new(Arc::clone(&events));
+        let errors = watcher.synchronize(&BTreeMap::from([(
+            id,
+            format!("/proc/self/fd/{}/.", directory.as_raw_fd()).into(),
+        )]));
+        anyhow::ensure!(
+            errors.is_empty(),
+            "descriptor registration failed: {errors:?}"
+        );
+        std::fs::write(
+            outside.path().join("outside.mkv"),
+            b"outside watcher fixture",
+        )?;
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert!(events.drain()?.events.is_empty());
+        std::fs::write(
+            root.path().join("nested/inside.mkv"),
+            b"inside watcher fixture",
+        )?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let batch = events.drain()?;
+            if batch.events.iter().any(|event| {
+                event.registration_public_id == id && event.path.ends_with("nested/inside.mkv")
+            }) {
+                break;
+            }
+            anyhow::ensure!(
+                std::time::Instant::now() < deadline,
+                "descriptor watch missed nested creation"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(watcher.synchronize(&BTreeMap::new()).is_empty());
+        drop(directory);
         Ok(())
     }
 }

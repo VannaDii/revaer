@@ -529,3 +529,5 @@
 -   [594](594-simple-discovery-worker-cleanup.md) - Self-contained transcoding and bounded recovery (Accepted 2026-10-02)
 -   [592](592-python-tooling.md) - uv-managed rv tooling (merged foundation; historical numbering retained)
 -   [595](595-media-continuation.md) - Media continuation on merged rv foundation (integration checkpoint; qualification incomplete)
+
+-   [596](596-cancellation-checkpoint-recovery.md) – Cancellation and checkpoint recovery (step-5 acceptance record; goal-7 release qualification remains)

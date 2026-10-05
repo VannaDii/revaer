@@ -50,6 +50,28 @@ pub fn create_managed_workspace(
     root_path: impl AsRef<Path>,
     job_key: &str,
 ) -> Result<ManagedWorkspace, ManagedWorkspaceError> {
+    prepare_managed_workspace(root_path.as_ref(), job_key, false)
+}
+
+/// Create or reopen the same stopped attempt's workspace under an admitted root.
+///
+/// Existing directories must retain the current user's private-directory policy.
+/// Call only after previous work has stopped and the service holds its root lock.
+///
+/// # Errors
+/// Rejects symlinks, foreign owners, unsafe permissions and filesystem failures.
+pub fn create_or_resume_managed_workspace(
+    root_path: impl AsRef<Path>,
+    job_key: &str,
+) -> Result<ManagedWorkspace, ManagedWorkspaceError> {
+    prepare_managed_workspace(root_path.as_ref(), job_key, true)
+}
+
+fn prepare_managed_workspace(
+    root_path: &Path,
+    job_key: &str,
+    resume_existing: bool,
+) -> Result<ManagedWorkspace, ManagedWorkspaceError> {
     let paths = project_managed_workspace(root_path, job_key)?;
     ensure_private_root(&paths.root_path)?;
     let root = open_directory_at(
@@ -64,21 +86,30 @@ pub fn create_managed_workspace(
         &paths.job_key,
         &paths.job_path,
         "workspace.create_job",
+        resume_existing,
     )?;
     let job = open_directory_at(&root, &paths.job_key, &paths.job_path, "workspace.open_job")?;
     let job_identity = private_directory_identity(&paths.job_path, &job)?;
-    create_private_directory_at(&job, "input", &paths.input_path, "workspace.create_input")?;
+    create_private_directory_at(
+        &job,
+        "input",
+        &paths.input_path,
+        "workspace.create_input",
+        resume_existing,
+    )?;
     create_private_directory_at(
         &job,
         "output",
         &paths.output_path,
         "workspace.create_output",
+        resume_existing,
     )?;
     create_private_directory_at(
         &job,
         "diagnostics",
         &paths.diagnostics_path,
         "workspace.create_diagnostics",
+        resume_existing,
     )?;
     let input = open_directory_at(&job, "input", &paths.input_path, "workspace.open_input")?;
     let output = open_directory_at(&job, "output", &paths.output_path, "workspace.open_output")?;
@@ -222,18 +253,22 @@ fn create_private_directory_at(
     name: &str,
     path: &Path,
     operation: &'static str,
+    resume_existing: bool,
 ) -> Result<(), ManagedWorkspaceError> {
-    mkdirat(parent, name, Mode::RWXU).map_err(|source| {
-        if source == rustix::io::Errno::EXIST {
-            ManagedWorkspaceError::UnsafePath(path.to_path_buf())
-        } else {
-            ManagedWorkspaceError::Io {
-                operation,
-                path: path.to_path_buf(),
-                source: io::Error::from_raw_os_error(source.raw_os_error()),
-            }
+    match mkdirat(parent, name, Mode::RWXU) {
+        Ok(()) => Ok(()),
+        Err(rustix::io::Errno::EXIST) if resume_existing => {
+            let existing = open_directory_at(parent, name, path, "workspace.open_existing")?;
+            private_directory_identity(path, &existing)?;
+            Ok(())
         }
-    })
+        Err(rustix::io::Errno::EXIST) => Err(ManagedWorkspaceError::UnsafePath(path.to_path_buf())),
+        Err(source) => Err(ManagedWorkspaceError::Io {
+            operation,
+            path: path.to_path_buf(),
+            source: io::Error::from_raw_os_error(source.raw_os_error()),
+        }),
+    }
 }
 
 fn open_directory_at(

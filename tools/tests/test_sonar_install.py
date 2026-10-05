@@ -212,6 +212,36 @@ def test_archive_paths_and_special_files_cannot_escape_staging(
     assert not (tmp_path / "escape").exists()
 
 
+@pytest.mark.parametrize(
+    "link",
+    ("../java.base/LICENSE", "/outside", "../../../../outside", "missing", "../other/LICENSE"),
+)
+def test_scanner_license_links_are_materialized_only_from_regular_archive_members(
+    tmp_path: Path, link: str
+) -> None:
+    archive = tmp_path / "scanner.zip"
+    with zipfile.ZipFile(archive, "w") as output:
+        for name, mode, contents in (
+            ("bin/sonar-scanner", stat.S_IFREG | 0o755, b"#!/bin/sh\n"),
+            ("jre/legal/java.base/LICENSE", stat.S_IFREG | 0o644, b"license bytes"),
+            ("jre/legal/other/LICENSE", stat.S_IFLNK | 0o777, b"../java.base/LICENSE"),
+            ("jre/legal/jdk.jfr/LICENSE", stat.S_IFLNK | 0o777, link.encode()),
+        ):
+            entry = zipfile.ZipInfo(DIRECTORY + "/" + name)
+            entry.external_attr = mode << 16
+            output.writestr(entry, contents)
+    destination = tmp_path / "staged"
+    if link != "../java.base/LICENSE":
+        with pytest.raises(ToolingError, match="unsafe link"):
+            extract_archive(archive, destination, DIRECTORY)
+        return
+    extract_archive(archive, destination, DIRECTORY)
+    license_file = destination / DIRECTORY / "jre/legal/jdk.jfr/LICENSE"
+    assert license_file.read_bytes() == b"license bytes"
+    assert not license_file.is_symlink()
+    assert license_file.stat().st_mode & 0o777 == 0o644
+
+
 def test_https_redirects_and_download_failures_preserve_previous_file(tmp_path: Path) -> None:
     state = Downloads(
         {

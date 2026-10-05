@@ -12,8 +12,11 @@
   including ADR 513's full-workspace age when it would retain such media.
   Replaces corresponding requirements in their supporting appendices and earlier
   ADRs only within this scope. ADR 593 remains authoritative for recovery.
-- Implementation status: Approved. Isolated supervisor detour removed; simplified
-  discovery/recovery/cleanup implementation and full validation remain outstanding.
+- Implementation status: Approved. Isolated supervisor detour removed;
+  cancellation and checkpoint recovery progress is recorded in
+  [ADR 596](596-cancellation-checkpoint-recovery.md). Native automatic discovery
+  is integrated. Step-5 acceptance is recorded there; remaining strict Sonar
+  and package qualification are carried into goal 7, with no release-ready claim.
 
 ## Requested Decision
 

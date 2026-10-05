@@ -12,8 +12,10 @@ pub mod policy_snapshot;
 pub mod portable;
 pub mod profile_versions;
 pub mod profiles;
+pub mod rescan;
 pub mod root_catalog;
 pub mod schedules;
+pub mod step_checkpoints;
 
 pub use identity::{
     MediaRootIdentity, MediaRootIdentityError, MediaRootIdentityResolver,

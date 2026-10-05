@@ -24,6 +24,7 @@ rv test-media-conversion
 | `verify-test-fixtures` | Verify all source hashes and snapshots, then publish a fresh preparation report. |
 | `test-media-conversion` | Prepare fixtures and run the media crate's ignored integration suite; require positive audio/video actions and zero failures. |
 | `update-test-fixture-probes` | Explicitly replace ordinary snapshots after every probe succeeds; the ADR 578 F1 snapshot is always compared and never replaced. |
+| `test-media-service-recovery` | Require one passing Linux service qualification: interrupt active FFmpeg, join, complete the same attempt after restart, and preserve terminal explicit cancellation. |
 | `test-media-root-catalog` | Run the media runtime's `root_catalog` tests. |
 | `test-media-root-contract` | Run the API model's `media_root_contract` tests. |
 | `test-media-broker-codec` | Run the media runtime's `process::broker` tests. |
@@ -144,3 +145,21 @@ disposable checkout: 22 locked sources, eight generated files and 30 reviewed
 snapshots. The real F1 emission matched the approved Homebrew 9.0.1 profile and
 retained its evidence. See the [task ADR](../../../../docs/adr/592-python-tooling.md)
 for logs and the remaining application acceptance work.
+
+`just test-media-service-recovery` requires a disposable administrative
+`REVAER_TEST_DATABASE_URL` and `REVAER_NATIVE_RECOVERY_ROOT` pointing to an owned,
+restart-persistent Linux mount. It creates private source/workspace slots and a
+service-owned catalog, admits a non-dry-run job through HTTP, and requires native
+root readiness. Explicit HTTP cancellation must join FFmpeg, preserve the source,
+and remain terminal after restart. Changed/missing admitted sources after
+interruption must produce a recorded failure without modifying or recreating them.
+For checkpoint faults, it stops the real subtitle-sidecar writer after the main
+media output is checkpointed, joins the service, removes or corrupts that output,
+then requires reconstruction and verified completion on the original attempt.
+It also leaves a real prepared replacement manifest and backup for startup to
+reconcile, then requires checkpoint reuse and completion. The fixture prepares
+that transaction after joined shutdown; this does not prove an interruption
+inside the service's final replacement or qualify committed rollback/replay.
+Synthetic compliance in the serving test
+harness does not prove packaged-image compliance. It is an explicit fixture gate, separate from
+`just ci` and `just ui-e2e`; zero selected tests fail.

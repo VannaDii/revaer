@@ -37,13 +37,16 @@ use revaer_data::media::jobs::{
     list_recent_media_jobs, load_media_workspace_retention_snapshot, mark_media_job_completed,
     mark_media_job_terminal_outbox_published, media_job_worker_acknowledge_cancel,
     media_job_worker_claim_next, media_job_worker_commit_replacement_terminal,
-    media_job_worker_complete, media_job_worker_heartbeat, media_job_worker_mark_status,
-    media_job_worker_poll_control, media_job_worker_recover_stale, retry_media_job,
-    run_media_job_retention,
+    media_job_worker_complete, media_job_worker_heartbeat, media_job_worker_interrupt,
+    media_job_worker_mark_status, media_job_worker_poll_control,
+    media_job_worker_resume_interrupted, retry_media_job, run_media_job_retention,
 };
 use revaer_data::media::profiles::{
     MediaProfileRow, UpdateMediaProfileInput, UpsertMediaProfileInput, get_media_profile,
     list_media_profiles, update_media_profile, upsert_media_profile,
+};
+use revaer_data::media::step_checkpoints::{
+    StepCheckpoint, get_step_checkpoint, write_step_checkpoint,
 };
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -64,6 +67,17 @@ impl MediaStore {
         after_attempt_id: i64,
     ) -> DataResult<Vec<ReplacementRecoveryRow>> {
         list_replacement_recovery(&self.pool, after_attempt_id).await
+    }
+
+    /// Persist verified rollback metadata while retaining the original digest and attempt.
+    ///
+    /// # Errors
+    /// Propagates claim, content and persistence failures.
+    pub async fn refresh_restored_source(
+        &self,
+        input: &revaer_data::media::job_roots::RestoredSourceInput<'_>,
+    ) -> DataResult<()> {
+        revaer_data::media::job_roots::refresh_restored_source(&self.pool, input).await
     }
 
     /// Construct a media store facade from a connection pool.
@@ -636,6 +650,56 @@ impl MediaStore {
         mark_media_job_terminal_outbox_published(&self.pool, media_job_public_id).await
     }
 
+    /// Read completed execution evidence for a current attempt.
+    ///
+    /// # Errors
+    /// Returns stale-claim and persistence errors.
+    pub async fn get_step_checkpoint(
+        &self,
+        job_id: Uuid,
+        generation: i64,
+        step_index: i32,
+    ) -> DataResult<Option<StepCheckpoint>> {
+        get_step_checkpoint(&self.pool, job_id, generation, step_index).await
+    }
+
+    /// Record a joined writer's synchronized output.
+    ///
+    /// # Errors
+    /// Returns stale-claim, malformed-evidence and persistence errors.
+    pub async fn write_step_checkpoint(
+        &self,
+        job_id: Uuid,
+        generation: i64,
+        step_index: i32,
+        checkpoint: &StepCheckpoint,
+    ) -> DataResult<()> {
+        write_step_checkpoint(&self.pool, job_id, generation, step_index, checkpoint).await
+    }
+
+    /// Resume a bounded batch at startup after root admission and journal recovery.
+    ///
+    /// # Errors
+    /// Returns persistence errors. Never call while a previous owner is active.
+    pub async fn resume_interrupted_jobs(
+        &self,
+        workspace_root: &str,
+    ) -> DataResult<Vec<RecoveredMediaJobRow>> {
+        media_job_worker_resume_interrupted(&self.pool, workspace_root).await
+    }
+
+    /// Resume a stopped job on its current attempt, preserving explicit cancellation.
+    ///
+    /// # Errors
+    /// Returns stale-claim or persistence errors. Call only after child work has stopped.
+    pub async fn interrupt_job(
+        &self,
+        media_job_public_id: Uuid,
+        claim_generation: i64,
+    ) -> DataResult<bool> {
+        media_job_worker_interrupt(&self.pool, media_job_public_id, claim_generation).await
+    }
+
     /// Mark a claimed media job with a worker status.
     ///
     /// # Errors
@@ -656,18 +720,6 @@ impl MediaStore {
             last_error,
         )
         .await
-    }
-
-    /// Mark stale in-flight media jobs terminal after worker heartbeat expiry.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the underlying stored-procedure call fails.
-    pub async fn recover_stale_jobs(
-        &self,
-        stale_after_seconds: i32,
-    ) -> DataResult<Vec<RecoveredMediaJobRow>> {
-        media_job_worker_recover_stale(&self.pool, stale_after_seconds).await
     }
 
     /// Run the active completed-job and failed-diagnostic retention policies.
@@ -1501,7 +1553,7 @@ mod tests {
         assert!(store.get_job(job_id).await.is_err());
         assert!(store.list_job_phases(job_id).await.is_err());
         assert!(store.list_job_operations(job_id).await.is_err());
-        assert!(store.recover_stale_jobs(0).await.is_err());
+        assert!(store.resume_interrupted_jobs("/workspace").await.is_err());
         assert!(
             store
                 .append_job_violation(job_id, 0, 0, "codec_mismatch", "high", Some(0))

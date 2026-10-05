@@ -33,6 +33,25 @@ The phases are explicit and ordered:
 2. `api-api-key` configures key authentication and runs the same scenarios.
 3. `ui-<browser>` runs the browser scenarios using the resulting key.
 
+Single-init media expands each API authentication mode into an absent-catalog
+phase followed by its positive API phase: `api-none-missing-catalog`, `api-none`,
+`api-api-key-missing-catalog`, `api-api-key`, then the browser phases. The original
+three missing-catalog checks run in each dedicated phase; the positive phases
+retain every foundation scenario and all other media scenarios. Each phase has
+its own selection, report and raw coverage, required by shard and coverage
+consumers. This separation preserves rejection checks alongside real discovery.
+
+Authentication setup's factory reset clears catalog tables. The media runner
+performs that setup with an absent startup source, stops and reaps that service,
+then starts the scenario service. Positive phases require the real configured
+`REVAER_MEDIA_ROOT_CATALOG_FILE` to attest successfully on Linux. No stored
+attestation is inserted by the harness. Each API phase reset uses the current
+session retained from the preceding phase, then replaces it with the new setup
+credentials. Restarting the service does not reset database authentication.
+Browser restarts retain the authenticated
+session and database without another reset. Setup and scenario logs live in
+separate phase subdirectories under `tests/logs`.
+
 API phases use one worker because they share mutable application configuration.
 UI workers are configurable. Keys pass to pytest through its environment, with
 redaction at the process boundary. Process logs are private files and reject

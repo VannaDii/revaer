@@ -24,6 +24,7 @@ use tokio::time::{MissedTickBehavior, interval};
 use tracing::warn;
 use uuid::Uuid;
 
+use crate::media::native_discovery::{NativeDiscovery, NativeDiscoveryError};
 use crate::media::{
     build_discovery_previews, ensure_execution_capability_snapshot,
     ensure_profile_compatibility_target_readiness,
@@ -32,15 +33,17 @@ use crate::media_discovery_fingerprint::{
     fingerprint_media_aggregate, owner_for_changed_path, revalidate_media_aggregate,
 };
 use crate::media_discovery_scan::{ScanBudget, ScanCursor, ScanError, scan_media_source_paths};
+#[cfg(test)]
+use crate::media_discovery_watcher::NotifyMediaWatcher;
 use crate::media_discovery_watcher::{
-    MediaWatchEvent, MediaWatchEventBuffer, MediaWatcher, MediaWatcherError, NotifyMediaWatcher,
+    MediaWatchEvent, MediaWatchEventBuffer, MediaWatcher, MediaWatcherError,
 };
 use crate::runtime_shutdown::{self, RuntimeShutdownReceiver};
 
-const DEFAULT_DISCOVERY_TICK_INTERVAL: Duration = Duration::from_mins(1);
+const DEFAULT_DISCOVERY_TICK_INTERVAL: Duration = Duration::from_secs(1);
 const WATCH_DEBOUNCE_INTERVAL: Duration = Duration::from_secs(1);
 const WATCH_DEBOUNCE_TICK_INTERVAL: Duration = Duration::from_millis(100);
-const WATCH_EVENT_CAPACITY: usize = 1_024;
+pub(crate) const WATCH_EVENT_CAPACITY: usize = 1_024;
 const SYSTEM_USER_PUBLIC_ID: Uuid = Uuid::from_u128(0);
 const MEDIA_FILE_EXTENSIONS: &[&str] = &[
     "3g2", "3gp", "aac", "ac3", "asf", "avi", "divx", "eac3", "flac", "flv", "m2ts", "m2v", "m4a",
@@ -50,6 +53,7 @@ const MEDIA_FILE_EXTENSIONS: &[&str] = &[
 
 /// Background runtime that discovers media files for enabled profiles.
 pub(crate) struct MediaDiscoveryRuntime {
+    native: Option<NativeDiscovery>,
     store: MediaStore,
     telemetry: Metrics,
     tick_interval: Duration,
@@ -66,18 +70,45 @@ pub(crate) struct MediaDiscoveryRuntime {
 impl MediaDiscoveryRuntime {
     /// Construct a production media discovery runtime.
     #[must_use]
-    pub(crate) fn new(store: MediaStore, telemetry: Metrics) -> Self {
-        Self::with_tick_interval(store, telemetry, DEFAULT_DISCOVERY_TICK_INTERVAL)
+    pub(crate) fn new(
+        store: MediaStore,
+        telemetry: Metrics,
+        watcher: Box<dyn MediaWatcher>,
+        watch_events: Arc<MediaWatchEventBuffer>,
+        native: NativeDiscovery,
+    ) -> Self {
+        Self::build(
+            store,
+            telemetry,
+            DEFAULT_DISCOVERY_TICK_INTERVAL,
+            watcher,
+            watch_events,
+            Some(native),
+        )
     }
 
+    #[cfg(test)]
     fn with_tick_interval(store: MediaStore, telemetry: Metrics, tick_interval: Duration) -> Self {
         let watch_events = Arc::new(MediaWatchEventBuffer::new(WATCH_EVENT_CAPACITY));
+        let watcher = Box::new(NotifyMediaWatcher::new(Arc::clone(&watch_events)));
+        Self::build(store, telemetry, tick_interval, watcher, watch_events, None)
+    }
+
+    fn build(
+        store: MediaStore,
+        telemetry: Metrics,
+        tick_interval: Duration,
+        watcher: Box<dyn MediaWatcher>,
+        watch_events: Arc<MediaWatchEventBuffer>,
+        native: Option<NativeDiscovery>,
+    ) -> Self {
         Self {
+            native,
             store,
             telemetry,
             tick_interval,
             last_scheduled: Mutex::new(BTreeMap::new()),
-            watcher: Box::new(NotifyMediaWatcher::new(watch_events.clone())),
+            watcher,
             watch_events,
             watcher_profiles: BTreeMap::new(),
             pending_watch_events: BTreeMap::new(),
@@ -108,8 +139,8 @@ impl MediaDiscoveryRuntime {
         loop {
             tokio::select! {
                 _ = ticker.tick() => {
-                    if let Err(error) = self.run_tick().await {
-                        warn!(error = %error, "media discovery runtime tick failed");
+                    if self.run_tick_until_shutdown(&mut shutdown).await {
+                        return;
                     }
                 }
                 _ = debounce_ticker.tick() => {
@@ -124,7 +155,26 @@ impl MediaDiscoveryRuntime {
         }
     }
 
+    async fn run_tick_until_shutdown(&mut self, shutdown: &mut RuntimeShutdownReceiver) -> bool {
+        let cancelled = Arc::clone(&self.cancelled);
+        let (result, stopped) = finish_discovery_tick(self.run_tick(), cancelled, shutdown).await;
+        if let Err(error) = result {
+            warn!(error = %error, "media discovery runtime tick failed");
+        }
+        stopped
+    }
+
     async fn run_tick(&mut self) -> Result<(), MediaDiscoveryRuntimeError> {
+        if let Some(native) = self.native.as_mut() {
+            return native
+                .tick(
+                    Arc::clone(&self.cancelled),
+                    &self.watch_events,
+                    self.watcher.as_mut(),
+                )
+                .await
+                .map_err(Into::into);
+        }
         let profiles = self.store.list_profiles().await?;
         let watch_roots = profiles
             .iter()
@@ -394,8 +444,15 @@ impl MediaDiscoveryRuntime {
     }
 
     async fn flush_watch_events(&mut self) -> Result<(), MediaDiscoveryRuntimeError> {
+        if let Some(native) = self.native.as_mut() {
+            return native
+                .flush_watch_events(&self.watch_events, self.watcher.as_mut())
+                .await
+                .map_err(Into::into);
+        }
         let drained = self.watch_events.drain()?;
         self.overflowed_profiles.extend(drained.overflowed_profiles);
+        self.overflowed_profiles.extend(drained.uncertain_profiles);
         for event in drained.events {
             self.record_watch_event(&event);
         }
@@ -463,6 +520,23 @@ fn canonicalize_candidates(
 
 struct CancelOnDrop(Arc<AtomicBool>);
 
+async fn finish_discovery_tick(
+    tick: impl std::future::Future<Output = Result<(), MediaDiscoveryRuntimeError>>,
+    cancelled: Arc<AtomicBool>,
+    shutdown: &mut RuntimeShutdownReceiver,
+) -> (Result<(), MediaDiscoveryRuntimeError>, bool) {
+    tokio::pin!(tick);
+    tokio::select! {
+        result = &mut tick => (result, false),
+        () = runtime_shutdown::changed(shutdown) => {
+            cancelled.store(true, Ordering::Relaxed);
+            // A cooperative scan owns its join until it finishes. Dropping the
+            // async tick would otherwise leave its blocking work alive.
+            (tick.await, true)
+        }
+    }
+}
+
 impl Drop for CancelOnDrop {
     fn drop(&mut self) {
         self.0.store(true, Ordering::Relaxed);
@@ -494,6 +568,8 @@ const fn scan_limit_label(limit: crate::media_discovery_scan::ScanLimit) -> &'st
 
 #[derive(Debug, Error)]
 enum MediaDiscoveryRuntimeError {
+    #[error(transparent)]
+    Native(#[from] NativeDiscoveryError),
     #[error("media discovery runtime data error: {0}")]
     Data(#[from] DataError),
     #[error(transparent)]
@@ -546,6 +622,51 @@ mod tests {
     use std::path::Path;
     use std::time::{Duration, Instant};
     use uuid::Uuid;
+
+    #[tokio::test]
+    async fn discovery_shutdown_cancels_and_joins_a_running_blocking_scan() -> anyhow::Result<()> {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let finished = Arc::new(AtomicBool::new(false));
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (shutdown_tx, mut shutdown_rx) = runtime_shutdown::channel();
+        let child_cancelled = Arc::clone(&cancelled);
+        let child_finished = Arc::clone(&finished);
+        let scan = tokio::task::spawn_blocking(move || -> Result<(), String> {
+            started_tx
+                .send(())
+                .map_err(|()| "scan readiness receiver closed")?;
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while !child_cancelled.load(Ordering::Relaxed) {
+                if Instant::now() >= deadline {
+                    return Err("scan was not cancelled".into());
+                }
+                std::thread::yield_now();
+            }
+            child_finished.store(true, Ordering::Relaxed);
+            Ok(())
+        });
+        started_rx.await?;
+        assert!(runtime_shutdown::request(&shutdown_tx));
+        let tick = async {
+            scan.await
+                .map_err(|error| super::MediaDiscoveryRuntimeError::Join(error.to_string()))?
+                .map_err(super::MediaDiscoveryRuntimeError::Join)
+        };
+        let (result, stopped) = tokio::time::timeout(
+            Duration::from_secs(3),
+            super::finish_discovery_tick(tick, Arc::clone(&cancelled), &mut shutdown_rx),
+        )
+        .await?;
+        result?;
+        assert!(stopped);
+        assert!(cancelled.load(Ordering::Relaxed));
+        assert!(finished.load(Ordering::Relaxed));
+        Ok(())
+    }
 
     fn closed_media_store() -> MediaStore {
         let options = sqlx::postgres::PgConnectOptions::new()

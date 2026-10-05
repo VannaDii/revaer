@@ -46,6 +46,7 @@ continue to use `uv run --locked` and do not update the graph.
 | --- | --- |
 | `rv test` | Every workspace package with all features. |
 | `rv test-native` | `revaer-torrent-libt` with all features, `REVAER_NATIVE_IT=1`, and one test thread. |
+| `rv test-media-service-recovery` | One explicit Linux service restart with active FFmpeg on an owned persistent mount. |
 | `rv test-features-min` | `revaer-api`, then `revaer-app`, each with default features disabled. |
 
 All variants use the locked Cargo graph and treat compiler warnings as errors.

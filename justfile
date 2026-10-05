@@ -170,6 +170,12 @@ check *args:
 test *args:
     uv run --locked -- rv test {{args}}
 
+test-media-recovery *args:
+    uv run --locked -- rv test-media-recovery {{args}}
+
+test-media-service-recovery *args:
+    uv run --locked -- rv test-media-service-recovery {{args}}
+
 test-native *args:
     uv run --locked -- rv test-native {{args}}
 

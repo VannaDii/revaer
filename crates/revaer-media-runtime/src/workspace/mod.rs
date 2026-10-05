@@ -7,8 +7,8 @@ mod monitor;
 mod policy;
 
 pub use filesystem::{
-    cleanup_terminal_workspace, create_managed_workspace, project_managed_workspace,
-    teardown_managed_workspace,
+    cleanup_terminal_workspace, create_managed_workspace, create_or_resume_managed_workspace,
+    project_managed_workspace, teardown_managed_workspace,
 };
 pub use janitor::{cleanup_stale_workspaces, cleanup_stale_workspaces_bounded};
 pub use model::{

@@ -257,6 +257,10 @@ def test_media_selection_adds_to_foundation_cases(
         destination = browser_project.root / "tests/specs" / relative
         destination.mkdir(parents=True, exist_ok=True)
         (destination / f"test_{name}.py").write_text(f"def test_{name}():\n    assert 2 + 2 == 4\n")
+    if kind == "api":
+        (browser_project.root / "tests/specs/media/api/test_root_readiness.py").write_text(
+            "def test_missing_catalog():\n    assert 2 + 2 == 4\n"
+        )
     output = browser_project.root / "selection-results"
     for name in ("results", "report", "coverage"):
         (output / name).mkdir(parents=True)
@@ -275,3 +279,19 @@ def test_media_selection_adds_to_foundation_cases(
         case.attrib["name"] for case in ET.parse(output / "results/junit.xml").iter("testcase")
     }
     assert cases == ({"test_foundation", "test_media"} if include_media else {"test_foundation"})
+    if kind == "api" and include_media:
+        browser_project.e2e(
+            E2ePytestArgs(
+                "api-none-missing-catalog",
+                load_e2e_settings({"E2E_RETRIES": "0"}),
+                output / "results",
+                output / "report",
+                output / "coverage",
+                include_media=True,
+            ),
+            {},
+        )
+        missing_cases = {
+            case.attrib["name"] for case in ET.parse(output / "results/junit.xml").iter("testcase")
+        }
+        assert missing_cases == {"test_missing_catalog"}

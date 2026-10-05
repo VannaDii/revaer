@@ -116,8 +116,10 @@ def test_media_coordinator_uses_sealed_runtime_and_preserves_cleanup_order(
     assert "migrate" not in scenario.events
     assert "create-database" not in scenario.events
     assert scenario.events[-1] == "drop-sealed"
-    if failure != "start-api":
+    if "start-ui" in scenario.events:
         assert scenario.events[-3:] == ["stop-ui", "stop-api", "drop-sealed"]
+    elif failure != "start-api":
+        assert scenario.events[-2:] == ["stop-api", "drop-sealed"]
 
 
 @pytest.mark.parametrize("phase", ("", "unknown"))

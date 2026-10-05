@@ -63,6 +63,22 @@ def test_recording_modes_preserve_first_retry_and_failure_semantics() -> None:
     assert not Recording.OFF.enabled(1) and not Recording.OFF.retain(True)
 
 
+def test_media_keeps_missing_catalog_checks_in_each_authentication_mode() -> None:
+    expected = (
+        "api-none-missing-catalog",
+        "api-none",
+        "api-api-key-missing-catalog",
+        "api-api-key",
+        "ui-chromium",
+    )
+    assert load_e2e_settings({}).phases(media=True) == expected
+    assert (
+        load_e2e_settings({"E2E_PLAYWRIGHT_PROJECTS": "ui-chromium"}).phases(media=True) == expected
+    )
+    focused = load_e2e_settings({"E2E_PLAYWRIGHT_PROJECTS": "api-none"})
+    assert focused.phases(media=True) == expected[:2]
+
+
 def test_shards_and_timeouts_are_explicit() -> None:
     settings = load_e2e_settings(
         {

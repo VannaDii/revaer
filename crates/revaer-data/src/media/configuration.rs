@@ -859,10 +859,8 @@ mod tests {
         upsert_media_policy_profile,
     };
     use crate::config::factory_reset;
-    use crate::media::jobs::{
-        EnqueueDiscoveredMediaJobInput, enqueue_discovered_media_job,
-        list_media_job_desired_target_streams,
-    };
+    use crate::media::jobs::list_media_job_desired_target_streams;
+    use crate::media::profile_versions::CreateProfileVersionInput;
     use crate::media::profiles::{UpsertMediaProfileInput, upsert_media_profile};
     use crate::media::schema_tests::{MediaTestDb, setup_media_db};
     use uuid::Uuid;
@@ -887,9 +885,7 @@ mod tests {
     #[tokio::test]
     async fn desired_target_graph_accepts_maximum_page_and_rejects_max_plus_one()
     -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("desired_target_graph_page").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db().await?;
         for index in 0..128 {
             let target_id = create_media_desired_target(
                 db.pool(),
@@ -1114,9 +1110,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_configuration_catalogs_are_stored_procedure_backed() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("media_configuration_catalogs").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db().await?;
 
         let targets = list_media_compatibility_targets(db.pool()).await?;
         assert!(targets.iter().any(|target| {
@@ -1210,9 +1204,7 @@ mod tests {
 
     #[tokio::test]
     async fn desired_target_versions_are_ordered_immutable_job_snapshots() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("desired_target_versions_are_ordered").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db().await?;
         let actor = db.system_user_public_id;
         let target_id = create_ordered_desired_target(&db).await?;
 
@@ -1238,32 +1230,27 @@ mod tests {
         assert_eq!(streams[2].subtitle_placement.as_deref(), Some("both"));
         assert_eq!(streams[2].image_subtitle_action.as_deref(), Some("remove"));
 
-        let profile_id = upsert_media_profile(
+        let (_roots, _profile_id, job_id) = crate::media::tests::native_configured_job(
+            db.database(),
             db.pool(),
-            &UpsertMediaProfileInput {
+            &CreateProfileVersionInput {
                 actor_public_id: actor,
                 profile_key: "target-snapshot-profile",
-                source_root: "/input/target-snapshot",
-                output_root: "/output/target-snapshot",
+                display_name: "Target snapshot fixture",
+                description: "Synthetic native admission",
+                enabled: true,
                 dry_run_only: true,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
+                desired_target_key: "theater-master",
+                desired_target_version: 2,
+                policy_key: "recovery-policy",
+                policy_version: 1,
+                output_root_key: "worker-source",
+                workspace_root_key: "worker-workspace",
+                backup_root_key: None,
+                quarantine_root_key: None,
             },
         )
         .await?;
-        set_media_profile_desired_target(
-            db.pool(),
-            actor,
-            profile_id,
-            Some("theater-master"),
-            Some(2),
-        )
-        .await?;
-        let job_id = create_target_snapshot_job(&db, actor, profile_id).await?;
         let job_streams = list_media_job_desired_target_streams(db.pool(), job_id).await?;
         assert_job_desired_target_stream_snapshot(&job_streams);
 
@@ -1303,36 +1290,9 @@ mod tests {
         Ok(())
     }
 
-    async fn create_target_snapshot_job(
-        db: &MediaTestDb,
-        actor: Uuid,
-        profile_id: Uuid,
-    ) -> anyhow::Result<Uuid> {
-        enqueue_discovered_media_job(
-            db.pool(),
-            &EnqueueDiscoveredMediaJobInput {
-                actor_public_id: actor,
-                media_profile_public_id: profile_id,
-                source_path: "/input/target-snapshot/movie.mkv",
-                output_path: Some("/output/target-snapshot/movie.mkv"),
-                dry_run: true,
-                source_identity: "0000000000000001:0000000000000001",
-                source_size_bytes: 100,
-                source_modified_ns: 100,
-                source_changed_ns: 100,
-                source_sha256: &"1".repeat(64),
-            },
-        )
-        .await?
-        .map(|job| job.media_job_public_id)
-        .ok_or_else(|| anyhow::anyhow!("target snapshot job should be queued"))
-    }
-
     #[tokio::test]
     async fn desired_target_pin_rejects_empty_stream_graph() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("desired_target_empty_stream_graph").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db().await?;
         let actor = db.system_user_public_id;
         create_media_desired_target(
             db.pool(),
@@ -1412,9 +1372,7 @@ mod tests {
     #[tokio::test]
     async fn desired_target_subtitle_shape_rejects_invalid_values_and_cross_kind_fields()
     -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("desired_target_subtitle_shape").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db().await?;
         let target_id = create_subtitle_shape_validation_target(&db).await?;
         assert_invalid_subtitle_placement_rejected(&db, target_id).await?;
         assert_cross_kind_subtitle_fields_rejected(&db, target_id).await?;

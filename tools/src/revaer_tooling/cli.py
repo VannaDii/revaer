@@ -167,12 +167,15 @@ from .tasks.testing import (
     LintRuntimeShutdown,
     Test,
     TestFeaturesMinimal,
+    TestMediaRecovery,
+    TestMediaServiceRecovery,
     TestNative,
     TestRuntimeShutdown,
     UiE2eAppTest,
 )
 
 COMMANDS: dict[str, Callable[[Context], TaskResult]] = {
+    "test-media-service-recovery": TestMediaServiceRecovery.run,
     "cargo-lock": CargoLock.run,
     "db-baseline-verify": DatabaseBaselineVerify.run,
     "db-pristine-catalog-generate": PristineGenerate.run,
@@ -234,6 +237,7 @@ COMMANDS: dict[str, Callable[[Context], TaskResult]] = {
     "check": Check.run,
     "test": Test.run,
     "test-native": TestNative.run,
+    "test-media-recovery": TestMediaRecovery.run,
     "test-runtime-shutdown": TestRuntimeShutdown.run,
     "lint-runtime-shutdown": LintRuntimeShutdown.run,
     "test-features-min": TestFeaturesMinimal.run,

@@ -862,12 +862,14 @@ pub struct MediaDiscoveryPreviewRequest {
 }
 
 impl MediaDiscoveryPreviewRequest {
+    /// Maximum candidates admitted by one discovery request.
+    pub const MAX_SOURCE_PATHS: usize = 128;
     /// Check the complete bounded root-relative candidate list.
     ///
     /// # Errors
     /// Rejects empty/oversized lists and empty, absolute or non-component-safe paths.
     pub fn validate(&self) -> Result<(), media_root_contract::RootInputError> {
-        if self.source_paths.is_empty() || self.source_paths.len() > 128 {
+        if self.source_paths.is_empty() || self.source_paths.len() > Self::MAX_SOURCE_PATHS {
             return Err(media_root_contract::RootInputError);
         }
         for path in &self.source_paths {

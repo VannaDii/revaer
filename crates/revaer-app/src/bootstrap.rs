@@ -12,7 +12,9 @@ use crate::import_job_runtime::ImportJobRuntime;
 use crate::indexer_runtime::IndexerRuntime;
 use crate::indexers::IndexerService;
 use crate::media::MediaService;
-use crate::media_discovery_runtime::MediaDiscoveryRuntime;
+use crate::media::native_discovery::NativeDiscovery;
+use crate::media_discovery_runtime::{MediaDiscoveryRuntime, WATCH_EVENT_CAPACITY};
+use crate::media_discovery_watcher::{MediaWatchEventBuffer, NotifyMediaWatcher};
 use crate::media_job_runtime::MediaJobRuntime;
 use crate::media_retention_runtime::MediaRetentionRuntime;
 use crate::media_workspace_retention::MediaWorkspaceRetentionService;
@@ -47,6 +49,8 @@ use revaer_torrent_core::{TorrentEngine, TorrentInspector, TorrentWorkflow};
 const SYSTEM_USER_PUBLIC_ID: Uuid = Uuid::from_u128(0);
 
 mod root_catalog;
+#[cfg(unix)]
+mod signals;
 
 /// Dependencies required to bootstrap the Revaer application.
 pub(crate) struct BootstrapDependencies {
@@ -362,6 +366,8 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     } = dependencies;
 
     let addr = bootstrap_listener_addr(&snapshot.app_profile, &telemetry, &events)?;
+    #[cfg(unix)]
+    let signals = signals::ShutdownSignals::install()?;
     // Retain catalog descriptors and root locks until the service has stopped.
     let media_roots = root_catalog::start(&config, media_root_source).await?;
     let (shutdown, receiver) = runtime_shutdown::channel();
@@ -409,12 +415,13 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         .with_association_source(media_roots.as_ref().map(Arc::clone)),
     );
     refresh_startup_media_capabilities(&media, &events, &telemetry).await;
+    let api_media = Arc::clone(&media);
     let api = build_api_server(
         &config,
         &events,
         torrent_handles,
         telemetry.clone(),
-        media,
+        api_media,
         source_compliance,
     )?;
     let indexer_runtime_task =
@@ -428,9 +435,13 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         media_workspace_root,
         native_process_supervisor,
         receiver,
+        media,
     );
     info!(addr = %addr, "Launching API listener");
 
+    #[cfg(unix)]
+    let serve_result = signals.serve(api, addr).await;
+    #[cfg(not(unix))]
     let serve_result = api.serve(addr).await;
 
     request_runtime_shutdown(&shutdown);
@@ -461,10 +472,19 @@ fn spawn_media_runtime_tasks(
     media_workspace_root: PathBuf,
     native_process_supervisor: Arc<dyn NativeProcessSupervisor>,
     receiver: runtime_shutdown::RuntimeShutdownReceiver,
+    media: Arc<MediaService>,
 ) -> MediaRuntimeTasks {
     let media_store = MediaStore::new(config.pool().clone());
-    let discovery =
-        MediaDiscoveryRuntime::new(media_store.clone(), telemetry.clone()).spawn(receiver.clone());
+    let watch_events = Arc::new(MediaWatchEventBuffer::new(WATCH_EVENT_CAPACITY));
+    let watcher = Box::new(NotifyMediaWatcher::new(Arc::clone(&watch_events)));
+    let discovery = MediaDiscoveryRuntime::new(
+        media_store.clone(),
+        telemetry.clone(),
+        watcher,
+        watch_events,
+        NativeDiscovery::new(media),
+    )
+    .spawn(receiver.clone());
     let job = MediaJobRuntime::new(
         media_store.clone(),
         events.clone(),
@@ -981,3 +1001,7 @@ mod runtime_tests;
 #[cfg(test)]
 #[path = "bootstrap/shutdown_tests.rs"]
 mod shutdown_tests;
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "bootstrap/service_recovery_tests.rs"]
+mod service_recovery_tests;

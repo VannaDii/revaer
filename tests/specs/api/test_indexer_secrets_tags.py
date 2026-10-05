@@ -14,7 +14,7 @@ def test_secret_rotation(api: ApiClient, public_api: ApiClient, session: ApiSess
     create = ApiRequest(Method.POST, route, {"secret_type": "api_key", "secret_value": secret})
     requires_key(public_api, session, create)
     created = api.request(create)
-    assert created.status == 201
+    assert created.status == 201, created.object().get("context")
     identifier = string_value(created.object()["secret_public_id"])
     find_row(rows(api, route, "secrets"), "secret_public_id", identifier)
     rotated = api.request(

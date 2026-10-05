@@ -11914,6 +11914,10 @@ BEGIN
     END IF;
     IF NOT (
         NEW.status = OLD.status
+        OR (OLD.status IN (media_job_status_running_v1(), media_job_status_verifying_v1())
+            AND NEW.status = media_job_status_queued_v1()
+            AND NEW.heartbeat_at IS NULL AND NEW.completed_at IS NULL
+            AND NEW.last_error IS NULL)
         OR (OLD.status = media_job_status_queued_v1() AND NEW.status IN (
             media_job_status_running_v1(), media_job_status_cancelled_v1()
         ))
@@ -12310,13 +12314,21 @@ BEGIN
         RAISE EXCEPTION 'stale worker claim'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_worker_claim_stale';
     END IF;
-    INSERT INTO media_job_compact_audit (
+    INSERT INTO media_job_compact_audit AS existing (
         media_job_id, media_job_public_id, media_job_attempt_id,
         audit_index, fact_kind, fact_text
     ) VALUES (
         current_job_id, media_job_public_id_input, current_attempt_id,
         audit_index_input, btrim(fact_kind_input), btrim(fact_text_input)
-    );
+    )
+    ON CONFLICT (media_job_attempt_id, audit_index) DO UPDATE SET
+        fact_kind = EXCLUDED.fact_kind
+    WHERE ROW(existing.fact_kind, existing.fact_text)
+        IS NOT DISTINCT FROM ROW(EXCLUDED.fact_kind, EXCLUDED.fact_text);
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'resumed plan evidence changed'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_resumed_plan_changed';
+    END IF;
 END;
 $$;
 
@@ -12360,10 +12372,7 @@ BEGIN
        OR NEW.dry_run IS DISTINCT FROM OLD.dry_run
        OR NEW.intent_source_root IS DISTINCT FROM OLD.intent_source_root
        OR NEW.intent_output_root IS DISTINCT FROM OLD.intent_output_root
-       OR NEW.intent_source_identity IS DISTINCT FROM OLD.intent_source_identity
        OR NEW.intent_source_size_bytes IS DISTINCT FROM OLD.intent_source_size_bytes
-       OR NEW.intent_source_modified_ns IS DISTINCT FROM OLD.intent_source_modified_ns
-       OR NEW.intent_source_changed_ns IS DISTINCT FROM OLD.intent_source_changed_ns
        OR NEW.intent_source_sha256 IS DISTINCT FROM OLD.intent_source_sha256
        OR NEW.intent_compatibility_target_key IS DISTINCT FROM OLD.intent_compatibility_target_key
        OR NEW.intent_policy_key IS DISTINCT FROM OLD.intent_policy_key
@@ -12373,6 +12382,13 @@ BEGIN
        OR NEW.intent_policy_version IS DISTINCT FROM OLD.intent_policy_version
        OR NEW.intent_desired_target_profile_id IS DISTINCT FROM OLD.intent_desired_target_profile_id
        OR NEW.intent_desired_target_version IS DISTINCT FROM OLD.intent_desired_target_version THEN
+        RAISE EXCEPTION 'job configuration snapshot is immutable'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_configuration_immutable';
+    END IF;
+    IF (NEW.intent_source_identity IS DISTINCT FROM OLD.intent_source_identity
+        OR NEW.intent_source_modified_ns IS DISTINCT FROM OLD.intent_source_modified_ns
+        OR NEW.intent_source_changed_ns IS DISTINCT FROM OLD.intent_source_changed_ns)
+       AND current_setting('revaer.restored_source_job', true) IS DISTINCT FROM OLD.media_job_public_id::text THEN
         RAISE EXCEPTION 'job configuration snapshot is immutable'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_configuration_immutable';
     END IF;
@@ -12998,7 +13014,7 @@ BEGIN
         RAISE EXCEPTION 'stale worker claim'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_worker_claim_stale';
     END IF;
-    INSERT INTO media_job_operation (
+    INSERT INTO media_job_operation AS existing (
         media_job_id, media_job_attempt_id, operation_index, operation_kind,
         stream_id, command_bin, arg_1, arg_2, arg_3, arg_4, arg_5
     ) VALUES (
@@ -13007,7 +13023,15 @@ BEGIN
         NULLIF(btrim(arg_1_input), ''), NULLIF(btrim(arg_2_input), ''),
         NULLIF(btrim(arg_3_input), ''), NULLIF(btrim(arg_4_input), ''),
         NULLIF(btrim(arg_5_input), '')
-    );
+    )
+    ON CONFLICT (media_job_attempt_id, operation_index) DO UPDATE SET
+        operation_kind = EXCLUDED.operation_kind
+    WHERE ROW(existing.operation_kind, existing.stream_id, existing.command_bin, existing.arg_1, existing.arg_2, existing.arg_3, existing.arg_4, existing.arg_5)
+        IS NOT DISTINCT FROM ROW(EXCLUDED.operation_kind, EXCLUDED.stream_id, EXCLUDED.command_bin, EXCLUDED.arg_1, EXCLUDED.arg_2, EXCLUDED.arg_3, EXCLUDED.arg_4, EXCLUDED.arg_5);
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'resumed plan evidence changed'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_resumed_plan_changed';
+    END IF;
 END;
 $$;
 
@@ -13104,13 +13128,21 @@ BEGIN
         RAISE EXCEPTION 'stale worker claim'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_worker_claim_stale';
     END IF;
-    INSERT INTO media_job_plan_reason (
+    INSERT INTO media_job_plan_reason AS existing (
         media_job_id, media_job_attempt_id, reason_index, candidate_index,
         selected, reason_code, reason_text
     ) VALUES (
         current_job_id, current_attempt_id, reason_index_input, candidate_index_input,
         COALESCE(selected_input, FALSE), btrim(reason_code_input), btrim(reason_text_input)
-    );
+    )
+    ON CONFLICT (media_job_attempt_id, reason_index) DO UPDATE SET
+        candidate_index = EXCLUDED.candidate_index
+    WHERE ROW(existing.candidate_index, existing.selected, existing.reason_code, existing.reason_text)
+        IS NOT DISTINCT FROM ROW(EXCLUDED.candidate_index, EXCLUDED.selected, EXCLUDED.reason_code, EXCLUDED.reason_text);
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'resumed plan evidence changed'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_resumed_plan_changed';
+    END IF;
 END;
 $$;
 
@@ -13757,7 +13789,13 @@ BEGIN
         current_job_id, current_attempt_id, check_index_input, btrim(check_kind_input),
         lower(btrim(check_status_input)), NULLIF(btrim(expected_value_input), ''),
         NULLIF(btrim(actual_value_input), ''), NULLIF(btrim(details_text_input), '')
-    );
+    )
+    ON CONFLICT (media_job_attempt_id, check_index) DO UPDATE SET
+        check_kind = EXCLUDED.check_kind,
+        check_status = EXCLUDED.check_status,
+        expected_value = EXCLUDED.expected_value,
+        actual_value = EXCLUDED.actual_value,
+        details_text = EXCLUDED.details_text;
 END;
 $$;
 
@@ -13887,7 +13925,7 @@ BEGIN
     updated_attempt AS (
         UPDATE media_job_attempt attempt
            SET status = media_job_status_running_v1(),
-               claimed_at = now(),
+               claimed_at = COALESCE(attempt.claimed_at, now()),
                heartbeat_at = now(),
                cancel_generation_at_claim = job.cancel_generation
           FROM claimed
@@ -13961,7 +13999,7 @@ BEGIN
     updated_attempt AS (
         UPDATE media_job_attempt attempt
            SET status = media_job_status_running_v1(),
-               claimed_at = now(),
+               claimed_at = COALESCE(attempt.claimed_at, now()),
                heartbeat_at = now(),
                cancel_generation_at_claim = job.cancel_generation
           FROM claimed
@@ -14255,6 +14293,74 @@ END;
 $$;
 
 
+-- A stopped local worker keeps the same attempt and completed evidence.
+-- Call only after its child work has joined; cancellation wins under the row lock.
+CREATE FUNCTION public.media_job_worker_interrupt_v1(media_job_public_id_input uuid, claim_generation_input bigint) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO pg_catalog, public
+    AS $$
+DECLARE
+    attempt_id BIGINT;
+    cancelled BOOLEAN;
+BEGIN
+    SELECT attempt.media_job_attempt_id,
+           job.cancel_generation > job.cancel_acknowledged_generation
+      INTO attempt_id, cancelled
+      FROM public.media_job job
+      JOIN public.media_job_attempt attempt ON attempt.media_job_attempt_id = job.current_attempt_id
+     WHERE job.media_job_public_id = media_job_public_id_input
+       AND attempt.claim_generation = claim_generation_input
+       AND attempt.status IN (public.media_job_status_running_v1(), public.media_job_status_verifying_v1())
+       AND job.status = attempt.status
+     FOR UPDATE OF job, attempt;
+    IF attempt_id IS NULL THEN
+        RAISE EXCEPTION 'stale worker claim'
+            USING ERRCODE = public.media_app_error_code_v1(), DETAIL = 'media_job_worker_claim_stale';
+    END IF;
+    UPDATE public.media_job_attempt
+       SET status = CASE WHEN cancelled THEN public.media_job_status_cancelled_v1() ELSE public.media_job_status_queued_v1() END,
+           completed_at = CASE WHEN cancelled THEN now() ELSE NULL END,
+           heartbeat_at = NULL,
+           last_error = NULL
+     WHERE media_job_attempt_id = attempt_id;
+    UPDATE public.media_job
+       SET status = CASE WHEN cancelled THEN public.media_job_status_cancelled_v1() ELSE public.media_job_status_queued_v1() END,
+           completed_at = CASE WHEN cancelled THEN now() ELSE NULL END,
+           heartbeat_at = NULL,
+           last_error = NULL,
+           cancel_acknowledged_generation = CASE WHEN cancelled THEN cancel_generation ELSE cancel_acknowledged_generation END
+     WHERE media_job_public_id = media_job_public_id_input;
+    RETURN cancelled;
+END;
+$$;
+
+-- Startup runs only after root-lock admission and journal reconciliation.
+CREATE FUNCTION public.media_job_worker_resume_interrupted_v1(workspace_root_input text)
+RETURNS TABLE(media_job_public_id uuid, status public.media_job_status, last_error text)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    candidate RECORD;
+BEGIN
+    FOR candidate IN
+        SELECT job.media_job_public_id AS public_id, attempt.claim_generation AS generation
+          FROM public.media_job job
+          JOIN public.media_job_attempt attempt ON attempt.media_job_attempt_id = job.current_attempt_id
+         WHERE job.status IN (public.media_job_status_running_v1(), public.media_job_status_verifying_v1())
+           AND attempt.status = job.status
+           AND EXISTS (SELECT 1 FROM public.media_job_root_snapshot root
+               WHERE root.media_job_id = job.media_job_id AND root.media_root_kind_id = 3
+                 AND root.binding_state = 'bound' AND root.canonical_path = workspace_root_input)
+         ORDER BY job.media_job_id
+         LIMIT 64
+         FOR UPDATE OF job, attempt
+    LOOP
+        PERFORM public.media_job_worker_interrupt_v1(candidate.public_id, candidate.generation);
+        RETURN QUERY SELECT job.media_job_public_id, job.status, job.last_error
+          FROM public.media_job job WHERE job.media_job_public_id = candidate.public_id;
+    END LOOP;
+END;
+$$;
+
 --
 -- Name: media_job_worker_mark_status_v1(uuid, bigint, public.media_job_status, text); Type: FUNCTION; Schema: public; Owner: -
 --
@@ -14326,133 +14432,6 @@ BEGIN
     END IF;
     UPDATE media_job SET heartbeat_at = now()
      WHERE media_job_public_id = media_job_public_id_input;
-END;
-$$;
-
-
---
--- Name: media_job_worker_recover_stale_v1(integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.media_job_worker_recover_stale_v1(stale_after_seconds_input integer) RETURNS TABLE(media_job_public_id uuid, status public.media_job_status, last_error text)
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'pg_temp'
-    AS $$
-BEGIN
-    IF stale_after_seconds_input IS NULL OR stale_after_seconds_input < 0 THEN
-        RAISE EXCEPTION 'stale worker recovery interval invalid'
-            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_worker_stale_after_invalid';
-    END IF;
-
-    RETURN QUERY
-    WITH stale_attempt AS (
-        SELECT job.media_job_id,
-               attempt.media_job_attempt_id,
-               CASE
-                   WHEN job.cancel_generation > job.cancel_acknowledged_generation
-                       THEN media_job_status_cancelled_v1()
-                   ELSE media_job_status_failed_v1()
-               END AS terminal_status
-          FROM media_job job
-          JOIN media_job_attempt attempt
-            ON attempt.media_job_attempt_id = job.current_attempt_id
-         WHERE job.status IN (
-                   media_job_status_running_v1(),
-                   media_job_status_verifying_v1()
-               )
-           AND attempt.status = job.status
-           AND COALESCE(job.heartbeat_at, job.started_at, job.queued_at)
-               <= now() - make_interval(secs => stale_after_seconds_input)
-         FOR UPDATE OF job, attempt SKIP LOCKED
-    ),
-    terminal_attempt AS (
-        UPDATE media_job_attempt attempt
-           SET status = stale_attempt.terminal_status,
-               completed_at = now(),
-               last_error = CASE
-                   WHEN stale_attempt.terminal_status = media_job_status_cancelled_v1()
-                       THEN NULL
-                   ELSE 'media_job_worker_heartbeat_stale'
-               END
-          FROM stale_attempt
-         WHERE attempt.media_job_attempt_id = stale_attempt.media_job_attempt_id
-        RETURNING attempt.media_job_id,
-                  attempt.status,
-                  attempt.last_error
-    )
-    UPDATE media_job job
-       SET status = terminal_attempt.status,
-           cancel_acknowledged_generation = CASE
-               WHEN terminal_attempt.status = media_job_status_cancelled_v1()
-                   THEN job.cancel_generation
-               ELSE job.cancel_acknowledged_generation
-           END,
-           completed_at = now(),
-           last_error = terminal_attempt.last_error
-      FROM terminal_attempt
-     WHERE job.media_job_id = terminal_attempt.media_job_id
-    RETURNING job.media_job_public_id,
-              job.status,
-              job.last_error;
-END;
-$$;
-
-
---
--- Name: media_job_worker_recover_stale_v1(uuid, bigint, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.media_job_worker_recover_stale_v1(media_job_public_id_input uuid, claim_generation_input bigint, stale_before_input timestamp with time zone, recovered_at_input timestamp with time zone) RETURNS integer
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'pg_temp'
-    AS $$
-DECLARE
-    job_id BIGINT;
-    stale_attempt_id BIGINT;
-    next_attempt_number INT;
-    next_attempt_id BIGINT;
-BEGIN
-    IF stale_before_input IS NULL OR recovered_at_input IS NULL
-       OR stale_before_input > recovered_at_input THEN
-        RAISE EXCEPTION 'stale recovery timestamps are invalid'
-            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_stale_recovery_time_invalid';
-    END IF;
-
-    SELECT job.media_job_id, attempt.media_job_attempt_id, attempt.attempt_number + 1
-      INTO job_id, stale_attempt_id, next_attempt_number
-      FROM media_job job
-      JOIN media_job_attempt attempt ON attempt.media_job_attempt_id = job.current_attempt_id
-     WHERE job.media_job_public_id = media_job_public_id_input
-       AND attempt.claim_generation = claim_generation_input
-       AND attempt.status IN (media_job_status_running_v1(), media_job_status_verifying_v1())
-       AND job.status = attempt.status
-       AND attempt.heartbeat_at < stale_before_input
-     FOR UPDATE OF job, attempt;
-    IF stale_attempt_id IS NULL THEN
-        RAISE EXCEPTION 'stale worker recovery rejected'
-            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_worker_claim_stale';
-    END IF;
-
-    UPDATE media_job_attempt
-       SET status = media_job_status_failed_v1(),
-           completed_at = recovered_at_input,
-           last_error = 'worker heartbeat expired'
-     WHERE media_job_attempt_id = stale_attempt_id;
-    INSERT INTO media_job_attempt (media_job_id, attempt_number, queued_at)
-    VALUES (job_id, next_attempt_number, recovered_at_input)
-    RETURNING media_job_attempt_id INTO next_attempt_id;
-    UPDATE media_job
-       SET current_attempt_id = next_attempt_id,
-           status = media_job_status_queued_v1(),
-           queued_at = recovered_at_input,
-           started_at = NULL,
-           heartbeat_at = NULL,
-           completed_at = NULL,
-           last_error = NULL,
-           diagnostics_pruned_at = NULL,
-           cancel_acknowledged_generation = cancel_generation
-     WHERE media_job_id = job_id;
-    RETURN next_attempt_number;
 END;
 $$;
 
@@ -36479,8 +36458,9 @@ CREATE TABLE public.media_job_attempt (
     last_error text,
     cancel_generation_at_claim bigint,
     CONSTRAINT media_job_attempt_lifecycle CHECK (
+        -- Resumable queued attempts retain their immutable first claim timestamp.
         (status = public.media_job_status_queued_v1()
-            AND claimed_at IS NULL AND heartbeat_at IS NULL AND completed_at IS NULL)
+            AND heartbeat_at IS NULL AND completed_at IS NULL)
         OR (status IN (public.media_job_status_running_v1(), public.media_job_status_verifying_v1())
             AND claimed_at IS NOT NULL AND heartbeat_at IS NOT NULL AND completed_at IS NULL)
         OR (status IN (public.media_job_status_completed_v1(), public.media_job_status_failed_v1(), public.media_job_status_cancelled_v1())
@@ -43749,7 +43729,7 @@ ALTER TABLE ONLY public.media_job_policy_retention_rule_snapshot
 --
 
 ALTER TABLE ONLY public.media_job_root_snapshot
-    ADD CONSTRAINT media_job_root_snapshot_job_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE RESTRICT;
+    ADD CONSTRAINT media_job_root_snapshot_job_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
 
 
 --
@@ -45955,7 +45935,6 @@ CREATE TABLE public.media_discovery_association_version (
     CONSTRAINT media_discovery_association_version_resolution_coherent CHECK (
         (resolution_state = 'resolved') = (media_root_catalog_slot_attestation_id IS NOT NULL)),
     CONSTRAINT media_discovery_association_version_relative_path_contract CHECK (public.media_root_relative_prefix_valid_v1(root_relative_path)),
-    CONSTRAINT media_discovery_association_version_automatic_discovery_held CHECK (NOT watcher_enabled AND NOT schedule_enabled),
     CONSTRAINT media_discovery_association_version_activation_coherent CHECK (
         (lifecycle_state = 'active' AND resolution_state = 'resolved') OR
         (lifecycle_state IN ('draft', 'archived') AND NOT manual_enabled AND NOT watcher_enabled AND NOT schedule_enabled))
@@ -46348,9 +46327,6 @@ BEGIN
         OR manual_input IS NULL OR watcher_input IS NULL OR schedule_input IS NULL THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
     END IF;
-    IF watcher_input OR schedule_input THEN
-        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_pending_contract', DETAIL = 'media_configuration_pending_contract';
-    END IF;
     actor_id := public.media_actor_id_for_public_id_v1(actor_input);
     SELECT CASE WHEN s.source_state = 'ready' AND s.attestation_state = 'ready'
         THEN s.active_media_root_catalog_generation_id END INTO generation_id
@@ -46432,10 +46408,13 @@ BEGIN
         root_relative_path, manual_enabled, watcher_enabled, schedule_enabled, created_by_user_id)
     VALUES (parent_id, next_version, CASE WHEN active THEN 'active' ELSE 'draft' END,
         profile_row.media_profile_version_id, source_key_input, source_id, resolution, prefix_input,
-        manual_input AND active, false, false, actor_id) RETURNING media_discovery_association_version_id INTO body_id;
+        manual_input AND active, watcher_input AND active, schedule_input AND active, actor_id) RETURNING media_discovery_association_version_id INTO body_id;
     UPDATE public.media_discovery_association SET latest_media_discovery_association_version_id = body_id,
         active_media_discovery_association_version_id = CASE WHEN active THEN body_id ELSE active_media_discovery_association_version_id END
     WHERE media_discovery_association_id = parent_id;
+    IF active THEN
+        PERFORM public.media_discovery_rescan_publish_v1(body_id, 'configuration_activated');
+    END IF;
     RETURN public_id;
 END;
 $$;
@@ -46497,9 +46476,6 @@ BEGIN
        OR profile_version_input IS NULL OR profile_version_input <= 0
        OR manual_enabled_input IS NULL OR watcher_enabled_input IS NULL OR schedule_enabled_input IS NULL THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
-    END IF;
-    IF watcher_enabled_input OR schedule_enabled_input THEN
-        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_pending_contract', DETAIL = 'media_configuration_pending_contract';
     END IF;
     actor_id := public.media_actor_id_for_public_id_v1(actor_public_id_input);
     SELECT s.active_media_root_catalog_generation_id INTO generation_id
@@ -46573,7 +46549,7 @@ BEGIN
         root_relative_path, manual_enabled, watcher_enabled, schedule_enabled, created_by_user_id
     ) VALUES (parent_id, 1, 'active', profile_row.media_profile_version_id,
         source_root_key_input, source_id, 'resolved', root_relative_path_input,
-        manual_enabled_input, FALSE, FALSE, actor_id)
+        manual_enabled_input, watcher_enabled_input, schedule_enabled_input, actor_id)
     RETURNING media_discovery_association_version_id INTO version_id;
     UPDATE public.media_discovery_association SET latest_media_discovery_association_version_id = version_id,
         active_media_discovery_association_version_id = version_id WHERE media_discovery_association_id = parent_id;
@@ -46683,6 +46659,15 @@ ALTER TABLE public.media_discovery_source_fingerprint
     ADD CONSTRAINT media_discovery_source_fingerprint_relative_path CHECK (
         public.media_root_relative_prefix_valid_v1(source_path) AND source_path <> ''
     );
+ALTER TABLE public.media_discovery_source_fingerprint
+    ADD COLUMN last_observed_sequence bigint NOT NULL DEFAULT 0 CHECK (last_observed_sequence >= 0),
+    ADD COLUMN absence_observations smallint NOT NULL DEFAULT 0 CHECK (absence_observations BETWEEN 0 AND 2),
+    ADD COLUMN absence_observed_at timestamptz,
+    ADD COLUMN absence_generation bigint REFERENCES public.media_root_catalog_generation(media_root_catalog_generation_id),
+    ADD CONSTRAINT media_discovery_absence_evidence CHECK (
+        (absence_observations = 0 AND absence_observed_at IS NULL AND absence_generation IS NULL)
+        OR (absence_observations > 0 AND absence_observed_at IS NOT NULL AND absence_generation IS NOT NULL));
+
 ALTER TABLE public.media_job
     ADD COLUMN media_profile_version_id bigint NOT NULL,
     ADD COLUMN media_discovery_association_version_id bigint NOT NULL,
@@ -46957,6 +46942,41 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.media_job_replacement_recovery_list_v1(bigint) FROM PUBLIC;
 
+-- Approved rollback-only physical fingerprint refresh; content and bindings stay immutable.
+CREATE FUNCTION public.media_job_restored_source_refresh_v1(
+    job_public_id_input uuid, generation_input bigint, source_path_input text,
+    identity_input text, size_input bigint, modified_ns_input bigint,
+    changed_ns_input bigint, sha256_input text)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    job public.media_job%ROWTYPE;
+    attempt public.media_job_attempt%ROWTYPE;
+BEGIN
+    SELECT * INTO job FROM public.media_job j WHERE j.media_job_public_id = job_public_id_input FOR UPDATE;
+    SELECT * INTO attempt FROM public.media_job_attempt a WHERE a.media_job_attempt_id = job.current_attempt_id FOR UPDATE;
+    IF job.media_job_id IS NULL OR attempt.claim_generation IS DISTINCT FROM generation_input
+        OR attempt.claimed_at IS NULL OR job.dry_run
+        OR job.status = public.media_job_status_completed_v1() THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_worker_claim_stale', DETAIL = 'media_job_worker_claim_stale';
+    END IF;
+    IF source_path_input IS DISTINCT FROM job.source_path
+        OR size_input IS DISTINCT FROM job.intent_source_size_bytes
+        OR sha256_input IS DISTINCT FROM job.intent_source_sha256
+        OR identity_input IS NULL OR identity_input !~ '^[0-9a-f]{16}:[0-9a-f]{16}$'
+        OR modified_ns_input IS NULL OR modified_ns_input < 0
+        OR changed_ns_input IS NULL OR changed_ns_input < 0 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_source_fingerprint_mismatch', DETAIL = 'media_job_source_fingerprint_mismatch';
+    END IF;
+    PERFORM public.media_job_root_snapshot_complete_v1(job.media_job_id);
+    PERFORM set_config('revaer.restored_source_job', job_public_id_input::text, true);
+    UPDATE public.media_job SET intent_source_identity = identity_input,
+        intent_source_modified_ns = modified_ns_input, intent_source_changed_ns = changed_ns_input
+    WHERE media_job_id = job.media_job_id;
+    PERFORM set_config('revaer.restored_source_job', '', true);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_job_restored_source_refresh_v1(uuid, bigint, text, text, bigint, bigint, bigint, text) FROM PUBLIC;
+
 CREATE FUNCTION public.media_discovery_association_job_enqueue_v1(
     actor_public_id_input uuid, association_public_id_input uuid, source_relative_path_input text,
     dry_run_input boolean, source_identity_input text, source_size_bytes_input bigint,
@@ -47071,7 +47091,8 @@ BEGIN
         ) ON CONFLICT (media_discovery_association_version_id, source_path) DO UPDATE
         SET source_identity = EXCLUDED.source_identity, source_size_bytes = EXCLUDED.source_size_bytes,
             source_modified_ns = EXCLUDED.source_modified_ns, source_changed_ns = EXCLUDED.source_changed_ns,
-            source_sha256 = EXCLUDED.source_sha256, last_seen_at = transaction_timestamp()
+            source_sha256 = EXCLUDED.source_sha256, last_seen_at = transaction_timestamp(),
+            absence_observations = 0, absence_observed_at = NULL, absence_generation = NULL
         WHERE ROW(media_discovery_source_fingerprint.source_identity, media_discovery_source_fingerprint.source_size_bytes,
             media_discovery_source_fingerprint.source_modified_ns, media_discovery_source_fingerprint.source_changed_ns,
             media_discovery_source_fingerprint.source_sha256) IS DISTINCT FROM
@@ -47142,45 +47163,12 @@ CREATE TABLE public.media_discovery_rescan (
 CREATE TABLE public.media_discovery_rescan_reason_kind (
     reason_code text PRIMARY KEY
 );
-CREATE TABLE public.media_discovery_execution_slot (
-    slot_id smallint PRIMARY KEY CHECK (slot_id BETWEEN 1 AND 2),
-    claim_generation bigint NOT NULL DEFAULT 0 CHECK (claim_generation >= 0),
-    owner_public_id uuid,
-    instance_public_id uuid,
-    principal_user_id bigint REFERENCES public.app_user(user_id),
-    media_discovery_association_version_id bigint
-        REFERENCES public.media_discovery_association_version(media_discovery_association_version_id),
-    media_root_catalog_generation_id bigint
-        REFERENCES public.media_root_catalog_generation(media_root_catalog_generation_id),
-    media_root_catalog_slot_attestation_id bigint
-        REFERENCES public.media_root_catalog_slot_attestation(media_root_catalog_slot_attestation_id),
-    media_policy_profile_id bigint REFERENCES public.media_policy_profile(media_policy_profile_id),
-    captured_sequence bigint,
-    lease_expires_at timestamptz,
-    CONSTRAINT media_discovery_execution_slot_coherent CHECK (
-        (owner_public_id IS NULL AND instance_public_id IS NULL AND principal_user_id IS NULL
-            AND media_discovery_association_version_id IS NULL AND media_root_catalog_generation_id IS NULL
-            AND media_root_catalog_slot_attestation_id IS NULL AND media_policy_profile_id IS NULL
-            AND captured_sequence IS NULL AND lease_expires_at IS NULL)
-        OR (owner_public_id IS NOT NULL AND instance_public_id IS NOT NULL AND principal_user_id IS NOT NULL
-            AND media_discovery_association_version_id IS NOT NULL AND media_root_catalog_generation_id IS NOT NULL
-            AND media_root_catalog_slot_attestation_id IS NOT NULL AND media_policy_profile_id IS NOT NULL
-            AND captured_sequence IS NOT NULL AND captured_sequence > 0
-            AND lease_expires_at IS NOT NULL AND claim_generation > 0))
-);
-CREATE UNIQUE INDEX media_discovery_execution_instance ON public.media_discovery_execution_slot(instance_public_id);
-CREATE UNIQUE INDEX media_discovery_execution_root ON public.media_discovery_execution_slot(media_root_catalog_slot_attestation_id);
-CREATE UNIQUE INDEX media_discovery_execution_policy ON public.media_discovery_execution_slot(media_policy_profile_id);
-CREATE UNIQUE INDEX media_discovery_execution_owner ON public.media_discovery_execution_slot(owner_public_id);
-
 CREATE FUNCTION public.media_discovery_rescan_seed_reason_kinds_v1()
 RETURNS void LANGUAGE sql SET search_path TO pg_catalog, public AS $$
     INSERT INTO public.media_discovery_rescan_reason_kind(reason_code) VALUES
         ('manual'), ('schedule'), ('overflow'), ('watcher_uncertain'),
         ('directory_changed'), ('configuration_activated'), ('restart_reconcile')
     ON CONFLICT (reason_code) DO NOTHING;
-    INSERT INTO public.media_discovery_execution_slot(slot_id) VALUES (1), (2)
-    ON CONFLICT (slot_id) DO NOTHING;
 $$;
 REVOKE ALL ON FUNCTION public.media_discovery_rescan_seed_reason_kinds_v1() FROM PUBLIC;
 SELECT public.media_discovery_rescan_seed_reason_kinds_v1();
@@ -47244,140 +47232,180 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
 $$;
 REVOKE ALL ON FUNCTION public.media_discovery_rescan_get_v1(uuid) FROM PUBLIC;
 
-CREATE FUNCTION public.media_discovery_execution_claim_v1(
-    actor_input uuid, association_input uuid, version_input integer,
-    generation_input bigint, generation_sha256_input bytea, instance_input uuid, owner_input uuid
-)
-RETURNS TABLE(slot_id smallint, claim_generation bigint, captured_sequence bigint, lease_expires_at timestamptz)
-LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public SET lock_timeout TO '250ms' AS $$
+-- Request/acknowledgement authority comes from the retained catalog and the
+-- exact active association, not a scanner owner, lease or caller-supplied path.
+CREATE FUNCTION public.media_discovery_rescan_fence_v1(
+    public_id_input uuid, association_version_input integer,
+    expected_generation_input bigint, expected_generation_sha256_input bytea,
+    trigger_input text
+) RETURNS bigint LANGUAGE plpgsql SET search_path TO pg_catalog, public AS $$
 DECLARE
-    principal_id bigint;
-    current_generation bigint;
-    binding record;
-    request_sequence bigint;
-    selected_slot smallint;
-    existing public.media_discovery_execution_slot%ROWTYPE;
+    generation_id bigint;
+    association_row record;
+    readiness_row record;
 BEGIN
-    IF instance_input IS NULL OR owner_input IS NULL
-       OR instance_input = '00000000-0000-0000-0000-000000000000'::uuid
-       OR owner_input = '00000000-0000-0000-0000-000000000000'::uuid
-       OR version_input IS NULL OR version_input <= 0 THEN
+    IF trigger_input IS NULL OR trigger_input NOT IN ('watcher', 'schedule') THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
     END IF;
-    principal_id := public.media_actor_id_for_public_id_v1(actor_input);
-    SELECT s.active_media_root_catalog_generation_id INTO current_generation
-    FROM public.media_root_catalog_state s WHERE s.media_root_catalog_state_id = 1
-        AND s.source_state = 'ready' AND s.attestation_state = 'ready' FOR SHARE;
-    IF current_generation IS NULL OR current_generation IS DISTINCT FROM generation_input
-       OR NOT EXISTS (SELECT 1 FROM public.media_root_catalog_generation g
-           WHERE g.media_root_catalog_generation_id = current_generation AND g.generation_sha256 = generation_sha256_input) THEN
+    SELECT s.active_media_root_catalog_generation_id INTO generation_id
+        FROM public.media_root_catalog_state s WHERE s.media_root_catalog_state_id = 1
+            AND s.source_state = 'ready' AND s.attestation_state = 'ready' FOR SHARE;
+    IF generation_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    IF generation_id IS DISTINCT FROM expected_generation_input OR NOT EXISTS (
+        SELECT 1 FROM public.media_root_catalog_generation g
+        WHERE g.media_root_catalog_generation_id = generation_id
+            AND g.generation_sha256 = expected_generation_sha256_input
+    ) THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_stale', DETAIL = 'media_root_attestation_stale';
     END IF;
-    SELECT v.*, pv.media_profile_id, pv.media_policy_profile_id INTO binding
-    FROM public.media_discovery_association a JOIN public.media_discovery_association_version v
-        ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
-    JOIN public.media_profile_version pv USING (media_profile_version_id)
-    WHERE a.media_discovery_association_public_id = association_input;
+    SELECT v.*, p.media_profile_id INTO association_row
+        FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v
+            ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+        JOIN public.media_profile_version pv USING (media_profile_version_id)
+        JOIN public.media_profile p USING (media_profile_id)
+        WHERE a.media_discovery_association_public_id = public_id_input;
     IF NOT FOUND THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_association_not_found', DETAIL = 'media_discovery_association_not_found';
     END IF;
-    PERFORM pg_advisory_xact_lock(hashtextextended('media_discovery_association_overlap_v1', binding.media_root_catalog_slot_attestation_id));
-    PERFORM p.media_profile_id FROM public.media_profile p WHERE p.media_profile_id = binding.media_profile_id FOR UPDATE;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_discovery_association_overlap_v1', association_row.media_root_catalog_slot_attestation_id));
+    PERFORM p.media_profile_id FROM public.media_profile p
+        WHERE p.media_profile_id = association_row.media_profile_id FOR UPDATE;
     PERFORM a.media_discovery_association_id FROM public.media_discovery_association a
-        WHERE a.media_discovery_association_public_id = association_input
-            AND a.active_media_discovery_association_version_id = binding.media_discovery_association_version_id FOR UPDATE;
-    IF NOT FOUND OR binding.version <> version_input OR NOT EXISTS (
-        SELECT 1 FROM public.media_discovery_association_get_v1(association_input) r
-        WHERE r.binding_ready AND r.active_version = version_input AND r.latest_version = version_input
-    ) THEN
-        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
-    END IF;
-    SELECT s.requested_sequence INTO request_sequence FROM public.media_discovery_rescan s
-        WHERE s.media_discovery_association_version_id = binding.media_discovery_association_version_id
-            AND s.requested_sequence > s.satisfied_sequence AND s.not_before <= clock_timestamp() FOR UPDATE;
-    IF NOT FOUND THEN RETURN; END IF;
-    -- Serialize the two capacity rows; an expired owner still occupies its slot.
-    PERFORM s.slot_id FROM public.media_discovery_execution_slot s ORDER BY s.slot_id FOR UPDATE;
-    SELECT s.* INTO existing FROM public.media_discovery_execution_slot s WHERE s.owner_public_id = owner_input;
-    IF FOUND THEN
-        IF existing.instance_public_id <> instance_input OR existing.principal_user_id <> principal_id
-           OR existing.media_discovery_association_version_id <> binding.media_discovery_association_version_id
-           OR existing.media_root_catalog_generation_id <> current_generation THEN
-            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_claim_conflict', DETAIL = 'media_discovery_claim_conflict';
-        END IF;
-        IF existing.lease_expires_at <= clock_timestamp() THEN
-            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_claim_expired', DETAIL = 'media_discovery_claim_expired';
-        END IF;
-        RETURN QUERY SELECT existing.slot_id, existing.claim_generation, existing.captured_sequence, existing.lease_expires_at;
-        RETURN;
-    END IF;
-    IF EXISTS (SELECT 1 FROM public.media_discovery_execution_slot s WHERE s.owner_public_id IS NOT NULL
-        AND (s.instance_public_id = instance_input
-            OR s.media_root_catalog_slot_attestation_id = binding.media_root_catalog_slot_attestation_id
-            OR s.media_policy_profile_id = binding.media_policy_profile_id)) THEN RETURN; END IF;
-    SELECT s.slot_id INTO selected_slot FROM public.media_discovery_execution_slot s
-        WHERE s.owner_public_id IS NULL ORDER BY s.slot_id LIMIT 1;
-    IF selected_slot IS NULL THEN RETURN; END IF;
-    RETURN QUERY UPDATE public.media_discovery_execution_slot AS s SET
-        claim_generation = s.claim_generation + 1, owner_public_id = owner_input, instance_public_id = instance_input,
-        principal_user_id = principal_id, media_discovery_association_version_id = binding.media_discovery_association_version_id,
-        media_root_catalog_generation_id = current_generation,
-        media_root_catalog_slot_attestation_id = binding.media_root_catalog_slot_attestation_id,
-        media_policy_profile_id = binding.media_policy_profile_id, captured_sequence = request_sequence,
-        lease_expires_at = clock_timestamp() + interval '20 seconds'
-    WHERE s.slot_id = selected_slot
-    RETURNING s.slot_id, s.claim_generation, s.captured_sequence, s.lease_expires_at;
-END;
-$$;
-REVOKE ALL ON FUNCTION public.media_discovery_execution_claim_v1(uuid, uuid, integer, bigint, bytea, uuid, uuid) FROM PUBLIC;
-
-CREATE FUNCTION public.media_discovery_execution_renew_v1(slot_input smallint, fence_input bigint, owner_input uuid)
-RETURNS timestamptz LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public SET lock_timeout TO '250ms' AS $$
-DECLARE
-    renewed_at timestamptz;
-    current_generation bigint;
-BEGIN
-    SELECT c.active_media_root_catalog_generation_id INTO current_generation
-    FROM public.media_root_catalog_state c WHERE c.media_root_catalog_state_id = 1
-        AND c.source_state = 'ready' AND c.attestation_state = 'ready' FOR SHARE;
-    IF current_generation IS NULL THEN
+        WHERE a.media_discovery_association_id = association_row.media_discovery_association_id FOR UPDATE;
+    SELECT r.* INTO readiness_row FROM public.media_discovery_association_get_v1(public_id_input) r;
+    IF association_row.version IS DISTINCT FROM association_version_input
+       OR readiness_row.latest_version IS DISTINCT FROM association_version_input
+       OR readiness_row.active_version IS DISTINCT FROM association_version_input THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_stale', DETAIL = 'media_root_attestation_stale';
     END IF;
-    UPDATE public.media_discovery_execution_slot s SET lease_expires_at = clock_timestamp() + interval '20 seconds'
-    WHERE s.slot_id = slot_input AND s.claim_generation = fence_input AND s.owner_public_id = owner_input
-        AND s.lease_expires_at > clock_timestamp()
-        AND s.media_root_catalog_generation_id = current_generation
-        AND EXISTS (
-            SELECT 1 FROM public.media_discovery_association a
-            JOIN public.media_discovery_association_version v
-                ON v.media_discovery_association_version_id = s.media_discovery_association_version_id
-            JOIN public.media_discovery_association_get_v1(a.media_discovery_association_public_id) r ON TRUE
-            WHERE a.active_media_discovery_association_version_id = v.media_discovery_association_version_id
-                AND r.binding_ready AND r.active_version = v.version AND r.latest_version = v.version)
-    RETURNING s.lease_expires_at INTO renewed_at;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_claim_expired', DETAIL = 'media_discovery_claim_expired';
+    IF NOT (CASE trigger_input WHEN 'watcher' THEN readiness_row.watcher_enabled
+        WHEN 'schedule' THEN readiness_row.schedule_enabled ELSE FALSE END) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_' || trigger_input || '_disabled',
+            DETAIL = 'media_discovery_' || trigger_input || '_disabled';
     END IF;
-    RETURN renewed_at;
+    IF NOT COALESCE(readiness_row.binding_ready, FALSE) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    RETURN association_row.media_discovery_association_version_id;
 END;
 $$;
-REVOKE ALL ON FUNCTION public.media_discovery_execution_renew_v1(smallint, bigint, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_discovery_rescan_fence_v1(uuid,integer,bigint,bytea,text) FROM PUBLIC;
 
--- The caller releases only after scanner quiescence; lease expiry is not release.
-CREATE FUNCTION public.media_discovery_execution_release_v1(slot_input smallint, fence_input bigint, owner_input uuid)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public SET lock_timeout TO '250ms' AS $$
+CREATE FUNCTION public.media_discovery_rescan_request_v1(
+    public_id_input uuid, association_version_input integer,
+    expected_generation_input bigint, expected_generation_sha256_input bytea,
+    trigger_input text, reason_input text
+) RETURNS bigint LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE version_id bigint;
 BEGIN
-    UPDATE public.media_discovery_execution_slot s SET owner_public_id = NULL, instance_public_id = NULL,
-        principal_user_id = NULL, media_discovery_association_version_id = NULL, media_root_catalog_generation_id = NULL,
-        media_root_catalog_slot_attestation_id = NULL, media_policy_profile_id = NULL,
-        captured_sequence = NULL, lease_expires_at = NULL
-    WHERE s.slot_id = slot_input AND s.claim_generation = fence_input AND s.owner_public_id = owner_input;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_claim_conflict', DETAIL = 'media_discovery_claim_conflict';
+    IF reason_input IS NULL OR reason_input NOT IN (
+        'schedule', 'overflow', 'watcher_uncertain', 'directory_changed', 'restart_reconcile'
+    ) OR (reason_input = 'schedule' AND trigger_input IS DISTINCT FROM 'schedule') THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
     END IF;
+    version_id := public.media_discovery_rescan_fence_v1(public_id_input, association_version_input,
+        expected_generation_input, expected_generation_sha256_input, trigger_input);
+    IF reason_input IN ('overflow','watcher_uncertain','directory_changed','restart_reconcile') THEN
+        UPDATE public.media_discovery_source_fingerprint
+        SET absence_observations = 0, absence_observed_at = NULL, absence_generation = NULL
+        WHERE media_discovery_association_version_id = version_id;
+    END IF;
+    RETURN public.media_discovery_rescan_publish_v1(version_id, reason_input);
 END;
 $$;
-REVOKE ALL ON FUNCTION public.media_discovery_execution_release_v1(smallint, bigint, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_discovery_rescan_request_v1(uuid,integer,bigint,bytea,text,text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_rescan_observe_paths_v1(
+    public_id_input uuid, association_version_input integer, expected_generation_input bigint,
+    expected_generation_sha256_input bytea, trigger_input text, captured_sequence_input bigint,
+    paths_input text[]
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE version_id bigint; requested_value bigint; satisfied_value bigint;
+BEGIN
+    version_id := public.media_discovery_rescan_fence_v1(public_id_input, association_version_input,
+        expected_generation_input, expected_generation_sha256_input, trigger_input);
+    SELECT s.requested_sequence, s.satisfied_sequence INTO requested_value, satisfied_value
+    FROM public.media_discovery_rescan s WHERE s.media_discovery_association_version_id = version_id FOR UPDATE;
+    IF captured_sequence_input IS NULL OR requested_value IS NULL
+        OR captured_sequence_input <= satisfied_value OR captured_sequence_input > requested_value
+        OR paths_input IS NULL OR cardinality(paths_input) NOT BETWEEN 1 AND 128
+        OR EXISTS (SELECT 1 FROM unnest(paths_input) p WHERE p IS NULL OR p = ''
+            OR NOT public.media_root_relative_prefix_valid_v1(p)) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    UPDATE public.media_discovery_source_fingerprint
+    SET last_observed_sequence = GREATEST(last_observed_sequence, captured_sequence_input),
+        last_seen_at = clock_timestamp(), absence_observations = 0,
+        absence_observed_at = NULL, absence_generation = NULL
+    WHERE media_discovery_association_version_id = version_id AND source_path = ANY(paths_input);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_rescan_observe_paths_v1(uuid,integer,bigint,bytea,text,bigint,text[]) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_source_diagnostics_get_v1(public_id_input uuid, path_input text)
+RETURNS TABLE(source_path text, last_seen_at timestamptz, absence_observations smallint, diagnostic_absent boolean)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT f.source_path, f.last_seen_at, f.absence_observations,
+        f.absence_observations = 2 AND f.absence_generation = s.active_media_root_catalog_generation_id
+            AND s.source_state = 'ready' AND s.attestation_state = 'ready'
+    FROM public.media_discovery_association a
+    JOIN public.media_discovery_source_fingerprint f
+        ON f.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+    JOIN public.media_root_catalog_state s ON s.media_root_catalog_state_id = 1
+    WHERE a.media_discovery_association_public_id = public_id_input AND f.source_path = path_input;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_source_diagnostics_get_v1(uuid,text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_rescan_satisfy_v1(
+    public_id_input uuid, association_version_input integer,
+    expected_generation_input bigint, expected_generation_sha256_input bytea,
+    trigger_input text, captured_sequence_input bigint
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    version_id bigint;
+    requested_value bigint;
+    satisfied_value bigint;
+    observed_at timestamptz;
+BEGIN
+    version_id := public.media_discovery_rescan_fence_v1(public_id_input, association_version_input,
+        expected_generation_input, expected_generation_sha256_input, trigger_input);
+    SELECT s.requested_sequence, s.satisfied_sequence INTO requested_value, satisfied_value FROM public.media_discovery_rescan s
+        WHERE s.media_discovery_association_version_id = version_id FOR UPDATE;
+    IF requested_value IS NULL OR captured_sequence_input IS NULL
+       OR captured_sequence_input < 1 OR captured_sequence_input > requested_value THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    -- Only a newly completed latest request can establish absence. Replayed
+    -- acknowledgements and a scan predating a newer trigger cannot do so.
+    IF captured_sequence_input = requested_value AND captured_sequence_input > satisfied_value THEN
+        observed_at := clock_timestamp();
+        UPDATE public.media_discovery_source_fingerprint f
+        SET absence_observations = CASE
+                WHEN f.absence_generation IS DISTINCT FROM expected_generation_input THEN 1
+                ELSE LEAST(2, f.absence_observations + 1) END,
+            absence_observed_at = observed_at, absence_generation = expected_generation_input
+        WHERE f.media_discovery_association_version_id = version_id
+            AND f.last_observed_sequence < captured_sequence_input
+            AND (f.absence_observed_at IS NULL OR f.absence_generation IS DISTINCT FROM expected_generation_input
+                OR f.absence_observed_at <= observed_at - interval '1 second');
+        IF EXISTS (SELECT 1 FROM public.media_discovery_source_fingerprint f
+            WHERE f.media_discovery_association_version_id = version_id AND f.absence_observations = 1) THEN
+            -- This complete census requests its confirmation, preserving its
+            -- tentative evidence. Actual uncertainty uses request_v1 and resets it.
+            PERFORM public.media_discovery_rescan_publish_v1(version_id, 'directory_changed');
+        END IF;
+    END IF;
+    UPDATE public.media_discovery_rescan s
+        SET satisfied_sequence = GREATEST(s.satisfied_sequence, captured_sequence_input)
+        WHERE s.media_discovery_association_version_id = version_id;
+    -- Reasons retain their last requested sequence. An acknowledgement of R
+    -- cannot erase a newer reason or satisfy a request published after capture.
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_rescan_satisfy_v1(uuid,integer,bigint,bytea,text,bigint) FROM PUBLIC;
 
 CREATE TABLE public.media_discovery_schedule_state (
     media_discovery_association_version_id bigint PRIMARY KEY
@@ -47511,6 +47539,49 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.media_discovery_schedule_configuration_replace_v1(uuid,uuid,integer,integer,text,timestamptz) FROM PUBLIC;
 
+-- Observe one configured cadence and publish its coalesced request atomically.
+CREATE FUNCTION public.media_discovery_schedule_observe_due_v1(
+    public_id_input uuid, association_version_input integer, generation_input bigint,
+    generation_sha256_input bytea, trigger_input text
+) RETURNS bigint
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    version_id bigint;
+    cadence public.media_discovery_schedule_state%ROWTYPE;
+    observed_at timestamptz;
+    cadence_interval interval;
+    due_count bigint;
+    last_due timestamptz;
+BEGIN
+    IF trigger_input IS DISTINCT FROM 'schedule' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    version_id := public.media_discovery_rescan_fence_v1(public_id_input, association_version_input,
+        generation_input, generation_sha256_input, trigger_input);
+    SELECT s.* INTO cadence FROM public.media_discovery_schedule_state s
+    WHERE s.media_discovery_association_version_id = version_id FOR UPDATE;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+    observed_at := clock_timestamp();
+    IF cadence.next_due_at > observed_at THEN RETURN NULL; END IF;
+    cadence_interval := CASE cadence.interval_unit
+        WHEN 'minutes' THEN cadence.interval_quantity * interval '1 minute'
+        WHEN 'hours' THEN cadence.interval_quantity * interval '1 hour'
+    END;
+    due_count := floor(extract(epoch FROM observed_at - cadence.next_due_at)
+        / extract(epoch FROM cadence_interval))::bigint + 1;
+    last_due := cadence.next_due_at + (due_count - 1) * cadence_interval;
+    UPDATE public.media_discovery_schedule_state s
+    SET next_due_at = last_due + cadence_interval,
+        last_coalesced_first_due_at = cadence.next_due_at,
+        last_coalesced_last_due_at = last_due,
+        last_coalesced_count = due_count,
+        updated_at = GREATEST(observed_at, s.updated_at + interval '1 microsecond')
+    WHERE s.media_discovery_association_version_id = version_id;
+    RETURN public.media_discovery_rescan_publish_v1(version_id, 'schedule');
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_schedule_observe_due_v1(uuid,integer,bigint,bytea,text) FROM PUBLIC;
+
 CREATE FUNCTION public.media_job_operator_path_v1(path_input text, root_input text)
 RETURNS text LANGUAGE plpgsql IMMUTABLE SET search_path TO pg_catalog, public AS $$
 DECLARE relative_value text;
@@ -47600,6 +47671,55 @@ CREATE TABLE revaer_system.database_baseline (
     CONSTRAINT database_baseline_runtime_nonempty CHECK (length(runtime_role::text) BETWEEN 1 AND 63),
     CONSTRAINT database_baseline_distinct_roles CHECK (schema_owner_role <> runtime_role)
 );
+
+-- Completed execution outputs are scoped to the same resumable attempt.
+CREATE TABLE public.media_job_step_checkpoint (
+    media_job_attempt_id bigint NOT NULL REFERENCES public.media_job_attempt(media_job_attempt_id) ON DELETE CASCADE,
+    step_index integer NOT NULL CHECK (step_index >= 0),
+    step_signature bytea NOT NULL CHECK (octet_length(step_signature) = 32),
+    output_path text NOT NULL CHECK (length(output_path) > 0),
+    size_bytes bigint NOT NULL CHECK (size_bytes >= 0),
+    output_sha256 bytea NOT NULL CHECK (octet_length(output_sha256) = 32),
+    completed_at timestamp with time zone NOT NULL DEFAULT now(),
+    PRIMARY KEY (media_job_attempt_id, step_index)
+);
+
+CREATE FUNCTION public.media_job_step_checkpoint_get_v1(media_job_public_id_input uuid, claim_generation_input bigint, step_index_input integer)
+RETURNS TABLE(step_signature bytea, output_path text, size_bytes bigint, output_sha256 bytea)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE attempt_id bigint;
+BEGIN
+    SELECT media_job_attempt_id INTO attempt_id
+        FROM public.media_job_current_attempt_v1(media_job_public_id_input, claim_generation_input);
+    IF attempt_id IS NULL THEN
+        RAISE EXCEPTION 'stale worker claim' USING ERRCODE = public.media_app_error_code_v1(), DETAIL = 'media_job_worker_claim_stale';
+    END IF;
+    RETURN QUERY SELECT c.step_signature, c.output_path, c.size_bytes, c.output_sha256
+        FROM public.media_job_step_checkpoint c
+        WHERE c.media_job_attempt_id = attempt_id AND c.step_index = step_index_input;
+END;
+$$;
+
+CREATE FUNCTION public.media_job_step_checkpoint_write_v1(media_job_public_id_input uuid, claim_generation_input bigint,
+    step_index_input integer, step_signature_input bytea, output_path_input text, size_bytes_input bigint, output_sha256_input bytea)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE attempt_id bigint;
+BEGIN
+    -- Serialize completion with cancellation and status changes on this job.
+    PERFORM 1 FROM public.media_job j WHERE j.media_job_public_id = media_job_public_id_input FOR UPDATE;
+    SELECT media_job_attempt_id INTO attempt_id
+        FROM public.media_job_current_attempt_v1(media_job_public_id_input, claim_generation_input);
+    IF attempt_id IS NULL THEN
+        RAISE EXCEPTION 'stale worker claim' USING ERRCODE = public.media_app_error_code_v1(), DETAIL = 'media_job_worker_claim_stale';
+    END IF;
+    INSERT INTO public.media_job_step_checkpoint AS c
+        (media_job_attempt_id, step_index, step_signature, output_path, size_bytes, output_sha256)
+    VALUES (attempt_id, step_index_input, step_signature_input, output_path_input, size_bytes_input, output_sha256_input)
+    ON CONFLICT (media_job_attempt_id, step_index) DO UPDATE SET
+        step_signature = EXCLUDED.step_signature, output_path = EXCLUDED.output_path,
+        size_bytes = EXCLUDED.size_bytes, output_sha256 = EXCLUDED.output_sha256, completed_at = now();
+END;
+$$;
 
 -- Generated authored routine security begins.
 ALTER FUNCTION public.policy_action_to_decision_type(public.policy_action) SECURITY DEFINER SET search_path TO pg_catalog, public;
@@ -47874,8 +47994,6 @@ ALTER FUNCTION public.media_job_worker_complete_v1(uuid, bigint, bigint) SECURIT
 ALTER FUNCTION public.media_job_worker_heartbeat_v1(uuid, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_job_worker_mark_status_v1(uuid, bigint, public.media_job_status, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_job_worker_poll_control_v1(uuid, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.media_job_worker_recover_stale_v1(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.media_job_worker_recover_stale_v1(uuid, bigint, timestamp with time zone, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_key_valid_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
 ALTER FUNCTION public.media_policy_anime_v1() SECURITY DEFINER SET search_path TO pg_catalog;
 ALTER FUNCTION public.media_policy_archival_v1() SECURITY DEFINER SET search_path TO pg_catalog;
@@ -48521,9 +48639,11 @@ BEGIN
             'public.media_job_operator_get_v1(uuid)',
             'public.media_discovery_schedule_configuration_get_v1(uuid)',
             'public.media_discovery_rescan_get_v1(uuid)',
-            'public.media_discovery_execution_claim_v1(uuid, uuid, integer, bigint, bytea, uuid, uuid)',
-            'public.media_discovery_execution_renew_v1(smallint, bigint, uuid)',
-            'public.media_discovery_execution_release_v1(smallint, bigint, uuid)',
+            'public.media_discovery_rescan_request_v1(uuid,integer,bigint,bytea,text,text)',
+            'public.media_discovery_rescan_satisfy_v1(uuid,integer,bigint,bytea,text,bigint)',
+            'public.media_discovery_rescan_observe_paths_v1(uuid,integer,bigint,bytea,text,bigint,text[])',
+            'public.media_discovery_source_diagnostics_get_v1(uuid,text)',
+            'public.media_discovery_schedule_observe_due_v1(uuid,integer,bigint,bytea,text)',
             'public.media_discovery_schedule_configuration_create_v1(uuid,uuid,integer,integer,text)',
             'public.media_discovery_schedule_configuration_replace_v1(uuid,uuid,integer,integer,text,timestamptz)',
             'public.media_job_operator_list_v1(uuid, public.media_job_status)',
@@ -48553,6 +48673,7 @@ BEGIN
             'public.media_job_status_verifying_v1()',
             'public.media_job_terminal_outbox_list_unpublished_v1()',
             'public.media_job_replacement_recovery_list_v1(bigint)',
+            'public.media_job_restored_source_refresh_v1(uuid, bigint, text, text, bigint, bigint, bigint, text)',
             'public.media_job_terminal_outbox_mark_published_v1(uuid)',
             'public.media_job_validate_path_within_root_v1(text, text, text)',
             'public.media_job_verification_check_append_v1(uuid, bigint, integer, text, text, text, text, text)',
@@ -48565,10 +48686,12 @@ BEGIN
             'public.media_job_worker_commit_replacement_terminal_v1(uuid, bigint, bigint)',
             'public.media_job_worker_complete_v1(uuid, bigint, bigint)',
             'public.media_job_worker_heartbeat_v1(uuid, bigint)',
+            'public.media_job_worker_interrupt_v1(uuid, bigint)',
+            'public.media_job_worker_resume_interrupted_v1(text)',
+            'public.media_job_step_checkpoint_get_v1(uuid, bigint, integer)',
+            'public.media_job_step_checkpoint_write_v1(uuid, bigint, integer, bytea, text, bigint, bytea)',
             'public.media_job_worker_mark_status_v1(uuid, bigint, public.media_job_status, text)',
             'public.media_job_worker_poll_control_v1(uuid, bigint, bigint)',
-            'public.media_job_worker_recover_stale_v1(integer)',
-            'public.media_job_worker_recover_stale_v1(uuid, bigint, timestamp with time zone, timestamp with time zone)',
             'public.media_key_valid_v1(text)',
             'public.media_policy_anime_v1()',
             'public.media_policy_archival_v1()',

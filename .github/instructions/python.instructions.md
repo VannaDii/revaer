@@ -58,6 +58,15 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 
 ## Media continuation integration
 
+- Media E2E phase selection includes both missing-catalog authentication phases
+  before their respective positive API phases. Shared service adapters accept an
+  explicit startup catalog override only at the process wiring boundary. Coverage
+  and shard consumers require the same complete media phase set as the producer;
+  preserving a negative phase separately is not permission to omit its evidence.
+  When restarting between phases, authenticate the owned database's factory
+  reset with the previous phase's current session, then replace that session
+  with the newly issued credentials. A service restart does not reset authentication.
+
 - ADR 595 records the combined checkpoint/main source and retained comparison work. Keep `just` aliases as direct rv dispatch, with no duplicate gate bodies.
 - `rv cargo-lock` reconciles workspace metadata offline with `cargo update --workspace --offline`; it does not authorize registry upgrades.
 - In accepted feature-development mode, composed CI uses the existing owned single-init lifecycle. Verify the selected runtime baseline before the other validation steps; tests retain their explicit administrative endpoint. Reject legacy migration/reset/seed operations in that mode.

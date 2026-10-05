@@ -64,6 +64,12 @@ mod tests {
             Err(RootDirectoryError::InvalidPath)
         ));
         drop(parent);
+        let reader = opened.open_read_directory(0, std::path::Path::new(""))?;
+        assert!(matches!(
+            opened.open_read_directory(1, std::path::Path::new("")),
+            Err(RootDirectoryError::InvalidPath)
+        ));
+        drop(reader);
         for failure_call in [None, Some(1), Some(2)] {
             let mounts = ObservedMounts {
                 calls: std::sync::atomic::AtomicUsize::new(0),
@@ -239,6 +245,24 @@ impl OpenedRootCatalog {
             .get(slot_index)
             .ok_or(RootDirectoryError::InvalidPath)?
             .open_read_parent(relative_candidate)
+    }
+
+    /// Open a read-only directory from a retained trusted catalog slot.
+    /// Empty relative paths select the declared root. Slot indices come from
+    /// the trusted catalog, never from an operator-supplied path.
+    ///
+    /// # Errors
+    /// Rejects absent slots, invalid paths, changed roots and unsafe descendants.
+    /// The caller must retain this catalog while using the descriptor.
+    pub fn open_read_directory(
+        &self,
+        slot_index: usize,
+        relative_directory: &std::path::Path,
+    ) -> Result<std::os::fd::OwnedFd, RootDirectoryError> {
+        self.roots
+            .get(slot_index)
+            .ok_or(RootDirectoryError::InvalidPath)?
+            .open_read_directory(relative_directory)
     }
 
     fn revalidate_directories(&self) -> Result<(), RootDirectoryError> {
