@@ -1692,7 +1692,10 @@ fn estimate_live_workspace_demand(
         u64::try_from(sidecar_and_attachment_count).map_or(u64::MAX, |value| value),
     ) / 10;
     let container_temporary_and_log_overhead = primary_output / 4;
-    primary_output
+    // Account for the staged aggregate input alongside the current output, any
+    // auxiliary artifacts, and one current container/intermediate allowance.
+    source_file_bytes
+        .saturating_add(primary_output)
         .saturating_add(auxiliary_bytes)
         .saturating_add(container_temporary_and_log_overhead)
 }

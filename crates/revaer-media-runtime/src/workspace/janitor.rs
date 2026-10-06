@@ -58,6 +58,9 @@ pub fn cleanup_stale_workspaces(
         let Some(job_key) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
+        if !is_revaer_workspace_key(job_key) {
+            continue;
+        }
         if active.contains(job_key) {
             continue;
         }
@@ -72,7 +75,7 @@ pub fn cleanup_stale_workspaces(
             continue;
         };
         if age >= max_age {
-            fs::remove_dir_all(&path).map_err(|source| ManagedWorkspaceError::Io {
+            remove_workspace_idempotently(&path).map_err(|source| ManagedWorkspaceError::Io {
                 operation: "workspace.cleanup_remove",
                 path: path.clone(),
                 source,
@@ -176,6 +179,9 @@ fn cleanup_bounded_entry(
     let Some(job_key) = path.file_name().and_then(|name| name.to_str()) else {
         return;
     };
+    if !is_revaer_workspace_key(job_key) {
+        return;
+    }
     if active.contains(job_key) {
         return;
     }
@@ -201,7 +207,7 @@ fn cleanup_bounded_entry(
     if age < retention {
         return;
     }
-    if let Err(error) = fs::remove_dir_all(&path) {
+    if let Err(error) = remove_workspace_idempotently(&path) {
         report.failures.push(WorkspaceCleanupFailure {
             path,
             operation: "workspace.cleanup_remove",
@@ -212,10 +218,69 @@ fn cleanup_bounded_entry(
     report.removed.push(path);
 }
 
+fn remove_workspace_idempotently(path: &Path) -> Result<(), std::io::Error> {
+    match fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+fn is_revaer_workspace_key(value: &str) -> bool {
+    let Some((job_id, attempt_and_generation)) = value.split_once("-attempt-") else {
+        return false;
+    };
+    let Some((attempt, generation)) = attempt_and_generation.split_once("-claim-") else {
+        return false;
+    };
+    is_canonical_uuid(job_id)
+        && attempt.parse::<u32>().is_ok_and(|number| number > 0)
+        && generation.parse::<u64>().is_ok()
+}
+
+fn is_canonical_uuid(value: &str) -> bool {
+    value.bytes().enumerate().all(|(index, byte)| {
+        if matches!(index, 8 | 13 | 18 | 23) {
+            byte == b'-'
+        } else {
+            byte.is_ascii_hexdigit()
+        }
+    }) && value.len() == 36
+}
+
 fn is_diagnostics_only_workspace(path: &Path) -> bool {
     let diagnostics = fs::symlink_metadata(path.join("diagnostics"))
         .is_ok_and(|metadata| metadata.file_type().is_dir());
     let input_exists = fs::symlink_metadata(path.join("input")).is_ok();
     let output_exists = fs::symlink_metadata(path.join("output")).is_ok();
     diagnostics && !input_exists && !output_exists
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_revaer_workspace_key, remove_workspace_idempotently};
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn cleanup_identity_is_strict_and_absent_paths_succeed() -> anyhow::Result<()> {
+        assert!(is_revaer_workspace_key(
+            "00000000-0000-0000-0000-000000000001-attempt-1-claim-0"
+        ));
+        assert!(!is_revaer_workspace_key("unknown-directory"));
+        assert!(!is_revaer_workspace_key(
+            "00000000-0000-0000-0000-000000000001-attempt-0-claim-1"
+        ));
+
+        let root = std::env::temp_dir().join(format!(
+            "revaer-absent-cleanup-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir(&root)?;
+        let absent = root.join("already-absent");
+        assert!(remove_workspace_idempotently(&absent).is_ok());
+        fs::remove_dir(root)?;
+        Ok(())
+    }
 }

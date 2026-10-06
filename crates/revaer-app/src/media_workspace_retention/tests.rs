@@ -81,7 +81,7 @@ fn service(
 async fn startup_cleanup_removes_expired_inactive_workspace() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let root = private_root(parent.path())?;
-    let stale = root.join("stale-job");
+    let stale = root.join("00000000-0000-0000-0000-000000000001-attempt-1-claim-1");
     fs::create_dir(&stale)?;
     let runtime = service(
         root,
@@ -100,7 +100,7 @@ async fn startup_cleanup_removes_expired_inactive_workspace() -> anyhow::Result<
 async fn active_job_workspace_is_preserved_past_retention() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let root = private_root(parent.path())?;
-    let active_key = "7b88867e-1382-4143-9c33-26d477019705";
+    let active_key = "7b88867e-1382-4143-9c33-26d477019705-attempt-1-claim-1";
     let active = root.join(active_key);
     fs::create_dir(&active)?;
     let runtime = service(
@@ -120,8 +120,8 @@ async fn active_job_workspace_is_preserved_past_retention() -> anyhow::Result<()
 async fn failed_and_cancelled_diagnostics_expire_after_quarantine_window() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let root = private_root(parent.path())?;
-    let failed = root.join("failed-job");
-    let cancelled = root.join("cancelled-job");
+    let failed = root.join("00000000-0000-0000-0000-000000000002-attempt-1-claim-1");
+    let cancelled = root.join("00000000-0000-0000-0000-000000000003-attempt-1-claim-1");
     fs::create_dir_all(failed.join("diagnostics"))?;
     fs::create_dir_all(cancelled.join("diagnostics"))?;
     let runtime = service(
@@ -132,7 +132,7 @@ async fn failed_and_cancelled_diagnostics_expire_after_quarantine_window() -> an
 
     let report = runtime.run_once().await?;
 
-    assert_eq!(report.removed, vec![cancelled.clone(), failed.clone()]);
+    assert_eq!(report.removed, vec![failed.clone(), cancelled.clone()]);
     assert!(!failed.exists());
     assert!(!cancelled.exists());
     Ok(())

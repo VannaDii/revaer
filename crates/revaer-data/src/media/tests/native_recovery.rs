@@ -61,7 +61,7 @@ pub(super) async fn enqueue_with_fingerprint(
     enqueue_candidate(pool, &association, &path, dry_run, fingerprint).await
 }
 
-pub(super) async fn initialize_catalog(
+pub(crate) async fn initialize_catalog(
     database: &TestDatabase,
     pool: &PgPool,
     roots: &TestRoots,
@@ -95,7 +95,7 @@ pub(super) async fn initialize_catalog(
     Ok(())
 }
 
-pub(super) async fn create_profile_association(
+pub(crate) async fn create_profile_association(
     pool: &PgPool,
     key: &str,
     dry_run: bool,

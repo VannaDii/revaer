@@ -55,6 +55,10 @@ pub(super) async fn replay(fault: ReplayFault) -> anyhow::Result<()> {
         assert_eq!(first_checkpoint.output_sha256.len(), 32);
         assert_eq!(fs::read(&candidate)?, b"source");
         assert!(
+            !intermediate.exists(),
+            "consumed intermediates are removed after their final writer"
+        );
+        assert!(
             !fixture
                 .store
                 .interrupt_job(job.media_job_public_id, job.claim_generation)
@@ -67,10 +71,9 @@ pub(super) async fn replay(fault: ReplayFault) -> anyhow::Result<()> {
             .ok_or_else(|| anyhow::anyhow!("resume missing"))?;
         assert_eq!(resumed.claim_generation, job.claim_generation);
         match fault {
-            ReplayFault::ObsoleteMissing => fs::remove_file(&intermediate)?,
+            ReplayFault::ObsoleteMissing => {}
             ReplayFault::RequiredMissing => {
                 fs::remove_file(&candidate)?;
-                fs::remove_file(&intermediate)?;
             }
             ReplayFault::RequiredCorrupt => {
                 fs::remove_file(&candidate)?;
@@ -86,7 +89,10 @@ pub(super) async fn replay(fault: ReplayFault) -> anyhow::Result<()> {
             fault,
             ReplayFault::RequiredMissing | ReplayFault::RequiredCorrupt
         ) {
-            assert_eq!(fs::read(&intermediate)?, b"source");
+            assert!(
+                !intermediate.exists(),
+                "rebuilt intermediates are removed after their final writer"
+            );
         } else {
             assert!(
                 !intermediate.exists(),
@@ -245,7 +251,6 @@ async fn real_process_replay_with_fixture(fixture: &super::RuntimeFixture) -> an
             .await?
             .is_none()
     );
-    let intermediate_inode = fs::metadata(&intermediate)?.ino();
     assert!(
         !fixture
             .store
@@ -261,17 +266,17 @@ async fn real_process_replay_with_fixture(fixture: &super::RuntimeFixture) -> an
         .runtime
         .execute_steps(&resumed, steps, &workspace, &fingerprint, None)
         .await?;
-    assert_eq!(
-        fs::metadata(intermediate)?.ino(),
-        intermediate_inode,
-        "completed ffmpeg step reran"
-    );
+    assert!(!intermediate.exists(), "consumed intermediate was retained");
     assert!(
         fixture
             .store
             .get_step_checkpoint(job.media_job_public_id, job.claim_generation, 1)
             .await?
             .is_some()
+    );
+    assert!(
+        !intermediate.exists(),
+        "resumed consumer removes its completed input"
     );
     let probe = std::process::Command::new("ffprobe")
         .args(["-v", "error", "-show_format"])

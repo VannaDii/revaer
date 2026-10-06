@@ -5,14 +5,14 @@
 //! - Persists phase, operation, verification, and compact-audit rows before terminal status.
 //! - Keeps runtime adapters injected so tests avoid real `ffmpeg` execution.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{self, Read};
 use std::num::TryFromIntError;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -62,16 +62,16 @@ use revaer_media_runtime::verification::{
     VerificationExecutor, VerificationPolicy, VerificationReport, verify_candidate_controlled,
 };
 use revaer_media_runtime::workspace::{
-    ManagedWorkspaceError, TerminalWorkspaceCleanupPolicy, TerminalWorkspaceState, WorkspacePaths,
-    WorkspacePolicy, cleanup_terminal_workspace, create_or_resume_managed_workspace,
-    project_managed_workspace,
+    ManagedWorkspace, ManagedWorkspaceError, TerminalWorkspaceCleanupPolicy,
+    TerminalWorkspaceState, WorkspacePaths, WorkspacePolicy, cleanup_terminal_workspace,
+    create_or_resume_managed_workspace, project_managed_workspace,
 };
 use revaer_runtime::media::MediaStore;
 use revaer_telemetry::Metrics;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::sync::watch;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{MissedTickBehavior, interval};
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -84,6 +84,7 @@ use crate::runtime_shutdown::{self, RuntimeShutdownReceiver};
 const DEFAULT_TICK_INTERVAL: Duration = Duration::from_secs(1);
 const DEFAULT_WORKSPACE_MAX_BYTES: u64 = 20 * 1024 * 1024 * 1024;
 const DEFAULT_WORKSPACE_RESERVE_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_IN_PROCESS_MEDIA_JOBS: usize = 256;
 const FAILURE_PHASE_INDEX: i32 = 99;
 const FAILURE_CHECK_INDEX: i32 = 99;
 const CANCELLATION_PHASE_INDEX: i32 = 98;
@@ -118,6 +119,7 @@ struct MediaJobRuntimeComponents {
     tick_interval: Duration,
     workspace_policy: WorkspacePolicy,
     workspace_root: PathBuf,
+    scratch_reservations: Arc<Mutex<BTreeMap<PathBuf, u64>>>,
 }
 
 struct RuntimePreflightEvaluation {
@@ -218,6 +220,15 @@ impl InspectCancellation for CancellationSignal {
 
 trait FilesystemCapacityProbe {
     fn available_bytes(&self, path: &Path) -> Result<u64, String>;
+
+    fn workspace_bytes(&self, path: &Path) -> Result<u64, String> {
+        revaer_media_runtime::workspace::WorkspaceBudgetProbe::sample(
+            &revaer_media_runtime::workspace::SystemWorkspaceBudgetProbe,
+            path,
+        )
+        .map(|sample| sample.workspace_bytes)
+        .map_err(|error| error.to_string())
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -415,6 +426,7 @@ fn retain_audio_analysis_tail(retained: &mut Vec<u8>, chunk: &[u8], truncated: &
 }
 
 /// Runtime worker that progresses queued media jobs to terminal status.
+#[derive(Clone)]
 pub(crate) struct MediaJobRuntime {
     store: MediaStore,
     inspector: Arc<RuntimeInspector>,
@@ -429,6 +441,7 @@ pub(crate) struct MediaJobRuntime {
     tick_interval: Duration,
     workspace_policy: WorkspacePolicy,
     workspace_root: PathBuf,
+    scratch_reservations: Arc<Mutex<BTreeMap<PathBuf, u64>>>,
 }
 
 impl MediaJobRuntime {
@@ -463,6 +476,7 @@ impl MediaJobRuntime {
                     reserve_bytes: DEFAULT_WORKSPACE_RESERVE_BYTES,
                 },
                 workspace_root,
+                scratch_reservations: Arc::new(Mutex::new(BTreeMap::new())),
             },
         )
     }
@@ -482,6 +496,7 @@ impl MediaJobRuntime {
             tick_interval: components.tick_interval,
             workspace_policy: components.workspace_policy,
             workspace_root: components.workspace_root,
+            scratch_reservations: components.scratch_reservations,
         }
     }
 
@@ -513,15 +528,51 @@ impl MediaJobRuntime {
         }
         let mut ticker = interval(self.tick_interval);
         ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let mut workers = JoinSet::new();
 
         loop {
             tokio::select! {
                 _ = ticker.tick() => {
-                    if let Err(error) = self.run_tick_with_shutdown(shutdown.clone()).await {
-                        warn!(error = %error, "media job runtime tick failed");
+                    while workers.len() < MAX_IN_PROCESS_MEDIA_JOBS {
+                        match self.store.claim_next_job().await {
+                            Ok(Some(job)) => {
+                                let runtime = self.clone();
+                                let worker_shutdown = shutdown.clone();
+                                workers.spawn(async move {
+                                    runtime.process_claimed_job_with_shutdown(job, worker_shutdown).await
+                                });
+                            }
+                            Ok(None) => break,
+                            Err(error) => {
+                                warn!(error = %error, "media job runtime tick failed to claim work");
+                                break;
+                            }
+                        }
+                    }
+                }
+                joined = workers.join_next(), if !workers.is_empty() => {
+                    match joined {
+                        Some(Ok(Ok(()))) | None => {}
+                        Some(Ok(Err(error))) => {
+                            warn!(error = %error, "media job worker task failed");
+                        }
+                        Some(Err(error)) => {
+                            warn!(error = %error, "media job worker task failed to join");
+                        }
                     }
                 }
                 () = runtime_shutdown::changed(&mut shutdown) => {
+                    while let Some(joined) = workers.join_next().await {
+                        match joined {
+                            Ok(Ok(())) => {}
+                            Ok(Err(error)) => {
+                                warn!(error = %error, "media job worker failed during shutdown");
+                            }
+                            Err(error) => {
+                                warn!(error = %error, "media job worker task failed to join during shutdown");
+                            }
+                        }
+                    }
                     return;
                 }
             }
@@ -627,21 +678,6 @@ impl MediaJobRuntime {
         Ok(())
     }
 
-    async fn run_tick_with_shutdown(
-        &self,
-        shutdown: RuntimeShutdownReceiver,
-    ) -> Result<(), MediaJobRuntimeError> {
-        if runtime_shutdown::requested(&shutdown) {
-            return Ok(());
-        }
-        let claimed = self.store.claim_next_job().await?;
-        if let Some(job) = claimed {
-            self.process_claimed_job_with_shutdown(job, shutdown)
-                .await?;
-        }
-        Ok(())
-    }
-
     async fn resume_interrupted_jobs(&self) -> Result<(), MediaJobRuntimeError> {
         let workspace_root =
             self.workspace_root
@@ -695,40 +731,10 @@ impl MediaJobRuntime {
         shutdown: Option<RuntimeShutdownReceiver>,
     ) {
         let started_at = Instant::now();
-        if let Err(error) = self.validate_claimed_roots(&job).await {
-            warn!(media_job_public_id = %job.media_job_public_id, error = %error, "media job immutable root admission failed");
-            self.telemetry.inc_media_job_failure(error.category());
-            self.telemetry.inc_media_job_outcome("failed", job.dry_run);
-            self.persist_failure(&job, error).await;
+        let Some((workspace_paths, managed_workspace)) =
+            self.prepare_job_workspace(&job, started_at).await
+        else {
             return;
-        }
-        let workspace_key = crate::media_workspace_identity::workspace_key(
-            job.media_job_public_id,
-            job.attempt_number,
-            job.claim_generation,
-        );
-        let workspace = if job.dry_run {
-            project_managed_workspace(&self.workspace_root, &workspace_key)
-                .map(|paths| (paths, None))
-        } else {
-            create_or_resume_managed_workspace(&self.workspace_root, &workspace_key)
-                .map(|workspace| (workspace.paths.clone(), Some(workspace)))
-        };
-        let (workspace_paths, managed_workspace) = match workspace {
-            Ok(value) => value,
-            Err(error) => {
-                warn!(media_job_public_id = %job.media_job_public_id, error = %error, "media job runtime failed to create workspace");
-                self.telemetry.inc_media_job_failure("workspace");
-                self.telemetry.inc_media_job_outcome("failed", job.dry_run);
-                self.telemetry.observe_media_job_duration(
-                    "failed",
-                    job.dry_run,
-                    started_at.elapsed(),
-                );
-                self.persist_failure(&job, MediaJobRuntimeError::Workspace(error))
-                    .await;
-                return;
-            }
         };
 
         let terminal_state = match self
@@ -744,21 +750,42 @@ impl MediaJobRuntime {
                 info!(media_job_public_id = %job.media_job_public_id, "media job runtime processed job");
                 state
             }
-            Err(MediaJobRuntimeError::Interrupted) => {
+            Err(
+                error @ (MediaJobRuntimeError::ScratchCapacityDeferred
+                | MediaJobRuntimeError::Interrupted),
+            ) => {
+                let deferred = matches!(error, MediaJobRuntimeError::ScratchCapacityDeferred);
                 match self
                     .store
                     .interrupt_job(job.media_job_public_id, job.claim_generation)
                     .await
                 {
                     Ok(false) => {
-                        self.telemetry
-                            .inc_media_job_outcome("interrupted", job.dry_run);
-                        info!(media_job_public_id = %job.media_job_public_id, "stopped media job remains resumable on its current attempt");
+                        let (outcome, message) = if deferred {
+                            (
+                                "deferred",
+                                "media job returned to the queue until scratch capacity is available",
+                            )
+                        } else {
+                            (
+                                "interrupted",
+                                "stopped media job remains resumable on its current attempt",
+                            )
+                        };
+                        self.telemetry.inc_media_job_outcome(outcome, job.dry_run);
+                        info!(media_job_public_id = %job.media_job_public_id, "{message}");
+                        self.release_scratch_capacity(&workspace_paths.job_path);
                         return;
                     }
                     Ok(true) => TerminalWorkspaceState::Cancelled,
                     Err(error) => {
-                        warn!(media_job_public_id = %job.media_job_public_id, error = %error, "stopped media job could not persist interruption; retained for startup recovery");
+                        let message = if deferred {
+                            "media job scratch deferral could not be persisted; workspace retained for startup recovery"
+                        } else {
+                            "stopped media job could not persist interruption; retained for startup recovery"
+                        };
+                        warn!(media_job_public_id = %job.media_job_public_id, error = %error, "{message}");
+                        self.release_scratch_capacity(&workspace_paths.job_path);
                         return;
                     }
                 }
@@ -790,6 +817,50 @@ impl MediaJobRuntime {
         if let Some(workspace) = managed_workspace {
             self.cleanup_job_workspace(&job, &workspace, terminal_state);
         }
+        self.release_scratch_capacity(&workspace_paths.job_path);
+    }
+
+    async fn prepare_job_workspace(
+        &self,
+        job: &ClaimedMediaJobRow,
+        started_at: Instant,
+    ) -> Option<(WorkspacePaths, Option<ManagedWorkspace>)> {
+        if let Err(error) = self.validate_claimed_roots(job).await {
+            warn!(media_job_public_id = %job.media_job_public_id, error = %error, "media job immutable root admission failed");
+            self.telemetry.inc_media_job_failure(error.category());
+            self.telemetry.inc_media_job_outcome("failed", job.dry_run);
+            self.persist_failure(job, error).await;
+            return None;
+        }
+        let workspace_key = crate::media_workspace_identity::workspace_key(
+            job.media_job_public_id,
+            job.attempt_number,
+            job.claim_generation,
+        );
+        let workspace = if job.dry_run {
+            project_managed_workspace(&self.workspace_root, &workspace_key)
+                .map(|paths| (paths, None))
+        } else {
+            create_or_resume_managed_workspace(&self.workspace_root, &workspace_key)
+                .map(|workspace| (workspace.paths.clone(), Some(workspace)))
+        };
+        let (workspace_paths, managed_workspace) = match workspace {
+            Ok(value) => value,
+            Err(error) => {
+                warn!(media_job_public_id = %job.media_job_public_id, error = %error, "media job runtime failed to create workspace");
+                self.telemetry.inc_media_job_failure("workspace");
+                self.telemetry.inc_media_job_outcome("failed", job.dry_run);
+                self.telemetry.observe_media_job_duration(
+                    "failed",
+                    job.dry_run,
+                    started_at.elapsed(),
+                );
+                self.persist_failure(job, MediaJobRuntimeError::Workspace(error))
+                    .await;
+                return None;
+            }
+        };
+        Some((workspace_paths, managed_workspace))
     }
 
     fn cleanup_job_workspace(
@@ -809,6 +880,68 @@ impl MediaJobRuntime {
             self.telemetry.inc_media_workspace_cleanup("failed");
         } else {
             self.telemetry.inc_media_workspace_cleanup("completed");
+        }
+    }
+
+    fn reserve_scratch_capacity(
+        &self,
+        job_workspace_path: &Path,
+        required_peak_bytes: u64,
+    ) -> Result<bool, MediaJobRuntimeError> {
+        let workspace_bytes = self
+            .capacity_probe
+            .workspace_bytes(&self.workspace_root)
+            .map_err(MediaJobRuntimeError::Capacity)?;
+        let free_bytes = self
+            .capacity_probe
+            .available_bytes(&self.workspace_root)
+            .map_err(MediaJobRuntimeError::Capacity)?;
+        let job_workspace_bytes = self
+            .capacity_probe
+            .workspace_bytes(job_workspace_path)
+            .map_err(MediaJobRuntimeError::Capacity)?;
+        let mut reservations = self.scratch_reservations.lock().map_err(|_| {
+            MediaJobRuntimeError::Capacity("scratch_reservation_lock_poisoned".into())
+        })?;
+        let mut reserved_future_bytes = 0_u64;
+        for (path, peak_bytes) in reservations.iter() {
+            if path == job_workspace_path {
+                continue;
+            }
+            let current_bytes = self
+                .capacity_probe
+                .workspace_bytes(path)
+                .map_err(MediaJobRuntimeError::Capacity)?;
+            reserved_future_bytes =
+                reserved_future_bytes.saturating_add(peak_bytes.saturating_sub(current_bytes));
+        }
+        let new_future_bytes = required_peak_bytes.saturating_sub(job_workspace_bytes);
+        let projected_workspace_bytes = workspace_bytes
+            .saturating_add(reserved_future_bytes)
+            .saturating_add(new_future_bytes);
+        let projected_free_demand = self
+            .workspace_policy
+            .reserve_bytes
+            .saturating_add(reserved_future_bytes)
+            .saturating_add(new_future_bytes);
+        if projected_workspace_bytes > self.workspace_policy.max_bytes
+            || free_bytes < projected_free_demand
+        {
+            return Ok(false);
+        }
+        reservations.insert(job_workspace_path.to_path_buf(), required_peak_bytes);
+        drop(reservations);
+        Ok(true)
+    }
+
+    fn release_scratch_capacity(&self, job_workspace_path: &Path) {
+        match self.scratch_reservations.lock() {
+            Ok(mut reservations) => {
+                reservations.remove(job_workspace_path);
+            }
+            Err(error) => {
+                warn!(error = %error, path = %job_workspace_path.display(), "media job scratch reservation could not be released");
+            }
         }
     }
 
@@ -882,10 +1015,26 @@ impl MediaJobRuntime {
         } = preflight;
 
         match evaluation {
+            JobPreflightEvaluation::Failed(report)
+                if report.failed_stage == "workspace_capacity" =>
+            {
+                Err(MediaJobRuntimeError::ScratchCapacityDeferred)
+            }
             JobPreflightEvaluation::Failed(report) => {
                 self.handle_preflight_failed(job, report).await
             }
             JobPreflightEvaluation::Ready(report) => {
+                let required_peak_bytes = report.planned.estimated_workspace_bytes;
+                if !job.dry_run
+                    && !self.reserve_scratch_capacity(&workspace.job_path, required_peak_bytes)?
+                {
+                    warn!(
+                        media_job_public_id = %job.media_job_public_id,
+                        required_peak_bytes,
+                        "media job deferred because concurrent scratch demand exceeds the configured budget"
+                    );
+                    return Err(MediaJobRuntimeError::ScratchCapacityDeferred);
+                }
                 self.handle_preflight_ready(
                     job,
                     *report,
@@ -2708,6 +2857,8 @@ enum MediaJobRuntimeError {
     Cancelled,
     #[error("media job runtime interrupted by shutdown")]
     Interrupted,
+    #[error("media job deferred until scratch capacity is available")]
+    ScratchCapacityDeferred,
     #[error("media job runtime join error: {0}")]
     Join(String),
     #[error("media job runtime inspect error: {0}")]
@@ -2767,6 +2918,7 @@ impl MediaJobRuntimeError {
             Self::Data(_) | Self::InspectionControl { .. } => "media_job_runtime_storage_failed",
             Self::Cancelled => "media_job_cancelled_by_operator",
             Self::Interrupted => "media_job_shutdown_interrupted",
+            Self::ScratchCapacityDeferred => "media_job_scratch_capacity_deferred",
             Self::Join(_) => "media_job_runtime_join_failed",
             Self::Inspect(_) => "media_job_runtime_inspect_failed",
             Self::SourceMetadata { .. } => "media_job_runtime_source_metadata_failed",
@@ -2795,6 +2947,7 @@ impl MediaJobRuntimeError {
             Self::Data(_) | Self::InspectionControl { .. } => "storage",
             Self::Cancelled => "cancellation",
             Self::Interrupted => "interruption",
+            Self::ScratchCapacityDeferred => "capacity",
             Self::Join(_) => "join",
             Self::Inspect(_)
             | Self::SourceMetadata { .. }
@@ -4907,6 +5060,7 @@ const fn filesystem_step_kind(step: &ExecutionStep) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     mod checkpoint_replay;
     mod fingerprint_cancellation;
 
@@ -6483,6 +6637,7 @@ mod tests {
                     reserve_bytes: 1024,
                 },
                 workspace_root,
+                scratch_reservations: Arc::new(Mutex::new(BTreeMap::new())),
             },
         )
     }
@@ -8061,8 +8216,8 @@ Integrated loudness:
     }
 
     #[tokio::test]
-    async fn media_job_runtime_rejects_low_workspace_capacity_before_execution()
-    -> anyhow::Result<()> {
+    async fn media_job_runtime_defers_low_workspace_capacity_before_execution() -> anyhow::Result<()>
+    {
         let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.capacity_probe =
             Arc::new(StaticCapacityProbe { available_bytes: 0 }) as Arc<RuntimeCapacityProbe>;
@@ -8074,11 +8229,8 @@ Integrated loudness:
             .get_job(fixture.job_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
-        assert_eq!(job.status_text, "failed");
-        assert_eq!(
-            job.last_error.as_deref(),
-            Some("preflight_workspace_insufficient_reserve")
-        );
+        assert_eq!(job.status_text, "queued");
+        assert!(job.last_error.is_none());
         let command_count = {
             let commands = fixture
                 .command_runner

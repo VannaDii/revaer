@@ -13983,8 +13983,10 @@ BEGIN
     WITH claimed AS (
         SELECT job.media_job_id, job.current_attempt_id
           FROM media_job job
-          JOIN media_job_attempt attempt
+         JOIN media_job_attempt attempt
             ON attempt.media_job_attempt_id = job.current_attempt_id
+          JOIN media_job_policy_behavior_snapshot candidate_policy
+            ON candidate_policy.media_job_id = job.media_job_id
          WHERE job.status = media_job_status_queued_v1()
            AND attempt.status = media_job_status_queued_v1()
            AND job.intent_source_identity IS NOT NULL
@@ -13992,6 +13994,31 @@ BEGIN
            AND job.intent_source_modified_ns IS NOT NULL
            AND job.intent_source_changed_ns IS NOT NULL
            AND job.intent_source_sha256 IS NOT NULL
+           AND (
+               SELECT COUNT(*)
+                 FROM media_job active
+                WHERE active.intent_policy_profile_id = job.intent_policy_profile_id
+                  AND active.status IN (
+                      media_job_status_running_v1(), media_job_status_verifying_v1()
+                  )
+           ) < candidate_policy.max_concurrency
+           AND (
+               job.dry_run
+               OR candidate_policy.replacement_mode <> 'atomic_replace'
+               OR NOT EXISTS (
+                   SELECT 1
+                     FROM media_job active
+                     JOIN media_job_policy_behavior_snapshot active_policy
+                       ON active_policy.media_job_id = active.media_job_id
+                    WHERE active.media_job_id <> job.media_job_id
+                      AND active.intent_source_identity = job.intent_source_identity
+                      AND NOT active.dry_run
+                      AND active_policy.replacement_mode = 'atomic_replace'
+                      AND active.status IN (
+                          media_job_status_running_v1(), media_job_status_verifying_v1()
+                      )
+               )
+           )
          ORDER BY job.queued_at, job.media_job_id
          FOR UPDATE OF job, attempt SKIP LOCKED
          LIMIT 1

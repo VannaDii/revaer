@@ -564,3 +564,4 @@
     -   [592: uv-managed rv tooling](adr/592-python-tooling.md)
     -   [595: Media continuation on merged rv foundation](adr/595-media-continuation.md)
     -   [596: Cancellation and checkpoint recovery (step 5)](adr/596-cancellation-checkpoint-recovery.md)
+    -   [597: Media concurrency, scratch admission and cleanup (step 6)](adr/597-concurrency-scratch-cleanup.md)

@@ -6,7 +6,9 @@ use std::sync::Arc;
 
 use revaer_data::media::step_checkpoints::StepCheckpoint;
 use revaer_media_runtime::execute::execute_step_controlled;
-use revaer_media_runtime::workspace::ManagedWorkspace;
+use revaer_media_runtime::workspace::{
+    ManagedWorkspace, SystemWorkspaceBudgetProbe, WorkspaceBudgetControl,
+};
 use sha2::{Digest, Sha256};
 
 use super::{
@@ -112,6 +114,9 @@ impl MediaJobRuntime {
         shutdown: Option<&super::RuntimeShutdownReceiver>,
     ) -> Result<(), MediaJobRuntimeError> {
         let writers = writers(steps)?;
+        let terminal_outputs = required_outputs(steps, &writers);
+        let workspace_root = workspace.root_path.clone();
+        let workspace_policy = self.workspace_policy.clone();
         let selected = self
             .select_unfinished_steps(job, steps, &writers, workspace, &signal)
             .await?;
@@ -131,8 +136,17 @@ impl MediaJobRuntime {
             let runner = Arc::clone(&self.command_runner);
             let step = step.clone();
             let control = Arc::clone(&signal);
+            let workspace_root = workspace_root.clone();
+            let workspace_policy = workspace_policy.clone();
             let executed = tokio::task::spawn_blocking(move || {
-                execute_step_controlled(&step, &*runner, &*control)
+                let probe = SystemWorkspaceBudgetProbe;
+                let budget = WorkspaceBudgetControl::new(
+                    &workspace_root,
+                    &workspace_policy,
+                    &*control,
+                    &probe,
+                );
+                execute_step_controlled(&step, &*runner, &budget)
             })
             .await
             .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
@@ -150,6 +164,7 @@ impl MediaJobRuntime {
             if let Some(writer) = &writers[index] {
                 self.record_step_output(job, index, writer, workspace, &signal)
                     .await?;
+                discard_consumed_intermediates(index, &writers, &terminal_outputs, workspace)?;
             }
         }
         Ok(())
@@ -237,6 +252,31 @@ impl MediaJobRuntime {
     }
 }
 
+fn discard_consumed_intermediates(
+    completed_index: usize,
+    writers: &[Option<Writer>],
+    terminal_outputs: &BTreeSet<PathBuf>,
+    workspace: &ManagedWorkspace,
+) -> Result<(), MediaJobRuntimeError> {
+    for writer in writers.iter().take(completed_index + 1) {
+        let Some(writer) = writer else {
+            continue;
+        };
+        if !writer.output.starts_with(&workspace.output_path)
+            || terminal_outputs.contains(&writer.output)
+            || writers
+                .iter()
+                .skip(completed_index + 1)
+                .flatten()
+                .any(|later| later.inputs.contains(&writer.output))
+        {
+            continue;
+        }
+        files::discard(&writer.output, workspace)?;
+    }
+    Ok(())
+}
+
 async fn inspect_output(
     output: &Path,
     workspace: &ManagedWorkspace,
@@ -249,4 +289,51 @@ async fn inspect_output(
     tokio::task::spawn_blocking(move || files::inspect(&path, &workspace, &signal, synchronize))
         .await
         .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Writer, discard_consumed_intermediates};
+    use revaer_media_runtime::workspace::create_managed_workspace;
+    use std::collections::BTreeSet;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn intermediate_is_deleted_after_its_last_consumer_and_peak_bytes_fall() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700))?;
+        let workspace = create_managed_workspace(root.path(), "checkpoint-test")?;
+        let intermediate = workspace.output_path.join("intermediate.mkv");
+        let final_output = workspace.output_path.join("final.mkv");
+        fs::write(&intermediate, b"temporary-media")?;
+        let writers = vec![
+            Some(Writer {
+                output: intermediate.clone(),
+                inputs: Vec::new(),
+                signature: Vec::new(),
+            }),
+            Some(Writer {
+                output: final_output.clone(),
+                inputs: vec![intermediate.clone()],
+                signature: Vec::new(),
+            }),
+        ];
+        let terminal = BTreeSet::from([final_output.clone()]);
+
+        discard_consumed_intermediates(0, &writers, &terminal, &workspace)?;
+        assert!(
+            intermediate.exists(),
+            "the later writer still needs this input"
+        );
+        fs::write(&final_output, b"final")?;
+        let peak_bytes = fs::metadata(&intermediate)?.len() + fs::metadata(&final_output)?.len();
+
+        discard_consumed_intermediates(1, &writers, &terminal, &workspace)?;
+        assert!(!intermediate.exists());
+        assert!(final_output.exists());
+        assert_eq!(fs::metadata(&final_output)?.len(), 5);
+        assert!(peak_bytes > fs::metadata(&final_output)?.len());
+        Ok(())
+    }
 }

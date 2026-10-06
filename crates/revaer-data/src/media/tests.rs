@@ -19,7 +19,7 @@ use sqlx::postgres::{PgDatabaseError, PgPoolOptions};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-mod native_recovery;
+pub(super) mod native_recovery;
 mod rescan;
 mod rescan_absence;
 
@@ -87,7 +87,7 @@ fn identity_number(value: u64) -> anyhow::Result<i64> {
     Ok(i64::try_from(value)?)
 }
 
-fn make_test_roots() -> anyhow::Result<TestRoots> {
+pub(super) fn make_test_roots() -> anyhow::Result<TestRoots> {
     let base = std::env::temp_dir().join(format!("revaer-media-data-{}", Uuid::new_v4()));
     let source_path = base.join("LibraryCase");
     let output_path = base.join("output");

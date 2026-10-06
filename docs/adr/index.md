@@ -531,3 +531,4 @@
 -   [595](595-media-continuation.md) - Media continuation on merged rv foundation (integration checkpoint; qualification incomplete)
 
 -   [596](596-cancellation-checkpoint-recovery.md) – Cancellation and checkpoint recovery (step-5 acceptance record; goal-7 release qualification remains)
+-   [597](597-concurrency-scratch-cleanup.md) – Media concurrency, scratch admission and cleanup (step 6)

@@ -12,6 +12,10 @@ use std::time::{Duration, SystemTime};
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+fn owned_workspace_key(value: u128) -> String {
+    format!("00000000-0000-0000-0000-{value:012x}-attempt-1-claim-1")
+}
+
 fn temp_workspace_root() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let root = std::env::temp_dir().join(format!(
@@ -323,22 +327,22 @@ fn managed_workspace_detects_job_identity_swap() -> Result<(), Box<dyn std::erro
 fn stale_workspace_janitor_removes_only_inactive_directories()
 -> Result<(), Box<dyn std::error::Error>> {
     let root = temp_workspace_root()?;
-    let active = root.join("active-job");
-    let stale = root.join("stale-job");
+    let active_key = owned_workspace_key(1);
+    let active = root.join(&active_key);
+    let stale = root.join(owned_workspace_key(2));
+    let unknown = root.join("stale-job");
     fs::create_dir_all(&active)?;
     fs::create_dir_all(&stale)?;
+    fs::create_dir_all(&unknown)?;
     fs::write(root.join("not-a-workspace"), b"skip")?;
 
-    let removed = cleanup_stale_workspaces(
-        &root,
-        &["active-job".to_string()],
-        SystemTime::now(),
-        Duration::ZERO,
-    )?;
+    let removed =
+        cleanup_stale_workspaces(&root, &[active_key], SystemTime::now(), Duration::ZERO)?;
 
-    assert_eq!(removed, vec![stale]);
+    assert_eq!(removed, vec![stale.clone()]);
     assert!(active.exists());
-    assert!(!root.join("stale-job").exists());
+    assert!(!stale.exists());
+    assert!(unknown.exists());
     assert!(root.join("not-a-workspace").exists());
     fs::remove_dir_all(root)?;
     Ok(())
@@ -436,7 +440,7 @@ fn managed_workspace_and_janitors_report_inaccessible_parent_paths() {
 #[test]
 fn janitors_preserve_future_dated_workspace_entries() -> Result<(), Box<dyn std::error::Error>> {
     let root = temp_workspace_root()?;
-    let future = root.join("future-job");
+    let future = root.join(owned_workspace_key(3));
     fs::create_dir(&future)?;
 
     let removed = cleanup_stale_workspaces(&root, &[], SystemTime::UNIX_EPOCH, Duration::ZERO)?;
@@ -546,7 +550,7 @@ fn legacy_and_direct_cleanup_report_unreadable_workspace() -> Result<(), Box<dyn
     use std::os::unix::fs::PermissionsExt;
 
     let root = temp_workspace_root()?;
-    let workspace = create_managed_workspace(&root, "blocked-job")?;
+    let workspace = create_managed_workspace(&root, &owned_workspace_key(4))?;
     fs::write(workspace.diagnostics_path.join("evidence"), b"bounded")?;
     fs::set_permissions(&workspace.job_path, fs::Permissions::from_mode(0o000))?;
 
@@ -648,7 +652,7 @@ fn terminal_workspace_cleanup_cancelled_removes_transients_by_default()
 fn bounded_janitor_preserves_active_then_expires_after_restart()
 -> Result<(), Box<dyn std::error::Error>> {
     let root = temp_workspace_root()?;
-    let active = create_managed_workspace(&root, "active-job")?;
+    let active = create_managed_workspace(&root, &owned_workspace_key(5))?;
     let created_at = SystemTime::now();
     let policy = WorkspaceRetentionPolicy {
         workspace_max_age: Duration::from_secs(10),
@@ -676,8 +680,8 @@ fn bounded_janitor_preserves_active_then_expires_after_restart()
 fn diagnostics_only_workspace_uses_persisted_diagnostic_expiry()
 -> Result<(), Box<dyn std::error::Error>> {
     let root = temp_workspace_root()?;
-    let full = create_managed_workspace(&root, "full-job")?;
-    let diagnostics = create_managed_workspace(&root, "failed-job")?;
+    let full = create_managed_workspace(&root, &owned_workspace_key(6))?;
+    let diagnostics = create_managed_workspace(&root, &owned_workspace_key(7))?;
     cleanup_terminal_workspace(
         &diagnostics,
         TerminalWorkspaceState::Failed,
@@ -709,8 +713,8 @@ fn bounded_janitor_continues_after_partial_removal_failure()
     use std::os::unix::fs::PermissionsExt;
 
     let root = temp_workspace_root()?;
-    let blocked = create_managed_workspace(&root, "blocked-job")?;
-    let removable = create_managed_workspace(&root, "removable-job")?;
+    let blocked = create_managed_workspace(&root, &owned_workspace_key(8))?;
+    let removable = create_managed_workspace(&root, &owned_workspace_key(9))?;
     fs::write(blocked.diagnostics_path.join("evidence"), b"bounded")?;
     fs::set_permissions(&blocked.job_path, fs::Permissions::from_mode(0o000))?;
     let report = cleanup_stale_workspaces_bounded(

@@ -1954,8 +1954,41 @@ mod tests {
     -> anyhow::Result<()> {
         let db = setup_media_db().await?;
         let key = "recent-jobs";
-        let (_roots, first_job) =
-            crate::media::tests::native_job(db.database(), db.pool(), key, true).await?;
+        let roots = crate::media::tests::make_test_roots()?;
+        crate::media::tests::native_recovery::initialize_catalog(
+            db.database(),
+            db.pool(),
+            &roots,
+            true,
+        )
+        .await?;
+        sqlx::query(
+            "SELECT media_policy_runtime_limit_set_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+        )
+        .bind(db.system_user_public_id)
+        .bind("recovery-policy")
+        .bind(1_i32)
+        .bind(12_i32)
+        .bind(0_i32)
+        .bind(21_600_i32)
+        .bind(1024_i32)
+        .bind(10_737_418_240_i64)
+        .bind(true)
+        .bind(20_i32)
+        .bind("serious")
+        .bind(true)
+        .execute(db.pool())
+        .await?;
+        crate::media::tests::native_recovery::create_profile_association(
+            db.pool(),
+            key,
+            true,
+            "",
+            1,
+        )
+        .await?;
+        let first_job =
+            crate::media::tests::additional_native_job(db.pool(), key, "source.mkv", true).await?;
         let mut ids = vec![first_job];
         for index in 1..12 {
             ids.push(
@@ -2009,6 +2042,83 @@ mod tests {
                 .await
                 .is_err()
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn worker_claim_respects_snapshotted_profile_concurrency() -> anyhow::Result<()> {
+        let db = setup_media_db().await?;
+        let key = "worker-concurrency";
+        let (_roots, _first) =
+            crate::media::tests::native_job(db.database(), db.pool(), key, true).await?;
+        let _second =
+            crate::media::tests::additional_native_job(db.pool(), key, "second.mkv", true).await?;
+
+        let first_claim = media_job_worker_claim_next(db.pool())
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("expected first queued media job"))?;
+        assert!(media_job_worker_claim_next(db.pool()).await?.is_none());
+        assert_eq!(first_claim.attempt_number, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn atomic_replacement_claim_blocks_same_source_with_free_profile_capacity()
+    -> anyhow::Result<()> {
+        let db = setup_media_db().await?;
+        let roots = crate::media::tests::make_test_roots()?;
+        let key = "atomic-replacement-source-claim";
+        crate::media::tests::native_recovery::initialize_catalog(
+            db.database(),
+            db.pool(),
+            &roots,
+            false,
+        )
+        .await?;
+        sqlx::query(
+            "SELECT media_policy_runtime_limit_set_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+        )
+        .bind(db.system_user_public_id)
+        .bind("recovery-policy")
+        .bind(1_i32)
+        .bind(2_i32)
+        .bind(0_i32)
+        .bind(21_600_i32)
+        .bind(1024_i32)
+        .bind(10_737_418_240_i64)
+        .bind(true)
+        .bind(20_i32)
+        .bind("serious")
+        .bind(true)
+        .execute(db.pool())
+        .await?;
+        crate::media::tests::native_recovery::create_profile_association(
+            db.pool(),
+            key,
+            false,
+            "",
+            1,
+        )
+        .await?;
+        let first_job =
+            crate::media::tests::additional_native_job(db.pool(), key, "first.mkv", false).await?;
+        let second_job =
+            crate::media::tests::additional_native_job(db.pool(), key, "second.mkv", false).await?;
+        let active_policy_capacity = sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM media_job_policy_behavior_snapshot snapshot \
+             JOIN media_job job USING (media_job_id) \
+             WHERE job.media_job_public_id IN ($1, $2) AND snapshot.max_concurrency = 2",
+        )
+        .bind(first_job)
+        .bind(second_job)
+        .fetch_one(db.pool())
+        .await?;
+        assert_eq!(active_policy_capacity, 2);
+
+        let _first_claim = media_job_worker_claim_next(db.pool())
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("expected atomic replacement claim"))?;
+        assert!(media_job_worker_claim_next(db.pool()).await?.is_none());
         Ok(())
     }
 
