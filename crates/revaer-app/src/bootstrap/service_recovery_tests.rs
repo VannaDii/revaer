@@ -3,6 +3,9 @@
 #[path = "service_recovery_tests/discovery.rs"]
 mod discovery;
 
+#[path = "service_recovery_tests/operator.rs"]
+mod operator;
+
 use std::{
     fs,
     io::Write,
@@ -10,6 +13,7 @@ use std::{
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Stdio,
+    sync::OnceLock,
     time::Duration,
 };
 
@@ -25,7 +29,7 @@ use revaer_media_runtime::replacement::{
 };
 use revaer_test_support::postgres::{TestDatabase, start_postgres};
 use serde_json::{Value, json};
-use tokio::{process::Child, time::timeout};
+use tokio::{io::AsyncReadExt, process::Child, time::timeout};
 use uuid::Uuid;
 
 const BOUND: Duration = Duration::from_mins(5);
@@ -39,11 +43,18 @@ struct Fixture {
     origin: String,
     source: PathBuf,
     original: Vec<u8>,
+    api_key: OnceLock<String>,
 }
 
 #[tokio::test]
 #[ignore = "requires just test-media-service-recovery and an owned persistent Linux mount"]
 async fn native_service_shutdown_resumes_active_ffmpeg() -> Result<()> {
+    let fixture = Fixture::create_with_duration("0.1").await?;
+    let result = operator::qualify(&fixture).await;
+    finish_fixture(fixture, result).await?;
+    let fixture = Fixture::create_with_duration("0.1").await?;
+    let result = operator::scratch(&fixture).await;
+    finish_fixture(fixture, result).await?;
     for mode in [discovery::Mode::Watcher, discovery::Mode::Schedule] {
         let fixture = Fixture::create_with_duration("0.1").await?;
         let result = discovery::qualify(&fixture, mode).await;
@@ -551,6 +562,10 @@ async fn cancel_active(
     let response = fixture
         .api
         .post(format!("{}/v1/media/jobs/{job}/cancel", fixture.origin))
+        .header(
+            "x-revaer-api-key",
+            fixture.api_key.get().context("API key")?,
+        )
         .send()
         .await?;
     anyhow::ensure!(
@@ -682,11 +697,12 @@ impl Fixture {
             origin: format!("http://{address}"),
             source,
             original,
+            api_key: OnceLock::new(),
         })
     }
 
     async fn start(&self) -> Result<Child> {
-        let child = tokio::process::Command::new(std::env::current_exe()?)
+        let mut child = tokio::process::Command::new(std::env::current_exe()?)
             .args(["--exact", ENTRY, "--nocapture"])
             .env("REVAER_E2E_SERVING_ENTRY", "1")
             .env("DATABASE_URL", self.postgres.connection_string())
@@ -705,6 +721,24 @@ impl Fixture {
             .spawn()?;
         timeout(BOUND, async {
             loop {
+                if let Some(status) = child.try_wait()? {
+                    let mut diagnostics = String::new();
+                    child
+                        .stdout
+                        .take()
+                        .context("service stdout")?
+                        .read_to_string(&mut diagnostics)
+                        .await?;
+                    child
+                        .stderr
+                        .take()
+                        .context("service stderr")?
+                        .read_to_string(&mut diagnostics)
+                        .await?;
+                    return Err(anyhow::anyhow!(
+                        "service exited during startup: {status}: {diagnostics}"
+                    ));
+                }
                 match self.api.get(format!("{}/health", self.origin)).send().await {
                     Ok(response) => {
                         anyhow::ensure!(response.status().is_success());
@@ -745,6 +779,9 @@ impl Fixture {
                 .header("Content-Type", "application/json")
                 .body(serde_json::to_vec(&body)?);
         }
+        if let Some(api_key) = self.api_key.get() {
+            request = request.header("x-revaer-api-key", api_key);
+        }
         if let Some(token) = token {
             request = request.header("x-revaer-setup-token", token);
         }
@@ -770,18 +807,32 @@ impl Fixture {
             .request("GET", "/.well-known/revaer.json", None, None)
             .await?;
         let mut profile = snapshot["app_profile"].clone();
-        profile["auth_mode"] = json!("none");
+        profile["auth_mode"] = json!("api_key");
         let mut policy = snapshot["fs_policy"].clone();
         policy["allow_paths"] = json!([self.directory.path()]);
-        self.request(
-            "POST",
-            "/admin/setup/complete",
-            Some(json!({
-                "app_profile": profile, "fs_policy": policy
-            })),
-            Some(token),
-        )
-        .await?;
+        let completed = self
+            .request(
+                "POST",
+                "/admin/setup/complete",
+                Some(json!({
+                    "app_profile": profile, "fs_policy": policy
+                })),
+                Some(token),
+            )
+            .await?;
+        let key = completed["api_key"].as_str().context("bootstrap API key")?;
+        self.api_key
+            .set(key.to_owned())
+            .map_err(|_| anyhow::anyhow!("fixture already activated"))?;
+        let denied = self
+            .api
+            .get(format!("{}/v1/media/profiles", self.origin))
+            .send()
+            .await?;
+        anyhow::ensure!(
+            denied.status() == reqwest::StatusCode::UNAUTHORIZED,
+            "anonymous configuration was accepted"
+        );
         Ok(())
     }
 
