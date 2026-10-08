@@ -3385,64 +3385,73 @@ mod tests {
         for id in [None, Some(Uuid::new_v4())] {
             for fails in [false, true] {
                 for receiver_lost in [false, true] {
-                    let (release, result) = oneshot::channel();
-                    release
-                        .send(if fails {
-                            Err(limits_failure(id))
-                        } else {
-                            Ok(())
-                        })
-                        .map_err(|reply| anyhow!("session reply lost: {reply:?}"))?;
-                    let session = ControlledSession {
-                        limits_results: VecDeque::from([result]),
-                        ..ControlledSession::default()
-                    };
-                    let mut worker = Worker::new(EventBus::new(), Box::new(session), None);
-                    let limits = TorrentRateLimit {
-                        download_bps: Some(1_000),
-                        upload_bps: None,
-                    };
-                    let (respond_to, response) = oneshot::channel();
-                    let response = if receiver_lost {
-                        drop(response);
-                        None
-                    } else {
-                        Some(response)
-                    };
-                    worker
-                        .handle(EngineCommand::UpdateLimits {
-                            id,
-                            limits: limits.clone(),
-                            respond_to,
-                        })
-                        .await?;
-                    assert_eq!(worker.health.contains("session"), fails);
-                    if let Some(response) = response {
-                        if fails {
-                            assert_limits_failure(response.await?, id)?;
-                        } else {
-                            response.await??;
-                        }
-                    }
-                    if let Some(id) = id {
-                        assert_eq!(
-                            worker.per_torrent_limits.get(&id),
-                            if fails { None } else { Some(&limits) }
-                        );
-                    } else {
-                        assert_eq!(
-                            worker.global_limits.download_bps,
-                            if fails { None } else { limits.download_bps }
-                        );
-                    }
-                    let (respond_to, response) = oneshot::channel();
-                    worker
-                        .handle(EngineCommand::InspectSettings { respond_to })
-                        .await?;
-                    response.await??;
+                    assert_update_limits_ack(id, fails, receiver_lost).await?;
                 }
             }
         }
+        Ok(())
+    }
+
+    async fn assert_update_limits_ack(
+        id: Option<Uuid>,
+        fails: bool,
+        receiver_lost: bool,
+    ) -> Result<()> {
+        let (release, result) = oneshot::channel();
+        release
+            .send(if fails {
+                Err(limits_failure(id))
+            } else {
+                Ok(())
+            })
+            .map_err(|reply| anyhow!("session reply lost: {reply:?}"))?;
+        let session = ControlledSession {
+            limits_results: VecDeque::from([result]),
+            ..ControlledSession::default()
+        };
+        let mut worker = Worker::new(EventBus::new(), Box::new(session), None);
+        let limits = TorrentRateLimit {
+            download_bps: Some(1_000),
+            upload_bps: None,
+        };
+        let (respond_to, response) = oneshot::channel();
+        let response = if receiver_lost {
+            drop(response);
+            None
+        } else {
+            Some(response)
+        };
+        worker
+            .handle(EngineCommand::UpdateLimits {
+                id,
+                limits: limits.clone(),
+                respond_to,
+            })
+            .await?;
+        assert_eq!(worker.health.contains("session"), fails);
+        if let Some(response) = response {
+            if fails {
+                assert_limits_failure(response.await?, id)?;
+            } else {
+                response.await??;
+            }
+        }
+        if let Some(id) = id {
+            assert_eq!(
+                worker.per_torrent_limits.get(&id),
+                if fails { None } else { Some(&limits) }
+            );
+        } else {
+            assert_eq!(
+                worker.global_limits.download_bps,
+                if fails { None } else { limits.download_bps }
+            );
+        }
+        let (respond_to, response) = oneshot::channel();
+        worker
+            .handle(EngineCommand::InspectSettings { respond_to })
+            .await?;
+        response.await??;
         Ok(())
     }
 
