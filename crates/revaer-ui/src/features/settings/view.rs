@@ -1029,6 +1029,15 @@ fn render_save_bar(
     }
 }
 
+struct SettingsRenderContext<'a> {
+    snapshot: Option<&'a Value>,
+    draft: UseStateHandle<SettingsDraft>,
+    immutable_keys: &'a HashSet<String>,
+    on_copy_value: Callback<String>,
+    on_open_path_picker: Callback<PathPickerTarget>,
+    bundle: &'a TranslationBundle,
+}
+
 fn build_config_tab_body(
     fields: &ConfigTabFields,
     config_snapshot: Option<&Value>,
@@ -1038,77 +1047,55 @@ fn build_config_tab_body(
     bundle: &TranslationBundle,
     on_open_path_picker: Callback<PathPickerTarget>,
 ) -> Html {
+    let context = SettingsRenderContext {
+        snapshot: config_snapshot,
+        draft,
+        immutable_keys,
+        on_copy_value: props.on_copy_value.clone(),
+        on_open_path_picker,
+        bundle,
+    };
     match props.active_tab {
         SettingsTab::Downloads => render_engine_group_tab(
             "settings.group.downloads",
             "settings.group.downloads_body",
             &fields.engine_groups.downloads,
             true,
-            config_snapshot,
-            draft,
-            immutable_keys,
             props,
-            bundle,
-            on_open_path_picker,
+            &context,
         ),
         SettingsTab::Seeding => render_engine_group_tab(
             "settings.group.seeding",
             "settings.group.seeding_body",
             &fields.engine_groups.seeding,
             false,
-            config_snapshot,
-            draft,
-            immutable_keys,
             props,
-            bundle,
-            on_open_path_picker,
+            &context,
         ),
         SettingsTab::Network => render_engine_group_tab(
             "settings.group.network",
             "settings.group.network_body",
             &fields.engine_groups.network,
             false,
-            config_snapshot,
-            draft,
-            immutable_keys,
             props,
-            bundle,
-            on_open_path_picker,
+            &context,
         ),
         SettingsTab::Storage => render_storage_tab(
             bundle.text("settings.group.storage"),
             Some(bundle.text("settings.group.storage_body")),
             &fields.engine_groups.storage,
             &fields.fs_fields,
-            config_snapshot,
-            draft,
-            immutable_keys,
             props,
-            props.on_refresh_config.clone(),
-            bundle,
-            on_open_path_picker,
+            &context,
         ),
-        SettingsTab::Labels => render_labels_tab(
-            &fields.app_groups.labels,
-            config_snapshot,
-            draft,
-            immutable_keys,
-            props,
-            bundle,
-            on_open_path_picker,
-        ),
+        SettingsTab::Labels => render_labels_tab(&fields.app_groups.labels, props, &context),
         SettingsTab::System => render_system_tab(
             &fields.app_groups.info,
             &fields.app_groups.telemetry,
             &fields.app_groups.other,
             &fields.engine_groups.advanced,
-            config_snapshot,
-            draft,
-            immutable_keys,
             props,
-            props.on_refresh_config.clone(),
-            bundle,
-            on_open_path_picker,
+            &context,
         ),
         SettingsTab::Connection => html! {},
     }
@@ -1119,25 +1106,31 @@ fn render_engine_group_tab(
     body_key: &str,
     fields: &[SettingsField],
     show_refresh: bool,
-    config_snapshot: Option<&Value>,
-    draft: UseStateHandle<SettingsDraft>,
-    immutable_keys: &HashSet<String>,
     props: &SettingsConfigProps,
-    bundle: &TranslationBundle,
-    on_open_path_picker: Callback<PathPickerTarget>,
+    context: &SettingsRenderContext<'_>,
 ) -> Html {
     render_engine_tab(
-        bundle.text(title_key),
-        Some(bundle.text(body_key)),
+        context.bundle.text(title_key),
+        Some(context.bundle.text(body_key)),
         fields,
-        config_snapshot,
-        draft,
-        immutable_keys,
         props,
-        props.on_refresh_config.clone(),
         show_refresh,
-        bundle,
-        on_open_path_picker,
+        context,
+    )
+}
+
+fn settings_refresh_action(
+    props: &SettingsConfigProps,
+    bundle: &TranslationBundle,
+) -> (Callback<MouseEvent>, bool, String) {
+    (
+        emit_callback(props.on_refresh_config.clone()),
+        props.config_busy,
+        if props.config_busy {
+            bundle.text("settings.refreshing")
+        } else {
+            bundle.text("settings.refresh")
+        },
     )
 }
 
@@ -1145,47 +1138,17 @@ fn render_engine_tab(
     title: String,
     description: Option<String>,
     fields: &[SettingsField],
-    snapshot: Option<&Value>,
-    draft: UseStateHandle<SettingsDraft>,
-    immutable_keys: &HashSet<String>,
     props: &SettingsConfigProps,
-    on_refresh: Callback<()>,
     show_refresh: bool,
-    bundle: &TranslationBundle,
-    on_open_path_picker: Callback<PathPickerTarget>,
+    context: &SettingsRenderContext<'_>,
 ) -> Html {
-    if snapshot.is_none() {
-        return render_config_placeholder(bundle, props.config_busy);
+    if context.snapshot.is_none() {
+        return render_config_placeholder(context.bundle, props.config_busy);
     }
-
-    let header_action = if show_refresh {
-        Some((
-            emit_callback(on_refresh),
-            props.config_busy,
-            if props.config_busy {
-                bundle.text("settings.refreshing")
-            } else {
-                bundle.text("settings.refresh")
-            },
-        ))
-    } else {
-        None
-    };
-
+    let header_action = show_refresh.then(|| settings_refresh_action(props, context.bundle));
     html! {
         <div class="space-y-4">
-            {render_settings_group(
-                title,
-                description,
-                fields.to_vec(),
-                snapshot,
-                draft,
-                immutable_keys,
-                props.on_copy_value.clone(),
-                on_open_path_picker,
-                bundle,
-                header_action,
-            )}
+            {render_settings_group(title, description, fields.to_vec(), context, header_action)}
         </div>
     }
 }
@@ -1195,50 +1158,26 @@ fn render_storage_tab(
     description: Option<String>,
     engine_fields: &[SettingsField],
     fs_fields: &[SettingsField],
-    snapshot: Option<&Value>,
-    draft: UseStateHandle<SettingsDraft>,
-    immutable_keys: &HashSet<String>,
     props: &SettingsConfigProps,
-    on_refresh: Callback<()>,
-    bundle: &TranslationBundle,
-    on_open_path_picker: Callback<PathPickerTarget>,
+    context: &SettingsRenderContext<'_>,
 ) -> Html {
-    if snapshot.is_none() {
-        return render_config_placeholder(bundle, props.config_busy);
+    if context.snapshot.is_none() {
+        return render_config_placeholder(context.bundle, props.config_busy);
     }
-
     html! {
         <div class="space-y-4">
             {render_settings_group(
                 title,
                 description,
                 engine_fields.to_vec(),
-                snapshot,
-                draft.clone(),
-                immutable_keys,
-                props.on_copy_value.clone(),
-                on_open_path_picker.clone(),
-                bundle,
-                Some((
-                    emit_callback(on_refresh),
-                    props.config_busy,
-                    if props.config_busy {
-                        bundle.text("settings.refreshing")
-                    } else {
-                        bundle.text("settings.refresh")
-                    },
-                )),
+                context,
+                Some(settings_refresh_action(props, context.bundle)),
             )}
             {render_settings_group(
-                bundle.text("settings.group.fs_policy"),
-                Some(bundle.text("settings.group.fs_policy_body")),
+                context.bundle.text("settings.group.fs_policy"),
+                Some(context.bundle.text("settings.group.fs_policy_body")),
                 fs_fields.to_vec(),
-                snapshot,
-                draft,
-                immutable_keys,
-                props.on_copy_value.clone(),
-                on_open_path_picker,
-                bundle,
+                context,
                 None,
             )}
         </div>
@@ -1247,29 +1186,19 @@ fn render_storage_tab(
 
 fn render_labels_tab(
     fields: &[SettingsField],
-    snapshot: Option<&Value>,
-    draft: UseStateHandle<SettingsDraft>,
-    immutable_keys: &HashSet<String>,
     props: &SettingsConfigProps,
-    bundle: &TranslationBundle,
-    on_open_path_picker: Callback<PathPickerTarget>,
+    context: &SettingsRenderContext<'_>,
 ) -> Html {
-    if snapshot.is_none() {
-        return render_config_placeholder(bundle, props.config_busy);
+    if context.snapshot.is_none() {
+        return render_config_placeholder(context.bundle, props.config_busy);
     }
-
     html! {
         <div class="space-y-4">
             {render_settings_group(
-                bundle.text("settings.group.labels"),
-                Some(bundle.text("settings.group.labels_body")),
+                context.bundle.text("settings.group.labels"),
+                Some(context.bundle.text("settings.group.labels_body")),
                 fields.to_vec(),
-                snapshot,
-                draft,
-                immutable_keys,
-                props.on_copy_value.clone(),
-                on_open_path_picker,
-                bundle,
+                context,
                 None,
             )}
         </div>
@@ -1281,55 +1210,30 @@ fn render_system_tab(
     telemetry_fields: &[SettingsField],
     app_other_fields: &[SettingsField],
     engine_extra_fields: &[SettingsField],
-    snapshot: Option<&Value>,
-    draft: UseStateHandle<SettingsDraft>,
-    immutable_keys: &HashSet<String>,
     props: &SettingsConfigProps,
-    on_refresh: Callback<()>,
-    bundle: &TranslationBundle,
-    on_open_path_picker: Callback<PathPickerTarget>,
+    context: &SettingsRenderContext<'_>,
 ) -> Html {
-    if snapshot.is_none() {
-        return render_config_placeholder(bundle, props.config_busy);
+    if context.snapshot.is_none() {
+        return render_config_placeholder(context.bundle, props.config_busy);
     }
-
     let app_fields = [app_info_fields, app_other_fields].concat();
-
     html! {
         <div class="space-y-4">
             {render_settings_group(
-                bundle.text("settings.group.system"),
-                Some(bundle.text("settings.group.system_body")),
+                context.bundle.text("settings.group.system"),
+                Some(context.bundle.text("settings.group.system_body")),
                 app_fields.to_vec(),
-                snapshot,
-                draft.clone(),
-                immutable_keys,
-                props.on_copy_value.clone(),
-                on_open_path_picker.clone(),
-                bundle,
-                Some((
-                    emit_callback(on_refresh),
-                    props.config_busy,
-                    if props.config_busy {
-                        bundle.text("settings.refreshing")
-                    } else {
-                        bundle.text("settings.refresh")
-                    },
-                )),
+                context,
+                Some(settings_refresh_action(props, context.bundle)),
             )}
             {if telemetry_fields.is_empty() {
                 html! {}
             } else {
                 render_settings_group(
-                    bundle.text("settings.group.telemetry"),
-                    Some(bundle.text("settings.group.telemetry_body")),
+                    context.bundle.text("settings.group.telemetry"),
+                    Some(context.bundle.text("settings.group.telemetry_body")),
                     telemetry_fields.to_vec(),
-                    snapshot,
-                    draft.clone(),
-                    immutable_keys,
-                    props.on_copy_value.clone(),
-                    on_open_path_picker.clone(),
-                    bundle,
+                    context,
                     None,
                 )
             }}
@@ -1337,15 +1241,10 @@ fn render_system_tab(
                 html! {}
             } else {
                 render_settings_group(
-                    bundle.text("settings.group.engine_extra"),
-                    Some(bundle.text("settings.group.engine_extra_body")),
+                    context.bundle.text("settings.group.engine_extra"),
+                    Some(context.bundle.text("settings.group.engine_extra_body")),
                     engine_extra_fields.to_vec(),
-                    snapshot,
-                    draft.clone(),
-                    immutable_keys,
-                    props.on_copy_value.clone(),
-                    on_open_path_picker.clone(),
-                    bundle,
+                    context,
                     None,
                 )
             }}
@@ -1357,18 +1256,12 @@ fn render_settings_group(
     title: String,
     description: Option<String>,
     fields: Vec<SettingsField>,
-    snapshot: Option<&Value>,
-    draft: UseStateHandle<SettingsDraft>,
-    immutable_keys: &HashSet<String>,
-    on_copy_value: Callback<String>,
-    on_open_path_picker: Callback<PathPickerTarget>,
-    bundle: &TranslationBundle,
+    context: &SettingsRenderContext<'_>,
     header_action: Option<(Callback<MouseEvent>, bool, String)>,
 ) -> Html {
     if fields.is_empty() {
         return html! {};
     }
-
     html! {
         <div class="card bg-base-100 shadow">
             <div class="card-body gap-4">
@@ -1394,12 +1287,12 @@ fn render_settings_group(
                 <div class="grid gap-4 lg:grid-cols-2">
                     {for fields.iter().map(|field| render_setting_field(
                         field,
-                        snapshot,
-                        draft.clone(),
-                        immutable_keys,
-                        on_copy_value.clone(),
-                        on_open_path_picker.clone(),
-                        bundle,
+                        context.snapshot,
+                        context.draft.clone(),
+                        context.immutable_keys,
+                        context.on_copy_value.clone(),
+                        context.on_open_path_picker.clone(),
+                        context.bundle,
                     ))}
                 </div>
             </div>
@@ -2868,16 +2761,19 @@ fn label_policy_numeric_callback(
     let draft = context.draft.clone();
     let field_key = context.field_key.clone();
     Callback::from(move |value: String| {
-        update_label_policy_numeric(
-            &draft,
-            &field_key,
-            kind,
-            &name,
-            key,
-            &value,
-            kind_num,
-            &error_message,
-        );
+        update_label_policy_entry_with_error(&draft, &field_key, kind, &name, |policy| {
+            match apply_optional_numeric(&value, kind_num) {
+                Ok(Some(number)) => {
+                    policy.insert(key.to_string(), number);
+                    None
+                }
+                Ok(None) => {
+                    policy.remove(key);
+                    None
+                }
+                Err(_) => Some(error_message.to_string()),
+            }
+        });
     })
 }
 
@@ -2969,13 +2865,6 @@ fn render_tracker_lists(
     default_input: UseStateHandle<String>,
     extra_input: UseStateHandle<String>,
 ) -> Html {
-    let on_default_input = tracker_list_input_callback(default_input.clone());
-    let on_extra_input = tracker_list_input_callback(extra_input.clone());
-    let default_value = (*default_input).clone();
-    let extra_value = (*extra_input).clone();
-    let on_default_add = tracker_list_add_callback(context, "default", default_input);
-    let on_extra_add = tracker_list_add_callback(context, "extra", extra_input);
-
     html! {
         <div class="grid gap-3 sm:grid-cols-2">
             {render_tracker_list(
@@ -2984,9 +2873,7 @@ fn render_tracker_lists(
                 "settings.tracker.default",
                 "settings.tracker.default_placeholder",
                 values.default_list.clone(),
-                default_value,
-                on_default_input,
-                on_default_add,
+                default_input,
             )}
             {render_tracker_list(
                 context,
@@ -2994,9 +2881,7 @@ fn render_tracker_lists(
                 "settings.tracker.extra",
                 "settings.tracker.extra_placeholder",
                 values.extra_list.clone(),
-                extra_value,
-                on_extra_input,
-                on_extra_add,
+                extra_input,
             )}
         </div>
     }
@@ -3008,10 +2893,11 @@ fn render_tracker_list(
     label_key: &'static str,
     placeholder_key: &'static str,
     entries: Vec<String>,
-    input_value: String,
-    on_input: Callback<String>,
-    on_add: Callback<MouseEvent>,
+    input: UseStateHandle<String>,
 ) -> Html {
+    let input_value = (*input).clone();
+    let on_input = tracker_list_input_callback(input.clone());
+    let on_add = tracker_list_add_callback(context, list_key, input);
     html! {
         <div class="form-control w-full">
             <label class="label pb-1">
@@ -4315,31 +4201,6 @@ fn update_label_policy_bool(
 ) {
     update_label_policy_entry(draft, field_key, kind, name, |policy| {
         policy.insert(key.to_string(), Value::Bool(value));
-    });
-}
-
-fn update_label_policy_numeric(
-    draft: &UseStateHandle<SettingsDraft>,
-    field_key: &str,
-    kind: LabelKind,
-    name: &str,
-    key: &str,
-    raw: &str,
-    kind_num: NumericKind,
-    error_message: &str,
-) {
-    update_label_policy_entry_with_error(draft, field_key, kind, name, |policy| {
-        match apply_optional_numeric(raw, kind_num) {
-            Ok(Some(number)) => {
-                policy.insert(key.to_string(), number);
-                None
-            }
-            Ok(None) => {
-                policy.remove(key);
-                None
-            }
-            Err(_) => Some(error_message.to_string()),
-        }
     });
 }
 
