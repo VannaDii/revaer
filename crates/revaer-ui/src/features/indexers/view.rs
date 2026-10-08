@@ -222,8 +222,7 @@ fn action_callback<T, F, Fut>(
     api: Option<ApiCtx>,
     busy: UseStateHandle<bool>,
     records: UseStateHandle<Vec<OperationRecord>>,
-    on_success_toast: Callback<String>,
-    on_error_toast: Callback<String>,
+    props: &IndexersPageProps,
     title: &'static str,
     success_message: &'static str,
     operation: F,
@@ -233,6 +232,8 @@ where
     F: Fn(ApiCtx) -> Fut + Clone + 'static,
     Fut: Future<Output = Result<T, String>> + 'static,
 {
+    let on_success_toast = props.on_success_toast.clone();
+    let on_error_toast = props.on_error_toast.clone();
     Callback::from(move |_| {
         let Some(api) = api.clone() else {
             append_record(&records, title, "API context is unavailable");
@@ -268,8 +269,7 @@ fn void_action_callback<F, Fut>(
     api: Option<ApiCtx>,
     busy: UseStateHandle<bool>,
     records: UseStateHandle<Vec<OperationRecord>>,
-    on_success_toast: Callback<String>,
-    on_error_toast: Callback<String>,
+    props: &IndexersPageProps,
     title: &'static str,
     success_message: &'static str,
     operation: F,
@@ -278,6 +278,8 @@ where
     F: Fn(ApiCtx) -> Fut + Clone + 'static,
     Fut: Future<Output = Result<(), String>> + 'static,
 {
+    let on_success_toast = props.on_success_toast.clone();
+    let on_error_toast = props.on_error_toast.clone();
     Callback::from(move |_| {
         let Some(api) = api.clone() else {
             append_record(&records, title, "API context is unavailable");
@@ -944,8 +946,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Tag create",
             "Tag created",
             move |api| {
@@ -961,8 +962,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Tag update",
             "Tag updated",
             move |api| {
@@ -978,8 +978,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Tag delete",
             "Tag deleted",
             move |api| {
@@ -1568,8 +1567,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Secret create",
             "Secret created",
             move |api| {
@@ -1585,8 +1583,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Secret rotate",
             "Secret rotated",
             move |api| {
@@ -1602,8 +1599,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Secret revoke",
             "Secret revoked",
             move |api| {
@@ -1620,8 +1616,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Routing policy create",
             "Routing policy created",
             move |api| {
@@ -1684,8 +1679,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Routing param set",
             "Routing parameter saved",
             move |api| {
@@ -1701,8 +1695,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Routing secret bind",
             "Routing secret bound",
             move |api| {
@@ -1718,8 +1711,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Rate limit create",
             "Rate limit policy created",
             move |api| {
@@ -1735,8 +1727,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Rate limit update",
             "Rate limit policy updated",
             move |api| {
@@ -1752,8 +1743,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Rate limit delete",
             "Rate limit policy deleted",
             move |api| {
@@ -1769,8 +1759,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Rate limit assign indexer",
             "Rate limit assigned to indexer",
             move |api| {
@@ -1786,8 +1775,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Rate limit assign routing",
             "Rate limit assigned to routing policy",
             move |api| {
@@ -1803,8 +1791,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Tracker category mapping upsert",
             "Tracker category mapping updated",
             move |api| {
@@ -1820,8 +1807,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Tracker category mapping delete",
             "Tracker category mapping deleted",
             move |api| {
@@ -1838,8 +1824,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Indexer instance create",
             "Indexer instance created",
             move |api| {
@@ -1855,8 +1840,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Indexer instance update",
             "Indexer instance updated",
             move |api| {
@@ -1872,8 +1856,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "RSS subscription fetch",
             "RSS subscription loaded",
             move |api| {
@@ -1889,8 +1872,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "RSS subscription update",
             "RSS subscription updated",
             move |api| {
@@ -1906,8 +1888,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "RSS items fetch",
             "RSS items loaded",
             move |api| {
@@ -1923,8 +1904,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "RSS item mark seen",
             "RSS item recorded as seen",
             move |api| {
@@ -2081,8 +2061,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Indexer media domains",
             "Indexer media domains updated",
             move |api| {
@@ -2098,8 +2077,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Indexer tags",
             "Indexer tags updated",
             move |api| {
@@ -2115,8 +2093,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Indexer field value",
             "Indexer field value updated",
             move |api| {
@@ -2132,8 +2109,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Indexer field secret",
             "Indexer field secret bound",
             move |api| {
@@ -2149,8 +2125,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "CF state fetch",
             "Cloudflare state loaded",
             move |api| {
@@ -2166,8 +2141,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "CF state reset",
             "Cloudflare state reset",
             move |api| {
@@ -2183,8 +2157,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Indexer test prepare",
             "Indexer test prepared",
             move |api| {
@@ -2200,8 +2173,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Indexer test finalize",
             "Indexer test finalized",
             move |api| {
@@ -2218,8 +2190,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Search profile create",
             "Search profile created",
             move |api| {
@@ -2235,8 +2206,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Search profile update",
             "Search profile updated",
             move |api| {
@@ -2252,8 +2222,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Search profile default domain",
             "Search profile default domain updated",
             move |api| {
@@ -2269,8 +2238,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Search profile media domains",
             "Search profile media domains updated",
             move |api| {
@@ -2286,8 +2254,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Search profile policy set",
             "Policy set attached to search profile",
             move |api| {
@@ -2303,8 +2270,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Search profile indexers allow",
             "Search profile allow-list updated",
             move |api| {
@@ -2320,8 +2286,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Search profile indexers block",
             "Search profile block-list updated",
             move |api| {
@@ -2337,8 +2302,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Search profile tags allow",
             "Search profile allow tags updated",
             move |api| {
@@ -2357,8 +2321,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Search profile tags block",
             "Search profile block tags updated",
             move |api| {
@@ -2377,8 +2340,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Search profile tags prefer",
             "Search profile preferred tags updated",
             move |api| {
@@ -2397,8 +2359,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Policy set create",
             "Policy set created",
             move |api| {
@@ -2414,8 +2375,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Policy rule create",
             "Policy rule created",
             move |api| {
@@ -2896,8 +2856,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Torznab instance create",
             "Torznab instance created",
             move |api| {
@@ -2913,8 +2872,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Torznab key rotate",
             "Torznab API key rotated",
             move |api| {
@@ -2982,8 +2940,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Torznab state update",
             "Torznab state updated",
             move |api| {
@@ -2999,8 +2956,7 @@ pub(crate) fn indexers_page(props: &IndexersPageProps) -> Html {
             api.clone(),
             busy.clone(),
             records.clone(),
-            props.on_success_toast.clone(),
-            props.on_error_toast.clone(),
+            props,
             "Torznab delete",
             "Torznab instance deleted",
             move |api| {
