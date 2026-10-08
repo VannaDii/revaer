@@ -793,6 +793,9 @@ pub mod ffi {
         fn validate_tracker_transport(tracker: &str, authenticated: bool) -> Result<()>;
     }
 
+    // Expected libtorrent/authoring failures retain their native reply contracts.
+    // Fallible operations use CXX Result so unexpected exceptions become errors
+    // in the safe session wrapper instead of crossing the foreign ABI.
     unsafe extern "C++" {
         include!("revaer/session.hpp");
 
@@ -804,52 +807,65 @@ pub mod ffi {
         fn new_session(options: &SessionOptions) -> UniquePtr<Session>;
         /// Apply an engine profile to the running session.
         #[must_use]
-        fn apply_engine_profile(self: Pin<&mut Session>, options: &EngineOptions) -> String;
+        fn apply_engine_profile(self: Pin<&mut Session>, options: &EngineOptions)
+        -> Result<String>;
         /// Add a torrent to the session.
         #[must_use]
-        fn add_torrent(self: Pin<&mut Session>, request: &AddTorrentRequest) -> String;
+        fn add_torrent(self: Pin<&mut Session>, request: &AddTorrentRequest) -> Result<String>;
         /// Create a new `.torrent` metainfo payload.
         #[must_use]
-        fn create_torrent(self: &Session, request: &CreateTorrentRequest) -> CreateTorrentResult;
+        fn create_torrent(
+            self: &Session,
+            request: &CreateTorrentRequest,
+        ) -> Result<CreateTorrentResult>;
         /// Remove a torrent and optionally its data.
         #[must_use]
-        fn remove_torrent(self: Pin<&mut Session>, id: &str, with_data: bool) -> String;
+        fn remove_torrent(self: Pin<&mut Session>, id: &str, with_data: bool) -> Result<String>;
         /// Pause a torrent in the session.
         #[must_use]
-        fn pause_torrent(self: Pin<&mut Session>, id: &str) -> String;
+        fn pause_torrent(self: Pin<&mut Session>, id: &str) -> Result<String>;
         /// Resume a paused torrent.
         #[must_use]
-        fn resume_torrent(self: Pin<&mut Session>, id: &str) -> String;
+        fn resume_torrent(self: Pin<&mut Session>, id: &str) -> Result<String>;
         /// Toggle sequential mode for a torrent.
         #[must_use]
-        fn set_sequential(self: Pin<&mut Session>, id: &str, sequential: bool) -> String;
+        fn set_sequential(self: Pin<&mut Session>, id: &str, sequential: bool) -> Result<String>;
         /// Load fast-resume payload for a torrent.
         #[must_use]
-        fn load_fastresume(self: Pin<&mut Session>, id: &str, payload: &[u8]) -> String;
+        fn load_fastresume(self: Pin<&mut Session>, id: &str, payload: &[u8]) -> Result<String>;
         /// Apply rate limits to the session or a specific torrent.
         #[must_use]
-        fn update_limits(self: Pin<&mut Session>, request: &LimitRequest) -> String;
+        fn update_limits(self: Pin<&mut Session>, request: &LimitRequest) -> Result<String>;
         /// Update selection rules for a torrent.
         #[must_use]
-        fn update_selection(self: Pin<&mut Session>, request: &SelectionRules) -> String;
+        fn update_selection(self: Pin<&mut Session>, request: &SelectionRules) -> Result<String>;
         /// Update per-torrent options after admission.
         #[must_use]
-        fn update_options(self: Pin<&mut Session>, request: &UpdateOptionsRequest) -> String;
+        fn update_options(
+            self: Pin<&mut Session>,
+            request: &UpdateOptionsRequest,
+        ) -> Result<String>;
         /// Update trackers for a torrent.
         #[must_use]
-        fn update_trackers(self: Pin<&mut Session>, request: &UpdateTrackersRequest) -> String;
+        fn update_trackers(
+            self: Pin<&mut Session>,
+            request: &UpdateTrackersRequest,
+        ) -> Result<String>;
         /// Update web seeds for a torrent.
         #[must_use]
-        fn update_web_seeds(self: Pin<&mut Session>, request: &UpdateWebSeedsRequest) -> String;
+        fn update_web_seeds(
+            self: Pin<&mut Session>,
+            request: &UpdateWebSeedsRequest,
+        ) -> Result<String>;
         /// Move torrent storage to a new download directory.
         #[must_use]
-        fn move_torrent(self: Pin<&mut Session>, request: &MoveTorrentRequest) -> String;
+        fn move_torrent(self: Pin<&mut Session>, request: &MoveTorrentRequest) -> Result<String>;
         /// Trigger tracker reannounce.
         #[must_use]
-        fn reannounce(self: Pin<&mut Session>, id: &str) -> String;
+        fn reannounce(self: Pin<&mut Session>, id: &str) -> Result<String>;
         /// Recheck on-disk data for a torrent.
         #[must_use]
-        fn recheck(self: Pin<&mut Session>, id: &str) -> String;
+        fn recheck(self: Pin<&mut Session>, id: &str) -> Result<String>;
         /// Set or clear a deadline for a piece.
         #[must_use]
         fn set_piece_deadline(
@@ -858,7 +874,7 @@ pub mod ffi {
             piece: u32,
             deadline_ms: i32,
             has_deadline: bool,
-        ) -> String;
+        ) -> Result<String>;
         /// Inspect cache-related storage settings applied to the session.
         #[must_use]
         fn inspect_storage_state(self: &Session) -> EngineStorageState;
@@ -870,9 +886,9 @@ pub mod ffi {
         fn inspect_settings_state(self: &Session) -> EngineSettingsState;
         /// Poll pending events from the session.
         #[must_use]
-        fn poll_events(self: Pin<&mut Session>) -> Vec<NativeEvent>;
+        fn poll_events(self: Pin<&mut Session>) -> Result<Vec<NativeEvent>>;
         /// Retrieve connected peers for a torrent.
         #[must_use]
-        fn list_peers(self: Pin<&mut Session>, id: &str) -> Vec<NativePeerInfo>;
+        fn list_peers(self: Pin<&mut Session>, id: &str) -> Result<Vec<NativePeerInfo>>;
     }
 }

@@ -1697,7 +1697,7 @@ public:
             configure_peer_classes(options);
 
             session_->apply_settings(pack);
-        } catch (const std::exception& ex) {
+        } catch (const lt::system_error& ex) {
             return ::rust::String(ex.what());
         }
         return ::rust::String();
@@ -1889,7 +1889,7 @@ public:
             result.total_size = total_size;
 
             copy_authoring_lists(result, selection, trackers, web_seeds, warnings);
-        } catch (const std::exception& ex) {
+        } catch (const TorrentAuthoringError& ex) {
             result.error = ex.what();
         }
         return result;
@@ -1970,7 +1970,7 @@ public:
             configure_added_handle(handle, request, sequential_default_);
 
             (void)request.tags;
-        } catch (const std::exception& ex) {
+        } catch (const lt::system_error& ex) {
             return ::rust::String(ex.what());
         }
         return ::rust::String();
@@ -1991,7 +1991,7 @@ public:
             handles_.erase(it);
             snapshots_.erase(key);
             selection_rules_.erase(key);
-        } catch (const std::exception& ex) {
+        } catch (const lt::system_error& ex) {
             return ::rust::String(ex.what());
         }
         return ::rust::String();
@@ -2060,7 +2060,7 @@ public:
                     it->second.set_upload_limit(-1);
                 }
             }
-        } catch (const std::exception& ex) {
+        } catch (const lt::system_error& ex) {
             return ::rust::String(ex.what());
         }
         return ::rust::String();
@@ -2091,7 +2091,7 @@ public:
             }
             try {
                 apply_selection(it->first, it->second);
-            } catch (const std::exception& ex) {
+            } catch (const lt::system_error& ex) {
                 drop_torrent_state(key);
                 return ::rust::String(ex.what());
             }
@@ -2183,7 +2183,7 @@ public:
         std::vector<lt::peer_info> peers;
         try {
             it->second.get_peer_info(peers);
-        } catch (const std::exception&) {
+        } catch (const lt::system_error&) {
             drop_torrent_state(key);
             return peers_out;
         }
@@ -2359,7 +2359,7 @@ private:
             status = handle.status(
                 lt::torrent_handle::query_name | lt::torrent_handle::query_save_path |
                 lt::torrent_handle::query_pieces | lt::torrent_handle::query_torrent_file);
-        } catch (const std::exception& ex) {
+        } catch (const lt::system_error& ex) {
             note_invalid_handle(id, events, stale_ids, ex.what());
             return;
         }
@@ -2379,7 +2379,7 @@ private:
         if (!snapshot.metadata_emitted) {
             try {
                 emit_initial_metadata(id, handle, status, current_state, snapshot, events);
-            } catch (const std::exception& ex) {
+            } catch (const lt::system_error& ex) {
                 note_invalid_handle(id, events, stale_ids, ex.what());
                 return;
             }
@@ -2403,7 +2403,7 @@ private:
                     meta.private_flag = details.private_flag;
                     meta.has_private = details.has_private;
                 }
-            } catch (const std::exception& ex) {
+            } catch (const lt::system_error& ex) {
                 note_invalid_handle(id, events, stale_ids, ex.what());
                 return;
             }
@@ -2424,7 +2424,7 @@ private:
             try {
                 handle.save_resume_data(lt::resume_data_flags_t{});
                 snapshot.resume_requested = true;
-            } catch (const std::exception& ex) {
+            } catch (const lt::system_error& ex) {
                 note_invalid_handle(id, events, stale_ids, ex.what());
                 return;
             }
@@ -2661,7 +2661,7 @@ private:
         }
         try {
             fn(it->second);
-        } catch (const std::exception& ex) {
+        } catch (const lt::system_error& ex) {
             return ::rust::String(ex.what());
         }
         return ::rust::String();

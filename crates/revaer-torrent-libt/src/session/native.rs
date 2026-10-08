@@ -28,7 +28,27 @@ pub(super) fn create_session() -> TorrentResult<Box<dyn LibTorrentSession>> {
 }
 
 impl NativeSession {
-    fn map_error(operation: &'static str, message: String) -> TorrentResult<()> {
+    fn native_result<T>(
+        operation: &'static str,
+        result: Result<T, cxx::Exception>,
+    ) -> TorrentResult<T> {
+        result.map_err(|error| {
+            op_failed(
+                operation,
+                None,
+                LibtorrentError::NativeFailure {
+                    operation,
+                    message: error.to_string(),
+                },
+            )
+        })
+    }
+
+    fn map_error(
+        operation: &'static str,
+        result: Result<String, cxx::Exception>,
+    ) -> TorrentResult<()> {
+        let message = Self::native_result(operation, result)?;
         if message.is_empty() {
             Ok(())
         } else {
@@ -391,7 +411,8 @@ impl LibTorrentSession for NativeSession {
     ) -> TorrentResult<TorrentAuthorResult> {
         let create_request = map_author_request(request);
         let session = self.inner.pin_mut();
-        let result = session.create_torrent(&create_request);
+        let result =
+            Self::native_result("create_torrent", session.create_torrent(&create_request))?;
         if !result.error.is_empty() {
             return Err(op_failed(
                 "create_torrent",
@@ -578,7 +599,7 @@ impl LibTorrentSession for NativeSession {
     async fn peers(&mut self, id: Uuid) -> TorrentResult<Vec<PeerSnapshot>> {
         let key = id.to_string();
         let session = self.inner.pin_mut();
-        let peers = session.list_peers(&key);
+        let peers = Self::native_result("list_peers", session.list_peers(&key))?;
         Ok(peers.into_iter().map(map_peer_info).collect())
     }
 
@@ -657,7 +678,7 @@ impl LibTorrentSession for NativeSession {
 
     async fn poll_events(&mut self) -> TorrentResult<Vec<EngineEvent>> {
         let session = self.inner.pin_mut();
-        let raw_events = session.poll_events();
+        let raw_events = Self::native_result("poll_events", session.poll_events())?;
         let mut events = Vec::with_capacity(raw_events.len());
 
         for native in raw_events {
@@ -820,8 +841,8 @@ mod tests {
         assert!(!options.enable_dht);
         assert!(!options.sequential_default);
 
-        assert!(NativeSession::map_error("apply_config", String::new()).is_ok());
-        let err = NativeSession::map_error("apply_config", "native failure".to_string())
+        assert!(NativeSession::map_error("apply_config", Ok(String::new())).is_ok());
+        let err = NativeSession::map_error("apply_config", Ok("native failure".to_string()))
             .err()
             .ok_or_else(|| anyhow!("expected native error"))?;
         let revaer_torrent_core::TorrentError::OperationFailed { source, .. } = err else {
@@ -979,9 +1000,10 @@ mod tests {
 
     #[test]
     fn native_failure_message_validates_error_shape() -> TorrentResult<()> {
-        let native = NativeSession::map_error("apply_config", "cache_size unsupported".to_string())
-            .err()
-            .ok_or_else(|| anyhow!("expected native failure"))?;
+        let native =
+            NativeSession::map_error("apply_config", Ok("cache_size unsupported".to_string()))
+                .err()
+                .ok_or_else(|| anyhow!("expected native failure"))?;
         assert_eq!(native_failure_message(native)?, "cache_size unsupported");
 
         let unsupported = revaer_torrent_core::TorrentError::Unsupported {
@@ -1515,6 +1537,51 @@ mod tests {
         let snapshot = harness.session.inspect_peer_class_state();
         assert_eq!(snapshot.configured_ids, vec![3]);
         assert_eq!(snapshot.default_ids, vec![3]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn native_session_translates_authoring_exception_and_remains_usable() -> TorrentResult<()>
+    {
+        let mut harness = NativeSessionHarness::new()?;
+        let file_path = harness.download_path().join("empty.txt");
+        fs::write(&file_path, b"")?;
+        let request = TorrentAuthorRequest {
+            root_path: file_path.to_string_lossy().into_owned(),
+            ..TorrentAuthorRequest::default()
+        };
+
+        assert!(
+            harness
+                .session
+                .inner
+                .as_ref()
+                .create_torrent(&map_author_request(&request))
+                .is_err()
+        );
+        let error = harness
+            .session
+            .create_torrent(&request)
+            .await
+            .err()
+            .ok_or_else(|| anyhow!("expected authoring exception"))?;
+        let revaer_torrent_core::TorrentError::OperationFailed {
+            operation, source, ..
+        } = error
+        else {
+            return Err(anyhow!("expected authoring operation failure"));
+        };
+        assert_eq!(operation, "create_torrent");
+        let native = source
+            .downcast::<LibtorrentError>()
+            .map_err(|_| anyhow!("expected native failure"))?;
+        assert!(matches!(*native, LibtorrentError::NativeFailure { .. }));
+        assert!(fs::read(&file_path)?.is_empty());
+
+        fs::write(&file_path, b"revaer")?;
+        let result = harness.session.create_torrent(&request).await?;
+        assert!(!result.metainfo.is_empty());
+        assert_eq!(fs::read(&file_path)?, b"revaer");
         Ok(())
     }
 
