@@ -1241,6 +1241,15 @@ mod tests {
                 .iter()
                 .any(|event| is_tracker_error(event, descriptor.id));
             if tracker_error {
+                assert!(
+                    events.windows(2).any(|pair| matches!(
+                        pair,
+                        [status, EngineEvent::SessionError { component, .. }]
+                            if is_tracker_error(status, descriptor.id)
+                                && component.as_deref() == Some("tracker")
+                    )),
+                    "tracker status must precede its session error"
+                );
                 break;
             }
         }
