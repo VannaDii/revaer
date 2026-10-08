@@ -1607,7 +1607,7 @@ mod tests {
         fs::create_dir_all(&blocked_path)?;
         fs::write(root_path.join("readable.txt"), b"preserved source")?;
         fs::write(blocked_path.join("hidden.txt"), b"unreadable source")?;
-        fs::set_permissions(&blocked_path, fs::Permissions::from_mode(0))?;
+        fs::set_permissions(&blocked_path, fs::Permissions::from_mode(0o0))?;
         let request = TorrentAuthorRequest {
             root_path: root_path.to_string_lossy().into_owned(),
             ..TorrentAuthorRequest::default()
