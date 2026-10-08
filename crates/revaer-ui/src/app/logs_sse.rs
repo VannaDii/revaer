@@ -79,7 +79,7 @@ async fn run_log_stream_loop(
                 };
                 attempt = 0;
 
-                let reconnect = loop {
+                loop {
                     if signal.aborted() {
                         return;
                     }
@@ -137,8 +137,7 @@ async fn run_log_stream_loop(
                             break true;
                         }
                     }
-                };
-                reconnect
+                }
             }
             Err(err) => {
                 if signal.aborted() {

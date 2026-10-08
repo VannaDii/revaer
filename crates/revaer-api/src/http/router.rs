@@ -231,7 +231,7 @@ impl ApiServer {
                     .unwrap_or("")
                     .to_string();
 
-                let span = tracing::info_span!(
+                tracing::info_span!(
                     "http.request",
                     method = %method,
                     route = %uri_path,
@@ -240,8 +240,7 @@ impl ApiServer {
                     build_sha = %build_sha(),
                     status_code = tracing::field::Empty,
                     latency_ms = tracing::field::Empty
-                );
-                span
+                )
             })
             .on_request(|_request: &Request<_>, _span: &Span| {})
             .on_response(

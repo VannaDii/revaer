@@ -15,123 +15,6 @@ pub struct OpenedRootCatalog {
     roots: Vec<OpenedRootDirectory>,
 }
 
-#[cfg(all(test, target_os = "linux"))]
-mod tests {
-    use super::*;
-    use crate::root_catalog::parse_root_catalog_v1;
-
-    struct ObservedMounts {
-        calls: std::sync::atomic::AtomicUsize,
-        failure_call: Option<usize>,
-    }
-
-    impl super::super::RootMountSource for ObservedMounts {
-        fn snapshot(&self) -> Result<RootMountTopology, super::super::RootMountReadError> {
-            use super::super::{ProcRootMountSource, RootMountReadError};
-            let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-            if self.failure_call == Some(call) {
-                return Err(RootMountReadError::Filesystem(std::io::Error::other(
-                    "injected namespace observation failure",
-                )));
-            }
-            ProcRootMountSource.snapshot()
-        }
-    }
-
-    #[test]
-    fn catalog_read_probe_requires_both_fresh_snapshots_without_writing() -> anyhow::Result<()> {
-        use super::super::{ProcRootMountSource, RootMountSource};
-        let directory = tempfile::Builder::new()
-            .prefix(".catalog-read-test-")
-            .tempdir_in(std::env::current_dir()?)?;
-        std::fs::write(directory.path().join("original"), b"unchanged")?;
-        let catalog = parse_root_catalog_v1(&serde_json::to_vec(&serde_json::json!({
-            "format_version": 1,
-            "slots": [{
-                "key": "source", "path": directory.path(), "allowed_kinds": ["source"],
-                "durability_class": "disposable", "durability_evidence": "none",
-                "sole_writer_class": "uncontrolled", "sole_writer_evidence": "none"
-            }]
-        }))?)?;
-        let opened = OpenedRootCatalog::open(
-            &catalog,
-            rustix::process::geteuid().as_raw(),
-            &ProcRootMountSource.snapshot()?,
-        )?;
-        let parent = opened.open_read_parent(0, std::path::Path::new("original"))?;
-        assert!(matches!(
-            opened.open_read_parent(1, std::path::Path::new("original")),
-            Err(RootDirectoryError::InvalidPath)
-        ));
-        drop(parent);
-        let reader = opened.open_read_directory(0, std::path::Path::new(""))?;
-        assert!(matches!(
-            opened.open_read_directory(1, std::path::Path::new("")),
-            Err(RootDirectoryError::InvalidPath)
-        ));
-        drop(reader);
-        for failure_call in [None, Some(1), Some(2)] {
-            let mounts = ObservedMounts {
-                calls: std::sync::atomic::AtomicUsize::new(0),
-                failure_call,
-            };
-            let result = opened.probe_reads(&mounts);
-            if failure_call.is_some() {
-                assert!(matches!(result, Err(RootDirectoryError::MountRead(_))));
-            } else {
-                result?;
-            }
-            assert_eq!(
-                mounts.calls.load(std::sync::atomic::Ordering::SeqCst),
-                failure_call.unwrap_or(2)
-            );
-            assert_eq!(
-                std::fs::read(directory.path().join("original"))?,
-                b"unchanged"
-            );
-            assert_eq!(std::fs::read_dir(directory.path())?.count(), 1);
-        }
-        drop(opened);
-        directory.close()?;
-        Ok(())
-    }
-
-    #[test]
-    fn failed_catalog_open_releases_earlier_locks_without_writing() -> anyhow::Result<()> {
-        let directory = tempfile::Builder::new()
-            .prefix(".catalog-lock-test-")
-            .tempdir_in(std::env::current_dir()?)?;
-        let child = directory.path().join("child");
-        std::fs::create_dir(&child)?;
-        let slots =
-            [("parent", directory.path()), ("child", child.as_path())].map(|(key, path)| {
-                serde_json::json!({
-                    "key": key, "path": path, "allowed_kinds": ["workspace"],
-                    "durability_class": "disposable", "durability_evidence": "none",
-                    "sole_writer_class": "revaer_exclusive",
-                    "sole_writer_evidence": "linux_dedicated_service"
-                })
-            });
-        let catalog = parse_root_catalog_v1(&serde_json::to_vec(&serde_json::json!({
-            "format_version": 1, "slots": slots
-        }))?)?;
-        let uid = rustix::process::geteuid().as_raw();
-        let topology = RootMountTopology::parse(&std::fs::read_to_string("/proc/self/mountinfo")?)?;
-        assert!(matches!(
-            OpenedRootCatalog::open(&catalog, uid, &topology),
-            Err(RootDirectoryError::Overlap)
-        ));
-        for slot in catalog.slots() {
-            let handle = OpenedRootDirectory::open(slot, uid)?;
-            handle.revalidate()?;
-        }
-        assert_eq!(std::fs::read_dir(directory.path())?.count(), 1);
-        assert_eq!(std::fs::read_dir(&child)?.count(), 0);
-        directory.close()?;
-        Ok(())
-    }
-}
-
 impl OpenedRootCatalog {
     /// Open every declared slot, retaining locks until the catalog is dropped.
     ///
@@ -301,6 +184,123 @@ impl OpenedRootCatalog {
                 }
             }
         }
+        Ok(())
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use crate::root_catalog::parse_root_catalog_v1;
+
+    struct ObservedMounts {
+        calls: std::sync::atomic::AtomicUsize,
+        failure_call: Option<usize>,
+    }
+
+    impl super::super::RootMountSource for ObservedMounts {
+        fn snapshot(&self) -> Result<RootMountTopology, super::super::RootMountReadError> {
+            use super::super::{ProcRootMountSource, RootMountReadError};
+            let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            if self.failure_call == Some(call) {
+                return Err(RootMountReadError::Filesystem(std::io::Error::other(
+                    "injected namespace observation failure",
+                )));
+            }
+            ProcRootMountSource.snapshot()
+        }
+    }
+
+    #[test]
+    fn catalog_read_probe_requires_both_fresh_snapshots_without_writing() -> anyhow::Result<()> {
+        use super::super::{ProcRootMountSource, RootMountSource};
+        let directory = tempfile::Builder::new()
+            .prefix(".catalog-read-test-")
+            .tempdir_in(std::env::current_dir()?)?;
+        std::fs::write(directory.path().join("original"), b"unchanged")?;
+        let catalog = parse_root_catalog_v1(&serde_json::to_vec(&serde_json::json!({
+            "format_version": 1,
+            "slots": [{
+                "key": "source", "path": directory.path(), "allowed_kinds": ["source"],
+                "durability_class": "disposable", "durability_evidence": "none",
+                "sole_writer_class": "uncontrolled", "sole_writer_evidence": "none"
+            }]
+        }))?)?;
+        let opened = OpenedRootCatalog::open(
+            &catalog,
+            rustix::process::geteuid().as_raw(),
+            &ProcRootMountSource.snapshot()?,
+        )?;
+        let parent = opened.open_read_parent(0, std::path::Path::new("original"))?;
+        assert!(matches!(
+            opened.open_read_parent(1, std::path::Path::new("original")),
+            Err(RootDirectoryError::InvalidPath)
+        ));
+        drop(parent);
+        let reader = opened.open_read_directory(0, std::path::Path::new(""))?;
+        assert!(matches!(
+            opened.open_read_directory(1, std::path::Path::new("")),
+            Err(RootDirectoryError::InvalidPath)
+        ));
+        drop(reader);
+        for failure_call in [None, Some(1), Some(2)] {
+            let mounts = ObservedMounts {
+                calls: std::sync::atomic::AtomicUsize::new(0),
+                failure_call,
+            };
+            let result = opened.probe_reads(&mounts);
+            if failure_call.is_some() {
+                assert!(matches!(result, Err(RootDirectoryError::MountRead(_))));
+            } else {
+                result?;
+            }
+            assert_eq!(
+                mounts.calls.load(std::sync::atomic::Ordering::SeqCst),
+                failure_call.unwrap_or(2)
+            );
+            assert_eq!(
+                std::fs::read(directory.path().join("original"))?,
+                b"unchanged"
+            );
+            assert_eq!(std::fs::read_dir(directory.path())?.count(), 1);
+        }
+        drop(opened);
+        directory.close()?;
+        Ok(())
+    }
+
+    #[test]
+    fn failed_catalog_open_releases_earlier_locks_without_writing() -> anyhow::Result<()> {
+        let directory = tempfile::Builder::new()
+            .prefix(".catalog-lock-test-")
+            .tempdir_in(std::env::current_dir()?)?;
+        let child = directory.path().join("child");
+        std::fs::create_dir(&child)?;
+        let slots =
+            [("parent", directory.path()), ("child", child.as_path())].map(|(key, path)| {
+                serde_json::json!({
+                    "key": key, "path": path, "allowed_kinds": ["workspace"],
+                    "durability_class": "disposable", "durability_evidence": "none",
+                    "sole_writer_class": "revaer_exclusive",
+                    "sole_writer_evidence": "linux_dedicated_service"
+                })
+            });
+        let catalog = parse_root_catalog_v1(&serde_json::to_vec(&serde_json::json!({
+            "format_version": 1, "slots": slots
+        }))?)?;
+        let uid = rustix::process::geteuid().as_raw();
+        let topology = RootMountTopology::parse(&std::fs::read_to_string("/proc/self/mountinfo")?)?;
+        assert!(matches!(
+            OpenedRootCatalog::open(&catalog, uid, &topology),
+            Err(RootDirectoryError::Overlap)
+        ));
+        for slot in catalog.slots() {
+            let handle = OpenedRootDirectory::open(slot, uid)?;
+            handle.revalidate()?;
+        }
+        assert_eq!(std::fs::read_dir(directory.path())?.count(), 1);
+        assert_eq!(std::fs::read_dir(&child)?.count(), 0);
+        directory.close()?;
         Ok(())
     }
 }

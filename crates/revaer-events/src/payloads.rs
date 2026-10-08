@@ -251,6 +251,38 @@ pub struct EventEnvelope {
     pub event: Event,
 }
 
+/// Individual file discovered within a torrent.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct DiscoveredFile {
+    /// Relative path to the file inside the torrent contents.
+    pub path: String,
+    /// Size of the file in bytes.
+    pub size_bytes: u64,
+}
+
+/// High-level torrent states that downstream consumers care about.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TorrentState {
+    /// Torrent has been queued but not yet started.
+    Queued,
+    /// Torrent is fetching metadata (e.g., magnet resolution).
+    FetchingMetadata,
+    /// Torrent is actively downloading payload data.
+    Downloading,
+    /// Torrent is seeding and uploading data to peers.
+    Seeding,
+    /// Torrent completed downloading and awaits post-processing.
+    Completed,
+    /// Torrent encountered an unrecoverable error with a description.
+    Failed {
+        /// Error detail describing why the torrent failed.
+        message: String,
+    },
+    /// Torrent has been stopped manually and is inactive.
+    Stopped,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -466,36 +498,4 @@ mod tests {
     fn assert_event_kind(event: &Event, expected: &str) {
         assert_eq!(event.kind(), expected);
     }
-}
-
-/// Individual file discovered within a torrent.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-pub struct DiscoveredFile {
-    /// Relative path to the file inside the torrent contents.
-    pub path: String,
-    /// Size of the file in bytes.
-    pub size_bytes: u64,
-}
-
-/// High-level torrent states that downstream consumers care about.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum TorrentState {
-    /// Torrent has been queued but not yet started.
-    Queued,
-    /// Torrent is fetching metadata (e.g., magnet resolution).
-    FetchingMetadata,
-    /// Torrent is actively downloading payload data.
-    Downloading,
-    /// Torrent is seeding and uploading data to peers.
-    Seeding,
-    /// Torrent completed downloading and awaits post-processing.
-    Completed,
-    /// Torrent encountered an unrecoverable error with a description.
-    Failed {
-        /// Error detail describing why the torrent failed.
-        message: String,
-    },
-    /// Torrent has been stopped manually and is inactive.
-    Stopped,
 }
