@@ -66,3 +66,7 @@ coverage and complete scanner evidence even when a gate fails. Update the
 complete source and YAML inventories when files change; do not narrow scope.
 
 - Source preparation removes disposable browser HTML reports and test outputs after coverage collection. Do not copy them into a separate proof collection; retain only explicitly requested scanner outputs and required coverage inputs under the root artifact policy.
+
+- Source preparation also removes untracked Python bytecode immediately before scanning. Native LLVM text uses file-level line and branch counts without nested macro-expansion displays; retain the actual zero-hit lines. The malformed-YAML regression remains in the executed Python policy tests rather than an unused malformed scanner input.
+- Diagnostic verbosity is enabled in the canonical properties while resolving importer failures; it does not change analysis criteria.
+- The scanner-owned `.scannerwork/` output is ignored by Git so a second scan does not mistake generated analyzer state for newly authored sources. Keep every authored file in the analysis inventory.

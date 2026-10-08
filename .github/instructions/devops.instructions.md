@@ -405,3 +405,5 @@ merge tasks validate the same completed phase set.
   them from regular members of that same archive without creating filesystem
   links. Reject escaping, missing and chained targets; count materialized bytes
   against the existing extraction limit. Preserve signature and hash checks.
+
+- Native LLVM text supplied to Sonar retains measured line and branch counts without nested macro-expansion displays that its importer cannot parse.

@@ -90,6 +90,8 @@ def test_source_preparation_preserves_coverage_and_never_deletes_authored_conten
         "tests/test-results/result.json",
         "tests/playwright-report/index.html",
         "tests/logs/api.log",
+        "tools/src/revaer_tooling/__pycache__/cli.cpython-313.pyc",
+        "tests/__pycache__/conftest.cpython-313.pyc",
     )
     for name in paths:
         context.fs.write(context.root / name, "generated\n")

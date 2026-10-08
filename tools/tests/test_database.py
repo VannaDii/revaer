@@ -17,8 +17,9 @@ from urllib.parse import quote, urlsplit, urlunsplit
 import pytest
 from revaer_tooling.cli import make_context
 from revaer_tooling.context import Context, Options
-from revaer_tooling.errors import ToolingError
+from revaer_tooling.errors import CommandError, ToolingError
 from revaer_tooling.external.database import LibpqConnection
+from revaer_tooling.process import Completed
 from revaer_tooling.tasks.database import (
     DatabaseMigrate,
     DatabaseReset,
@@ -486,3 +487,27 @@ def test_postgres_readiness_has_a_bounded_failure() -> None:
             )
     with pytest.raises(ToolingError, match="at least one endpoint"):
         context.tools.pg_isready.wait(())
+
+
+@pytest.mark.parametrize("code", (124, 1))
+def test_postgres_readiness_retries_only_timed_out_candidates(
+    monkeypatch: pytest.MonkeyPatch, code: int
+) -> None:
+    context = make_context(Options())
+    calls = []
+
+    def probe(*args: object, **kwargs: object) -> Completed:
+        calls.append(args)
+        if len(calls) == 1:
+            raise CommandError("probe failed", code)
+        return Completed(0, "")
+
+    monkeypatch.setattr(context.tools.pg_isready, "_invoke", probe)
+    endpoints = ("postgres://fixture@first.invalid/database", "postgres://fixture@localhost/db")
+    if code == 124:
+        assert context.tools.pg_isready.wait(endpoints) == endpoints[1]
+        assert len(calls) == 2
+    else:
+        with pytest.raises(CommandError, match="probe failed"):
+            context.tools.pg_isready.wait(endpoints)
+        assert len(calls) == 1

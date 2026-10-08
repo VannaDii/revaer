@@ -61,6 +61,7 @@ REQUIRED_VALUES = {
     "sonar.projectKey": "VannaDii_Revaer",
     "sonar.organization": "vannadii",
     "sonar.sourceEncoding": "UTF-8",
+    "sonar.verbose": "true",
     "sonar.scanner.excludeHiddenFiles": "false",
     "sonar.text.activate": "true",
     "sonar.text.inclusions.activate": "true",

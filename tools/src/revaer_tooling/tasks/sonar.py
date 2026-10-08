@@ -100,10 +100,10 @@ def _scan_lock(context: Context) -> Path:
 
 class SonarPrepareSources(Task):
     @staticmethod
-    def run(context: Context) -> TaskResult:
+    def prepare(context: Context) -> None:
         # These generated mirrors sit under scanned source directories. Removing
         # them preserves authored scope without configuring scanner exclusions.
-        names = (
+        names: tuple[str, ...] = (
             "tests/node_modules",
             "release/node_modules",
             "tests/support/api/schema.ts",
@@ -112,15 +112,24 @@ class SonarPrepareSources(Task):
             "tests/playwright-report",
             "tests/logs",
         )
+        names += tuple(
+            str(path.relative_to(context.root))
+            for directory in ("tools", "tests", "scripts")
+            for path in (context.root / directory).rglob("__pycache__")
+        )
         tracked = context.tools.git.files()
         for name in names:
             if any(path == name or path.startswith(name + "/") for path in tracked):
                 raise ToolingError(
                     "Sonar source preparation refuses to remove tracked content: " + name
                 )
+        for name in names:
+            context.fs.remove_owned(context.root / name, context.root)
+
+    @staticmethod
+    def run(context: Context) -> TaskResult:
         with context.fs.lock(_scan_lock(context)):
-            for name in names:
-                context.fs.remove_owned(context.root / name, context.root)
+            SonarPrepareSources.prepare(context)
         return TaskResult("Sonar source inputs prepared; disposable browser reports removed")
 
 
@@ -147,6 +156,7 @@ class SonarScan(Task):
                 "version"
             ]
             context.tools.sonar_scanner.verify(version)
+            SonarPrepareSources.prepare(context)
             context.tools.sonar_scanner.scan(ScanArgs(log, settings.scanner_token))
             _require_nonempty(log)
             normalized = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", context.fs.read(log))
