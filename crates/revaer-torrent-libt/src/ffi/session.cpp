@@ -105,8 +105,8 @@ std::string sanitize_tracker_urls(std::string text) {
     while ((cursor = text.find("://", cursor)) != std::string::npos) {
         const auto authority_start = cursor + 3;
         const auto authority_end = text.find_first_of("/?# \t\r\n", authority_start);
-        const auto userinfo = text.find('@', authority_start);
-        if (userinfo != std::string::npos
+        if (const auto userinfo = text.find('@', authority_start);
+            userinfo != std::string::npos
             && (authority_end == std::string::npos || userinfo < authority_end)) {
             text.erase(authority_start, userinfo + 1 - authority_start);
         }
@@ -971,8 +971,8 @@ public:
             info.download_priority = cfg.download_priority;
             session_->set_peer_class(cid, info);
 
-            const std::size_t idx = static_cast<std::size_t>(cfg.id);
-            if (idx < peer_class_map_.size()) {
+            if (const auto idx = static_cast<std::size_t>(cfg.id);
+                idx < peer_class_map_.size()) {
                 peer_class_map_[idx] = cid;
             }
             custom_peer_classes_.push_back(cid);
@@ -987,7 +987,7 @@ public:
             lt::peer_class_type_filter::ssl_utp_socket,
             lt::peer_class_type_filter::i2p_socket};
         for (const auto cid : options.default_peer_classes) {
-            const std::size_t idx = static_cast<std::size_t>(cid);
+            const auto idx = static_cast<std::size_t>(cid);
             if (idx >= peer_class_map_.size()) {
                 continue;
             }
@@ -1349,8 +1349,8 @@ public:
             std::vector<char> metainfo_buffer;
             const auto request_id = to_std_string(request.id);
             const auto download_dir = to_std_string(request.download_dir);
-            auto resume_it = pending_resume_.find(request_id);
-            if (resume_it != pending_resume_.end()) {
+            if (const auto resume_it = pending_resume_.find(request_id);
+                resume_it != pending_resume_.end()) {
                 lt::error_code resume_ec;
                 auto resume_params = lt::read_resume_data(resume_it->second, resume_ec);
                 if (resume_ec) {
@@ -1388,18 +1388,18 @@ public:
                     if (overrides.has_comment || overrides.has_source || overrides.has_private) {
                         lt::error_code decode_ec;
                         lt::bdecode_node decoded;
-                        const int decode_result = lt::bdecode(
-                            metainfo_buffer.data(),
-                            metainfo_buffer.data() + metainfo_buffer.size(),
-                            decoded,
-                            decode_ec);
-                        if (decode_result != 0 || decode_ec) {
+                        if (const auto decode_result = lt::bdecode(
+                                metainfo_buffer.data(),
+                                metainfo_buffer.data() + metainfo_buffer.size(),
+                                decoded,
+                                decode_ec);
+                            decode_result != 0 || decode_ec) {
                             return ::rust::String(
                                 "metainfo decode failed: " + decode_ec.message());
                         }
                         lt::entry metainfo_entry(decoded);
-                        std::string override_error;
-                        if (!apply_metainfo_overrides(metainfo_entry, overrides, override_error)) {
+                        if (std::string override_error;
+                            !apply_metainfo_overrides(metainfo_entry, overrides, override_error)) {
                             return ::rust::String(override_error);
                         }
                         std::vector<char> updated;
@@ -1711,8 +1711,7 @@ public:
         const auto key = to_std_string(rules.id);
         selection_rules_[key] = std::move(entry);
 
-        auto it = handles_.find(key);
-        if (it != handles_.end()) {
+        if (const auto it = handles_.find(key); it != handles_.end()) {
             if (!it->second.is_valid()) {
                 drop_torrent_state(key);
                 return ::rust::String(kInvalidHandleMessage);
@@ -1891,8 +1890,7 @@ public:
             const auto& endpoint = peer.ip;
 #endif
             const auto address = endpoint.address().to_string();
-            const auto port = endpoint.port();
-            if (port > 0) {
+            if (const auto port = endpoint.port(); port > 0) {
                 info.endpoint = address + ":" + std::to_string(port);
             } else {
                 info.endpoint = address;
