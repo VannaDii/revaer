@@ -10,7 +10,7 @@ use crate::core::auth::{AuthMode, AuthState};
 use crate::core::breakpoints::Breakpoint;
 use crate::core::events::UiEventEnvelope;
 use crate::core::logic::{
-    SseView, build_sse_query, build_torrent_filter_query, parse_torrent_filter_query,
+    SseQuery, SseView, build_sse_query, build_torrent_filter_query, parse_torrent_filter_query,
 };
 use crate::core::store::{
     AppModeState, AppStore, FullHealthSnapshot, HealthMetricsSnapshot, HealthSnapshot,
@@ -216,24 +216,9 @@ pub fn revaer_app() -> Html {
 
     let location = use_location();
     let navigator = use_navigator();
-    let on_navigate = {
-        let navigator = navigator.clone();
-        Callback::from(move |route: Route| {
-            if let Some(navigator) = navigator.clone() {
-                navigator.push(&route);
-            }
-        })
-    };
-    let on_manage_labels = {
-        let navigator = navigator.clone();
-        let requested_settings_tab = requested_settings_tab.clone();
-        Callback::from(move |_| {
-            requested_settings_tab.set(Some(SettingsTab::Labels));
-            if let Some(navigator) = navigator.clone() {
-                navigator.push(&Route::Settings);
-            }
-        })
-    };
+    let on_navigate = build_app_on_navigate_callback(navigator.clone());
+    let on_manage_labels =
+        build_app_on_manage_labels_callback(navigator.clone(), requested_settings_tab.clone());
     let on_clear_requested_tab = {
         let requested_settings_tab = requested_settings_tab.clone();
         Callback::from(move |_| requested_settings_tab.set(None))
@@ -420,74 +405,15 @@ pub fn revaer_app() -> Html {
             || ()
         });
     }
-    {
-        let token_refresh_timer = token_refresh_timer.clone();
-        let auth_state = auth_state.clone();
-        let token_refresh_tick = token_refresh_tick.clone();
-        let token_refresh_tick_value = *token_refresh_tick;
-        let api_ctx = (*api_ctx).clone();
-        let dispatch = dispatch.clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        use_effect_with(
-            (auth_state.clone(), token_refresh_tick_value),
-            move |deps| {
-                let (auth_state, _tick) = deps;
-                let cleanup = || ();
-                token_refresh_timer.borrow_mut().take();
-                let Some(AuthState::ApiKey(api_key)) = auth_state.as_ref().clone() else {
-                    return cleanup;
-                };
-                let now_ms = Date::now() as i64;
-                let delay_ms = if let Some(expires_at_ms) = load_api_key_expires_at_ms() {
-                    if expires_at_ms <= now_ms {
-                        0
-                    } else {
-                        let refresh_at_ms = expires_at_ms.saturating_sub(TOKEN_REFRESH_SKEW_MS);
-                        refresh_at_ms.saturating_sub(now_ms).max(0)
-                    }
-                } else {
-                    0
-                };
-                let delay_ms_u32 = u32::try_from(delay_ms).unwrap_or(u32::MAX);
-                let token_refresh_timer_handle = token_refresh_timer.clone();
-                let dispatch = dispatch.clone();
-                let client = api_ctx.client.clone();
-                let toast_id = toast_id.clone();
-                let token_refresh_tick = token_refresh_tick.clone();
-                let handle = Timeout::new(delay_ms_u32, move || {
-                    token_refresh_timer_handle.borrow_mut().take();
-                    let dispatch = dispatch.clone();
-                    let toast_id = toast_id.clone();
-                    let client = client.clone();
-                    let bundle = bundle.clone();
-                    let token_refresh_tick = token_refresh_tick.clone();
-                    let api_key = api_key.clone();
-                    yew::platform::spawn_local(async move {
-                        let state = dispatch.get();
-                        if !matches!(state.auth.state, Some(AuthState::ApiKey(_))) {
-                            return;
-                        }
-                        match client.refresh_api_key().await {
-                            Ok(response) => {
-                                persist_api_key_with_expiry(&api_key, &response.api_key_expires_at);
-                                token_refresh_tick.set(*token_refresh_tick + 1);
-                            }
-                            Err(err) => {
-                                let detail = detail_or_fallback(
-                                    err.detail.clone(),
-                                    bundle.text("toast.api_key_refresh_failed"),
-                                );
-                                push_toast(&dispatch, &toast_id, ToastKind::Error, detail);
-                            }
-                        }
-                    });
-                });
-                *token_refresh_timer.borrow_mut() = Some(handle);
-                cleanup
-            },
-        );
-    }
+    use_app_token_refresh(
+        token_refresh_timer.clone(),
+        auth_state.clone(),
+        token_refresh_tick.clone(),
+        (*api_ctx).clone(),
+        dispatch.clone(),
+        toast_id.clone(),
+        (*bundle).clone(),
+    );
     {
         let dispatch = dispatch.clone();
         let api_ctx = (*api_ctx).clone();
@@ -548,50 +474,11 @@ pub fn revaer_app() -> Html {
             || ()
         });
     }
-    let request_setup_token = {
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        let toast_id = toast_id.clone();
-        Callback::from(move |_| {
-            dispatch.reduce_mut(|store| {
-                store.auth.setup_busy = true;
-            });
-            let dispatch = dispatch.clone();
-            let client = api_ctx.client.clone();
-            let toast_id = toast_id.clone();
-            yew::platform::spawn_local(async move {
-                match client.setup_start().await {
-                    Ok(response) => {
-                        dispatch.reduce_mut(|store| {
-                            store.auth.setup_token = Some(response.token);
-                            store.auth.setup_expires_at = Some(response.expires_at);
-                            store.auth.setup_error = None;
-                        });
-                    }
-                    Err(err) => {
-                        if err.status == 409 {
-                            dispatch.reduce_mut(|store| {
-                                store.auth.app_mode = AppModeState::Active;
-                                store.auth.setup_error = None;
-                            });
-                        } else {
-                            let message = detail_or_fallback(
-                                err.detail.clone(),
-                                "Setup token request failed.".to_string(),
-                            );
-                            dispatch.reduce_mut(|store| {
-                                store.auth.setup_error = Some(message.clone());
-                            });
-                            push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                        }
-                    }
-                }
-                dispatch.reduce_mut(|store| {
-                    store.auth.setup_busy = false;
-                });
-            });
-        })
-    };
+    let request_setup_token = build_app_request_setup_token_callback(
+        dispatch.clone(),
+        (*api_ctx).clone(),
+        toast_id.clone(),
+    );
     let on_setup_auth_mode_change = {
         let setup_auth_mode = setup_auth_mode.clone();
         Callback::from(move |mode: SetupAuthMode| {
@@ -599,134 +486,13 @@ pub fn revaer_app() -> Html {
         })
     };
 
-    let complete_setup = {
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        let toast_id = toast_id.clone();
-        let force_auth_prompt = force_auth_prompt.clone();
-        let app_auth_mode = app_auth_mode.clone();
-        Callback::from(move |input: SetupCompleteInput| {
-            dispatch.reduce_mut(|store| {
-                store.auth.setup_busy = true;
-            });
-            let dispatch = dispatch.clone();
-            let client = api_ctx.client.clone();
-            let toast_id = toast_id.clone();
-            let force_auth_prompt = force_auth_prompt.clone();
-            let app_auth_mode = app_auth_mode.clone();
-            yew::platform::spawn_local(async move {
-                let auth_mode = input.auth_mode;
-                let mut changeset = serde_json::Value::Object(serde_json::Map::new());
-                if auth_mode == SetupAuthMode::NoAuth {
-                    let snapshot = match client.fetch_well_known_snapshot().await {
-                        Ok(value) => value,
-                        Err(err) => {
-                            let message = detail_or_fallback(
-                                err.detail.clone(),
-                                "Setup snapshot request failed.".to_string(),
-                            );
-                            dispatch.reduce_mut(|store| {
-                                store.auth.setup_error = Some(message.clone());
-                                store.auth.setup_busy = false;
-                            });
-                            push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                            return;
-                        }
-                    };
-                    let mut app_profile = match snapshot.get("app_profile") {
-                        Some(value) => value.clone(),
-                        None => {
-                            let message = "Setup snapshot missing app profile.".to_string();
-                            dispatch.reduce_mut(|store| {
-                                store.auth.setup_error = Some(message.clone());
-                                store.auth.setup_busy = false;
-                            });
-                            push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                            return;
-                        }
-                    };
-                    let Some(map) = app_profile.as_object_mut() else {
-                        let message = "Setup snapshot app profile is invalid.".to_string();
-                        dispatch.reduce_mut(|store| {
-                            store.auth.setup_error = Some(message.clone());
-                            store.auth.setup_busy = false;
-                        });
-                        push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                        return;
-                    };
-                    map.insert(
-                        "auth_mode".to_string(),
-                        serde_json::Value::String("none".into()),
-                    );
-                    changeset = serde_json::json!({ "app_profile": app_profile });
-                }
-                match client.setup_complete(&input.token, changeset).await {
-                    Ok(response) => {
-                        let snapshot_auth_mode = response.snapshot.app_profile.auth_mode;
-                        app_auth_mode.set(Some(snapshot_auth_mode));
-                        let use_anonymous = matches!(snapshot_auth_mode, AppAuthMode::NoAuth)
-                            || auth_mode == SetupAuthMode::NoAuth;
-                        if use_anonymous {
-                            let state = AuthState::Anonymous;
-                            persist_auth_state(&state);
-                            dispatch.reduce_mut(|store| {
-                                store.auth.mode = AuthMode::ApiKey;
-                                store.auth.state = Some(state);
-                                store.auth.setup_error = None;
-                                store.auth.setup_token = None;
-                                store.auth.setup_expires_at = None;
-                                store.auth.app_mode = AppModeState::Active;
-                            });
-                            force_auth_prompt.set(false);
-                        } else {
-                            let Some(api_key) = response.api_key.clone() else {
-                                let message = "Setup completion missing API key.".to_string();
-                                dispatch.reduce_mut(|store| {
-                                    store.auth.setup_error = Some(message.clone());
-                                    store.auth.setup_busy = false;
-                                });
-                                push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                                return;
-                            };
-                            let Some(expires_at) = response.api_key_expires_at.clone() else {
-                                let message =
-                                    "Setup completion missing API key expiry.".to_string();
-                                dispatch.reduce_mut(|store| {
-                                    store.auth.setup_error = Some(message.clone());
-                                    store.auth.setup_busy = false;
-                                });
-                                push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                                return;
-                            };
-                            persist_api_key_with_expiry(&api_key, &expires_at);
-                            dispatch.reduce_mut(|store| {
-                                store.auth.mode = AuthMode::ApiKey;
-                                store.auth.state = Some(AuthState::ApiKey(api_key));
-                                store.auth.setup_error = None;
-                                store.auth.setup_token = None;
-                                store.auth.setup_expires_at = None;
-                                store.auth.app_mode = AppModeState::Active;
-                            });
-                            force_auth_prompt.set(true);
-                        }
-                    }
-                    Err(err) => {
-                        let message = detail_or_fallback(
-                            err.detail.clone(),
-                            "Setup completion failed.".to_string(),
-                        );
-                        dispatch.reduce_mut(|store| {
-                            store.auth.setup_error = Some(message.clone());
-                        });
-                        push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                    }
-                }
-                dispatch.reduce_mut(|store| {
-                    store.auth.setup_busy = false;
-                });
-            });
-        })
-    };
+    let complete_setup = build_app_complete_setup_callback(
+        dispatch.clone(),
+        (*api_ctx).clone(),
+        toast_id.clone(),
+        force_auth_prompt.clone(),
+        app_auth_mode.clone(),
+    );
 
     {
         let app_mode = app_mode.clone();
@@ -851,108 +617,21 @@ pub fn revaer_app() -> Html {
         );
     }
 
-    let schedule_refresh = {
-        let refresh_timer = refresh_timer.clone();
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        Callback::from(move |_| {
-            if refresh_timer.borrow().is_some() {
-                return;
-            }
-            let refresh_timer_handle = refresh_timer.clone();
-            let dispatch = dispatch.clone();
-            let client = api_ctx.client.clone();
-            let toast_id = toast_id.clone();
-            let bundle = bundle.clone();
-            let handle = Timeout::new(1200, move || {
-                refresh_timer_handle.borrow_mut().take();
-                let state = dispatch.get();
-                let auth_state = state.auth.state.clone();
-                let filters = state.torrents.filters.clone();
-                let paging = refresh_paging(&state.torrents.paging);
-                if auth_state.is_none() {
-                    dispatch.reduce_mut(|store| {
-                        set_rows(&mut store.torrents, demo_rows());
-                        store.torrents.paging.next_cursor = None;
-                    });
-                    return;
-                }
-                yew::platform::spawn_local(async move {
-                    fetch_torrent_list_with_retry(
-                        client,
-                        dispatch.clone(),
-                        toast_id,
-                        bundle,
-                        filters,
-                        paging,
-                    )
-                    .await;
-                });
-            });
-            *refresh_timer.borrow_mut() = Some(handle);
-        })
-    };
-    let schedule_detail_refresh = {
-        let detail_refresh_timer = detail_refresh_timer.clone();
-        let detail_refresh_pending = detail_refresh_pending.clone();
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        Callback::from(move |id: Uuid| {
-            {
-                let mut pending = detail_refresh_pending.borrow_mut();
-                if !pending.insert(id) {
-                    return;
-                }
-            }
-            if detail_refresh_timer.borrow().is_some() {
-                return;
-            }
-            let detail_refresh_timer_handle = detail_refresh_timer.clone();
-            let detail_refresh_pending = detail_refresh_pending.clone();
-            let dispatch = dispatch.clone();
-            let client = api_ctx.client.clone();
-            let toast_id = toast_id.clone();
-            let bundle = bundle.clone();
-            let handle = Timeout::new(300, move || {
-                detail_refresh_timer_handle.borrow_mut().take();
-                let ids = {
-                    let mut pending = detail_refresh_pending.borrow_mut();
-                    let ids = pending.iter().copied().collect::<Vec<_>>();
-                    pending.clear();
-                    ids
-                };
-                if ids.is_empty() {
-                    return;
-                }
-                let auth_state = dispatch.get().auth.state.clone();
-                if auth_state.is_none() {
-                    return;
-                }
-                yew::platform::spawn_local(async move {
-                    for id in ids {
-                        if let Some(detail) = fetch_torrent_detail_with_retry(
-                            client.clone(),
-                            dispatch.clone(),
-                            toast_id.clone(),
-                            bundle.clone(),
-                            id,
-                        )
-                        .await
-                        {
-                            dispatch.reduce_mut(|store| {
-                                upsert_detail(&mut store.torrents, id, detail);
-                            });
-                        }
-                    }
-                });
-            });
-            *detail_refresh_timer.borrow_mut() = Some(handle);
-        })
-    };
+    let schedule_refresh = build_app_schedule_refresh_callback(
+        refresh_timer.clone(),
+        dispatch.clone(),
+        (*api_ctx).clone(),
+        toast_id.clone(),
+        (*bundle).clone(),
+    );
+    let schedule_detail_refresh = build_app_schedule_detail_refresh_callback(
+        detail_refresh_timer.clone(),
+        detail_refresh_pending.clone(),
+        dispatch.clone(),
+        (*api_ctx).clone(),
+        toast_id.clone(),
+        (*bundle).clone(),
+    );
 
     {
         let dispatch = dispatch.clone();
@@ -1045,119 +724,19 @@ pub fn revaer_app() -> Html {
             view,
         )
     };
-    {
-        let sse_handle = sse_handle.clone();
-        let dispatch = dispatch.clone();
-        let auth_state = auth_state.clone();
-        let app_mode = app_mode.clone();
-        let progress_buffer = progress_buffer.clone();
-        let schedule_refresh = schedule_refresh.clone();
-        let sse_query = sse_query.clone();
-        let sse_reset = *sse_reset;
-        let app_mode_value = *app_mode;
-        use_effect_with(
-            (auth_state.clone(), app_mode_value, sse_reset, sse_query),
-            move |deps| {
-                let (auth_state_value, app_mode_value, _reset, query) = deps;
-                let cleanup_handle = sse_handle.clone();
-                let cleanup = move || {
-                    if let Some(handle) = cleanup_handle.borrow_mut().take() {
-                        handle.close();
-                    }
-                };
-                if let Some(handle) = sse_handle.borrow_mut().take() {
-                    handle.close();
-                }
-                if *app_mode_value == AppModeState::Setup {
-                    dispatch.reduce_mut(|store| {
-                        store.system.sse_status = SseStatus {
-                            state: SseConnectionState::Disconnected,
-                            backoff_ms: None,
-                            next_retry_at_ms: None,
-                            last_event_id: store.system.sse_status.last_event_id,
-                            last_error: Some(SseError {
-                                message: "setup required".to_string(),
-                                status_code: Some(409),
-                            }),
-                            auth_mode: None,
-                        };
-                    });
-                    return cleanup;
-                }
-                let auth_state_value = (**auth_state_value).clone();
-                if let Some(auth_state_value) = auth_state_value {
-                    let auth_mode = auth_mode_label(&Some(auth_state_value.clone()));
-                    let on_state = {
-                        let dispatch = dispatch.clone();
-                        Callback::from(move |state: SseStatus| {
-                            dispatch.reduce_mut(|store| {
-                                store.system.sse_status = state;
-                            });
-                        })
-                    };
-                    let on_event = {
-                        let dispatch = dispatch.clone();
-                        let progress_buffer = progress_buffer.clone();
-                        let schedule_refresh = schedule_refresh.clone();
-                        let schedule_detail_refresh = schedule_detail_refresh.clone();
-                        Callback::from(move |envelope: UiEventEnvelope| {
-                            handle_sse_envelope(
-                                envelope,
-                                &dispatch,
-                                &progress_buffer,
-                                &schedule_refresh,
-                                &schedule_detail_refresh,
-                            );
-                        })
-                    };
-                    let on_error = {
-                        Callback::from(move |err: SseDecodeError| {
-                            console::warn!("SSE decode error", err.event, err.id, err.data);
-                        })
-                    };
-                    if let Some(handle) = connect_sse(
-                        api_base_url(),
-                        Some(auth_state_value),
-                        query.clone(),
-                        on_event,
-                        on_error,
-                        on_state,
-                    ) {
-                        *sse_handle.borrow_mut() = Some(handle);
-                    } else {
-                        dispatch.reduce_mut(|store| {
-                            store.system.sse_status = SseStatus {
-                                state: SseConnectionState::Disconnected,
-                                backoff_ms: None,
-                                next_retry_at_ms: None,
-                                last_event_id: store.system.sse_status.last_event_id,
-                                last_error: Some(SseError {
-                                    message: "SSE unavailable".to_string(),
-                                    status_code: None,
-                                }),
-                                auth_mode: auth_mode.clone(),
-                            };
-                        });
-                    }
-                } else {
-                    dispatch.reduce_mut(|store| {
-                        store.system.sse_status = SseStatus {
-                            state: SseConnectionState::Disconnected,
-                            backoff_ms: None,
-                            next_retry_at_ms: None,
-                            last_event_id: store.system.sse_status.last_event_id,
-                            last_error: Some(SseError {
-                                message: "awaiting authentication".to_string(),
-                                status_code: None,
-                            }),
-                            auth_mode: None,
-                        };
-                    });
-                }
-                cleanup
-            },
-        );
-    }
+    use_app_sse(
+        SseEffectContext {
+            sse_handle: sse_handle.clone(),
+            dispatch: dispatch.clone(),
+            progress_buffer: progress_buffer.clone(),
+            schedule_refresh: schedule_refresh.clone(),
+            schedule_detail_refresh,
+        },
+        auth_state.clone(),
+        *app_mode,
+        *sse_reset,
+        sse_query.clone(),
+    );
     {
         let breakpoint = breakpoint.clone();
         use_effect(move || {
@@ -1212,18 +791,7 @@ pub fn revaer_app() -> Html {
         });
     }
 
-    let toggle_theme = {
-        let dispatch = dispatch.clone();
-        Callback::from(move |_| {
-            dispatch.reduce_mut(|store| {
-                store.ui.theme = if store.ui.theme == ThemeMode::Light {
-                    ThemeMode::Dark
-                } else {
-                    ThemeMode::Light
-                };
-            });
-        })
-    };
+    let toggle_theme = build_app_toggle_theme_callback(dispatch.clone());
 
     let set_density = {
         let dispatch = dispatch.clone();
@@ -1243,21 +811,7 @@ pub fn revaer_app() -> Html {
             });
         })
     };
-    let set_state_filter = {
-        let dispatch = dispatch.clone();
-        Callback::from(move |value: String| {
-            dispatch.reduce_mut(|store| {
-                let trimmed = value.trim();
-                store.torrents.filters.state = if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(trimmed.to_string())
-                };
-                store.torrents.paging.cursor = None;
-                store.torrents.paging.next_cursor = None;
-            });
-        })
-    };
+    let set_state_filter = build_app_set_state_filter_callback(dispatch.clone());
     let set_tags_filter = {
         let dispatch = dispatch.clone();
         Callback::from(move |values: Vec<String>| {
@@ -1268,36 +822,8 @@ pub fn revaer_app() -> Html {
             });
         })
     };
-    let set_tracker_filter = {
-        let dispatch = dispatch.clone();
-        Callback::from(move |value: String| {
-            dispatch.reduce_mut(|store| {
-                let trimmed = value.trim();
-                store.torrents.filters.tracker = if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(trimmed.to_string())
-                };
-                store.torrents.paging.cursor = None;
-                store.torrents.paging.next_cursor = None;
-            });
-        })
-    };
-    let set_extension_filter = {
-        let dispatch = dispatch.clone();
-        Callback::from(move |value: String| {
-            dispatch.reduce_mut(|store| {
-                let normalized = value.trim().trim_start_matches('.');
-                store.torrents.filters.extension = if normalized.is_empty() {
-                    None
-                } else {
-                    Some(normalized.to_string())
-                };
-                store.torrents.paging.cursor = None;
-                store.torrents.paging.next_cursor = None;
-            });
-        })
-    };
+    let set_tracker_filter = build_app_set_tracker_filter_callback(dispatch.clone());
+    let set_extension_filter = build_app_set_extension_filter_callback(dispatch.clone());
     let set_sort = {
         let dispatch = dispatch.clone();
         Callback::from(move |value: Option<TorrentSortState>| {
@@ -1316,49 +842,12 @@ pub fn revaer_app() -> Html {
             });
         })
     };
-    let on_load_more = {
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        Callback::from(move |_| {
-            let state = dispatch.get();
-            if state.torrents.paging.is_loading || state.auth.state.is_none() {
-                return;
-            }
-            let Some(cursor) = state.torrents.paging.next_cursor.clone() else {
-                return;
-            };
-            let filters = state.torrents.filters.clone();
-            let paging = TorrentsPaging {
-                cursor: Some(cursor),
-                next_cursor: None,
-                limit: state.torrents.paging.limit,
-                is_loading: false,
-            };
-            dispatch.reduce_mut(|store| {
-                store.torrents.paging.is_loading = true;
-            });
-            let dispatch = dispatch.clone();
-            let client = api_ctx.client.clone();
-            let toast_id = toast_id.clone();
-            let bundle = bundle.clone();
-            yew::platform::spawn_local(async move {
-                fetch_torrent_list_with_retry(
-                    client,
-                    dispatch.clone(),
-                    toast_id,
-                    bundle,
-                    filters,
-                    paging,
-                )
-                .await;
-                dispatch.reduce_mut(|store| {
-                    store.torrents.paging.is_loading = false;
-                });
-            });
-        })
-    };
+    let on_load_more = build_app_on_load_more_callback(
+        dispatch.clone(),
+        (*api_ctx).clone(),
+        toast_id.clone(),
+        (*bundle).clone(),
+    );
     let trigger_sse_reconnect = {
         let sse_reset = sse_reset.clone();
         let dispatch = dispatch.clone();
@@ -1396,111 +885,20 @@ pub fn revaer_app() -> Html {
             });
         })
     };
-    let on_save_auth = {
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        let force_auth_prompt = force_auth_prompt.clone();
-        Callback::from(move |state: AuthState| {
-            force_auth_prompt.set(false);
-            let dispatch = dispatch.clone();
-            let client = api_ctx.client.clone();
-            let toast_id = toast_id.clone();
-            let bundle = bundle.clone();
-            yew::platform::spawn_local(async move {
-                match state {
-                    AuthState::ApiKey(api_key) => {
-                        let auth_state = AuthState::ApiKey(api_key.clone());
-                        client.set_auth(Some(auth_state.clone()));
-                        match client.refresh_api_key().await {
-                            Ok(response) => {
-                                persist_api_key_with_expiry(&api_key, &response.api_key_expires_at);
-                                dispatch.reduce_mut(|store| {
-                                    store.auth.mode = AuthMode::ApiKey;
-                                    store.auth.state = Some(auth_state);
-                                });
-                            }
-                            Err(err) => {
-                                let detail = detail_or_fallback(
-                                    err.detail.clone(),
-                                    bundle.text("toast.api_key_refresh_failed"),
-                                );
-                                client.set_auth(None);
-                                clear_auth_storage();
-                                dispatch.reduce_mut(|store| {
-                                    store.auth.state = None;
-                                });
-                                push_toast(&dispatch, &toast_id, ToastKind::Error, detail);
-                            }
-                        }
-                    }
-                    AuthState::Local(auth) => {
-                        let auth_state = AuthState::Local(auth);
-                        persist_auth_state(&auth_state);
-                        dispatch.reduce_mut(|store| {
-                            store.auth.mode = AuthMode::Local;
-                            store.auth.state = Some(auth_state);
-                        });
-                    }
-                    AuthState::Anonymous => {
-                        let auth_state = AuthState::Anonymous;
-                        persist_auth_state(&auth_state);
-                        dispatch.reduce_mut(|store| {
-                            store.auth.mode = AuthMode::ApiKey;
-                            store.auth.state = Some(auth_state);
-                        });
-                    }
-                }
-            });
-        })
-    };
-    let on_test_connection = {
-        let api_ctx = (*api_ctx).clone();
-        let dispatch = dispatch.clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        let test_busy = test_busy.clone();
-        Callback::from(move |_| {
-            if *test_busy {
-                return;
-            }
-            test_busy.set(true);
-            let client = api_ctx.client.clone();
-            let dispatch = dispatch.clone();
-            let toast_id = toast_id.clone();
-            let bundle = bundle.clone();
-            let test_busy = test_busy.clone();
-            yew::platform::spawn_local(async move {
-                match client.fetch_health().await {
-                    Ok(health) => {
-                        dispatch.reduce_mut(|store| {
-                            store.health.basic = Some(HealthSnapshot {
-                                status: health.status.clone(),
-                                mode: health.mode.clone(),
-                                database_status: Some(health.database.status),
-                                database_revision: health.database.revision,
-                            });
-                        });
-                        push_toast(
-                            &dispatch,
-                            &toast_id,
-                            ToastKind::Success,
-                            bundle.text("settings.test_success"),
-                        );
-                    }
-                    Err(err) => {
-                        let message = detail_or_fallback(
-                            err.detail.clone(),
-                            bundle.text("settings.test_failed"),
-                        );
-                        push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                    }
-                }
-                test_busy.set(false);
-            });
-        })
-    };
+    let on_save_auth = build_app_on_save_auth_callback(
+        dispatch.clone(),
+        (*api_ctx).clone(),
+        toast_id.clone(),
+        (*bundle).clone(),
+        force_auth_prompt.clone(),
+    );
+    let on_test_connection = build_app_on_test_connection_callback(
+        (*api_ctx).clone(),
+        dispatch.clone(),
+        toast_id.clone(),
+        (*bundle).clone(),
+        test_busy.clone(),
+    );
     let on_server_restart = {
         let dispatch = dispatch.clone();
         let toast_id = toast_id.clone();
@@ -1514,237 +912,49 @@ pub fn revaer_app() -> Html {
             );
         })
     };
-    let on_refresh_config = {
-        let api_ctx = (*api_ctx).clone();
-        let dispatch = dispatch.clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        let config_snapshot = config_snapshot.clone();
-        let config_error = config_error.clone();
-        let config_busy = config_busy.clone();
-        Callback::from(move |_| {
-            if *config_busy {
-                return;
-            }
-            config_busy.set(true);
-            config_error.set(None);
-            let client = api_ctx.client.clone();
-            let dispatch = dispatch.clone();
-            let toast_id = toast_id.clone();
-            let bundle = bundle.clone();
-            let config_snapshot = config_snapshot.clone();
-            let config_error = config_error.clone();
-            let config_busy = config_busy.clone();
-            yew::platform::spawn_local(async move {
-                match client.fetch_config_snapshot().await {
-                    Ok(snapshot) => {
-                        config_snapshot.set(Some(snapshot));
-                        config_error.set(None);
-                    }
-                    Err(err) => {
-                        let message = detail_or_fallback(
-                            err.detail.clone(),
-                            bundle.text("settings.config_failed"),
-                        );
-                        config_error.set(Some(message.clone()));
-                        push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                    }
-                }
-                config_busy.set(false);
-            });
-        })
-    };
-    let on_apply_settings = {
-        let api_ctx = (*api_ctx).clone();
-        let dispatch = dispatch.clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        let config_snapshot = config_snapshot.clone();
-        let config_error = config_error.clone();
-        let config_save_busy = config_save_busy.clone();
-        Callback::from(move |changeset: Value| {
-            if *config_save_busy {
-                return;
-            }
-            if changeset
-                .as_object()
-                .map(|map| map.is_empty())
-                .unwrap_or(true)
-            {
-                return;
-            }
-            config_save_busy.set(true);
-            config_error.set(None);
-            let client = api_ctx.client.clone();
-            let dispatch = dispatch.clone();
-            let toast_id = toast_id.clone();
-            let bundle = bundle.clone();
-            let config_snapshot = config_snapshot.clone();
-            let config_error = config_error.clone();
-            let config_save_busy = config_save_busy.clone();
-            yew::platform::spawn_local(async move {
-                match client.patch_settings(changeset).await {
-                    Ok(snapshot) => {
-                        config_snapshot.set(Some(snapshot));
-                        config_error.set(None);
-                        push_toast(
-                            &dispatch,
-                            &toast_id,
-                            ToastKind::Success,
-                            bundle.text("settings.saved"),
-                        );
-                    }
-                    Err(err) => {
-                        let detail = detail_or_fallback(
-                            err.detail.clone(),
-                            bundle.text("settings.save_failed"),
-                        );
-                        config_error.set(Some(detail.clone()));
-                        push_toast(&dispatch, &toast_id, ToastKind::Error, detail);
-                    }
-                }
-                config_save_busy.set(false);
-            });
-        })
-    };
-    let on_server_logs = {
-        let navigator = navigator.clone();
-        Callback::from(move |_| {
-            if let Some(navigator) = navigator.clone() {
-                navigator.push(&Route::Logs);
-            }
-        })
-    };
-    let on_logs_error = {
-        let dispatch = dispatch.clone();
-        let toast_id = toast_id.clone();
-        Callback::from(move |message: String| {
-            if message.trim().is_empty() {
-                return;
-            }
-            push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-        })
-    };
+    let on_refresh_config = build_app_on_refresh_config_callback(
+        (*api_ctx).clone(),
+        dispatch.clone(),
+        toast_id.clone(),
+        (*bundle).clone(),
+        config_snapshot.clone(),
+        config_error.clone(),
+        config_busy.clone(),
+    );
+    let on_apply_settings = build_app_on_apply_settings_callback(
+        (*api_ctx).clone(),
+        dispatch.clone(),
+        toast_id.clone(),
+        (*bundle).clone(),
+        config_snapshot.clone(),
+        config_error.clone(),
+        config_save_busy.clone(),
+    );
+    let on_server_logs = build_app_on_server_logs_callback(navigator.clone());
+    let on_logs_error = build_app_on_logs_error_callback(dispatch.clone(), toast_id.clone());
     let on_factory_reset = {
         let factory_reset_open = factory_reset_open.clone();
         Callback::from(move |_| factory_reset_open.set(true))
     };
-    let on_factory_reset_close = {
-        let factory_reset_open = factory_reset_open.clone();
-        let factory_reset_busy = factory_reset_busy.clone();
-        Callback::from(move |_| {
-            if *factory_reset_busy {
-                return;
-            }
-            factory_reset_open.set(false);
-        })
-    };
-    let on_factory_reset_confirm = {
-        let api_ctx = (*api_ctx).clone();
-        let dispatch = dispatch.clone();
-        let toast_id = toast_id.clone();
-        let factory_reset_busy = factory_reset_busy.clone();
-        let factory_reset_open = factory_reset_open.clone();
-        Callback::from(move |confirm: String| {
-            if *factory_reset_busy {
-                return;
-            }
-            factory_reset_busy.set(true);
-            let client = api_ctx.client.clone();
-            let dispatch = dispatch.clone();
-            let toast_id = toast_id.clone();
-            let factory_reset_busy = factory_reset_busy.clone();
-            let factory_reset_open = factory_reset_open.clone();
-            yew::platform::spawn_local(async move {
-                match client.factory_reset(&confirm).await {
-                    Ok(()) => {
-                        clear_auth_storage();
-                        dispatch.reduce_mut(|store| {
-                            store.auth.app_mode = AppModeState::Setup;
-                            store.auth.state = None;
-                            store.auth.setup_token = None;
-                            store.auth.setup_expires_at = None;
-                            store.auth.setup_error = None;
-                        });
-                        factory_reset_busy.set(false);
-                        factory_reset_open.set(false);
-                        if window().location().reload().is_err() {
-                            push_toast(
-                                &dispatch,
-                                &toast_id,
-                                ToastKind::Error,
-                                "Factory reset completed but reload failed.".to_string(),
-                            );
-                        }
-                    }
-                    Err(err) => {
-                        let detail = detail_or_fallback(
-                            err.detail.clone(),
-                            "Factory reset failed.".to_string(),
-                        );
-                        push_toast(&dispatch, &toast_id, ToastKind::Error, detail);
-                        factory_reset_busy.set(false);
-                        factory_reset_open.set(true);
-                    }
-                }
-            });
-        })
-    };
-    let on_logout = {
-        let dispatch = dispatch.clone();
-        let auth_prompt_dismissed = auth_prompt_dismissed.clone();
-        let api_ctx = (*api_ctx).clone();
-        let auth_state = auth_state.clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        Callback::from(move |_| {
-            let dispatch = dispatch.clone();
-            let auth_prompt_dismissed = auth_prompt_dismissed.clone();
-            let client = api_ctx.client.clone();
-            let auth_state = (*auth_state).clone();
-            let toast_id = toast_id.clone();
-            let bundle = bundle.clone();
-            yew::platform::spawn_local(async move {
-                let mut should_clear = true;
-                if let Some(AuthState::ApiKey(api_key)) = auth_state {
-                    if let Some((key_id, _)) = api_key.split_once(':') {
-                        let changeset = json!({
-                            "api_keys": [{
-                                "op": "delete",
-                                "key_id": key_id,
-                            }],
-                        });
-                        match client.patch_settings(changeset).await {
-                            Ok(_) => {}
-                            Err(err) => {
-                                let detail = detail_or_fallback(
-                                    err.detail.clone(),
-                                    bundle.text("toast.logout_failed"),
-                                );
-                                push_toast(&dispatch, &toast_id, ToastKind::Error, detail);
-                                should_clear = false;
-                            }
-                        }
-                    } else {
-                        push_toast(
-                            &dispatch,
-                            &toast_id,
-                            ToastKind::Error,
-                            bundle.text("toast.logout_failed"),
-                        );
-                        should_clear = false;
-                    }
-                }
-                if should_clear {
-                    clear_auth_storage();
-                    auth_prompt_dismissed.set(false);
-                    dispatch.reduce_mut(|store| {
-                        store.auth.state = None;
-                    });
-                }
-            });
-        })
-    };
+    let on_factory_reset_close = build_app_on_factory_reset_close_callback(
+        factory_reset_open.clone(),
+        factory_reset_busy.clone(),
+    );
+    let on_factory_reset_confirm = build_app_on_factory_reset_confirm_callback(
+        (*api_ctx).clone(),
+        dispatch.clone(),
+        toast_id.clone(),
+        factory_reset_busy.clone(),
+        factory_reset_open.clone(),
+    );
+    let on_logout = build_app_on_logout_callback(
+        dispatch.clone(),
+        auth_prompt_dismissed.clone(),
+        (*api_ctx).clone(),
+        auth_state.clone(),
+        toast_id.clone(),
+        (*bundle).clone(),
+    );
     {
         let on_refresh_config = on_refresh_config.clone();
         let auth_state_value = auth_state_value.clone();
@@ -1807,53 +1017,10 @@ pub fn revaer_app() -> Html {
             || ()
         });
     }
-    let on_copy_payload = {
-        let dispatch = dispatch.clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        Callback::from(move |(kind, value): (CopyKind, String)| {
-            let dispatch = dispatch.clone();
-            let toast_id = toast_id.clone();
-            let bundle = bundle.clone();
-            yew::platform::spawn_local(async move {
-                match copy_text_to_clipboard(value).await {
-                    Ok(()) => {
-                        let message = match kind {
-                            CopyKind::Magnet => bundle.text("toast.magnet_copied"),
-                            CopyKind::Metainfo => bundle.text("toast.metainfo_copied"),
-                        };
-                        push_toast(&dispatch, &toast_id, ToastKind::Success, message);
-                    }
-                    Err(err) => {
-                        push_toast(&dispatch, &toast_id, ToastKind::Error, err);
-                    }
-                }
-            });
-        })
-    };
-    let on_copy_value = {
-        let dispatch = dispatch.clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        Callback::from(move |value: String| {
-            let dispatch = dispatch.clone();
-            let toast_id = toast_id.clone();
-            let bundle = bundle.clone();
-            yew::platform::spawn_local(async move {
-                match copy_text_to_clipboard(value).await {
-                    Ok(()) => push_toast(
-                        &dispatch,
-                        &toast_id,
-                        ToastKind::Success,
-                        bundle.text("toast.copied"),
-                    ),
-                    Err(err) => {
-                        push_toast(&dispatch, &toast_id, ToastKind::Error, err);
-                    }
-                }
-            });
-        })
-    };
+    let on_copy_payload =
+        build_app_on_copy_payload_callback(dispatch.clone(), toast_id.clone(), (*bundle).clone());
+    let on_copy_value =
+        build_app_on_copy_value_callback(dispatch.clone(), toast_id.clone(), (*bundle).clone());
     let on_error_toast = {
         let dispatch = dispatch.clone();
         let toast_id = toast_id.clone();
@@ -1868,57 +1035,12 @@ pub fn revaer_app() -> Html {
             push_toast(&dispatch, &toast_id, ToastKind::Success, message);
         })
     };
-    let on_add_torrent = {
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        Callback::from(move |input: AddTorrentInput| {
-            let client = api_ctx.client.clone();
-            let dispatch = dispatch.clone();
-            let toast_id = toast_id.clone();
-            let bundle = bundle.clone();
-            dispatch.reduce_mut(|store| {
-                store.ui.busy.add_torrent = true;
-            });
-            yew::platform::spawn_local(async move {
-                match client.add_torrent(input).await {
-                    Ok(_id) => {
-                        push_toast(
-                            &dispatch,
-                            &toast_id,
-                            ToastKind::Success,
-                            bundle.text("toast.add_success"),
-                        );
-                        let (filters, paging) = {
-                            let state = dispatch.get();
-                            (
-                                state.torrents.filters.clone(),
-                                refresh_paging(&state.torrents.paging),
-                            )
-                        };
-                        fetch_torrent_list_with_retry(
-                            client,
-                            dispatch.clone(),
-                            toast_id.clone(),
-                            bundle.clone(),
-                            filters,
-                            paging,
-                        )
-                        .await;
-                    }
-                    Err(err) => {
-                        let message =
-                            detail_or_fallback(err.detail.clone(), bundle.text("toast.add_failed"));
-                        push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                    }
-                }
-                dispatch.reduce_mut(|store| {
-                    store.ui.busy.add_torrent = false;
-                });
-            });
-        })
-    };
+    let on_add_torrent = build_app_on_add_torrent_callback(
+        dispatch.clone(),
+        (*api_ctx).clone(),
+        toast_id.clone(),
+        (*bundle).clone(),
+    );
     let on_reset_create = {
         let dispatch = dispatch.clone();
         Callback::from(move |_| {
@@ -1928,99 +1050,18 @@ pub fn revaer_app() -> Html {
             });
         })
     };
-    let on_create_torrent = {
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        Callback::from(move |request: TorrentAuthorRequest| {
-            let client = api_ctx.client.clone();
-            let dispatch = dispatch.clone();
-            let toast_id = toast_id.clone();
-            let bundle = bundle.clone();
-            dispatch.reduce_mut(|store| {
-                store.ui.busy.create_torrent = true;
-                store.torrents.create_error = None;
-                store.torrents.create_result = None;
-            });
-            yew::platform::spawn_local(async move {
-                match client.create_torrent(&request).await {
-                    Ok(response) => {
-                        dispatch.reduce_mut(|store| {
-                            store.torrents.create_result = Some(response);
-                        });
-                        push_toast(
-                            &dispatch,
-                            &toast_id,
-                            ToastKind::Success,
-                            bundle.text("toast.create_success"),
-                        );
-                    }
-                    Err(err) => {
-                        let message = detail_or_fallback(
-                            err.detail.clone(),
-                            bundle.text("toast.create_failed"),
-                        );
-                        dispatch.reduce_mut(|store| {
-                            store.torrents.create_error = Some(message.clone());
-                        });
-                        push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                    }
-                }
-                dispatch.reduce_mut(|store| {
-                    store.ui.busy.create_torrent = false;
-                });
-            });
-        })
-    };
-    let on_action = {
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        Callback::from(move |(action, id): (TorrentAction, Uuid)| {
-            let client = api_ctx.client.clone();
-            let dispatch = dispatch.clone();
-            let toast_id = toast_id.clone();
-            let bundle = bundle.clone();
-            yew::platform::spawn_local(async move {
-                let id_str = id.to_string();
-                let display_name = dispatch
-                    .get()
-                    .torrents
-                    .by_id
-                    .get(&id)
-                    .map(|row| row.name.clone())
-                    .unwrap_or_else(|| {
-                        format!("{} {id}", bundle.text("toast.torrent_placeholder"))
-                    });
-                match client.perform_action(&id_str, action.clone()).await {
-                    Ok(_) => {
-                        if matches!(action, TorrentAction::Delete { .. }) {
-                            dispatch.reduce_mut(|store| {
-                                remove_row(&mut store.torrents, id);
-                            });
-                        }
-                        push_toast(
-                            &dispatch,
-                            &toast_id,
-                            ToastKind::Success,
-                            success_message(&bundle, &action, &display_name),
-                        );
-                    }
-                    Err(err) => push_toast(
-                        &dispatch,
-                        &toast_id,
-                        ToastKind::Error,
-                        format!(
-                            "{} {display_name}: {err}",
-                            bundle.text("toast.action_failed")
-                        ),
-                    ),
-                }
-            });
-        })
-    };
+    let on_create_torrent = build_app_on_create_torrent_callback(
+        dispatch.clone(),
+        (*api_ctx).clone(),
+        toast_id.clone(),
+        (*bundle).clone(),
+    );
+    let on_action = build_app_on_action_callback(
+        dispatch.clone(),
+        (*api_ctx).clone(),
+        toast_id.clone(),
+        (*bundle).clone(),
+    );
     let on_bulk_action = {
         let dispatch = dispatch.clone();
         let api_ctx = (*api_ctx).clone();
@@ -2046,128 +1087,18 @@ pub fn revaer_app() -> Html {
             });
         })
     };
-    let on_update_selection = {
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        Callback::from(move |(id, change): (Uuid, FileSelectionChange)| {
-            let client = api_ctx.client.clone();
-            let dispatch = dispatch.clone();
-            let toast_id = toast_id.clone();
-            let bundle = bundle.clone();
-            let request = match change {
-                FileSelectionChange::Toggle {
-                    index,
-                    path,
-                    selected,
-                } => {
-                    dispatch.reduce_mut(|store| {
-                        update_detail_file_selection(&mut store.torrents, id, index, selected);
-                    });
-                    TorrentSelectionRequest {
-                        include: if selected {
-                            vec![path.clone()]
-                        } else {
-                            Vec::new()
-                        },
-                        exclude: if selected {
-                            Vec::new()
-                        } else {
-                            vec![path.clone()]
-                        },
-                        skip_fluff: None,
-                        priorities: Vec::new(),
-                    }
-                }
-                FileSelectionChange::Priority { index, priority } => {
-                    dispatch.reduce_mut(|store| {
-                        update_detail_file_priority(&mut store.torrents, id, index, priority);
-                    });
-                    TorrentSelectionRequest {
-                        include: Vec::new(),
-                        exclude: Vec::new(),
-                        skip_fluff: None,
-                        priorities: vec![FilePriorityOverride { index, priority }],
-                    }
-                }
-                FileSelectionChange::SkipFluff { enabled } => {
-                    dispatch.reduce_mut(|store| {
-                        update_detail_skip_fluff(&mut store.torrents, id, enabled);
-                    });
-                    TorrentSelectionRequest {
-                        include: Vec::new(),
-                        exclude: Vec::new(),
-                        skip_fluff: Some(enabled),
-                        priorities: Vec::new(),
-                    }
-                }
-            };
-            yew::platform::spawn_local(async move {
-                if let Err(err) = client
-                    .update_torrent_selection(&id.to_string(), &request)
-                    .await
-                {
-                    let message = detail_or_fallback(
-                        err.detail.clone(),
-                        bundle.text("toast.file_selection_failed"),
-                    );
-                    push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                    if let Some(detail) = fetch_torrent_detail_with_retry(
-                        client,
-                        dispatch.clone(),
-                        toast_id,
-                        bundle,
-                        id,
-                    )
-                    .await
-                    {
-                        dispatch.reduce_mut(|store| {
-                            upsert_detail(&mut store.torrents, id, detail);
-                        });
-                    }
-                }
-            });
-        })
-    };
-    let on_update_options = {
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        Callback::from(move |(id, request): (Uuid, TorrentOptionsRequest)| {
-            let client = api_ctx.client.clone();
-            let dispatch = dispatch.clone();
-            let toast_id = toast_id.clone();
-            let bundle = bundle.clone();
-            dispatch.reduce_mut(|store| {
-                update_detail_options(&mut store.torrents, id, &request);
-            });
-            yew::platform::spawn_local(async move {
-                if let Err(err) = client
-                    .update_torrent_options(&id.to_string(), &request)
-                    .await
-                {
-                    let message =
-                        detail_or_fallback(err.detail.clone(), bundle.text("toast.options_failed"));
-                    push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                    if let Some(detail) = fetch_torrent_detail_with_retry(
-                        client,
-                        dispatch.clone(),
-                        toast_id,
-                        bundle,
-                        id,
-                    )
-                    .await
-                    {
-                        dispatch.reduce_mut(|store| {
-                            upsert_detail(&mut store.torrents, id, detail);
-                        });
-                    }
-                }
-            });
-        })
-    };
+    let on_update_selection = build_app_on_update_selection_callback(
+        dispatch.clone(),
+        (*api_ctx).clone(),
+        toast_id.clone(),
+        (*bundle).clone(),
+    );
+    let on_update_options = build_app_on_update_options_callback(
+        dispatch.clone(),
+        (*api_ctx).clone(),
+        toast_id.clone(),
+        (*bundle).clone(),
+    );
 
     let locale_selector = {
         let dispatch = dispatch.clone();
@@ -2396,6 +1327,1262 @@ pub fn revaer_app() -> Html {
             </ContextProvider<TranslationBundle>>
         </ContextProvider<ApiCtx>>
     }
+}
+
+struct SseEffectContext {
+    sse_handle: Rc<RefCell<Option<SseHandle>>>,
+    dispatch: Dispatch<AppStore>,
+    progress_buffer: Rc<RefCell<HashMap<Uuid, ProgressPatch>>>,
+    schedule_refresh: Callback<()>,
+    schedule_detail_refresh: Callback<Uuid>,
+}
+
+#[hook]
+fn use_app_sse(
+    context: SseEffectContext,
+    auth_state: Rc<Option<AuthState>>,
+    app_mode_value: AppModeState,
+    sse_reset: u32,
+    sse_query: SseQuery,
+) {
+    let SseEffectContext {
+        sse_handle,
+        dispatch,
+        progress_buffer,
+        schedule_refresh,
+        schedule_detail_refresh,
+    } = context;
+    use_effect_with(
+        (auth_state.clone(), app_mode_value, sse_reset, sse_query),
+        move |deps| {
+            let (auth_state_value, app_mode_value, _reset, query) = deps;
+            let cleanup_handle = sse_handle.clone();
+            let cleanup = move || {
+                if let Some(handle) = cleanup_handle.borrow_mut().take() {
+                    handle.close();
+                }
+            };
+            if let Some(handle) = sse_handle.borrow_mut().take() {
+                handle.close();
+            }
+            if *app_mode_value == AppModeState::Setup {
+                dispatch.reduce_mut(|store| {
+                    store.system.sse_status = SseStatus {
+                        state: SseConnectionState::Disconnected,
+                        backoff_ms: None,
+                        next_retry_at_ms: None,
+                        last_event_id: store.system.sse_status.last_event_id,
+                        last_error: Some(SseError {
+                            message: "setup required".to_string(),
+                            status_code: Some(409),
+                        }),
+                        auth_mode: None,
+                    };
+                });
+                return cleanup;
+            }
+            let auth_state_value = (**auth_state_value).clone();
+            if let Some(auth_state_value) = auth_state_value {
+                let auth_mode = auth_mode_label(&Some(auth_state_value.clone()));
+                let on_state = {
+                    let dispatch = dispatch.clone();
+                    Callback::from(move |state: SseStatus| {
+                        dispatch.reduce_mut(|store| {
+                            store.system.sse_status = state;
+                        });
+                    })
+                };
+                let on_event = {
+                    let dispatch = dispatch.clone();
+                    let progress_buffer = progress_buffer.clone();
+                    let schedule_refresh = schedule_refresh.clone();
+                    let schedule_detail_refresh = schedule_detail_refresh.clone();
+                    Callback::from(move |envelope: UiEventEnvelope| {
+                        handle_sse_envelope(
+                            envelope,
+                            &dispatch,
+                            &progress_buffer,
+                            &schedule_refresh,
+                            &schedule_detail_refresh,
+                        );
+                    })
+                };
+                let on_error = {
+                    Callback::from(move |err: SseDecodeError| {
+                        console::warn!("SSE decode error", err.event, err.id, err.data);
+                    })
+                };
+                if let Some(handle) = connect_sse(
+                    api_base_url(),
+                    Some(auth_state_value),
+                    query.clone(),
+                    on_event,
+                    on_error,
+                    on_state,
+                ) {
+                    *sse_handle.borrow_mut() = Some(handle);
+                } else {
+                    dispatch.reduce_mut(|store| {
+                        store.system.sse_status = SseStatus {
+                            state: SseConnectionState::Disconnected,
+                            backoff_ms: None,
+                            next_retry_at_ms: None,
+                            last_event_id: store.system.sse_status.last_event_id,
+                            last_error: Some(SseError {
+                                message: "SSE unavailable".to_string(),
+                                status_code: None,
+                            }),
+                            auth_mode: auth_mode.clone(),
+                        };
+                    });
+                }
+            } else {
+                dispatch.reduce_mut(|store| {
+                    store.system.sse_status = SseStatus {
+                        state: SseConnectionState::Disconnected,
+                        backoff_ms: None,
+                        next_retry_at_ms: None,
+                        last_event_id: store.system.sse_status.last_event_id,
+                        last_error: Some(SseError {
+                            message: "awaiting authentication".to_string(),
+                            status_code: None,
+                        }),
+                        auth_mode: None,
+                    };
+                });
+            }
+            cleanup
+        },
+    );
+}
+
+#[hook]
+fn use_app_token_refresh(
+    token_refresh_timer: Rc<RefCell<Option<Timeout>>>,
+    auth_state: Rc<Option<AuthState>>,
+    token_refresh_tick: UseStateHandle<u32>,
+    api_ctx: ApiCtx,
+    dispatch: Dispatch<AppStore>,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+) {
+    let token_refresh_tick_value = *token_refresh_tick;
+    use_effect_with(
+        (auth_state.clone(), token_refresh_tick_value),
+        move |deps| {
+            let (auth_state, _tick) = deps;
+            let cleanup = || ();
+            token_refresh_timer.borrow_mut().take();
+            let Some(AuthState::ApiKey(api_key)) = auth_state.as_ref().clone() else {
+                return cleanup;
+            };
+            let now_ms = Date::now() as i64;
+            let delay_ms = if let Some(expires_at_ms) = load_api_key_expires_at_ms() {
+                if expires_at_ms <= now_ms {
+                    0
+                } else {
+                    let refresh_at_ms = expires_at_ms.saturating_sub(TOKEN_REFRESH_SKEW_MS);
+                    refresh_at_ms.saturating_sub(now_ms).max(0)
+                }
+            } else {
+                0
+            };
+            let delay_ms_u32 = u32::try_from(delay_ms).unwrap_or(u32::MAX);
+            let token_refresh_timer_handle = token_refresh_timer.clone();
+            let dispatch = dispatch.clone();
+            let client = api_ctx.client.clone();
+            let toast_id = toast_id.clone();
+            let token_refresh_tick = token_refresh_tick.clone();
+            let handle = Timeout::new(delay_ms_u32, move || {
+                token_refresh_timer_handle.borrow_mut().take();
+                let dispatch = dispatch.clone();
+                let toast_id = toast_id.clone();
+                let client = client.clone();
+                let bundle = bundle.clone();
+                let token_refresh_tick = token_refresh_tick.clone();
+                let api_key = api_key.clone();
+                yew::platform::spawn_local(async move {
+                    let state = dispatch.get();
+                    if !matches!(state.auth.state, Some(AuthState::ApiKey(_))) {
+                        return;
+                    }
+                    match client.refresh_api_key().await {
+                        Ok(response) => {
+                            persist_api_key_with_expiry(&api_key, &response.api_key_expires_at);
+                            token_refresh_tick.set(*token_refresh_tick + 1);
+                        }
+                        Err(err) => {
+                            let detail = detail_or_fallback(
+                                err.detail.clone(),
+                                bundle.text("toast.api_key_refresh_failed"),
+                            );
+                            push_toast(&dispatch, &toast_id, ToastKind::Error, detail);
+                        }
+                    }
+                });
+            });
+            *token_refresh_timer.borrow_mut() = Some(handle);
+            cleanup
+        },
+    );
+}
+
+fn build_app_on_navigate_callback(navigator: Option<Navigator>) -> Callback<Route> {
+    Callback::from(move |route: Route| {
+        if let Some(navigator) = navigator.clone() {
+            navigator.push(&route);
+        }
+    })
+}
+
+fn build_app_on_manage_labels_callback(
+    navigator: Option<Navigator>,
+    requested_settings_tab: UseStateHandle<Option<SettingsTab>>,
+) -> Callback<()> {
+    Callback::from(move |_| {
+        requested_settings_tab.set(Some(SettingsTab::Labels));
+        if let Some(navigator) = navigator.clone() {
+            navigator.push(&Route::Settings);
+        }
+    })
+}
+
+fn build_app_request_setup_token_callback(
+    dispatch: Dispatch<AppStore>,
+    api_ctx: ApiCtx,
+    toast_id: UseStateHandle<u64>,
+) -> Callback<()> {
+    Callback::from(move |_| {
+        dispatch.reduce_mut(|store| {
+            store.auth.setup_busy = true;
+        });
+        let dispatch = dispatch.clone();
+        let client = api_ctx.client.clone();
+        let toast_id = toast_id.clone();
+        yew::platform::spawn_local(async move {
+            match client.setup_start().await {
+                Ok(response) => {
+                    dispatch.reduce_mut(|store| {
+                        store.auth.setup_token = Some(response.token);
+                        store.auth.setup_expires_at = Some(response.expires_at);
+                        store.auth.setup_error = None;
+                    });
+                }
+                Err(err) => {
+                    if err.status == 409 {
+                        dispatch.reduce_mut(|store| {
+                            store.auth.app_mode = AppModeState::Active;
+                            store.auth.setup_error = None;
+                        });
+                    } else {
+                        let message = detail_or_fallback(
+                            err.detail.clone(),
+                            "Setup token request failed.".to_string(),
+                        );
+                        dispatch.reduce_mut(|store| {
+                            store.auth.setup_error = Some(message.clone());
+                        });
+                        push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                    }
+                }
+            }
+            dispatch.reduce_mut(|store| {
+                store.auth.setup_busy = false;
+            });
+        });
+    })
+}
+
+fn build_app_complete_setup_callback(
+    dispatch: Dispatch<AppStore>,
+    api_ctx: ApiCtx,
+    toast_id: UseStateHandle<u64>,
+    force_auth_prompt: UseStateHandle<bool>,
+    app_auth_mode: UseStateHandle<Option<AppAuthMode>>,
+) -> Callback<SetupCompleteInput> {
+    Callback::from(move |input: SetupCompleteInput| {
+        dispatch.reduce_mut(|store| {
+            store.auth.setup_busy = true;
+        });
+        let dispatch = dispatch.clone();
+        let client = api_ctx.client.clone();
+        let toast_id = toast_id.clone();
+        let force_auth_prompt = force_auth_prompt.clone();
+        let app_auth_mode = app_auth_mode.clone();
+        yew::platform::spawn_local(async move {
+            let auth_mode = input.auth_mode;
+            let mut changeset = serde_json::Value::Object(serde_json::Map::new());
+            if auth_mode == SetupAuthMode::NoAuth {
+                let snapshot = match client.fetch_well_known_snapshot().await {
+                    Ok(value) => value,
+                    Err(err) => {
+                        let message = detail_or_fallback(
+                            err.detail.clone(),
+                            "Setup snapshot request failed.".to_string(),
+                        );
+                        dispatch.reduce_mut(|store| {
+                            store.auth.setup_error = Some(message.clone());
+                            store.auth.setup_busy = false;
+                        });
+                        push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                        return;
+                    }
+                };
+                let mut app_profile = match snapshot.get("app_profile") {
+                    Some(value) => value.clone(),
+                    None => {
+                        let message = "Setup snapshot missing app profile.".to_string();
+                        dispatch.reduce_mut(|store| {
+                            store.auth.setup_error = Some(message.clone());
+                            store.auth.setup_busy = false;
+                        });
+                        push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                        return;
+                    }
+                };
+                let Some(map) = app_profile.as_object_mut() else {
+                    let message = "Setup snapshot app profile is invalid.".to_string();
+                    dispatch.reduce_mut(|store| {
+                        store.auth.setup_error = Some(message.clone());
+                        store.auth.setup_busy = false;
+                    });
+                    push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                    return;
+                };
+                map.insert(
+                    "auth_mode".to_string(),
+                    serde_json::Value::String("none".into()),
+                );
+                changeset = serde_json::json!({ "app_profile": app_profile });
+            }
+            match client.setup_complete(&input.token, changeset).await {
+                Ok(response) => {
+                    let snapshot_auth_mode = response.snapshot.app_profile.auth_mode;
+                    app_auth_mode.set(Some(snapshot_auth_mode));
+                    let use_anonymous = matches!(snapshot_auth_mode, AppAuthMode::NoAuth)
+                        || auth_mode == SetupAuthMode::NoAuth;
+                    if use_anonymous {
+                        let state = AuthState::Anonymous;
+                        persist_auth_state(&state);
+                        dispatch.reduce_mut(|store| {
+                            store.auth.mode = AuthMode::ApiKey;
+                            store.auth.state = Some(state);
+                            store.auth.setup_error = None;
+                            store.auth.setup_token = None;
+                            store.auth.setup_expires_at = None;
+                            store.auth.app_mode = AppModeState::Active;
+                        });
+                        force_auth_prompt.set(false);
+                    } else {
+                        let Some(api_key) = response.api_key.clone() else {
+                            let message = "Setup completion missing API key.".to_string();
+                            dispatch.reduce_mut(|store| {
+                                store.auth.setup_error = Some(message.clone());
+                                store.auth.setup_busy = false;
+                            });
+                            push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                            return;
+                        };
+                        let Some(expires_at) = response.api_key_expires_at.clone() else {
+                            let message = "Setup completion missing API key expiry.".to_string();
+                            dispatch.reduce_mut(|store| {
+                                store.auth.setup_error = Some(message.clone());
+                                store.auth.setup_busy = false;
+                            });
+                            push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                            return;
+                        };
+                        persist_api_key_with_expiry(&api_key, &expires_at);
+                        dispatch.reduce_mut(|store| {
+                            store.auth.mode = AuthMode::ApiKey;
+                            store.auth.state = Some(AuthState::ApiKey(api_key));
+                            store.auth.setup_error = None;
+                            store.auth.setup_token = None;
+                            store.auth.setup_expires_at = None;
+                            store.auth.app_mode = AppModeState::Active;
+                        });
+                        force_auth_prompt.set(true);
+                    }
+                }
+                Err(err) => {
+                    let message = detail_or_fallback(
+                        err.detail.clone(),
+                        "Setup completion failed.".to_string(),
+                    );
+                    dispatch.reduce_mut(|store| {
+                        store.auth.setup_error = Some(message.clone());
+                    });
+                    push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                }
+            }
+            dispatch.reduce_mut(|store| {
+                store.auth.setup_busy = false;
+            });
+        });
+    })
+}
+
+fn build_app_schedule_refresh_callback(
+    refresh_timer: Rc<RefCell<Option<Timeout>>>,
+    dispatch: Dispatch<AppStore>,
+    api_ctx: ApiCtx,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+) -> Callback<()> {
+    Callback::from(move |_| {
+        if refresh_timer.borrow().is_some() {
+            return;
+        }
+        let refresh_timer_handle = refresh_timer.clone();
+        let dispatch = dispatch.clone();
+        let client = api_ctx.client.clone();
+        let toast_id = toast_id.clone();
+        let bundle = bundle.clone();
+        let handle = Timeout::new(1200, move || {
+            refresh_timer_handle.borrow_mut().take();
+            let state = dispatch.get();
+            let auth_state = state.auth.state.clone();
+            let filters = state.torrents.filters.clone();
+            let paging = refresh_paging(&state.torrents.paging);
+            if auth_state.is_none() {
+                dispatch.reduce_mut(|store| {
+                    set_rows(&mut store.torrents, demo_rows());
+                    store.torrents.paging.next_cursor = None;
+                });
+                return;
+            }
+            yew::platform::spawn_local(async move {
+                fetch_torrent_list_with_retry(
+                    client,
+                    dispatch.clone(),
+                    toast_id,
+                    bundle,
+                    filters,
+                    paging,
+                )
+                .await;
+            });
+        });
+        *refresh_timer.borrow_mut() = Some(handle);
+    })
+}
+
+fn build_app_schedule_detail_refresh_callback(
+    detail_refresh_timer: Rc<RefCell<Option<Timeout>>>,
+    detail_refresh_pending: Rc<RefCell<HashSet<Uuid>>>,
+    dispatch: Dispatch<AppStore>,
+    api_ctx: ApiCtx,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+) -> Callback<Uuid> {
+    Callback::from(move |id: Uuid| {
+        {
+            let mut pending = detail_refresh_pending.borrow_mut();
+            if !pending.insert(id) {
+                return;
+            }
+        }
+        if detail_refresh_timer.borrow().is_some() {
+            return;
+        }
+        let detail_refresh_timer_handle = detail_refresh_timer.clone();
+        let detail_refresh_pending = detail_refresh_pending.clone();
+        let dispatch = dispatch.clone();
+        let client = api_ctx.client.clone();
+        let toast_id = toast_id.clone();
+        let bundle = bundle.clone();
+        let handle = Timeout::new(300, move || {
+            detail_refresh_timer_handle.borrow_mut().take();
+            let ids = {
+                let mut pending = detail_refresh_pending.borrow_mut();
+                let ids = pending.iter().copied().collect::<Vec<_>>();
+                pending.clear();
+                ids
+            };
+            if ids.is_empty() {
+                return;
+            }
+            let auth_state = dispatch.get().auth.state.clone();
+            if auth_state.is_none() {
+                return;
+            }
+            yew::platform::spawn_local(async move {
+                for id in ids {
+                    if let Some(detail) = fetch_torrent_detail_with_retry(
+                        client.clone(),
+                        dispatch.clone(),
+                        toast_id.clone(),
+                        bundle.clone(),
+                        id,
+                    )
+                    .await
+                    {
+                        dispatch.reduce_mut(|store| {
+                            upsert_detail(&mut store.torrents, id, detail);
+                        });
+                    }
+                }
+            });
+        });
+        *detail_refresh_timer.borrow_mut() = Some(handle);
+    })
+}
+
+fn build_app_toggle_theme_callback(dispatch: Dispatch<AppStore>) -> Callback<()> {
+    Callback::from(move |_| {
+        dispatch.reduce_mut(|store| {
+            store.ui.theme = if store.ui.theme == ThemeMode::Light {
+                ThemeMode::Dark
+            } else {
+                ThemeMode::Light
+            };
+        });
+    })
+}
+
+fn build_app_set_state_filter_callback(dispatch: Dispatch<AppStore>) -> Callback<String> {
+    Callback::from(move |value: String| {
+        dispatch.reduce_mut(|store| {
+            let trimmed = value.trim();
+            store.torrents.filters.state = if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            };
+            store.torrents.paging.cursor = None;
+            store.torrents.paging.next_cursor = None;
+        });
+    })
+}
+
+fn build_app_set_tracker_filter_callback(dispatch: Dispatch<AppStore>) -> Callback<String> {
+    Callback::from(move |value: String| {
+        dispatch.reduce_mut(|store| {
+            let trimmed = value.trim();
+            store.torrents.filters.tracker = if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            };
+            store.torrents.paging.cursor = None;
+            store.torrents.paging.next_cursor = None;
+        });
+    })
+}
+
+fn build_app_set_extension_filter_callback(dispatch: Dispatch<AppStore>) -> Callback<String> {
+    Callback::from(move |value: String| {
+        dispatch.reduce_mut(|store| {
+            let normalized = value.trim().trim_start_matches('.');
+            store.torrents.filters.extension = if normalized.is_empty() {
+                None
+            } else {
+                Some(normalized.to_string())
+            };
+            store.torrents.paging.cursor = None;
+            store.torrents.paging.next_cursor = None;
+        });
+    })
+}
+
+fn build_app_on_load_more_callback(
+    dispatch: Dispatch<AppStore>,
+    api_ctx: ApiCtx,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+) -> Callback<()> {
+    Callback::from(move |_| {
+        let state = dispatch.get();
+        if state.torrents.paging.is_loading || state.auth.state.is_none() {
+            return;
+        }
+        let Some(cursor) = state.torrents.paging.next_cursor.clone() else {
+            return;
+        };
+        let filters = state.torrents.filters.clone();
+        let paging = TorrentsPaging {
+            cursor: Some(cursor),
+            next_cursor: None,
+            limit: state.torrents.paging.limit,
+            is_loading: false,
+        };
+        dispatch.reduce_mut(|store| {
+            store.torrents.paging.is_loading = true;
+        });
+        let dispatch = dispatch.clone();
+        let client = api_ctx.client.clone();
+        let toast_id = toast_id.clone();
+        let bundle = bundle.clone();
+        yew::platform::spawn_local(async move {
+            fetch_torrent_list_with_retry(
+                client,
+                dispatch.clone(),
+                toast_id,
+                bundle,
+                filters,
+                paging,
+            )
+            .await;
+            dispatch.reduce_mut(|store| {
+                store.torrents.paging.is_loading = false;
+            });
+        });
+    })
+}
+
+fn build_app_on_save_auth_callback(
+    dispatch: Dispatch<AppStore>,
+    api_ctx: ApiCtx,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+    force_auth_prompt: UseStateHandle<bool>,
+) -> Callback<AuthState> {
+    Callback::from(move |state: AuthState| {
+        force_auth_prompt.set(false);
+        let dispatch = dispatch.clone();
+        let client = api_ctx.client.clone();
+        let toast_id = toast_id.clone();
+        let bundle = bundle.clone();
+        yew::platform::spawn_local(async move {
+            match state {
+                AuthState::ApiKey(api_key) => {
+                    let auth_state = AuthState::ApiKey(api_key.clone());
+                    client.set_auth(Some(auth_state.clone()));
+                    match client.refresh_api_key().await {
+                        Ok(response) => {
+                            persist_api_key_with_expiry(&api_key, &response.api_key_expires_at);
+                            dispatch.reduce_mut(|store| {
+                                store.auth.mode = AuthMode::ApiKey;
+                                store.auth.state = Some(auth_state);
+                            });
+                        }
+                        Err(err) => {
+                            let detail = detail_or_fallback(
+                                err.detail.clone(),
+                                bundle.text("toast.api_key_refresh_failed"),
+                            );
+                            client.set_auth(None);
+                            clear_auth_storage();
+                            dispatch.reduce_mut(|store| {
+                                store.auth.state = None;
+                            });
+                            push_toast(&dispatch, &toast_id, ToastKind::Error, detail);
+                        }
+                    }
+                }
+                AuthState::Local(auth) => {
+                    let auth_state = AuthState::Local(auth);
+                    persist_auth_state(&auth_state);
+                    dispatch.reduce_mut(|store| {
+                        store.auth.mode = AuthMode::Local;
+                        store.auth.state = Some(auth_state);
+                    });
+                }
+                AuthState::Anonymous => {
+                    let auth_state = AuthState::Anonymous;
+                    persist_auth_state(&auth_state);
+                    dispatch.reduce_mut(|store| {
+                        store.auth.mode = AuthMode::ApiKey;
+                        store.auth.state = Some(auth_state);
+                    });
+                }
+            }
+        });
+    })
+}
+
+fn build_app_on_test_connection_callback(
+    api_ctx: ApiCtx,
+    dispatch: Dispatch<AppStore>,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+    test_busy: UseStateHandle<bool>,
+) -> Callback<()> {
+    Callback::from(move |_| {
+        if *test_busy {
+            return;
+        }
+        test_busy.set(true);
+        let client = api_ctx.client.clone();
+        let dispatch = dispatch.clone();
+        let toast_id = toast_id.clone();
+        let bundle = bundle.clone();
+        let test_busy = test_busy.clone();
+        yew::platform::spawn_local(async move {
+            match client.fetch_health().await {
+                Ok(health) => {
+                    dispatch.reduce_mut(|store| {
+                        store.health.basic = Some(HealthSnapshot {
+                            status: health.status.clone(),
+                            mode: health.mode.clone(),
+                            database_status: Some(health.database.status),
+                            database_revision: health.database.revision,
+                        });
+                    });
+                    push_toast(
+                        &dispatch,
+                        &toast_id,
+                        ToastKind::Success,
+                        bundle.text("settings.test_success"),
+                    );
+                }
+                Err(err) => {
+                    let message =
+                        detail_or_fallback(err.detail.clone(), bundle.text("settings.test_failed"));
+                    push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                }
+            }
+            test_busy.set(false);
+        });
+    })
+}
+
+fn build_app_on_refresh_config_callback(
+    api_ctx: ApiCtx,
+    dispatch: Dispatch<AppStore>,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+    config_snapshot: UseStateHandle<Option<Value>>,
+    config_error: UseStateHandle<Option<String>>,
+    config_busy: UseStateHandle<bool>,
+) -> Callback<()> {
+    Callback::from(move |_| {
+        if *config_busy {
+            return;
+        }
+        config_busy.set(true);
+        config_error.set(None);
+        let client = api_ctx.client.clone();
+        let dispatch = dispatch.clone();
+        let toast_id = toast_id.clone();
+        let bundle = bundle.clone();
+        let config_snapshot = config_snapshot.clone();
+        let config_error = config_error.clone();
+        let config_busy = config_busy.clone();
+        yew::platform::spawn_local(async move {
+            match client.fetch_config_snapshot().await {
+                Ok(snapshot) => {
+                    config_snapshot.set(Some(snapshot));
+                    config_error.set(None);
+                }
+                Err(err) => {
+                    let message = detail_or_fallback(
+                        err.detail.clone(),
+                        bundle.text("settings.config_failed"),
+                    );
+                    config_error.set(Some(message.clone()));
+                    push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                }
+            }
+            config_busy.set(false);
+        });
+    })
+}
+
+fn build_app_on_apply_settings_callback(
+    api_ctx: ApiCtx,
+    dispatch: Dispatch<AppStore>,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+    config_snapshot: UseStateHandle<Option<Value>>,
+    config_error: UseStateHandle<Option<String>>,
+    config_save_busy: UseStateHandle<bool>,
+) -> Callback<Value> {
+    Callback::from(move |changeset: Value| {
+        if *config_save_busy {
+            return;
+        }
+        if changeset
+            .as_object()
+            .map(|map| map.is_empty())
+            .unwrap_or(true)
+        {
+            return;
+        }
+        config_save_busy.set(true);
+        config_error.set(None);
+        let client = api_ctx.client.clone();
+        let dispatch = dispatch.clone();
+        let toast_id = toast_id.clone();
+        let bundle = bundle.clone();
+        let config_snapshot = config_snapshot.clone();
+        let config_error = config_error.clone();
+        let config_save_busy = config_save_busy.clone();
+        yew::platform::spawn_local(async move {
+            match client.patch_settings(changeset).await {
+                Ok(snapshot) => {
+                    config_snapshot.set(Some(snapshot));
+                    config_error.set(None);
+                    push_toast(
+                        &dispatch,
+                        &toast_id,
+                        ToastKind::Success,
+                        bundle.text("settings.saved"),
+                    );
+                }
+                Err(err) => {
+                    let detail =
+                        detail_or_fallback(err.detail.clone(), bundle.text("settings.save_failed"));
+                    config_error.set(Some(detail.clone()));
+                    push_toast(&dispatch, &toast_id, ToastKind::Error, detail);
+                }
+            }
+            config_save_busy.set(false);
+        });
+    })
+}
+
+fn build_app_on_server_logs_callback(navigator: Option<Navigator>) -> Callback<()> {
+    Callback::from(move |_| {
+        if let Some(navigator) = navigator.clone() {
+            navigator.push(&Route::Logs);
+        }
+    })
+}
+
+fn build_app_on_logs_error_callback(
+    dispatch: Dispatch<AppStore>,
+    toast_id: UseStateHandle<u64>,
+) -> Callback<String> {
+    Callback::from(move |message: String| {
+        if message.trim().is_empty() {
+            return;
+        }
+        push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+    })
+}
+
+fn build_app_on_factory_reset_close_callback(
+    factory_reset_open: UseStateHandle<bool>,
+    factory_reset_busy: UseStateHandle<bool>,
+) -> Callback<()> {
+    Callback::from(move |_| {
+        if *factory_reset_busy {
+            return;
+        }
+        factory_reset_open.set(false);
+    })
+}
+
+fn build_app_on_factory_reset_confirm_callback(
+    api_ctx: ApiCtx,
+    dispatch: Dispatch<AppStore>,
+    toast_id: UseStateHandle<u64>,
+    factory_reset_busy: UseStateHandle<bool>,
+    factory_reset_open: UseStateHandle<bool>,
+) -> Callback<String> {
+    Callback::from(move |confirm: String| {
+        if *factory_reset_busy {
+            return;
+        }
+        factory_reset_busy.set(true);
+        let client = api_ctx.client.clone();
+        let dispatch = dispatch.clone();
+        let toast_id = toast_id.clone();
+        let factory_reset_busy = factory_reset_busy.clone();
+        let factory_reset_open = factory_reset_open.clone();
+        yew::platform::spawn_local(async move {
+            match client.factory_reset(&confirm).await {
+                Ok(()) => {
+                    clear_auth_storage();
+                    dispatch.reduce_mut(|store| {
+                        store.auth.app_mode = AppModeState::Setup;
+                        store.auth.state = None;
+                        store.auth.setup_token = None;
+                        store.auth.setup_expires_at = None;
+                        store.auth.setup_error = None;
+                    });
+                    factory_reset_busy.set(false);
+                    factory_reset_open.set(false);
+                    if window().location().reload().is_err() {
+                        push_toast(
+                            &dispatch,
+                            &toast_id,
+                            ToastKind::Error,
+                            "Factory reset completed but reload failed.".to_string(),
+                        );
+                    }
+                }
+                Err(err) => {
+                    let detail =
+                        detail_or_fallback(err.detail.clone(), "Factory reset failed.".to_string());
+                    push_toast(&dispatch, &toast_id, ToastKind::Error, detail);
+                    factory_reset_busy.set(false);
+                    factory_reset_open.set(true);
+                }
+            }
+        });
+    })
+}
+
+fn build_app_on_logout_callback(
+    dispatch: Dispatch<AppStore>,
+    auth_prompt_dismissed: UseStateHandle<bool>,
+    api_ctx: ApiCtx,
+    auth_state: Rc<Option<AuthState>>,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+) -> Callback<()> {
+    Callback::from(move |_| {
+        let dispatch = dispatch.clone();
+        let auth_prompt_dismissed = auth_prompt_dismissed.clone();
+        let client = api_ctx.client.clone();
+        let auth_state = (*auth_state).clone();
+        let toast_id = toast_id.clone();
+        let bundle = bundle.clone();
+        yew::platform::spawn_local(async move {
+            let mut should_clear = true;
+            if let Some(AuthState::ApiKey(api_key)) = auth_state {
+                if let Some((key_id, _)) = api_key.split_once(':') {
+                    let changeset = json!({
+                        "api_keys": [{
+                            "op": "delete",
+                            "key_id": key_id,
+                        }],
+                    });
+                    match client.patch_settings(changeset).await {
+                        Ok(_) => {}
+                        Err(err) => {
+                            let detail = detail_or_fallback(
+                                err.detail.clone(),
+                                bundle.text("toast.logout_failed"),
+                            );
+                            push_toast(&dispatch, &toast_id, ToastKind::Error, detail);
+                            should_clear = false;
+                        }
+                    }
+                } else {
+                    push_toast(
+                        &dispatch,
+                        &toast_id,
+                        ToastKind::Error,
+                        bundle.text("toast.logout_failed"),
+                    );
+                    should_clear = false;
+                }
+            }
+            if should_clear {
+                clear_auth_storage();
+                auth_prompt_dismissed.set(false);
+                dispatch.reduce_mut(|store| {
+                    store.auth.state = None;
+                });
+            }
+        });
+    })
+}
+
+fn build_app_on_copy_payload_callback(
+    dispatch: Dispatch<AppStore>,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+) -> Callback<(CopyKind, String)> {
+    Callback::from(move |(kind, value): (CopyKind, String)| {
+        let dispatch = dispatch.clone();
+        let toast_id = toast_id.clone();
+        let bundle = bundle.clone();
+        yew::platform::spawn_local(async move {
+            match copy_text_to_clipboard(value).await {
+                Ok(()) => {
+                    let message = match kind {
+                        CopyKind::Magnet => bundle.text("toast.magnet_copied"),
+                        CopyKind::Metainfo => bundle.text("toast.metainfo_copied"),
+                    };
+                    push_toast(&dispatch, &toast_id, ToastKind::Success, message);
+                }
+                Err(err) => {
+                    push_toast(&dispatch, &toast_id, ToastKind::Error, err);
+                }
+            }
+        });
+    })
+}
+
+fn build_app_on_copy_value_callback(
+    dispatch: Dispatch<AppStore>,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+) -> Callback<String> {
+    Callback::from(move |value: String| {
+        let dispatch = dispatch.clone();
+        let toast_id = toast_id.clone();
+        let bundle = bundle.clone();
+        yew::platform::spawn_local(async move {
+            match copy_text_to_clipboard(value).await {
+                Ok(()) => push_toast(
+                    &dispatch,
+                    &toast_id,
+                    ToastKind::Success,
+                    bundle.text("toast.copied"),
+                ),
+                Err(err) => {
+                    push_toast(&dispatch, &toast_id, ToastKind::Error, err);
+                }
+            }
+        });
+    })
+}
+
+fn build_app_on_add_torrent_callback(
+    dispatch: Dispatch<AppStore>,
+    api_ctx: ApiCtx,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+) -> Callback<AddTorrentInput> {
+    Callback::from(move |input: AddTorrentInput| {
+        let client = api_ctx.client.clone();
+        let dispatch = dispatch.clone();
+        let toast_id = toast_id.clone();
+        let bundle = bundle.clone();
+        dispatch.reduce_mut(|store| {
+            store.ui.busy.add_torrent = true;
+        });
+        yew::platform::spawn_local(async move {
+            match client.add_torrent(input).await {
+                Ok(_id) => {
+                    push_toast(
+                        &dispatch,
+                        &toast_id,
+                        ToastKind::Success,
+                        bundle.text("toast.add_success"),
+                    );
+                    let (filters, paging) = {
+                        let state = dispatch.get();
+                        (
+                            state.torrents.filters.clone(),
+                            refresh_paging(&state.torrents.paging),
+                        )
+                    };
+                    fetch_torrent_list_with_retry(
+                        client,
+                        dispatch.clone(),
+                        toast_id.clone(),
+                        bundle.clone(),
+                        filters,
+                        paging,
+                    )
+                    .await;
+                }
+                Err(err) => {
+                    let message =
+                        detail_or_fallback(err.detail.clone(), bundle.text("toast.add_failed"));
+                    push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                }
+            }
+            dispatch.reduce_mut(|store| {
+                store.ui.busy.add_torrent = false;
+            });
+        });
+    })
+}
+
+fn build_app_on_create_torrent_callback(
+    dispatch: Dispatch<AppStore>,
+    api_ctx: ApiCtx,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+) -> Callback<TorrentAuthorRequest> {
+    Callback::from(move |request: TorrentAuthorRequest| {
+        let client = api_ctx.client.clone();
+        let dispatch = dispatch.clone();
+        let toast_id = toast_id.clone();
+        let bundle = bundle.clone();
+        dispatch.reduce_mut(|store| {
+            store.ui.busy.create_torrent = true;
+            store.torrents.create_error = None;
+            store.torrents.create_result = None;
+        });
+        yew::platform::spawn_local(async move {
+            match client.create_torrent(&request).await {
+                Ok(response) => {
+                    dispatch.reduce_mut(|store| {
+                        store.torrents.create_result = Some(response);
+                    });
+                    push_toast(
+                        &dispatch,
+                        &toast_id,
+                        ToastKind::Success,
+                        bundle.text("toast.create_success"),
+                    );
+                }
+                Err(err) => {
+                    let message =
+                        detail_or_fallback(err.detail.clone(), bundle.text("toast.create_failed"));
+                    dispatch.reduce_mut(|store| {
+                        store.torrents.create_error = Some(message.clone());
+                    });
+                    push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                }
+            }
+            dispatch.reduce_mut(|store| {
+                store.ui.busy.create_torrent = false;
+            });
+        });
+    })
+}
+
+fn build_app_on_action_callback(
+    dispatch: Dispatch<AppStore>,
+    api_ctx: ApiCtx,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+) -> Callback<(TorrentAction, Uuid)> {
+    Callback::from(move |(action, id): (TorrentAction, Uuid)| {
+        let client = api_ctx.client.clone();
+        let dispatch = dispatch.clone();
+        let toast_id = toast_id.clone();
+        let bundle = bundle.clone();
+        yew::platform::spawn_local(async move {
+            let id_str = id.to_string();
+            let display_name = dispatch
+                .get()
+                .torrents
+                .by_id
+                .get(&id)
+                .map(|row| row.name.clone())
+                .unwrap_or_else(|| format!("{} {id}", bundle.text("toast.torrent_placeholder")));
+            match client.perform_action(&id_str, action.clone()).await {
+                Ok(_) => {
+                    if matches!(action, TorrentAction::Delete { .. }) {
+                        dispatch.reduce_mut(|store| {
+                            remove_row(&mut store.torrents, id);
+                        });
+                    }
+                    push_toast(
+                        &dispatch,
+                        &toast_id,
+                        ToastKind::Success,
+                        success_message(&bundle, &action, &display_name),
+                    );
+                }
+                Err(err) => push_toast(
+                    &dispatch,
+                    &toast_id,
+                    ToastKind::Error,
+                    format!(
+                        "{} {display_name}: {err}",
+                        bundle.text("toast.action_failed")
+                    ),
+                ),
+            }
+        });
+    })
+}
+
+fn build_app_on_update_selection_callback(
+    dispatch: Dispatch<AppStore>,
+    api_ctx: ApiCtx,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+) -> Callback<(Uuid, FileSelectionChange)> {
+    Callback::from(move |(id, change): (Uuid, FileSelectionChange)| {
+        let client = api_ctx.client.clone();
+        let dispatch = dispatch.clone();
+        let toast_id = toast_id.clone();
+        let bundle = bundle.clone();
+        let request = match change {
+            FileSelectionChange::Toggle {
+                index,
+                path,
+                selected,
+            } => {
+                dispatch.reduce_mut(|store| {
+                    update_detail_file_selection(&mut store.torrents, id, index, selected);
+                });
+                TorrentSelectionRequest {
+                    include: if selected {
+                        vec![path.clone()]
+                    } else {
+                        Vec::new()
+                    },
+                    exclude: if selected {
+                        Vec::new()
+                    } else {
+                        vec![path.clone()]
+                    },
+                    skip_fluff: None,
+                    priorities: Vec::new(),
+                }
+            }
+            FileSelectionChange::Priority { index, priority } => {
+                dispatch.reduce_mut(|store| {
+                    update_detail_file_priority(&mut store.torrents, id, index, priority);
+                });
+                TorrentSelectionRequest {
+                    include: Vec::new(),
+                    exclude: Vec::new(),
+                    skip_fluff: None,
+                    priorities: vec![FilePriorityOverride { index, priority }],
+                }
+            }
+            FileSelectionChange::SkipFluff { enabled } => {
+                dispatch.reduce_mut(|store| {
+                    update_detail_skip_fluff(&mut store.torrents, id, enabled);
+                });
+                TorrentSelectionRequest {
+                    include: Vec::new(),
+                    exclude: Vec::new(),
+                    skip_fluff: Some(enabled),
+                    priorities: Vec::new(),
+                }
+            }
+        };
+        yew::platform::spawn_local(async move {
+            if let Err(err) = client
+                .update_torrent_selection(&id.to_string(), &request)
+                .await
+            {
+                let message = detail_or_fallback(
+                    err.detail.clone(),
+                    bundle.text("toast.file_selection_failed"),
+                );
+                push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                if let Some(detail) =
+                    fetch_torrent_detail_with_retry(client, dispatch.clone(), toast_id, bundle, id)
+                        .await
+                {
+                    dispatch.reduce_mut(|store| {
+                        upsert_detail(&mut store.torrents, id, detail);
+                    });
+                }
+            }
+        });
+    })
+}
+
+fn build_app_on_update_options_callback(
+    dispatch: Dispatch<AppStore>,
+    api_ctx: ApiCtx,
+    toast_id: UseStateHandle<u64>,
+    bundle: TranslationBundle,
+) -> Callback<(Uuid, TorrentOptionsRequest)> {
+    Callback::from(move |(id, request): (Uuid, TorrentOptionsRequest)| {
+        let client = api_ctx.client.clone();
+        let dispatch = dispatch.clone();
+        let toast_id = toast_id.clone();
+        let bundle = bundle.clone();
+        dispatch.reduce_mut(|store| {
+            update_detail_options(&mut store.torrents, id, &request);
+        });
+        yew::platform::spawn_local(async move {
+            if let Err(err) = client
+                .update_torrent_options(&id.to_string(), &request)
+                .await
+            {
+                let message =
+                    detail_or_fallback(err.detail.clone(), bundle.text("toast.options_failed"));
+                push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                if let Some(detail) =
+                    fetch_torrent_detail_with_retry(client, dispatch.clone(), toast_id, bundle, id)
+                        .await
+                {
+                    dispatch.reduce_mut(|store| {
+                        upsert_detail(&mut store.torrents, id, detail);
+                    });
+                }
+            }
+        });
+    })
 }
 
 fn text_or(bundle: &TranslationBundle, key: &str, fallback: &str) -> String {
