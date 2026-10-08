@@ -763,6 +763,362 @@ std::string find_torrent_id(const std::unordered_map<std::string, lt::torrent_ha
     return {};
 }
 
+void configure_listen_settings(lt::settings_pack& pack, const EngineOptions& options) {
+    if (options.network.has_listen_interfaces &&
+        !options.network.listen_interfaces.empty()) {
+        std::string combined;
+        for (std::size_t i = 0; i < options.network.listen_interfaces.size(); ++i) {
+            if (i > 0) {
+                combined.push_back(',');
+            }
+            combined.append(to_std_string(options.network.listen_interfaces[i]));
+        }
+        pack.set_str(lt::settings_pack::listen_interfaces, combined);
+        pack.set_int(lt::settings_pack::max_retry_port_bind, 0);
+    } else if (options.network.set_listen_port && options.network.listen_port > 0) {
+        const auto port = std::to_string(options.network.listen_port);
+        if (options.network.ipv6_mode == 1) {
+            pack.set_str(lt::settings_pack::listen_interfaces,
+                         "0.0.0.0:" + port + ",[::]:" + port);
+        } else if (options.network.ipv6_mode == 2) {
+            pack.set_str(lt::settings_pack::listen_interfaces,
+                         "[::]:" + port + ",0.0.0.0:" + port);
+        } else {
+            pack.set_str(lt::settings_pack::listen_interfaces,
+                         "0.0.0.0:" + port);
+        }
+        pack.set_int(lt::settings_pack::max_retry_port_bind, 0);
+    } else if (options.tracker.has_listen_interface) {
+        pack.set_int(lt::settings_pack::max_retry_port_bind, 0);
+        pack.set_str(lt::settings_pack::listen_interfaces,
+                     to_std_string(options.tracker.listen_interface));
+    }
+}
+
+void configure_dht_settings(lt::settings_pack& pack, const EngineOptions& options) {
+    std::vector<std::string> dht_nodes;
+    dht_nodes.reserve(options.network.dht_bootstrap_nodes.size() +
+                      options.network.dht_router_nodes.size());
+    std::unordered_set<std::string> seen;
+    auto append_nodes = [&](const ::rust::Vec<::rust::String>& nodes) {
+        for (const auto& node : nodes) {
+            auto normalized = to_std_string(node);
+            if (normalized.empty()) {
+                continue;
+            }
+            std::string key = normalized;
+            std::transform(key.begin(), key.end(), key.begin(), [](unsigned char ch) {
+                return static_cast<char>(std::tolower(ch));
+            });
+            if (seen.insert(key).second) {
+                dht_nodes.push_back(std::move(normalized));
+            }
+        }
+    };
+    append_nodes(options.network.dht_bootstrap_nodes);
+    append_nodes(options.network.dht_router_nodes);
+
+    if (!dht_nodes.empty()) {
+        std::string combined = dht_nodes.front();
+        for (std::size_t i = 1; i < dht_nodes.size(); ++i) {
+            combined.append(",").append(dht_nodes[i]);
+        }
+        pack.set_str(lt::settings_pack::dht_bootstrap_nodes, combined);
+    } else {
+        pack.set_str(lt::settings_pack::dht_bootstrap_nodes, "");
+    }
+}
+
+void configure_limit_settings(lt::settings_pack& pack,
+                              const EngineOptions& options,
+                              TorrentDefaults& defaults) {
+    if (options.limits.max_active > 0) {
+        pack.set_int(lt::settings_pack::active_downloads, options.limits.max_active);
+        pack.set_int(lt::settings_pack::active_limit, options.limits.max_active);
+    }
+    if (options.limits.connections_limit >= 0) {
+        pack.set_int(lt::settings_pack::connections_limit,
+                     options.limits.connections_limit);
+    }
+    defaults.max_connections = options.limits.connections_limit_per_torrent;
+    if (options.limits.unchoke_slots >= 0) {
+        pack.set_int(lt::settings_pack::unchoke_slots_limit,
+                     options.limits.unchoke_slots);
+    }
+    if (options.limits.half_open_limit >= 0) {
+        set_int_setting(pack, "half_open_limit", options.limits.half_open_limit);
+    }
+
+    pack.set_int(lt::settings_pack::choking_algorithm,
+                 options.limits.choking_algorithm);
+    pack.set_int(lt::settings_pack::seed_choking_algorithm,
+                 options.limits.seed_choking_algorithm);
+    set_strict_super_seeding(pack, options.limits.strict_super_seeding);
+
+    if (options.limits.has_optimistic_unchoke_slots) {
+        pack.set_int(lt::settings_pack::num_optimistic_unchoke_slots,
+                     options.limits.optimistic_unchoke_slots);
+    }
+
+    if (options.limits.has_max_queued_disk_bytes) {
+        pack.set_int(lt::settings_pack::max_queued_disk_bytes,
+                     options.limits.max_queued_disk_bytes);
+    }
+}
+
+::rust::String configure_storage_settings(lt::settings_pack& pack,
+                                          const EngineOptions& options,
+                                          std::string& download_root,
+                                          std::string& default_resume_dir,
+                                          TorrentDefaults& defaults) {
+    if (!options.storage.download_root.empty()) {
+        download_root = to_std_string(options.storage.download_root);
+    }
+    if (!options.storage.resume_dir.empty()) {
+        const auto resume_dir = to_std_string(options.storage.resume_dir);
+        if (resume_dir != default_resume_dir) {
+            default_resume_dir = resume_dir;
+            std::error_code ec;
+            std::filesystem::create_directories(default_resume_dir, ec);
+        }
+    }
+    defaults.storage_mode = to_storage_mode(options.storage.storage_mode);
+    set_bool_setting(pack, "use_partfile", options.storage.use_partfile);
+    if (options.storage.has_disk_read_mode) {
+        set_int_setting(pack, "disk_io_read_mode", options.storage.disk_read_mode);
+    }
+    if (options.storage.has_disk_write_mode) {
+        set_int_setting(pack, "disk_io_write_mode", options.storage.disk_write_mode);
+    }
+    set_bool_setting(
+        pack, "disable_hash_checks", !options.storage.verify_piece_hashes);
+    if (options.storage.has_cache_size &&
+        !set_int_setting(pack, "cache_size", options.storage.cache_size)) {
+        return ::rust::String(unsupported_setting_message("cache_size"));
+    }
+    if (options.storage.has_cache_expiry &&
+        !set_int_setting(pack, "cache_expiry", options.storage.cache_expiry)) {
+        return ::rust::String(unsupported_setting_message("cache_expiry"));
+    }
+    set_bool_setting(pack, "coalesce_reads", options.storage.coalesce_reads);
+    set_bool_setting(pack, "coalesce_writes", options.storage.coalesce_writes);
+    set_bool_setting(pack, "use_disk_cache_pool", options.storage.use_disk_cache_pool);
+    return ::rust::String();
+}
+
+void configure_rate_settings(lt::settings_pack& pack, const EngineOptions& options) {
+    pack.set_int(
+        lt::settings_pack::download_rate_limit,
+        options.limits.download_rate_limit >= 0
+            ? static_cast<int>(options.limits.download_rate_limit)
+            : -1);
+    pack.set_int(lt::settings_pack::upload_rate_limit,
+                 options.limits.upload_rate_limit >= 0
+                     ? static_cast<int>(options.limits.upload_rate_limit)
+                     : -1);
+    if (options.limits.has_seed_ratio_limit) {
+        // libtorrent expects share ratio limit scaled by 1000.
+        const double scaled = std::clamp(
+            options.limits.seed_ratio_limit * 1000.0,
+            0.0,
+            static_cast<double>(std::numeric_limits<int>::max()));
+        pack.set_int(lt::settings_pack::share_ratio_limit,
+                     static_cast<int>(scaled));
+    } else {
+        pack.set_int(lt::settings_pack::share_ratio_limit, -1);
+    }
+    if (options.limits.has_seed_time_limit) {
+        const auto clamped = static_cast<int>(std::clamp(
+            options.limits.seed_time_limit,
+            static_cast<std::int64_t>(0),
+            static_cast<std::int64_t>(std::numeric_limits<int>::max())));
+        pack.set_int(lt::settings_pack::seed_time_limit, clamped);
+    } else {
+        pack.set_int(lt::settings_pack::seed_time_limit, -1);
+    }
+    if (options.limits.has_stats_interval) {
+        pack.set_int(lt::settings_pack::tick_interval,
+                     std::max(1, options.limits.stats_interval_ms));
+    }
+}
+
+void configure_tracker_settings(lt::settings_pack& pack, const EngineOptions& options) {
+    if (options.tracker.has_user_agent) {
+        pack.set_str(lt::settings_pack::user_agent,
+                     to_std_string(options.tracker.user_agent));
+    }
+    if (options.tracker.has_announce_ip) {
+        pack.set_str(lt::settings_pack::announce_ip,
+                     to_std_string(options.tracker.announce_ip));
+    }
+    if (options.tracker.has_listen_interface) {
+        pack.set_str(lt::settings_pack::listen_interfaces,
+                     to_std_string(options.tracker.listen_interface));
+    }
+    if (options.tracker.has_request_timeout) {
+        const auto seconds =
+            std::max<std::int64_t>(1, options.tracker.request_timeout_ms / 1000);
+        pack.set_int(lt::settings_pack::request_timeout,
+                     static_cast<int>(seconds));
+    }
+    if (options.tracker.has_ssl_cert) {
+        set_str_setting(pack, "ssl_cert", to_std_string(options.tracker.ssl_cert));
+    }
+    if (options.tracker.has_ssl_private_key) {
+        set_str_setting(
+            pack, "ssl_private_key", to_std_string(options.tracker.ssl_private_key));
+    }
+    if (options.tracker.has_ssl_ca_cert) {
+        set_str_setting(
+            pack, "ssl_ca_cert", to_std_string(options.tracker.ssl_ca_cert));
+    }
+    if (options.tracker.has_ssl_tracker_verify) {
+        set_bool_setting(
+            pack, "ssl_tracker_verify", options.tracker.ssl_tracker_verify);
+    }
+    pack.set_bool(lt::settings_pack::announce_to_all_trackers,
+                  options.tracker.announce_to_all);
+}
+
+::rust::String configure_proxy_settings(lt::settings_pack& pack, const EngineOptions& options) {
+    if (options.tracker.proxy.has_proxy) {
+        pack.set_str(lt::settings_pack::proxy_hostname,
+                     to_std_string(options.tracker.proxy.host));
+        pack.set_int(lt::settings_pack::proxy_port, options.tracker.proxy.port);
+        pack.set_bool(lt::settings_pack::proxy_peer_connections,
+                      options.tracker.proxy.proxy_peers);
+        if (options.tracker.proxy.has_username) {
+            pack.set_str(lt::settings_pack::proxy_username,
+                         to_std_string(options.tracker.proxy.username));
+        } else {
+            pack.set_str(lt::settings_pack::proxy_username, std::string{});
+        }
+        if (options.tracker.proxy.has_password) {
+            pack.set_str(lt::settings_pack::proxy_password,
+                         to_std_string(options.tracker.proxy.password));
+        } else {
+            pack.set_str(lt::settings_pack::proxy_password, std::string{});
+        }
+        const bool has_auth =
+            options.tracker.proxy.has_username || options.tracker.proxy.has_password;
+        int proxy_type = lt::settings_pack::http;
+        switch (options.tracker.proxy.kind) {
+            case 0:
+                proxy_type =
+                    has_auth ? lt::settings_pack::http_pw : lt::settings_pack::http;
+                break;
+            case 1:
+                return ::rust::String(
+                    "Https proxy type is not supported by the linked libtorrent version");
+            case 2:
+                proxy_type =
+                    has_auth ? lt::settings_pack::socks5_pw : lt::settings_pack::socks5;
+                break;
+            default:
+                return ::rust::String("unsupported proxy type");
+        }
+        pack.set_int(lt::settings_pack::proxy_type, proxy_type);
+    } else {
+        pack.set_int(lt::settings_pack::proxy_type, lt::settings_pack::none);
+        pack.set_str(lt::settings_pack::proxy_username, std::string{});
+        pack.set_str(lt::settings_pack::proxy_password, std::string{});
+    }
+    return ::rust::String();
+}
+
+::rust::String configure_ip_filter(lt::session& session, const EngineOptions& options) {
+    if (options.network.has_ip_filter) {
+        lt::ip_filter filter;
+        for (const auto& rule : options.network.ip_filter_rules) {
+            lt::error_code ec;
+            const auto start = lt::make_address(to_std_string(rule.start), ec);
+            if (ec) {
+                return ::rust::String(ec.message());
+            }
+            const auto end = lt::make_address(to_std_string(rule.end), ec);
+            if (ec) {
+                return ::rust::String(ec.message());
+            }
+            filter.add_rule(start, end, lt::ip_filter::blocked);
+        }
+        session.set_ip_filter(filter);
+    } else {
+        session.set_ip_filter(lt::ip_filter{});
+    }
+    return ::rust::String();
+}
+
+std::string skipped_file_warning(std::size_t skipped,
+                                 const std::vector<std::string>& skipped_samples) {
+    std::ostringstream message;
+    message << "skipped " << skipped << " files due to filters";
+    if (!skipped_samples.empty()) {
+        message << " (e.g. ";
+        for (std::size_t idx = 0; idx < skipped_samples.size(); ++idx) {
+            if (idx > 0) {
+                message << ", ";
+            }
+            message << skipped_samples[idx];
+        }
+        message << ")";
+    }
+    return message.str();
+}
+
+::rust::String override_metainfo_buffer(std::vector<char>& metainfo_buffer,
+                                       const MetainfoOverrides& overrides) {
+    if (!overrides.has_comment && !overrides.has_source && !overrides.has_private) {
+        return ::rust::String();
+    }
+    lt::error_code decode_ec;
+    lt::bdecode_node decoded;
+    if (const auto decode_result = lt::bdecode(
+            metainfo_buffer.data(),
+            metainfo_buffer.data() + metainfo_buffer.size(),
+            decoded,
+            decode_ec);
+        decode_result != 0 || decode_ec) {
+        return ::rust::String(
+            "metainfo decode failed: " + decode_ec.message());
+    }
+    lt::entry metainfo_entry(decoded);
+    if (std::string override_error;
+        !apply_metainfo_overrides(metainfo_entry, overrides, override_error)) {
+        return ::rust::String(override_error);
+    }
+    std::vector<char> updated;
+    lt::bencode(std::back_inserter(updated), metainfo_entry);
+    metainfo_buffer = std::move(updated);
+    return ::rust::String();
+}
+
+void configure_add_web_seeds(lt::add_torrent_params& params,
+                             const AddTorrentRequest& request) {
+    if (request.web_seeds.empty()) {
+        return;
+    }
+    std::vector<std::string> seeds;
+    seeds.reserve(request.web_seeds.size());
+    for (const auto& seed : request.web_seeds) {
+        seeds.push_back(to_std_string(seed));
+    }
+    if (request.replace_web_seeds) {
+        params.url_seeds = std::move(seeds);
+    } else if (!params.url_seeds.empty()) {
+        std::unordered_set<std::string> seen;
+        for (const auto& existing : params.url_seeds) {
+            seen.insert(existing);
+        }
+        for (const auto& seed : seeds) {
+            if (seen.insert(seed).second) {
+                params.url_seeds.push_back(seed);
+            }
+        }
+    } else {
+        params.url_seeds = std::move(seeds);
+    }
+}
+
 }  // namespace
 
 class Session::Impl {
@@ -829,35 +1185,7 @@ public:
             pack.set_bool(lt::settings_pack::dont_count_slow_torrents,
                           options.behavior.dont_count_slow_torrents);
 
-            if (options.network.has_listen_interfaces &&
-                !options.network.listen_interfaces.empty()) {
-                std::string combined;
-                for (std::size_t i = 0; i < options.network.listen_interfaces.size(); ++i) {
-                    if (i > 0) {
-                        combined.push_back(',');
-                    }
-                    combined.append(to_std_string(options.network.listen_interfaces[i]));
-                }
-                pack.set_str(lt::settings_pack::listen_interfaces, combined);
-                pack.set_int(lt::settings_pack::max_retry_port_bind, 0);
-            } else if (options.network.set_listen_port && options.network.listen_port > 0) {
-                const auto port = std::to_string(options.network.listen_port);
-                if (options.network.ipv6_mode == 1) {
-                    pack.set_str(lt::settings_pack::listen_interfaces,
-                                 "0.0.0.0:" + port + ",[::]:" + port);
-                } else if (options.network.ipv6_mode == 2) {
-                    pack.set_str(lt::settings_pack::listen_interfaces,
-                                 "[::]:" + port + ",0.0.0.0:" + port);
-                } else {
-                    pack.set_str(lt::settings_pack::listen_interfaces,
-                                 "0.0.0.0:" + port);
-                }
-                pack.set_int(lt::settings_pack::max_retry_port_bind, 0);
-            } else if (options.tracker.has_listen_interface) {
-                pack.set_int(lt::settings_pack::max_retry_port_bind, 0);
-                pack.set_str(lt::settings_pack::listen_interfaces,
-                             to_std_string(options.tracker.listen_interface));
-            }
+            configure_listen_settings(pack, options);
 
             if (options.network.has_outgoing_port_range &&
                 options.network.outgoing_port_min > 0 &&
@@ -878,181 +1206,27 @@ public:
                 pack.set_int(lt::settings_pack::peer_dscp, 0);
             }
 
-            std::vector<std::string> dht_nodes;
-            dht_nodes.reserve(options.network.dht_bootstrap_nodes.size() +
-                              options.network.dht_router_nodes.size());
-            std::unordered_set<std::string> seen;
-            auto append_nodes = [&](const ::rust::Vec<::rust::String>& nodes) {
-                for (const auto& node : nodes) {
-                    auto normalized = to_std_string(node);
-                    if (normalized.empty()) {
-                        continue;
-                    }
-                    std::string key = normalized;
-                    std::transform(key.begin(), key.end(), key.begin(), [](unsigned char ch) {
-                        return static_cast<char>(std::tolower(ch));
-                    });
-                    if (seen.insert(key).second) {
-                        dht_nodes.push_back(std::move(normalized));
-                    }
-                }
-            };
-            append_nodes(options.network.dht_bootstrap_nodes);
-            append_nodes(options.network.dht_router_nodes);
+            configure_dht_settings(pack, options);
 
-            if (!dht_nodes.empty()) {
-                std::string combined = dht_nodes.front();
-                for (std::size_t i = 1; i < dht_nodes.size(); ++i) {
-                    combined.append(",").append(dht_nodes[i]);
-                }
-                pack.set_str(lt::settings_pack::dht_bootstrap_nodes, combined);
-            } else {
-                pack.set_str(lt::settings_pack::dht_bootstrap_nodes, "");
-            }
-
-            if (options.limits.max_active > 0) {
-                pack.set_int(lt::settings_pack::active_downloads, options.limits.max_active);
-                pack.set_int(lt::settings_pack::active_limit, options.limits.max_active);
-            }
-            if (options.limits.connections_limit >= 0) {
-                pack.set_int(lt::settings_pack::connections_limit,
-                             options.limits.connections_limit);
-            }
-            torrent_defaults_.max_connections = options.limits.connections_limit_per_torrent;
-            if (options.limits.unchoke_slots >= 0) {
-                pack.set_int(lt::settings_pack::unchoke_slots_limit,
-                             options.limits.unchoke_slots);
-            }
-            if (options.limits.half_open_limit >= 0) {
-                set_int_setting(pack, "half_open_limit", options.limits.half_open_limit);
-            }
-
-            pack.set_int(lt::settings_pack::choking_algorithm,
-                         options.limits.choking_algorithm);
-            pack.set_int(lt::settings_pack::seed_choking_algorithm,
-                         options.limits.seed_choking_algorithm);
-            set_strict_super_seeding(pack, options.limits.strict_super_seeding);
-
-            if (options.limits.has_optimistic_unchoke_slots) {
-                pack.set_int(lt::settings_pack::num_optimistic_unchoke_slots,
-                             options.limits.optimistic_unchoke_slots);
-            }
-
-            if (options.limits.has_max_queued_disk_bytes) {
-                pack.set_int(lt::settings_pack::max_queued_disk_bytes,
-                             options.limits.max_queued_disk_bytes);
-            }
+            configure_limit_settings(pack, options, torrent_defaults_);
 
             pack.set_int(lt::settings_pack::out_enc_policy, options.network.encryption_policy);
             pack.set_int(lt::settings_pack::in_enc_policy, options.network.encryption_policy);
 
-            if (!options.storage.download_root.empty()) {
-                default_download_root_ = to_std_string(options.storage.download_root);
+            if (const auto error = configure_storage_settings(
+                    pack, options, default_download_root_, resume_dir_, torrent_defaults_);
+                !error.empty()) {
+                return error;
             }
-            if (!options.storage.resume_dir.empty()) {
-                const auto resume_dir = to_std_string(options.storage.resume_dir);
-                if (resume_dir != resume_dir_) {
-                    resume_dir_ = resume_dir;
-                    std::error_code ec;
-                    std::filesystem::create_directories(resume_dir_, ec);
-                }
-            }
-            torrent_defaults_.storage_mode = to_storage_mode(options.storage.storage_mode);
-            set_bool_setting(pack, "use_partfile", options.storage.use_partfile);
-            if (options.storage.has_disk_read_mode) {
-                set_int_setting(pack, "disk_io_read_mode", options.storage.disk_read_mode);
-            }
-            if (options.storage.has_disk_write_mode) {
-                set_int_setting(pack, "disk_io_write_mode", options.storage.disk_write_mode);
-            }
-            set_bool_setting(
-                pack, "disable_hash_checks", !options.storage.verify_piece_hashes);
-            if (options.storage.has_cache_size &&
-                !set_int_setting(pack, "cache_size", options.storage.cache_size)) {
-                return ::rust::String(unsupported_setting_message("cache_size"));
-            }
-            if (options.storage.has_cache_expiry &&
-                !set_int_setting(pack, "cache_expiry", options.storage.cache_expiry)) {
-                return ::rust::String(unsupported_setting_message("cache_expiry"));
-            }
-            set_bool_setting(pack, "coalesce_reads", options.storage.coalesce_reads);
-            set_bool_setting(pack, "coalesce_writes", options.storage.coalesce_writes);
-            set_bool_setting(pack, "use_disk_cache_pool", options.storage.use_disk_cache_pool);
 
             sequential_default_ = options.behavior.sequential_default;
             torrent_defaults_.auto_managed = options.behavior.auto_managed;
             torrent_defaults_.pex_enabled = options.network.enable_pex;
             torrent_defaults_.super_seeding = options.behavior.super_seeding;
 
-            pack.set_int(
-                lt::settings_pack::download_rate_limit,
-                options.limits.download_rate_limit >= 0
-                    ? static_cast<int>(options.limits.download_rate_limit)
-                    : -1);
-            pack.set_int(lt::settings_pack::upload_rate_limit,
-                         options.limits.upload_rate_limit >= 0
-                             ? static_cast<int>(options.limits.upload_rate_limit)
-                             : -1);
-            if (options.limits.has_seed_ratio_limit) {
-                // libtorrent expects share ratio limit scaled by 1000.
-                const double scaled = std::clamp(
-                    options.limits.seed_ratio_limit * 1000.0,
-                    0.0,
-                    static_cast<double>(std::numeric_limits<int>::max()));
-                pack.set_int(lt::settings_pack::share_ratio_limit,
-                             static_cast<int>(scaled));
-            } else {
-                pack.set_int(lt::settings_pack::share_ratio_limit, -1);
-            }
-            if (options.limits.has_seed_time_limit) {
-                const auto clamped = static_cast<int>(std::clamp(
-                    options.limits.seed_time_limit,
-                    static_cast<std::int64_t>(0),
-                    static_cast<std::int64_t>(std::numeric_limits<int>::max())));
-                pack.set_int(lt::settings_pack::seed_time_limit, clamped);
-            } else {
-                pack.set_int(lt::settings_pack::seed_time_limit, -1);
-            }
-            if (options.limits.has_stats_interval) {
-                pack.set_int(lt::settings_pack::tick_interval,
-                             std::max(1, options.limits.stats_interval_ms));
-            }
+            configure_rate_settings(pack, options);
 
-            if (options.tracker.has_user_agent) {
-                pack.set_str(lt::settings_pack::user_agent,
-                             to_std_string(options.tracker.user_agent));
-            }
-            if (options.tracker.has_announce_ip) {
-                pack.set_str(lt::settings_pack::announce_ip,
-                             to_std_string(options.tracker.announce_ip));
-            }
-            if (options.tracker.has_listen_interface) {
-                pack.set_str(lt::settings_pack::listen_interfaces,
-                             to_std_string(options.tracker.listen_interface));
-            }
-            if (options.tracker.has_request_timeout) {
-                const auto seconds =
-                    std::max<std::int64_t>(1, options.tracker.request_timeout_ms / 1000);
-                pack.set_int(lt::settings_pack::request_timeout,
-                             static_cast<int>(seconds));
-            }
-            if (options.tracker.has_ssl_cert) {
-                set_str_setting(pack, "ssl_cert", to_std_string(options.tracker.ssl_cert));
-            }
-            if (options.tracker.has_ssl_private_key) {
-                set_str_setting(
-                    pack, "ssl_private_key", to_std_string(options.tracker.ssl_private_key));
-            }
-            if (options.tracker.has_ssl_ca_cert) {
-                set_str_setting(
-                    pack, "ssl_ca_cert", to_std_string(options.tracker.ssl_ca_cert));
-            }
-            if (options.tracker.has_ssl_tracker_verify) {
-                set_bool_setting(
-                    pack, "ssl_tracker_verify", options.tracker.ssl_tracker_verify);
-            }
-            pack.set_bool(lt::settings_pack::announce_to_all_trackers,
-                          options.tracker.announce_to_all);
+            configure_tracker_settings(pack, options);
 
             announce_to_all_ = options.tracker.announce_to_all;
             default_trackers_.clear();
@@ -1083,66 +1257,12 @@ public:
                 tracker_cookie_ = to_std_string(options.tracker.auth.cookie);
             }
 
-            if (options.tracker.proxy.has_proxy) {
-                pack.set_str(lt::settings_pack::proxy_hostname,
-                             to_std_string(options.tracker.proxy.host));
-                pack.set_int(lt::settings_pack::proxy_port, options.tracker.proxy.port);
-                pack.set_bool(lt::settings_pack::proxy_peer_connections,
-                              options.tracker.proxy.proxy_peers);
-                if (options.tracker.proxy.has_username) {
-                    pack.set_str(lt::settings_pack::proxy_username,
-                                 to_std_string(options.tracker.proxy.username));
-                } else {
-                    pack.set_str(lt::settings_pack::proxy_username, std::string{});
-                }
-                if (options.tracker.proxy.has_password) {
-                    pack.set_str(lt::settings_pack::proxy_password,
-                                 to_std_string(options.tracker.proxy.password));
-                } else {
-                    pack.set_str(lt::settings_pack::proxy_password, std::string{});
-                }
-                const bool has_auth =
-                    options.tracker.proxy.has_username || options.tracker.proxy.has_password;
-                int proxy_type = lt::settings_pack::http;
-                switch (options.tracker.proxy.kind) {
-                    case 0:
-                        proxy_type =
-                            has_auth ? lt::settings_pack::http_pw : lt::settings_pack::http;
-                        break;
-                    case 1:
-                        return ::rust::String(
-                            "Https proxy type is not supported by the linked libtorrent version");
-                    case 2:
-                        proxy_type =
-                            has_auth ? lt::settings_pack::socks5_pw : lt::settings_pack::socks5;
-                        break;
-                    default:
-                        return ::rust::String("unsupported proxy type");
-                }
-                pack.set_int(lt::settings_pack::proxy_type, proxy_type);
-            } else {
-                pack.set_int(lt::settings_pack::proxy_type, lt::settings_pack::none);
-                pack.set_str(lt::settings_pack::proxy_username, std::string{});
-                pack.set_str(lt::settings_pack::proxy_password, std::string{});
+            if (const auto error = configure_proxy_settings(pack, options); !error.empty()) {
+                return error;
             }
 
-            if (options.network.has_ip_filter) {
-                lt::ip_filter filter;
-                for (const auto& rule : options.network.ip_filter_rules) {
-                    lt::error_code ec;
-                    const auto start = lt::make_address(to_std_string(rule.start), ec);
-                    if (ec) {
-                        return ::rust::String(ec.message());
-                    }
-                    const auto end = lt::make_address(to_std_string(rule.end), ec);
-                    if (ec) {
-                        return ::rust::String(ec.message());
-                    }
-                    filter.add_rule(start, end, lt::ip_filter::blocked);
-                }
-                session_->set_ip_filter(filter);
-            } else {
-                session_->set_ip_filter(lt::ip_filter{});
+            if (const auto error = configure_ip_filter(*session_, options); !error.empty()) {
+                return error;
             }
 
             configure_peer_classes(options);
@@ -1356,19 +1476,7 @@ public:
             }
 
             if (skipped > 0) {
-                std::ostringstream message;
-                message << "skipped " << skipped << " files due to filters";
-                if (!skipped_samples.empty()) {
-                    message << " (e.g. ";
-                    for (std::size_t idx = 0; idx < skipped_samples.size(); ++idx) {
-                        if (idx > 0) {
-                            message << ", ";
-                        }
-                        message << skipped_samples[idx];
-                    }
-                    message << ")";
-                }
-                append_warning(message.str());
+                append_warning(skipped_file_warning(skipped, skipped_samples));
             }
 
             std::uint64_t total_size = 0;
@@ -1591,26 +1699,9 @@ public:
                         request.metainfo.end(),
                         metainfo_buffer.begin(),
                         [](std::uint8_t byte) { return static_cast<char>(byte); });
-                    if (overrides.has_comment || overrides.has_source || overrides.has_private) {
-                        lt::error_code decode_ec;
-                        lt::bdecode_node decoded;
-                        if (const auto decode_result = lt::bdecode(
-                                metainfo_buffer.data(),
-                                metainfo_buffer.data() + metainfo_buffer.size(),
-                                decoded,
-                                decode_ec);
-                            decode_result != 0 || decode_ec) {
-                            return ::rust::String(
-                                "metainfo decode failed: " + decode_ec.message());
-                        }
-                        lt::entry metainfo_entry(decoded);
-                        if (std::string override_error;
-                            !apply_metainfo_overrides(metainfo_entry, overrides, override_error)) {
-                            return ::rust::String(override_error);
-                        }
-                        std::vector<char> updated;
-                        lt::bencode(std::back_inserter(updated), metainfo_entry);
-                        metainfo_buffer = std::move(updated);
+                    if (const auto error = override_metainfo_buffer(metainfo_buffer, overrides);
+                        !error.empty()) {
+                        return error;
                     }
 
                     lt::span<const char> buffer(
@@ -1749,28 +1840,7 @@ public:
                 params.trackerid = tracker_cookie_;
             }
 
-            if (!request.web_seeds.empty()) {
-                std::vector<std::string> seeds;
-                seeds.reserve(request.web_seeds.size());
-                for (const auto& seed : request.web_seeds) {
-                    seeds.push_back(to_std_string(seed));
-                }
-                if (request.replace_web_seeds) {
-                    params.url_seeds = std::move(seeds);
-                } else if (!params.url_seeds.empty()) {
-                    std::unordered_set<std::string> seen;
-                    for (const auto& existing : params.url_seeds) {
-                        seen.insert(existing);
-                    }
-                    for (const auto& seed : seeds) {
-                        if (seen.insert(seed).second) {
-                            params.url_seeds.push_back(seed);
-                        }
-                    }
-                } else {
-                    params.url_seeds = std::move(seeds);
-                }
-            }
+            configure_add_web_seeds(params, request);
 
             if (request.has_storage_mode) {
                 params.storage_mode = to_storage_mode(request.storage_mode);
