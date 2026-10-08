@@ -123,11 +123,7 @@ class CargoLlvmCov(ExternalTool):
         return self._invoke(
             (
                 "llvm-cov",
-                *(
-                    ("--package", "revaer-app", "--lib")
-                    if recovery
-                    else ("--workspace",)
-                ),
+                *(("--package", "revaer-app", "--lib") if recovery else ("--workspace",)),
                 "--all-features",
                 "--locked",
                 "--include-ffi",
