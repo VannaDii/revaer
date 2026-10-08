@@ -7,9 +7,7 @@ use revaer_events::EventEnvelope;
 use uuid::Uuid;
 
 use crate::cli::TailArgs;
-use crate::client::{
-    AppContext, CliError, CliResult, HEADER_LAST_EVENT_ID, HEADER_REQUEST_ID, classify_problem,
-};
+use crate::client::{AppContext, CliError, CliResult, HEADER_LAST_EVENT_ID, classify_problem};
 
 pub(crate) async fn handle_tail(ctx: &AppContext, args: TailArgs) -> CliResult<()> {
     let mut resume_id = match &args.resume_file {
@@ -131,38 +129,39 @@ pub(crate) async fn stream_events(
                             .map_err(CliError::failure)?;
                     }
                 }
-                match serde_json::from_str::<EventEnvelope>(&payload) {
-                    Ok(event) => {
-                        let text = serde_json::to_string_pretty(&event).map_err(|err| {
-                            CliError::failure(anyhow!("failed to format event JSON: {err}"))
-                        })?;
-                        println!("{text}");
-                    }
-                    Err(err) => {
-                        eprintln!("discarding malformed event payload: {err} -- {payload}");
-                    }
-                }
+                print_event_payload(&payload)?;
             } else if let Some(data) = line.strip_prefix("data:") {
                 current_data.push(data.trim_start().to_string());
             } else if let Some(id) = line.strip_prefix("id:")
                 && let Ok(value) = id.trim_start().parse::<u64>()
             {
                 current_event_id = Some(value);
-            } else if line.starts_with("event:")
-                || line.starts_with("retry:")
-                || line.starts_with(HEADER_REQUEST_ID)
-            {
-                // ignore auxiliary fields
             }
+            // Auxiliary and unrecognized fields do not alter event state.
         }
     }
 
     Ok(last_seen)
 }
 
+fn print_event_payload(payload: &str) -> CliResult<()> {
+    match serde_json::from_str::<EventEnvelope>(payload) {
+        Ok(event) => {
+            let text = serde_json::to_string_pretty(&event)
+                .map_err(|err| CliError::failure(anyhow!("failed to format event JSON: {err}")))?;
+            println!("{text}");
+        }
+        Err(err) => {
+            eprintln!("discarding malformed event payload: {err} -- {payload}");
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::HEADER_REQUEST_ID;
     use anyhow::Result;
     use chrono::Utc;
     use httpmock::MockServer;

@@ -409,68 +409,69 @@ impl Worker {
     }
 
     fn backfill_request_from_resume(&self, request: &mut AddTorrent) {
-        if let Some(stored) = self.resume_cache.get(&request.id) {
-            if request.options.trackers.is_empty() && !stored.trackers.is_empty() {
-                request.options.trackers.clone_from(&stored.trackers);
-                request.options.replace_trackers = stored.replace_trackers;
-            }
-            if request.options.web_seeds.is_empty() && !stored.web_seeds.is_empty() {
-                request.options.web_seeds.clone_from(&stored.web_seeds);
-                request.options.replace_web_seeds = stored.replace_web_seeds;
-            }
-            if request.options.tags.is_empty() && !stored.tags.is_empty() {
-                request.options.tags.clone_from(&stored.tags);
-            }
-            if request.options.category.is_none() && stored.category.is_some() {
-                request.options.category.clone_from(&stored.category);
-            }
-            if request.options.comment.is_none() && stored.comment.is_some() {
-                request.options.comment.clone_from(&stored.comment);
-            }
-            if request.options.source.is_none() && stored.source.is_some() {
-                request.options.source.clone_from(&stored.source);
-            }
-            if request.options.private.is_none() && stored.private.is_some() {
-                request.options.private = stored.private;
-            }
-            if request.options.cleanup.is_none() && stored.cleanup.is_some() {
-                request.options.cleanup.clone_from(&stored.cleanup);
-            }
-            if request.options.connections_limit.is_none() {
-                request.options.connections_limit = stored.connections_limit;
-            }
-            if !has_rate_limit(&request.options.rate_limit)
-                && let Some(limit) = &stored.rate_limit
-            {
-                request.options.rate_limit = limit.clone();
-            }
-            if request.options.seed_mode.is_none() {
-                request.options.seed_mode = stored.seed_mode;
-            }
-            if request.options.hash_check_sample_pct.is_none() {
-                request.options.hash_check_sample_pct = stored.hash_check_sample_pct;
-            }
-            if request.options.super_seeding.is_none() {
-                request.options.super_seeding = stored.super_seeding;
-            }
-            if request.options.auto_managed.is_none() {
-                request.options.auto_managed = stored.auto_managed;
-            }
-            if request.options.queue_position.is_none() {
-                request.options.queue_position = stored.queue_position;
-            }
-            if request.options.pex_enabled.is_none() {
-                request.options.pex_enabled = stored.pex_enabled;
-            }
-            if request.options.storage_mode.is_none() {
-                request.options.storage_mode = stored.storage_mode;
-            }
-            if request.options.download_dir.is_none() && stored.download_dir.is_some() {
-                request
-                    .options
-                    .download_dir
-                    .clone_from(&stored.download_dir);
-            }
+        let Some(stored) = self.resume_cache.get(&request.id) else {
+            return;
+        };
+        if request.options.trackers.is_empty() && !stored.trackers.is_empty() {
+            request.options.trackers.clone_from(&stored.trackers);
+            request.options.replace_trackers = stored.replace_trackers;
+        }
+        if request.options.web_seeds.is_empty() && !stored.web_seeds.is_empty() {
+            request.options.web_seeds.clone_from(&stored.web_seeds);
+            request.options.replace_web_seeds = stored.replace_web_seeds;
+        }
+        if request.options.tags.is_empty() && !stored.tags.is_empty() {
+            request.options.tags.clone_from(&stored.tags);
+        }
+        if request.options.category.is_none() && stored.category.is_some() {
+            request.options.category.clone_from(&stored.category);
+        }
+        if request.options.comment.is_none() && stored.comment.is_some() {
+            request.options.comment.clone_from(&stored.comment);
+        }
+        if request.options.source.is_none() && stored.source.is_some() {
+            request.options.source.clone_from(&stored.source);
+        }
+        if request.options.private.is_none() && stored.private.is_some() {
+            request.options.private = stored.private;
+        }
+        if request.options.cleanup.is_none() && stored.cleanup.is_some() {
+            request.options.cleanup.clone_from(&stored.cleanup);
+        }
+        if request.options.connections_limit.is_none() {
+            request.options.connections_limit = stored.connections_limit;
+        }
+        if !has_rate_limit(&request.options.rate_limit)
+            && let Some(limit) = &stored.rate_limit
+        {
+            request.options.rate_limit = limit.clone();
+        }
+        if request.options.seed_mode.is_none() {
+            request.options.seed_mode = stored.seed_mode;
+        }
+        if request.options.hash_check_sample_pct.is_none() {
+            request.options.hash_check_sample_pct = stored.hash_check_sample_pct;
+        }
+        if request.options.super_seeding.is_none() {
+            request.options.super_seeding = stored.super_seeding;
+        }
+        if request.options.auto_managed.is_none() {
+            request.options.auto_managed = stored.auto_managed;
+        }
+        if request.options.queue_position.is_none() {
+            request.options.queue_position = stored.queue_position;
+        }
+        if request.options.pex_enabled.is_none() {
+            request.options.pex_enabled = stored.pex_enabled;
+        }
+        if request.options.storage_mode.is_none() {
+            request.options.storage_mode = stored.storage_mode;
+        }
+        if request.options.download_dir.is_none() && stored.download_dir.is_some() {
+            request
+                .options
+                .download_dir
+                .clone_from(&stored.download_dir);
         }
     }
 
