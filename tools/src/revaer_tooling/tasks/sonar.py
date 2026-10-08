@@ -16,7 +16,7 @@ from ..context import Context, TaskResult
 from ..errors import ToolingError
 from ..external.git import ScmArgs
 from ..external.sonar import ScanArgs
-from ..json_data import JsonObject
+from ..json_data import JsonObject, array_value, object_value, string_value
 from ..sonar.inputs import (
     NATIVE_SOURCE,
     verify_bootstrap_coverage,
@@ -30,7 +30,7 @@ from .native import verify_compilation_database
 from .python_coverage import authored_python
 from .workflows import SonarPolicy
 
-RESULT_NAMES = ("ce-task", "measures", "quality-gate", "issues", "hotspots")
+RESULT_NAMES = ("ce-task", "measures", "quality-gate", "issues", "all-issues", "hotspots")
 
 
 class SonarVerifyInputs(Task):
@@ -230,7 +230,7 @@ def _fetch_result(context: Context, identifier: str, records: dict[str, JsonObje
         },
     )
     records["quality-gate"] = api.get("qualitygates/project_status", {"analysisId": analysis})
-    new_code = {"inNewCodePeriod": "true"} if settings.pull_request else {}
+    new_code = {} if settings.pull_request else {"sinceLeakPeriod": "true"}
     records["issues"] = api.get(
         "issues/search",
         {
@@ -241,17 +241,44 @@ def _fetch_result(context: Context, identifier: str, records: dict[str, JsonObje
             "ps": "1",
         },
     )
-    # Deliberately omit a hotspot status filter. A reviewed or acknowledged
-    # hotspot is still a current hotspot under the repository's strict gate.
+    records["all-issues"] = _fetch_all_issues(context)
     records["hotspots"] = api.get(
         "hotspots/search",
         {
             **scope,
-            **new_code,
             "projectKey": settings.project_key,
+            "status": "TO_REVIEW",
             "ps": "1",
         },
     )
+
+
+def _fetch_all_issues(context: Context) -> JsonObject:
+    settings = context.settings.sonar
+    scope = {"pullRequest": settings.pull_request} if settings.pull_request else {}
+    parameters = {**scope, "componentKeys": settings.project_key, "resolved": "false", "ps": "500"}
+    record = context.tools.sonar_api.get("issues/search", {**parameters, "p": "1"})
+    total = record.get("total")
+    if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+        raise ToolingError("Sonar issue search has an invalid total")
+    rows = array_value(record.get("issues"))
+    page = 1
+    while len(rows) < total:
+        page += 1
+        following = context.tools.sonar_api.get("issues/search", {**parameters, "p": str(page)})
+        if type(following.get("total")) is not int or following.get("total") != total:
+            raise ToolingError("Sonar issue search changed during pagination")
+        batch = array_value(following.get("issues"))
+        if not batch:
+            raise ToolingError("Sonar issue search returned an incomplete page")
+        rows.extend(batch)
+    if len(rows) != total:
+        raise ToolingError("Sonar issue search returned an inconsistent total")
+    keys = {string_value(object_value(row).get("key")) for row in rows}
+    if len(keys) != total:
+        raise ToolingError("Sonar issue search returned duplicate rows")
+    record["issues"] = rows
+    return record
 
 
 def _verify_result(context: Context, identifier: str) -> PublishedResult:
@@ -297,5 +324,5 @@ class SonarVerifyResult(Task):
         return TaskResult(
             f"Sonar {scope} verified: task={identifier} analysis={result.analysis} "
             f"coverage={result.coverage}% lines_to_cover={result.lines_to_cover} "
-            "unresolved_issues=0 current_hotspots=0"
+            "new_issues=0 production_issues=0 unreviewed_hotspots=0"
         )

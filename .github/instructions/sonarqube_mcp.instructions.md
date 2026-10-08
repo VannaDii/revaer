@@ -37,7 +37,7 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 - Treat zero published coverage, a missing Rust LCOV report, a missing native LLVM coverage report, or unavailable SCM baseline data as a failed analysis even when Sonar reports a green quality gate.
 - Pull-request and main-branch scans must receive the same complete measured Rust, native, browser JavaScript, Python, and root Bash bootstrap inputs. Nonproduction inputs remain available without affecting production coverage. A browser run with no authored production JavaScript may retain honest zero-hit records and must not manufacture execution. Retain the scanner report after post-scan verification.
 - Use pull-request-specific quality-gate checks when the user asks whether a PR is blocked.
-- New Security Hotspots on touched code must be reviewed before merge. Backlog hotspots outside touched code are tracked separately and do not automatically block unrelated work.
+- Result verification follows the issue and hotspot completion policy in root `AGENTS.md`. Fetch the complete unresolved backlog to check active runtime code, and check new issues separately. Use the server-supported `sinceLeakPeriod` filter for main-branch new issues and `TO_REVIEW` for unreviewed hotspots; PR queries use their explicit pull-request scope. Preserve full scanner analysis and coverage inputs.
 
 # Noise And Scope
 
