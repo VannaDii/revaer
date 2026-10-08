@@ -5,10 +5,12 @@ composition boundary to prove that failure cannot reach a later release build
 and that every gate receives the selected, locked database connection.
 """
 
+import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 from revaer_tooling.cli import make_context
@@ -106,8 +108,10 @@ def test_ci_holds_connection_until_gates_finish_and_never_builds_after_failure(
 
 
 def test_database_selection_preserves_options_and_encodes_the_name() -> None:
-    assert with_database("postgresql://user:p%40ss@[::1]/old?sslmode=require", "new/name") == (
-        "postgresql://user:p%40ss@[::1]/new%2Fname?sslmode=require"
+    password = quote(secrets.token_hex(12) + "@", safe="")
+    assert (
+        with_database(f"postgresql://user:{password}@[::1]/old?sslmode=require", "new/name")
+        == f"postgresql://user:{password}@[::1]/new%2Fname?sslmode=require"
     )
 
 

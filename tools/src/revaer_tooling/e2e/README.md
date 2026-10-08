@@ -108,7 +108,9 @@ Do not mix artifacts from different workflow attempts.
 [`uv run --env-file` interface](https://docs.astral.sh/uv/concepts/projects/run/#environment-files).
 Existing environment variables keep uv's documented precedence. The tool does
 not implement a dotenv parser. The internal re-entry flag only prevents a second
-load after uv has prepared the environment.
+load after uv has prepared the environment. Supply the database connection in
+the process environment through `E2E_DB_ADMIN_URL`, `REVAER_TEST_DATABASE_URL`,
+or `DATABASE_URL`; the tracked defaults contain no database password.
 
 | Setting | Default and behavior |
 | --- | --- |

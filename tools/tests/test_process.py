@@ -2,6 +2,7 @@
 
 import json
 import os
+import secrets
 import stat
 import sys
 import time
@@ -120,7 +121,7 @@ def test_binary_capture_preserves_blobs_without_logging_them(tmp_path: Path, sta
     source = tmp_path / "blob"
     source.write_bytes(payload)
     messages: list[str] = []
-    token = "private-diagnostic-value"
+    token = secrets.token_hex(24)
     log = tmp_path / "command.log"
     result = ProcessRunner(messages.append).run(
         Invocation(
@@ -165,18 +166,19 @@ def test_binary_failure_reports_status_without_decoding_its_output(tmp_path: Pat
 def test_development_logs_stream_and_retain_the_same_redacted_output(tmp_path: Path) -> None:
     messages: list[str] = []
     log = tmp_path / "development.log"
+    token = secrets.token_hex(24)
     ProcessRunner(messages.append).run(
         Invocation(
             (sys.executable, "-c", "import os; print(os.environ['API_KEY'])"),
             tmp_path,
-            {**os.environ, "API_KEY": "private-development-fixture"},
+            {**os.environ, "API_KEY": token},
             log_path=log,
             stream_log=True,
         )
     )
     assert log.read_text() == "[redacted]\n"
     assert "[redacted]" in messages
-    assert "private-development-fixture" not in "\n".join(messages)
+    assert token not in "\n".join(messages)
 
 
 def test_large_stdin_does_not_prevent_timeout(tmp_path: Path) -> None:

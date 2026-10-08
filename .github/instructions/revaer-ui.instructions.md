@@ -64,6 +64,8 @@ applyTo:
 
 ## Single-init E2E ownership
 
+- E2E connection defaults follow the environment-supplied credential policy in `devops.instructions.md`; the tracked defaults file is not a credential store.
+
 - In the approved `feature-development` phase, Python E2E uses the complete
   initializer and sealed restricted runtime role. Require explicit test-service
   selection and verify its exact loopback binding before provisioning.

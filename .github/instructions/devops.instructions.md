@@ -408,3 +408,6 @@ merge tasks validate the same completed phase set.
 
 - Native LLVM text supplied to Sonar retains measured line and branch counts without nested macro-expansion displays that its importer cannot parse.
 - Rust LCOV and native LLVM text target their respective language importers; preserve complete measured native counts in the native stream.
+
+- The Helm lint-only default database URI uses a fresh disposable password generated at settings bootstrap. It is a render fixture, never an application credential; an explicit operator URI still takes precedence.
+- The tracked E2E environment contains public defaults only. Supply its database URI through the process environment instead of committing a default password.

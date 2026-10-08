@@ -5,6 +5,7 @@ receive these values instead of interpreting environment variables themselves.
 Credentials are omitted from dataclass representations as well as process logs.
 """
 
+import secrets
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -201,7 +202,7 @@ def load_settings(environment: Mapping[str, str], *, linux: bool = False) -> Set
             repository_id=environment.get("ARTIFACTHUB_REPOSITORY_ID", ""),
             # Used only for Helm rendering; this does not open a database connection.
             lint_database_url=environment.get("REVAER_HELM_LINT_DATABASE_URL")
-            or "postgres://revaer:revaer@postgres.default.svc.cluster.local:5432/revaer",
+            or f"postgres://revaer:{secrets.token_hex(24)}@postgres.default.svc.cluster.local:5432/revaer",
             registry=RegistryCredentials(
                 host, username, password, Path(registry_ca).resolve() if registry_ca else None
             ),
