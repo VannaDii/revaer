@@ -172,24 +172,25 @@ std::vector<int> pick_sample_pieces(int total_pieces, int sample_count) {
     const int step = std::max(1, total_pieces / sample_count);
     std::unordered_set<int> seen;
 
-    for (int piece = 0;
-         static_cast<int>(pieces.size()) < sample_count && piece < total_pieces;
-         piece += step) {
+    for (int piece = 0; piece < total_pieces; piece += step) {
+        if (static_cast<int>(pieces.size()) >= sample_count) {
+            break;
+        }
         if (seen.insert(piece).second) {
             pieces.push_back(piece);
         }
     }
 
     if (!pieces.empty() && pieces.back() != total_pieces - 1
-        && static_cast<int>(pieces.size()) < sample_count) {
-        if (seen.insert(total_pieces - 1).second) {
-            pieces.push_back(total_pieces - 1);
-        }
+        && static_cast<int>(pieces.size()) < sample_count
+        && seen.insert(total_pieces - 1).second) {
+        pieces.push_back(total_pieces - 1);
     }
 
-    for (int candidate = 0;
-         static_cast<int>(pieces.size()) < sample_count && candidate < total_pieces;
-         ++candidate) {
+    for (int candidate = 0; candidate < total_pieces; ++candidate) {
+        if (static_cast<int>(pieces.size()) >= sample_count) {
+            break;
+        }
         if (seen.insert(candidate).second) {
             pieces.push_back(candidate);
         }
@@ -562,7 +563,8 @@ bool matches_any(const std::vector<std::regex>& patterns, const std::string& val
 
 class Session::Impl {
 public:
-    explicit Impl(const SessionOptions& options) {
+    explicit Impl(const SessionOptions& options)
+        : sequential_default_(options.sequential_default) {
         lt::settings_pack pack;
         pack.set_bool(lt::settings_pack::enable_dht, options.enable_dht);
         pack.set_bool(lt::settings_pack::enable_lsd, false);
@@ -583,7 +585,6 @@ public:
         session_ = std::make_unique<lt::session>(params);
         default_download_root_ = to_std_string(options.download_root);
         resume_dir_ = to_std_string(options.resume_dir);
-        sequential_default_ = options.sequential_default;
 
         if (!resume_dir_.empty()) {
             std::error_code ec;
@@ -1445,9 +1446,11 @@ public:
                 }
             }
 
+            const bool auto_managed_fallback =
+                !request.has_queue_position && auto_managed_default_;
             const bool auto_managed = request.has_auto_managed
                 ? request.auto_managed
-                : (request.has_queue_position ? false : auto_managed_default_);
+                : auto_managed_fallback;
             const bool pex_enabled =
                 request.has_pex_enabled ? request.pex_enabled : pex_enabled_;
             const bool super_seeding = request.has_super_seeding
