@@ -1119,6 +1119,403 @@ void configure_add_web_seeds(lt::add_torrent_params& params,
     }
 }
 
+struct AuthoringFileEntry {
+    std::string path;
+    std::uint64_t size;
+};
+
+struct AuthoringFiles {
+    std::vector<AuthoringFileEntry> files;
+    std::size_t skipped{0};
+    std::vector<std::string> skipped_samples;
+};
+
+std::vector<std::regex> compile_authoring_patterns(const rust::Vec<rust::String>& patterns) {
+    std::vector<std::regex> compiled;
+    compiled.reserve(patterns.size());
+    for (const auto& pattern : patterns) {
+        compiled.emplace_back(glob_to_regex(to_std_string(pattern)), std::regex::icase);
+    }
+    return compiled;
+}
+
+bool authoring_path_included(const std::string& rel_path,
+                             bool skip_fluff,
+                             const std::vector<std::regex>& include_patterns,
+                             const std::vector<std::regex>& exclude_patterns) {
+    if (rel_path.size() > kMaxCreatePathLength) {
+        return false;
+    }
+    if (skip_fluff && is_fluff(rel_path)) {
+        return false;
+    }
+    if (!exclude_patterns.empty() && matches_any(exclude_patterns, rel_path)) {
+        return false;
+    }
+    if (!include_patterns.empty() && !matches_any(include_patterns, rel_path)) {
+        return false;
+    }
+    return true;
+}
+
+::rust::String collect_authoring_files(const CreateTorrentRequest& request,
+                                       const std::filesystem::path& root_path,
+                                       bool is_file,
+                                       AuthoringFiles& selection) {
+    const auto include_patterns = compile_authoring_patterns(request.include);
+    const auto exclude_patterns = compile_authoring_patterns(request.exclude);
+    std::error_code fs_ec;
+    std::unordered_set<std::string> seen;
+
+    auto record_skip = [&selection](const std::string& path) {
+        ++selection.skipped;
+        if (selection.skipped_samples.size() < 5) {
+            selection.skipped_samples.push_back(path);
+        }
+    };
+
+    auto add_file = [&](const std::filesystem::path& full_path,
+                        const std::filesystem::path& relative_path) {
+        const std::string rel = relative_path.generic_string();
+        if (!authoring_path_included(rel, request.skip_fluff, include_patterns, exclude_patterns)) {
+            record_skip(rel);
+            return;
+        }
+        if (!seen.insert(rel).second) {
+            throw TorrentAuthoringError("duplicate file path: " + rel);
+        }
+        std::error_code size_ec;
+        const auto size = std::filesystem::file_size(full_path, size_ec);
+        if (size_ec) {
+            throw TorrentAuthoringError("failed to read file size for " + rel);
+        }
+        selection.files.push_back(AuthoringFileEntry{rel, static_cast<std::uint64_t>(size)});
+    };
+
+    if (is_file) {
+        add_file(root_path, root_path.filename());
+    } else {
+        for (std::filesystem::recursive_directory_iterator it(root_path, fs_ec), end;
+             it != end;
+             it.increment(fs_ec)) {
+            if (!it->is_regular_file()) {
+                continue;
+            }
+            const auto rel_path = it->path().lexically_relative(root_path);
+            add_file(it->path(), rel_path);
+        }
+        if (fs_ec) {
+            return ::rust::String("failed to traverse root_path");
+        }
+    }
+    return ::rust::String();
+}
+
+std::filesystem::path normalized_authoring_root(const std::filesystem::path& root_path) {
+    auto named_root_path = root_path.lexically_normal();
+    while (named_root_path.filename().empty()
+           && named_root_path.has_parent_path()
+           && named_root_path.parent_path() != named_root_path) {
+        named_root_path = named_root_path.parent_path();
+    }
+    return named_root_path;
+}
+
+std::uint32_t normalized_piece_length(std::uint32_t value) {
+    constexpr std::uint32_t kMinPiece = 16 * 1024;
+    constexpr std::uint32_t kMaxPiece = 16 * 1024 * 1024;
+    if (value < kMinPiece) {
+        return kMinPiece;
+    }
+    if (value > kMaxPiece) {
+        return kMaxPiece;
+    }
+    if ((value & (value - 1)) == 0) {
+        return value;
+    }
+    std::uint32_t next = kMinPiece;
+    while (next < value && next < kMaxPiece) {
+        next <<= 1;
+    }
+    return std::min(next, kMaxPiece);
+}
+
+std::vector<std::string> unique_authoring_urls(const rust::Vec<rust::String>& values) {
+    std::vector<std::string> urls;
+    std::unordered_set<std::string> seen;
+    for (const auto& item : values) {
+        const auto value = to_std_string(item);
+        if (!value.empty() && seen.insert(value).second) {
+            urls.push_back(value);
+        }
+    }
+    return urls;
+}
+
+void configure_authoring_builder(lt::create_torrent& builder,
+                                  const CreateTorrentRequest& request,
+                                  CreateTorrentResult& result,
+                                  const std::vector<std::string>& trackers,
+                                  const std::vector<std::string>& web_seeds) {
+    if (request.private_flag) {
+        builder.set_priv(true);
+    }
+    if (request.has_comment && !result.comment.empty()) {
+        builder.set_comment(result.comment.c_str());
+    }
+    for (const auto& tracker : trackers) {
+        builder.add_tracker(tracker);
+    }
+    for (const auto& seed : web_seeds) {
+        builder.add_url_seed(seed);
+    }
+}
+
+void copy_authoring_lists(CreateTorrentResult& result,
+                           const AuthoringFiles& selection,
+                           const std::vector<std::string>& trackers,
+                           const std::vector<std::string>& web_seeds,
+                           const std::vector<std::string>& warnings) {
+    result.files.reserve(selection.files.size());
+    for (const auto& entry : selection.files) {
+        CreateTorrentFile file{};
+        file.path = entry.path;
+        file.size_bytes = entry.size;
+        result.files.push_back(std::move(file));
+    }
+    result.trackers.reserve(trackers.size());
+    for (const auto& tracker : trackers) {
+        result.trackers.push_back(tracker);
+    }
+    result.web_seeds.reserve(web_seeds.size());
+    for (const auto& seed : web_seeds) {
+        result.web_seeds.push_back(seed);
+    }
+    result.warnings.reserve(warnings.size());
+    for (const auto& warning : warnings) {
+        result.warnings.push_back(warning);
+    }
+}
+
+::rust::String generate_authoring_metainfo(lt::create_torrent& builder,
+                                          const CreateTorrentRequest& request,
+                                          CreateTorrentResult& result,
+                                          const std::string& hash_root,
+                                          std::uint32_t piece_length) {
+    lt::error_code hash_ec;
+    lt::set_piece_hashes(builder, hash_root, hash_ec);
+    if (hash_ec) {
+        return ::rust::String("hashing failed: " + hash_ec.message());
+    }
+
+    lt::entry metainfo_entry = builder.generate();
+    if (request.has_source && !result.source.empty()) {
+        metainfo_entry["info"]["source"] = result.source;
+    }
+
+    std::vector<char> buffer;
+    lt::bencode(std::back_inserter(buffer), metainfo_entry);
+
+    lt::error_code load_ec;
+    auto metainfo_params = load_metainfo_buffer(
+        lt::span<char const>(buffer.data(), static_cast<long>(buffer.size())),
+        load_ec);
+    if (load_ec || !metainfo_params.ti) {
+        return ::rust::String("metainfo parse failed: "
+            + (load_ec ? load_ec.message() : std::string("missing torrent info")));
+    }
+
+    result.metainfo.reserve(buffer.size());
+    for (char byte : buffer) {
+        result.metainfo.push_back(static_cast<std::uint8_t>(byte));
+    }
+    result.magnet_uri = make_magnet_uri_for_params(metainfo_params);
+    result.info_hash =
+        to_hex_string(metainfo_params.ti->info_hashes().get_best().to_string());
+    const int effective_piece_length = builder.piece_length();
+    result.piece_length =
+        effective_piece_length > 0
+            ? static_cast<std::uint32_t>(effective_piece_length)
+            : piece_length;
+    return ::rust::String();
+}
+
+::rust::String load_add_source(lt::add_torrent_params& params,
+                               const AddTorrentRequest& request,
+                               const std::string& download_dir,
+                               const std::string& default_download_root,
+                               const MetainfoOverrides& overrides) {
+    std::vector<char> metainfo_buffer;
+    params.save_path = request.has_download_dir ? download_dir : default_download_root;
+    if (params.save_path.empty()) {
+        return "download directory not configured";
+    }
+
+    if (request.source_kind == SourceKind::Magnet) {
+        auto parsed = lt::parse_magnet_uri(to_std_string(request.magnet_uri));
+        parsed.save_path =
+            request.has_download_dir ? download_dir : default_download_root;
+        params = std::move(parsed);
+    } else {
+        if (request.metainfo.empty()) {
+            return "metainfo payload empty";
+        }
+        metainfo_buffer.resize(request.metainfo.size());
+        std::transform(
+            request.metainfo.begin(),
+            request.metainfo.end(),
+            metainfo_buffer.begin(),
+            [](std::uint8_t byte) { return static_cast<char>(byte); });
+        if (const auto error = override_metainfo_buffer(metainfo_buffer, overrides);
+            !error.empty()) {
+            return error;
+        }
+
+        lt::span<const char> buffer(
+            metainfo_buffer.data(),
+            static_cast<long>(metainfo_buffer.size()));
+        lt::error_code parse_ec;
+        auto metainfo_params = load_metainfo_buffer(buffer, parse_ec);
+        if (parse_ec || !metainfo_params.ti) {
+            return ::rust::String(
+                "metainfo parse failed (bytes="
+                + std::to_string(metainfo_buffer.size())
+                + "): "
+                + (parse_ec
+                       ? parse_ec.message()
+                       : std::string("missing torrent info")));
+        }
+        metainfo_params.save_path = params.save_path;
+        params = std::move(metainfo_params);
+    }
+    return ::rust::String();
+}
+
+::rust::String validate_add_seed_mode(const lt::add_torrent_params& params,
+                                      const AddTorrentRequest& request,
+                                      bool seed_mode_requested,
+                                      bool hash_sample_requested) {
+    if (seed_mode_requested && !params.ti) {
+        return "seed_mode requires metainfo payload";
+    }
+
+    if (hash_sample_requested) {
+        if (!params.ti) {
+            return "hash sample requires metainfo payload";
+        }
+        const auto sample_result =
+            hash_sample(*params.ti, params.save_path, request.hash_check_sample_pct);
+        if (sample_result.has_value()) {
+            return ::rust::String(*sample_result);
+        }
+    }
+    return ::rust::String();
+}
+
+void configure_add_flags(lt::add_torrent_params& params,
+                          const AddTorrentRequest& request,
+                          const TorrentDefaults& defaults,
+                          bool seed_mode_requested) {
+    const bool auto_managed_fallback =
+        !request.has_queue_position && defaults.auto_managed;
+    const bool auto_managed = request.has_auto_managed
+        ? request.auto_managed
+        : auto_managed_fallback;
+    const bool pex_enabled =
+        request.has_pex_enabled ? request.pex_enabled : defaults.pex_enabled;
+    const bool super_seeding = request.has_super_seeding
+        ? request.super_seeding
+        : defaults.super_seeding;
+    if (auto_managed) {
+        params.flags |= lt::torrent_flags::auto_managed;
+    } else {
+        params.flags &= ~lt::torrent_flags::auto_managed;
+    }
+    if (pex_enabled) {
+        params.flags &= ~lt::torrent_flags::disable_pex;
+    } else {
+        params.flags |= lt::torrent_flags::disable_pex;
+    }
+    if (seed_mode_requested) {
+        params.flags |= lt::torrent_flags::seed_mode;
+    } else {
+        params.flags &= ~lt::torrent_flags::seed_mode;
+    }
+    if (super_seeding) {
+        params.flags |= lt::torrent_flags::super_seeding;
+    } else {
+        params.flags &= ~lt::torrent_flags::super_seeding;
+    }
+    if (request.has_start_paused && request.start_paused) {
+        params.flags |= lt::torrent_flags::paused;
+    }
+    if (request.has_max_connections && request.max_connections > 0) {
+        params.max_connections = request.max_connections;
+    } else if (defaults.max_connections > 0) {
+        params.max_connections = defaults.max_connections;
+    }
+}
+
+::rust::String configure_add_trackers(lt::add_torrent_params& params,
+                                      const AddTorrentRequest& request,
+                                      const AuthView& auth,
+                                      const std::vector<std::string>& default_trackers,
+                                      const std::vector<std::string>& extra_trackers,
+                                      bool replace_default_trackers,
+                                      const MetainfoOverrides& overrides) {
+                std::vector<std::string> trackers;
+                if (!replace_default_trackers) {
+                    trackers.insert(trackers.end(), default_trackers.begin(), default_trackers.end());
+                    trackers.insert(trackers.end(), extra_trackers.begin(), extra_trackers.end());
+                }
+                if (request.replace_trackers) {
+                    trackers.clear();
+                    trackers.reserve(request.trackers.size());
+                    for (const auto& tracker : request.trackers) {
+                        trackers.push_back(to_std_string(tracker));
+                    }
+                } else {
+                    for (const auto& tracker : request.trackers) {
+                        trackers.push_back(to_std_string(tracker));
+                    }
+                }
+                if (trackers.empty()) {
+                    trackers = params.trackers;
+                }
+    #if LIBTORRENT_VERSION_NUM < 20100
+                if (params.ti) {
+                    for (const auto& tracker : params.ti->trackers()) {
+                        if (const auto error = validate_tracker_url(
+                                tracker.url, auth.has_username || auth.has_password)) {
+                            return ::rust::String(*error);
+                        }
+                    }
+                }
+    #endif
+                for (const auto& tracker : trackers) {
+                    if (const auto error = validate_tracker_url(
+                            tracker, auth.has_username || auth.has_password)) {
+                        return ::rust::String(*error);
+                    }
+                }
+                if (!trackers.empty()) {
+                    params.trackers = apply_tracker_auth(trackers, auth);
+                }
+
+                if (overrides.has_private && overrides.private_flag) {
+                    bool has_tracker = !params.trackers.empty();
+    #if LIBTORRENT_VERSION_NUM < 20100
+                    if (!has_tracker && params.ti) {
+                        has_tracker = !params.ti->trackers().empty();
+                    }
+    #endif
+                    if (!has_tracker) {
+                        return ::rust::String("private torrents require at least one tracker");
+                    }
+                }
+    return ::rust::String();
+}
+
 }  // namespace
 
 class Session::Impl {
@@ -1370,89 +1767,13 @@ public:
                 warnings.push_back(message);
             };
 
-            auto compile_patterns = [](const rust::Vec<rust::String>& patterns) {
-                std::vector<std::regex> compiled;
-                compiled.reserve(patterns.size());
-                for (const auto& pattern : patterns) {
-                    compiled.emplace_back(glob_to_regex(to_std_string(pattern)), std::regex::icase);
-                }
-                return compiled;
-            };
-
-            const auto include_patterns = compile_patterns(request.include);
-            const auto exclude_patterns = compile_patterns(request.exclude);
-
-            struct FileEntry {
-                std::string path;
-                std::uint64_t size;
-            };
-
-            std::vector<FileEntry> files;
-            std::unordered_set<std::string> seen;
-            std::size_t skipped = 0;
-            std::vector<std::string> skipped_samples;
-
-            auto record_skip = [&skipped, &skipped_samples](const std::string& path) {
-                ++skipped;
-                if (skipped_samples.size() < 5) {
-                    skipped_samples.push_back(path);
-                }
-            };
-
-            auto should_include = [&](const std::string& rel_path) {
-                if (rel_path.size() > kMaxCreatePathLength) {
-                    record_skip(rel_path);
-                    return false;
-                }
-                if (request.skip_fluff && is_fluff(rel_path)) {
-                    record_skip(rel_path);
-                    return false;
-                }
-                if (!exclude_patterns.empty() && matches_any(exclude_patterns, rel_path)) {
-                    record_skip(rel_path);
-                    return false;
-                }
-                if (!include_patterns.empty() && !matches_any(include_patterns, rel_path)) {
-                    record_skip(rel_path);
-                    return false;
-                }
-                return true;
-            };
-
-            auto add_file = [&](const std::filesystem::path& full_path,
-                                const std::filesystem::path& relative_path) {
-                const std::string rel = relative_path.generic_string();
-                if (!should_include(rel)) {
-                    return;
-                }
-                if (!seen.insert(rel).second) {
-                    throw TorrentAuthoringError("duplicate file path: " + rel);
-                }
-                std::error_code size_ec;
-                const auto size = std::filesystem::file_size(full_path, size_ec);
-                if (size_ec) {
-                    throw TorrentAuthoringError("failed to read file size for " + rel);
-                }
-                files.push_back(FileEntry{rel, static_cast<std::uint64_t>(size)});
-            };
-
-            if (is_file) {
-                add_file(root_path, root_path.filename());
-            } else {
-                for (std::filesystem::recursive_directory_iterator it(root_path, fs_ec), end;
-                     it != end;
-                     it.increment(fs_ec)) {
-                    if (!it->is_regular_file()) {
-                        continue;
-                    }
-                    const auto rel_path = it->path().lexically_relative(root_path);
-                    add_file(it->path(), rel_path);
-                }
-                if (fs_ec) {
-                    result.error = "failed to traverse root_path";
-                    return result;
-                }
+            AuthoringFiles selection;
+            if (const auto error = collect_authoring_files(request, root_path, is_file, selection);
+                !error.empty()) {
+                result.error = error;
+                return result;
             }
+            auto& files = selection.files;
 
             if (files.empty()) {
                 result.error = "no files matched the authoring rules";
@@ -1463,20 +1784,15 @@ public:
                 return left.path < right.path;
             });
 
-            auto named_root_path = root_path.lexically_normal();
-            while (named_root_path.filename().empty()
-                   && named_root_path.has_parent_path()
-                   && named_root_path.parent_path() != named_root_path) {
-                named_root_path = named_root_path.parent_path();
-            }
+            const auto named_root_path = normalized_authoring_root(root_path);
             const std::string torrent_root_name = named_root_path.filename().generic_string();
             if (!is_file && torrent_root_name.empty()) {
                 result.error = "root_path directory must have a name";
                 return result;
             }
 
-            if (skipped > 0) {
-                append_warning(skipped_file_warning(skipped, skipped_samples));
+            if (selection.skipped > 0) {
+                append_warning(skipped_file_warning(selection.skipped, selection.skipped_samples));
             }
 
             std::uint64_t total_size = 0;
@@ -1508,65 +1824,22 @@ public:
             }
 #endif
 
-            const auto normalize_piece = [](std::uint32_t value) {
-                constexpr std::uint32_t kMinPiece = 16 * 1024;
-                constexpr std::uint32_t kMaxPiece = 16 * 1024 * 1024;
-                if (value < kMinPiece) {
-                    return kMinPiece;
-                }
-                if (value > kMaxPiece) {
-                    return kMaxPiece;
-                }
-                if ((value & (value - 1)) == 0) {
-                    return value;
-                }
-                std::uint32_t next = kMinPiece;
-                while (next < value && next < kMaxPiece) {
-                    next <<= 1;
-                }
-                return std::min(next, kMaxPiece);
-            };
-
             std::uint32_t piece_length = 0;
             if (request.has_piece_length) {
-                piece_length = normalize_piece(request.piece_length);
+                piece_length = normalized_piece_length(request.piece_length);
                 if (piece_length != request.piece_length) {
                     append_warning("piece_length was adjusted to a supported value");
                 }
             }
 
-            std::vector<std::string> trackers;
-            {
-                std::unordered_set<std::string> seen_tracker;
-                for (const auto& tracker : request.trackers) {
-                    const auto value = to_std_string(tracker);
-                    if (value.empty()) {
-                        continue;
-                    }
-                    if (seen_tracker.insert(value).second) {
-                        trackers.push_back(value);
-                    }
-                }
-            }
+            const auto trackers = unique_authoring_urls(request.trackers);
 
             if (request.private_flag && trackers.empty()) {
                 result.error = "private torrents require at least one tracker";
                 return result;
             }
 
-            std::vector<std::string> web_seeds;
-            {
-                std::unordered_set<std::string> seen_seed;
-                for (const auto& seed : request.web_seeds) {
-                    const auto value = to_std_string(seed);
-                    if (value.empty()) {
-                        continue;
-                    }
-                    if (seen_seed.insert(value).second) {
-                        web_seeds.push_back(value);
-                    }
-                }
-            }
+            const auto web_seeds = unique_authoring_urls(request.web_seeds);
 
             const int piece_length_value =
                 request.has_piece_length ? static_cast<int>(piece_length) : 0;
@@ -1575,81 +1848,21 @@ public:
 #else
             lt::create_torrent builder(storage, piece_length_value);
 #endif
-            if (request.private_flag) {
-                builder.set_priv(true);
-            }
-            if (request.has_comment && !result.comment.empty()) {
-                builder.set_comment(result.comment.c_str());
-            }
-            for (const auto& tracker : trackers) {
-                builder.add_tracker(tracker);
-            }
-            for (const auto& seed : web_seeds) {
-                builder.add_url_seed(seed);
-            }
+            configure_authoring_builder(builder, request, result, trackers, web_seeds);
 
             const auto hash_root_path =
                 is_file ? root_path.parent_path() : named_root_path.parent_path();
             const auto hash_root =
                 hash_root_path.empty() ? std::string(".") : hash_root_path.string();
-            lt::error_code hash_ec;
-            lt::set_piece_hashes(builder, hash_root, hash_ec);
-            if (hash_ec) {
-                result.error = "hashing failed: " + hash_ec.message();
+            if (const auto error = generate_authoring_metainfo(
+                    builder, request, result, hash_root, piece_length);
+                !error.empty()) {
+                result.error = error;
                 return result;
             }
-
-            lt::entry metainfo_entry = builder.generate();
-            if (request.has_source && !result.source.empty()) {
-                metainfo_entry["info"]["source"] = result.source;
-            }
-
-            std::vector<char> buffer;
-            lt::bencode(std::back_inserter(buffer), metainfo_entry);
-
-            lt::error_code load_ec;
-            auto metainfo_params = load_metainfo_buffer(
-                lt::span<char const>(buffer.data(), static_cast<long>(buffer.size())),
-                load_ec);
-            if (load_ec || !metainfo_params.ti) {
-                result.error = "metainfo parse failed: "
-                    + (load_ec ? load_ec.message() : std::string("missing torrent info"));
-                return result;
-            }
-
-            result.metainfo.reserve(buffer.size());
-            for (char byte : buffer) {
-                result.metainfo.push_back(static_cast<std::uint8_t>(byte));
-            }
-            result.magnet_uri = make_magnet_uri_for_params(metainfo_params);
-            result.info_hash =
-                to_hex_string(metainfo_params.ti->info_hashes().get_best().to_string());
-            const int effective_piece_length = builder.piece_length();
-            result.piece_length =
-                effective_piece_length > 0
-                    ? static_cast<std::uint32_t>(effective_piece_length)
-                    : piece_length;
             result.total_size = total_size;
 
-            result.files.reserve(files.size());
-            for (const auto& entry : files) {
-                CreateTorrentFile file{};
-                file.path = entry.path;
-                file.size_bytes = entry.size;
-                result.files.push_back(std::move(file));
-            }
-            result.trackers.reserve(trackers.size());
-            for (const auto& tracker : trackers) {
-                result.trackers.push_back(tracker);
-            }
-            result.web_seeds.reserve(web_seeds.size());
-            for (const auto& seed : web_seeds) {
-                result.web_seeds.push_back(seed);
-            }
-            result.warnings.reserve(warnings.size());
-            for (const auto& warning : warnings) {
-                result.warnings.push_back(warning);
-            }
+            copy_authoring_lists(result, selection, trackers, web_seeds, warnings);
         } catch (const std::exception& ex) {
             result.error = ex.what();
         }
@@ -1660,7 +1873,6 @@ public:
         try {
             lt::add_torrent_params params;
             const auto overrides = overrides_from_request(request);
-            std::vector<char> metainfo_buffer;
             const auto request_id = to_std_string(request.id);
             const auto download_dir = to_std_string(request.download_dir);
             if (const auto resume_it = pending_resume_.find(request_id);
@@ -1679,47 +1891,10 @@ public:
                     params.save_path = download_dir;
                 }
             } else {
-                params.save_path = request.has_download_dir ? download_dir : default_download_root_;
-                if (params.save_path.empty()) {
-                    return "download directory not configured";
-                }
-
-                if (request.source_kind == SourceKind::Magnet) {
-                    auto parsed = lt::parse_magnet_uri(to_std_string(request.magnet_uri));
-                    parsed.save_path =
-                        request.has_download_dir ? download_dir : default_download_root_;
-                    params = std::move(parsed);
-                } else {
-                    if (request.metainfo.empty()) {
-                        return "metainfo payload empty";
-                    }
-                    metainfo_buffer.resize(request.metainfo.size());
-                    std::transform(
-                        request.metainfo.begin(),
-                        request.metainfo.end(),
-                        metainfo_buffer.begin(),
-                        [](std::uint8_t byte) { return static_cast<char>(byte); });
-                    if (const auto error = override_metainfo_buffer(metainfo_buffer, overrides);
-                        !error.empty()) {
-                        return error;
-                    }
-
-                    lt::span<const char> buffer(
-                        metainfo_buffer.data(),
-                        static_cast<long>(metainfo_buffer.size()));
-                    lt::error_code parse_ec;
-                    auto metainfo_params = load_metainfo_buffer(buffer, parse_ec);
-                    if (parse_ec || !metainfo_params.ti) {
-                        return ::rust::String(
-                            "metainfo parse failed (bytes="
-                            + std::to_string(metainfo_buffer.size())
-                            + "): "
-                            + (parse_ec
-                                   ? parse_ec.message()
-                                   : std::string("missing torrent info")));
-                    }
-                    metainfo_params.save_path = params.save_path;
-                    params = std::move(metainfo_params);
+                if (const auto error = load_add_source(
+                        params, request, download_dir, default_download_root_, overrides);
+                    !error.empty()) {
+                    return error;
                 }
             }
 
@@ -1727,111 +1902,21 @@ public:
             const bool hash_sample_requested =
                 request.has_hash_check_sample && request.hash_check_sample_pct > 0;
 
-            if (seed_mode_requested && !params.ti) {
-                return "seed_mode requires metainfo payload";
+            if (const auto error = validate_add_seed_mode(
+                    params, request, seed_mode_requested, hash_sample_requested);
+                !error.empty()) {
+                return error;
             }
 
-            if (hash_sample_requested) {
-                if (!params.ti) {
-                    return "hash sample requires metainfo payload";
-                }
-                const auto sample_result =
-                    hash_sample(*params.ti, params.save_path, request.hash_check_sample_pct);
-                if (sample_result.has_value()) {
-                    return ::rust::String(*sample_result);
-                }
-            }
-
-            const bool auto_managed_fallback =
-                !request.has_queue_position && torrent_defaults_.auto_managed;
-            const bool auto_managed = request.has_auto_managed
-                ? request.auto_managed
-                : auto_managed_fallback;
-            const bool pex_enabled =
-                request.has_pex_enabled ? request.pex_enabled : torrent_defaults_.pex_enabled;
-            const bool super_seeding = request.has_super_seeding
-                ? request.super_seeding
-                : torrent_defaults_.super_seeding;
-            if (auto_managed) {
-                params.flags |= lt::torrent_flags::auto_managed;
-            } else {
-                params.flags &= ~lt::torrent_flags::auto_managed;
-            }
-            if (pex_enabled) {
-                params.flags &= ~lt::torrent_flags::disable_pex;
-            } else {
-                params.flags |= lt::torrent_flags::disable_pex;
-            }
-            if (seed_mode_requested) {
-                params.flags |= lt::torrent_flags::seed_mode;
-            } else {
-                params.flags &= ~lt::torrent_flags::seed_mode;
-            }
-            if (super_seeding) {
-                params.flags |= lt::torrent_flags::super_seeding;
-            } else {
-                params.flags &= ~lt::torrent_flags::super_seeding;
-            }
-            if (request.has_start_paused && request.start_paused) {
-                params.flags |= lt::torrent_flags::paused;
-            }
-            if (request.has_max_connections && request.max_connections > 0) {
-                params.max_connections = request.max_connections;
-            } else if (torrent_defaults_.max_connections > 0) {
-                params.max_connections = torrent_defaults_.max_connections;
-            }
+            configure_add_flags(params, request, torrent_defaults_, seed_mode_requested);
 
             const AuthView auth = resolve_auth_view(request.tracker_auth);
 
-            std::vector<std::string> trackers;
-            if (!replace_default_trackers_) {
-                trackers.insert(trackers.end(), default_trackers_.begin(), default_trackers_.end());
-                trackers.insert(trackers.end(), extra_trackers_.begin(), extra_trackers_.end());
-            }
-            if (request.replace_trackers) {
-                trackers.clear();
-                trackers.reserve(request.trackers.size());
-                for (const auto& tracker : request.trackers) {
-                    trackers.push_back(to_std_string(tracker));
-                }
-            } else {
-                for (const auto& tracker : request.trackers) {
-                    trackers.push_back(to_std_string(tracker));
-                }
-            }
-            if (trackers.empty()) {
-                trackers = params.trackers;
-            }
-#if LIBTORRENT_VERSION_NUM < 20100
-            if (params.ti) {
-                for (const auto& tracker : params.ti->trackers()) {
-                    if (const auto error = validate_tracker_url(
-                            tracker.url, auth.has_username || auth.has_password)) {
-                        return ::rust::String(*error);
-                    }
-                }
-            }
-#endif
-            for (const auto& tracker : trackers) {
-                if (const auto error = validate_tracker_url(
-                        tracker, auth.has_username || auth.has_password)) {
-                    return ::rust::String(*error);
-                }
-            }
-            if (!trackers.empty()) {
-                params.trackers = apply_tracker_auth(trackers, auth);
-            }
-
-            if (overrides.has_private && overrides.private_flag) {
-                bool has_tracker = !params.trackers.empty();
-#if LIBTORRENT_VERSION_NUM < 20100
-                if (!has_tracker && params.ti) {
-                    has_tracker = !params.ti->trackers().empty();
-                }
-#endif
-                if (!has_tracker) {
-                    return ::rust::String("private torrents require at least one tracker");
-                }
+            if (const auto error = configure_add_trackers(
+                    params, request, auth, default_trackers_, extra_trackers_,
+                    replace_default_trackers_, overrides);
+                !error.empty()) {
+                return error;
             }
 
             if (request.tracker_auth.has_cookie) {
