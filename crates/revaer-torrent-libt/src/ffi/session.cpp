@@ -1119,7 +1119,7 @@ void configure_add_web_seeds(lt::add_torrent_params& params,
     }
 }
 
-void configure_added_handle(lt::torrent_handle& handle,
+void configure_added_handle(const lt::torrent_handle& handle,
                             const AddTorrentRequest& request,
                             bool sequential_default) {
     if (request.has_queue_position && request.queue_position >= 0) {
@@ -1267,7 +1267,7 @@ std::uint32_t authoring_piece_length(const CreateTorrentRequest& request,
     }
     const auto length = normalized_piece_length(request.piece_length);
     if (length != request.piece_length) {
-        warnings.push_back("piece_length was adjusted to a supported value");
+        warnings.emplace_back("piece_length was adjusted to a supported value");
     }
     return length;
 }

@@ -235,15 +235,7 @@ pub(crate) fn scan_retained_media_source_paths(
     while let Some(mut directory) = pending.pop_front() {
         let run_remaining = progress.remaining(&budget.run, started)?;
         let remaining = budget.entries.saturating_sub(entries_seen);
-        let limit = if cancelled() {
-            Some(ScanLimit::Cancelled)
-        } else if started.elapsed() >= budget.elapsed {
-            Some(ScanLimit::Elapsed)
-        } else if remaining == 0 {
-            Some(ScanLimit::Entries)
-        } else {
-            None
-        };
+        let limit = retained_scan_limit(budget, started, remaining, cancelled());
         if let Some(limit) = limit {
             pending.push_front(directory);
             return Ok(finish_retained(paths, pending, limit, progress, started));
@@ -320,6 +312,24 @@ pub(crate) fn scan_retained_media_source_paths(
         cursor: None,
         limit: None,
     })
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn retained_scan_limit(
+    budget: &ScanBudget,
+    started: Instant,
+    remaining: usize,
+    cancelled: bool,
+) -> Option<ScanLimit> {
+    if cancelled {
+        Some(ScanLimit::Cancelled)
+    } else if started.elapsed() >= budget.elapsed {
+        Some(ScanLimit::Elapsed)
+    } else if remaining == 0 {
+        Some(ScanLimit::Entries)
+    } else {
+        None
+    }
 }
 
 #[cfg(any(target_os = "linux", test))]

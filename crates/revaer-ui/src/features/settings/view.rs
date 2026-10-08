@@ -693,7 +693,6 @@ fn settings_config_tabs(props: &SettingsConfigProps) -> Html {
         &bundle,
     );
     let tab_body = build_config_tab_body(
-        props.active_tab,
         &fields,
         config_snapshot,
         draft.clone(),
@@ -1015,7 +1014,6 @@ fn render_save_bar(
 }
 
 fn build_config_tab_body(
-    active_tab: SettingsTab,
     fields: &ConfigTabFields,
     config_snapshot: Option<&Value>,
     draft: UseStateHandle<SettingsDraft>,
@@ -1024,7 +1022,7 @@ fn build_config_tab_body(
     bundle: &TranslationBundle,
     on_open_path_picker: Callback<PathPickerTarget>,
 ) -> Html {
-    match active_tab {
+    match props.active_tab {
         SettingsTab::Downloads => render_engine_group_tab(
             "settings.group.downloads",
             "settings.group.downloads_body",

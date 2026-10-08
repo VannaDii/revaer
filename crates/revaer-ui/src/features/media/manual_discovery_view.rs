@@ -105,18 +105,12 @@ pub(crate) fn manual_discovery(props: &ManualDiscoveryProps) -> Html {
                 if queue {
                     let result = run_manual_discovery(&api.client, &input).await;
                     if active.get() {
-                        match result {
-                            Ok(response) => outcome.set(Some(response)),
-                            Err(message) => error.set(Some(message)),
-                        }
+                        apply_response(result, &outcome, &error);
                     }
                 } else {
                     let result = preview_manual_discovery(&api.client, &input).await;
                     if active.get() {
-                        match result {
-                            Ok(response) => preview.set(Some(response)),
-                            Err(message) => error.set(Some(message)),
-                        }
+                        apply_response(result, &preview, &error);
                     }
                 }
                 if active.get() {
@@ -143,6 +137,17 @@ pub(crate) fn manual_discovery(props: &ManualDiscoveryProps) -> Html {
             {error.map(|message| html! { <p role="alert">{message}</p> }).unwrap_or_default()}
             {outcome.as_ref().map(render_outcome).unwrap_or_default()}
         </section>
+    }
+}
+
+fn apply_response<T>(
+    result: Result<T, &'static str>,
+    response: &UseStateHandle<Option<T>>,
+    error: &UseStateHandle<Option<&'static str>>,
+) {
+    match result {
+        Ok(value) => response.set(Some(value)),
+        Err(message) => error.set(Some(message)),
     }
 }
 

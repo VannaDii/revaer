@@ -123,11 +123,7 @@ pub(crate) async fn stream_events(
                     if let Some(slot) = resume_slot.as_mut() {
                         **slot = id;
                     }
-                    if let Some(path) = &args.resume_file {
-                        fs::write(path, id.to_string())
-                            .await
-                            .map_err(CliError::failure)?;
-                    }
+                    save_resume_id(args.resume_file.as_deref(), id).await?;
                 }
                 print_event_payload(&payload)?;
             } else if let Some(data) = line.strip_prefix("data:") {
@@ -142,6 +138,15 @@ pub(crate) async fn stream_events(
     }
 
     Ok(last_seen)
+}
+
+async fn save_resume_id(path: Option<&std::path::Path>, id: u64) -> CliResult<()> {
+    if let Some(path) = path {
+        fs::write(path, id.to_string())
+            .await
+            .map_err(CliError::failure)?;
+    }
+    Ok(())
 }
 
 fn print_event_payload(payload: &str) -> CliResult<()> {
