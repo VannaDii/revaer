@@ -358,6 +358,28 @@ fn retained_entries_after(
         .collect())
 }
 
+struct SelectedScanFiles {
+    paths: Vec<String>,
+    bytes: u64,
+}
+
+enum DirectoryRead {
+    Entries(BTreeMap<OsString, PathBuf>, bool),
+    Limited(ScanLimit),
+}
+
+enum ScanEntryOutcome {
+    Continue,
+    Descended,
+    Limited(ScanLimit),
+}
+
+enum FileSelection {
+    Selected,
+    Deferred(ScanLimit),
+    Oversized,
+}
+
 pub(crate) fn scan_media_source_paths(
     root: &Path,
     budget: &ScanBudget,
@@ -366,104 +388,157 @@ pub(crate) fn scan_media_source_paths(
 ) -> Result<ScanBatch, ScanError> {
     let started = Instant::now();
     let mut pending = initial_pending(root, cursor);
-    let mut paths = Vec::new();
+    let mut files = SelectedScanFiles {
+        paths: Vec::new(),
+        bytes: 0,
+    };
     let mut entries_seen = 0_usize;
-    let mut bytes_selected = 0_u64;
-
     while let Some(mut directory) = pending.pop_front() {
         let remaining = budget.entries.saturating_sub(entries_seen);
         if remaining == 0 {
             pending.push_front(directory);
-            return Ok(finish(paths, pending, ScanLimit::Entries));
+            return Ok(finish(files.paths, pending, ScanLimit::Entries));
         }
-        let mut entries = BTreeMap::new();
-        let mut has_more = false;
-        for entry in fs::read_dir(&directory.path).map_err(|source| ScanError::Io {
-            path: directory.path.clone(),
-            source,
-        })? {
-            if cancelled() {
-                pending.push_front(directory);
-                return Ok(finish(paths, pending, ScanLimit::Cancelled));
-            }
-            if started.elapsed() >= budget.elapsed {
-                pending.push_front(directory);
-                return Ok(finish(paths, pending, ScanLimit::Elapsed));
-            }
-            let entry = entry.map_err(|source| ScanError::Io {
-                path: directory.path.clone(),
-                source,
-            })?;
-            let name = entry.file_name();
-            if directory.after.as_ref().is_some_and(|after| name <= *after) {
-                continue;
-            }
-            entries.insert(name, entry.path());
-            if entries.len() > remaining {
-                entries.pop_last();
-                has_more = true;
-            }
-        }
+        let (entries, has_more) =
+            match read_scan_directory(&directory, remaining, budget, started, &cancelled)? {
+                DirectoryRead::Entries(entries, has_more) => (entries, has_more),
+                DirectoryRead::Limited(limit) => {
+                    pending.push_front(directory);
+                    return Ok(finish(files.paths, pending, limit));
+                }
+            };
         let mut descended = false;
         let entry_count = entries.len();
-        for (entry_index, (name, entry_path)) in entries.into_iter().enumerate() {
+        for (entry_index, (name, path)) in entries.into_iter().enumerate() {
             entries_seen += 1;
-            let file_type = entry_file_type(&entry_path)?;
-            if file_type.is_dir() {
-                if directory.depth >= budget.depth {
-                    directory.after = Some(name);
-                    pending.push_front(directory);
-                    return Ok(finish(paths, pending, ScanLimit::Depth));
+            let has_remaining = has_more || entry_index < entry_count.saturating_sub(1);
+            match visit_scan_entry(
+                &mut directory,
+                &mut pending,
+                name,
+                path,
+                has_remaining,
+                budget,
+                &mut files,
+            )? {
+                ScanEntryOutcome::Continue => {}
+                ScanEntryOutcome::Descended => {
+                    descended = true;
+                    break;
                 }
-                directory.after = Some(name);
-                descend(
-                    &mut pending,
-                    &directory,
-                    entry_path,
-                    has_more || entry_index < entry_count.saturating_sub(1),
-                );
-                descended = true;
-                break;
-            } else if file_type.is_file() && is_media_file(&entry_path) {
-                let size = fs::metadata(&entry_path)
-                    .map_err(|source| ScanError::Io {
-                        path: entry_path.clone(),
-                        source,
-                    })?
-                    .len();
-                if paths.len() >= budget.files {
+                ScanEntryOutcome::Limited(limit) => {
                     pending.push_front(directory);
-                    return Ok(finish(paths, pending, ScanLimit::Files));
+                    return Ok(finish(files.paths, pending, limit));
                 }
-                if size > budget.bytes {
-                    directory.after = Some(name);
-                    pending.push_front(directory);
-                    return Ok(finish(paths, pending, ScanLimit::Bytes));
-                }
-                if bytes_selected.saturating_add(size) > budget.bytes {
-                    pending.push_front(directory);
-                    return Ok(finish(paths, pending, ScanLimit::Bytes));
-                }
-                bytes_selected += size;
-                paths.push(
-                    entry_path
-                        .to_str()
-                        .map(str::to_string)
-                        .ok_or_else(|| ScanError::NonUnicodePath(entry_path.clone()))?,
-                );
             }
-            directory.after = Some(name);
         }
         if !descended && has_more {
             pending.push_front(directory);
         }
     }
-    paths.sort();
+    files.paths.sort();
     Ok(ScanBatch {
-        paths,
+        paths: files.paths,
         cursor: None,
         limit: None,
     })
+}
+
+fn read_scan_directory(
+    directory: &DirectoryCursor,
+    remaining: usize,
+    budget: &ScanBudget,
+    started: Instant,
+    cancelled: &impl Fn() -> bool,
+) -> Result<DirectoryRead, ScanError> {
+    let mut entries = BTreeMap::new();
+    let mut has_more = false;
+    for entry in fs::read_dir(&directory.path).map_err(|source| ScanError::Io {
+        path: directory.path.clone(),
+        source,
+    })? {
+        if cancelled() {
+            return Ok(DirectoryRead::Limited(ScanLimit::Cancelled));
+        }
+        if started.elapsed() >= budget.elapsed {
+            return Ok(DirectoryRead::Limited(ScanLimit::Elapsed));
+        }
+        let entry = entry.map_err(|source| ScanError::Io {
+            path: directory.path.clone(),
+            source,
+        })?;
+        let name = entry.file_name();
+        if directory.after.as_ref().is_some_and(|after| name <= *after) {
+            continue;
+        }
+        entries.insert(name, entry.path());
+        if entries.len() > remaining {
+            entries.pop_last();
+            has_more = true;
+        }
+    }
+    Ok(DirectoryRead::Entries(entries, has_more))
+}
+
+fn visit_scan_entry(
+    directory: &mut DirectoryCursor,
+    pending: &mut VecDeque<DirectoryCursor>,
+    name: OsString,
+    path: PathBuf,
+    has_remaining: bool,
+    budget: &ScanBudget,
+    files: &mut SelectedScanFiles,
+) -> Result<ScanEntryOutcome, ScanError> {
+    let file_type = entry_file_type(&path)?;
+    if file_type.is_dir() {
+        directory.after = Some(name);
+        if directory.depth >= budget.depth {
+            return Ok(ScanEntryOutcome::Limited(ScanLimit::Depth));
+        }
+        descend(pending, directory, path, has_remaining);
+        return Ok(ScanEntryOutcome::Descended);
+    }
+    if file_type.is_file() && is_media_file(&path) {
+        match select_scan_file(&path, budget, files)? {
+            FileSelection::Selected => {}
+            FileSelection::Deferred(limit) => return Ok(ScanEntryOutcome::Limited(limit)),
+            FileSelection::Oversized => {
+                directory.after = Some(name);
+                return Ok(ScanEntryOutcome::Limited(ScanLimit::Bytes));
+            }
+        }
+    }
+    directory.after = Some(name);
+    Ok(ScanEntryOutcome::Continue)
+}
+
+fn select_scan_file(
+    path: &Path,
+    budget: &ScanBudget,
+    files: &mut SelectedScanFiles,
+) -> Result<FileSelection, ScanError> {
+    let size = fs::metadata(path)
+        .map_err(|source| ScanError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?
+        .len();
+    if files.paths.len() >= budget.files {
+        return Ok(FileSelection::Deferred(ScanLimit::Files));
+    }
+    if size > budget.bytes {
+        return Ok(FileSelection::Oversized);
+    }
+    if files.bytes.saturating_add(size) > budget.bytes {
+        return Ok(FileSelection::Deferred(ScanLimit::Bytes));
+    }
+    files.bytes += size;
+    files.paths.push(
+        path.to_str()
+            .map(str::to_string)
+            .ok_or_else(|| ScanError::NonUnicodePath(path.to_path_buf()))?,
+    );
+    Ok(FileSelection::Selected)
 }
 
 fn entry_file_type(path: &Path) -> Result<fs::FileType, ScanError> {
