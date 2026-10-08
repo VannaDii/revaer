@@ -553,6 +553,25 @@ fn render_file_row(
     }
 }
 
+fn build_optional_integer_callback(
+    detail_id: Uuid,
+    field: fn(&mut TorrentOptionsRequest, Option<i32>),
+    input: UseStateHandle<String>,
+    error: UseStateHandle<Option<String>>,
+    invalid_label: String,
+    on_update_options: Callback<(Uuid, TorrentOptionsRequest)>,
+) -> Callback<MouseEvent> {
+    Callback::from(move |_| match parse_optional_i32((*input).as_str()) {
+        Ok(value) => {
+            let mut request = TorrentOptionsRequest::default();
+            field(&mut request, value);
+            error.set(None);
+            on_update_options.emit((detail_id, request));
+        }
+        Err(_) => error.set(Some(invalid_label.clone())),
+    })
+}
+
 fn render_options_tab(
     detail: &TorrentDetail,
     on_update_options: Callback<(Uuid, TorrentOptionsRequest)>,
@@ -641,37 +660,22 @@ fn render_options_tab(
         request.auto_managed = Some(value);
     });
 
-    let on_connections_apply = {
-        let on_update_options = on_update_options.clone();
-        let connections_input = connections_input.clone();
-        let connections_error = connections_error.clone();
-        Callback::from(
-            move |_| match parse_optional_i32((*connections_input).as_str()) {
-                Ok(value) => {
-                    let mut request = TorrentOptionsRequest::default();
-                    request.connections_limit = value;
-                    connections_error.set(None);
-                    on_update_options.emit((detail_id, request));
-                }
-                Err(_) => connections_error.set(Some(invalid_label_for_connections.clone())),
-            },
-        )
-    };
-
-    let on_queue_apply = {
-        let on_update_options = on_update_options.clone();
-        let queue_input = queue_input.clone();
-        let queue_error = queue_error.clone();
-        Callback::from(move |_| match parse_optional_i32((*queue_input).as_str()) {
-            Ok(value) => {
-                let mut request = TorrentOptionsRequest::default();
-                request.queue_position = value;
-                queue_error.set(None);
-                on_update_options.emit((detail_id, request));
-            }
-            Err(_) => queue_error.set(Some(invalid_label_for_queue.clone())),
-        })
-    };
+    let on_connections_apply = build_optional_integer_callback(
+        detail_id,
+        |request, value| request.connections_limit = value,
+        connections_input.clone(),
+        connections_error.clone(),
+        invalid_label_for_connections,
+        on_update_options.clone(),
+    );
+    let on_queue_apply = build_optional_integer_callback(
+        detail_id,
+        |request, value| request.queue_position = value,
+        queue_input.clone(),
+        queue_error.clone(),
+        invalid_label_for_queue,
+        on_update_options.clone(),
+    );
 
     let connections_error_msg = (*connections_error).clone().unwrap_or_default();
     let queue_error_msg = (*queue_error).clone().unwrap_or_default();
