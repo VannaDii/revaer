@@ -111,7 +111,7 @@ class CargoLlvmCov(ExternalTool):
     def clean(self, environment: Mapping[str, str]) -> Completed:
         return self._invoke(("llvm-cov", "clean", "--workspace"), env=environment)
 
-    def collect(self, environment: Mapping[str, str]) -> Completed:
+    def collect(self, environment: Mapping[str, str], *, recovery: bool = False) -> Completed:
         # Preserve caller flags and append the warning gate using Cargo's exact
         # encoded-argument interface, which also handles paths containing spaces.
         supplied = self.environment.get("CARGO_ENCODED_RUSTFLAGS")
@@ -123,13 +123,29 @@ class CargoLlvmCov(ExternalTool):
         return self._invoke(
             (
                 "llvm-cov",
-                "--workspace",
+                *(
+                    ("--package", "revaer-app", "--lib", "--no-clean")
+                    if recovery
+                    else ("--workspace",)
+                ),
                 "--all-features",
                 "--locked",
                 "--include-ffi",
                 "--no-report",
+                *(
+                    (
+                        "--",
+                        "--ignored",
+                        "--exact",
+                        "bootstrap::service_recovery_tests::native_service_shutdown_resumes_active_ffmpeg",
+                        "--test-threads=1",
+                    )
+                    if recovery
+                    else ()
+                ),
             ),
             env={**environment, **flags},
+            capture=recovery,
         )
 
     def report(self, args: CoverageReportArgs, environment: Mapping[str, str]) -> Completed:

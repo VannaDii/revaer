@@ -320,3 +320,5 @@ compiler.
 - [`compliance.py`](compliance.py): independent [image evidence gates](../images/README.md).
 - [`release.py`](release.py), [`charts.py`](charts.py): release coordination and
   chart operations; see the [release guide](../../../../release/README.md).
+
+Supplying `REVAER_NATIVE_RECOVERY_ROOT` to `rv cov` selects an owned persistent Linux mount and additionally executes the existing native service-recovery scenario under coverage instrumentation. The ordinary workspace run and its profiles remain part of the resulting reports. An unsupported mount fails the scenario.
