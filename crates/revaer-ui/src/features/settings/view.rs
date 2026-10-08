@@ -109,6 +109,17 @@ struct PathBrowserCallbacks {
     on_go: Callback<()>,
 }
 
+struct ConnectionAuthForm {
+    auth_mode: AuthMode,
+    api_key: UseStateHandle<String>,
+    local_user: UseStateHandle<String>,
+    local_pass: UseStateHandle<String>,
+    auth_error: UseStateHandle<Option<String>>,
+    auth_mode_options: Vec<(AttrValue, AttrValue)>,
+    on_auth_mode_change: Callback<AttrValue>,
+    on_save: Callback<MouseEvent>,
+}
+
 #[function_component(SettingsPage)]
 pub(crate) fn settings_page(props: &SettingsPageProps) -> Html {
     let active_tab = use_state(|| SettingsTab::Connection);
@@ -279,15 +290,17 @@ fn settings_connection_tab(props: &SettingsConnectionProps) -> Html {
             {render_connection_card(
                 &bundle,
                 props,
-                *auth_mode,
-                api_key.clone(),
-                local_user.clone(),
-                local_pass.clone(),
-                auth_error.clone(),
-                auth_mode_options,
-                on_auth_mode_change,
+                ConnectionAuthForm {
+                    auth_mode: *auth_mode,
+                    api_key: api_key.clone(),
+                    local_user: local_user.clone(),
+                    local_pass: local_pass.clone(),
+                    auth_error: auth_error.clone(),
+                    auth_mode_options,
+                    on_auth_mode_change,
+                    on_save: save_auth,
+                },
                 on_toggle,
-                save_auth,
                 on_test_connection,
                 test_label,
             )}
@@ -416,18 +429,21 @@ fn test_button_label(bundle: &TranslationBundle, busy: bool) -> String {
 fn render_connection_card(
     bundle: &TranslationBundle,
     props: &SettingsConnectionProps,
-    auth_mode: AuthMode,
-    api_key: UseStateHandle<String>,
-    local_user: UseStateHandle<String>,
-    local_pass: UseStateHandle<String>,
-    auth_error: UseStateHandle<Option<String>>,
-    auth_mode_options: Vec<(AttrValue, AttrValue)>,
-    on_auth_mode_change: Callback<AttrValue>,
+    auth_form: ConnectionAuthForm,
     on_toggle: Callback<bool>,
-    on_save: Callback<MouseEvent>,
     on_test: Callback<MouseEvent>,
     test_label: String,
 ) -> Html {
+    let ConnectionAuthForm {
+        auth_mode,
+        api_key,
+        local_user,
+        local_pass,
+        auth_error,
+        auth_mode_options,
+        on_auth_mode_change,
+        on_save,
+    } = auth_form;
     html! {
         <div class="card bg-base-100 shadow">
             <div class="card-body gap-4">
