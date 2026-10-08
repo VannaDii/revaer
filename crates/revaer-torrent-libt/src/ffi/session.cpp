@@ -1991,24 +1991,24 @@ public:
 
     EngineStorageState inspect_storage_state() const {
         const auto settings = session_->get_settings();
-        std::uint8_t flags = 0;
+        std::byte flags{};
         if (get_bool_setting(settings, "use_partfile", false)) {
-            flags |= 0b0001;
+            flags |= std::byte{0b0001};
         }
         if (get_bool_setting(settings, "coalesce_reads", true)) {
-            flags |= 0b0010;
+            flags |= std::byte{0b0010};
         }
         if (get_bool_setting(settings, "coalesce_writes", true)) {
-            flags |= 0b0100;
+            flags |= std::byte{0b0100};
         }
         if (get_bool_setting(settings, "use_disk_cache_pool", true)) {
-            flags |= 0b1000;
+            flags |= std::byte{0b1000};
         }
 
         EngineStorageState snapshot{};
         snapshot.cache_size = get_int_setting(settings, "cache_size", 0);
         snapshot.cache_expiry = get_int_setting(settings, "cache_expiry", 0);
-        snapshot.flags = flags;
+        snapshot.flags = std::to_integer<std::uint8_t>(flags);
         snapshot.disk_read_mode = get_int_setting(settings, "disk_io_read_mode", 0);
         snapshot.disk_write_mode = get_int_setting(settings, "disk_io_write_mode", 0);
         snapshot.verify_piece_hashes = !get_bool_setting(settings, "disable_hash_checks", false);
@@ -2117,15 +2117,13 @@ private:
 #else
         const bool should_save_resume = status.need_save_resume;
 #endif
-        if (should_save_resume) {
-            if (!snapshot.resume_requested) {
-                try {
-                    handle.save_resume_data(lt::resume_data_flags_t{});
-                    snapshot.resume_requested = true;
-                } catch (const std::exception& ex) {
-                    note_invalid_handle(id, events, stale_ids, ex.what());
-                    return;
-                }
+        if (should_save_resume && !snapshot.resume_requested) {
+            try {
+                handle.save_resume_data(lt::resume_data_flags_t{});
+                snapshot.resume_requested = true;
+            } catch (const std::exception& ex) {
+                note_invalid_handle(id, events, stale_ids, ex.what());
+                return;
             }
         }
     }
