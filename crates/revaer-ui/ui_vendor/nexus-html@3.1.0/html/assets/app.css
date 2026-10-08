@@ -1655,6 +1655,8 @@ strong {
         mask-image: var(--mask-tooltip);
         display: block;
         position: absolute;
+        transform: translate(-50%) translateY(var(--tt-pos, 0.25rem));
+        inset: auto auto var(--tt-tail) 50%;
     }
     :is(
             .tooltip.tooltip-open,
@@ -1708,10 +1710,6 @@ strong {
         transform: translate(-50%) translateY(var(--tt-pos, 0.25rem));
         inset: auto auto var(--tt-off) 50%;
     }
-    .tooltip:after {
-        transform: translate(-50%) translateY(var(--tt-pos, 0.25rem));
-        inset: auto auto var(--tt-tail) 50%;
-    }
     .tab {
         cursor: pointer;
         appearance: none;
@@ -1723,13 +1721,6 @@ strong {
         align-items: center;
         display: inline-flex;
         position: relative;
-    }
-    @media (hover: hover) {
-        .tab:hover {
-            color: var(--color-base-content);
-        }
-    }
-    .tab {
         --tab-p: 1rem;
         --tab-bg: var(--color-base-100);
         --tab-border-color: var(--color-base-300);
@@ -1745,6 +1736,11 @@ strong {
         padding-inline-start: var(--tab-p);
         padding-inline-end: var(--tab-p);
         font-size: 0.875rem;
+    }
+    @media (hover: hover) {
+        .tab:hover {
+            color: var(--color-base-content);
+        }
     }
     .tab:is(input[type="radio"]) {
         min-width: fit-content;
@@ -2443,12 +2439,10 @@ strong {
     .collapse:is(details) summary {
         display: block;
         position: relative;
+        outline: none;
     }
     .collapse:is(details) summary::-webkit-details-marker {
         display: none;
-    }
-    .collapse:is(details) summary {
-        outline: none;
     }
     .collapse-content {
         visibility: hidden;
@@ -4617,9 +4611,6 @@ strong {
     .float-end {
         float: inline-end;
     }
-    .container {
-        width: 100%;
-    }
     @media (min-width: 40rem) {
         .container {
             max-width: 40rem;
@@ -4666,6 +4657,9 @@ strong {
     .filter {
         flex-wrap: wrap;
         display: flex;
+        filter: var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,)
+            var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,)
+            var(--tw-drop-shadow,);
     }
     .filter input[type="radio"] {
         width: auto;
@@ -4701,6 +4695,7 @@ strong {
         scale: 0;
     }
     .container {
+        width: 100%;
         margin-inline: auto;
         padding-inline: 1rem;
     }
@@ -6048,13 +6043,6 @@ strong {
     .skeleton {
         border-radius: var(--radius-box);
         background-color: var(--color-base-300);
-    }
-    @media (prefers-reduced-motion: reduce) {
-        .skeleton {
-            transition-duration: 15s;
-        }
-    }
-    .skeleton {
         will-change: background-position;
         background-image: linear-gradient(
             105deg,
@@ -6065,6 +6053,11 @@ strong {
         background-position-x: -50%;
         background-repeat: no-repeat;
         background-size: 200%;
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .skeleton {
+            transition-duration: 15s;
+        }
     }
     @media (prefers-reduced-motion: no-preference) {
         .skeleton {
@@ -9602,11 +9595,6 @@ strong {
     }
     .sepia {
         --tw-sepia: sepia(100%);
-        filter: var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,)
-            var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,)
-            var(--tw-drop-shadow,);
-    }
-    .filter {
         filter: var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,)
             var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,)
             var(--tw-drop-shadow,);
