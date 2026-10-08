@@ -3,7 +3,9 @@
 use super::{manual_discovery::AssociationChoice, schedule};
 use crate::app::api::ApiCtx;
 use crate::components::atoms::{IconButton, icons::IconRefreshCw};
-use revaer_api_models::media_schedule::MediaScheduleConfigurationResponse;
+use revaer_api_models::media_schedule::{
+    MediaScheduleConfigurationRequest, MediaScheduleConfigurationResponse,
+};
 use std::{cell::Cell, rc::Rc};
 use uuid::Uuid;
 use web_sys::{HtmlInputElement, HtmlSelectElement};
@@ -191,26 +193,18 @@ fn schedule_authoring(props: &ScheduleAuthoringProps) -> Html {
                         .await
                 };
                 if active.get() {
-                    if let Ok((row, etag)) = result {
-                        if etag != row.etag() {
+                    let confirmed = result
+                        .map_err(|_| "Schedule save was not confirmed. Draft preserved; reload before resubmitting.")
+                        .and_then(|(row, etag)| confirm_saved_schedule(id, &request, row, &etag));
+                    match confirmed {
+                        Ok(row) => {
+                            saved.set(Some(row));
+                            editing.set(false);
+                        }
+                        Err(message) => {
                             loaded.set(false);
-                            error.set(Some("Schedule confirmation is inconsistent. Reload before resubmitting."));
-                            busy.set(false);
-                            return;
+                            error.set(Some(message));
                         }
-                        match schedule::confirm(id, &request, &row) {
-                            Ok(()) => {
-                                saved.set(Some(row));
-                                editing.set(false);
-                            }
-                            Err(message) => {
-                                loaded.set(false);
-                                error.set(Some(message));
-                            }
-                        }
-                    } else {
-                        loaded.set(false);
-                        error.set(Some("Schedule save was not confirmed. Draft preserved; reload before resubmitting."));
                     }
                     busy.set(false);
                 }
@@ -259,4 +253,17 @@ fn schedule_authoring(props: &ScheduleAuthoringProps) -> Html {
             <span title="Reload cadence"><IconButton label="Reload cadence" icon={html! { <IconRefreshCw size="4" /> }} onclick={on_reload} disabled={*busy} /></span>
         </div>
     }
+}
+
+fn confirm_saved_schedule(
+    id: Uuid,
+    request: &MediaScheduleConfigurationRequest,
+    row: MediaScheduleConfigurationResponse,
+    etag: &str,
+) -> Result<MediaScheduleConfigurationResponse, &'static str> {
+    if etag != row.etag() {
+        return Err("Schedule confirmation is inconsistent. Reload before resubmitting.");
+    }
+    schedule::confirm(id, request, &row)?;
+    Ok(row)
 }

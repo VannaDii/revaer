@@ -55,15 +55,7 @@ pub(crate) fn profile_root_editor(props: &ProfileRootEditorProps) -> Html {
                     spawn_local(async move {
                         let result = fetch_profile_edit(&api.client, id).await;
                         if active.get() {
-                            match result {
-                                Ok(loaded) => {
-                                    profile.set(ProfileDraft::from_request(&loaded.profile));
-                                    draft.set(ProfileRootDraft::from_request(&loaded.profile));
-                                    edit.set(Some(loaded));
-                                    error.set(None);
-                                }
-                                Err(message) => error.set(Some(message)),
-                            }
+                            apply_loaded_profile(result, &profile, &draft, &edit, &error);
                             busy.set(false);
                         }
                     });
@@ -152,43 +144,7 @@ pub(crate) fn profile_root_editor(props: &ProfileRootEditorProps) -> Html {
             });
         })
     };
-    let on_new = {
-        let profile = profile.clone();
-        let draft = draft.clone();
-        let saved = saved.clone();
-        let error = error.clone();
-        let edit = edit.clone();
-        let on_new = props.on_new.clone();
-        let selected = props.selected;
-        Callback::from(move |_| {
-            if selected.is_some() && saved.is_none() {
-                match web_sys::window()
-                    .ok_or("Profile editor confirmation is unavailable.")
-                    .and_then(|window| {
-                        window
-                            .confirm_with_message(
-                                "Discard the current profile draft and create a new profile?",
-                            )
-                            .map_err(
-                                |_| "Profile editor confirmation failed. The draft is preserved.",
-                            )
-                    }) {
-                    Ok(true) => {}
-                    Ok(false) => return,
-                    Err(message) => {
-                        error.set(Some(message));
-                        return;
-                    }
-                }
-            }
-            profile.set(ProfileDraft::default());
-            draft.set(ProfileRootDraft::default());
-            saved.set(None);
-            edit.set(None);
-            error.set(None);
-            on_new.emit(());
-        })
-    };
+    let on_new = build_new_profile_callback(&profile, &draft, &saved, &error, &edit, props);
     html! {
         <section class="border-b border-base-300 py-4 space-y-3" data-testid="media-profile-root-editor">
             <h2 class="text-lg font-semibold">{if props.selected.is_some() { "Edit profile" } else { "Create profile" }}</h2>
@@ -207,6 +163,67 @@ pub(crate) fn profile_root_editor(props: &ProfileRootEditorProps) -> Html {
             {if saved.is_some() || props.selected.is_some() { html! { <button type="button" class="btn" disabled={*busy} onclick={on_new}>{"New profile"}</button> } } else { Html::default() }}
         </section>
     }
+}
+
+fn apply_loaded_profile(
+    result: Result<ProfileEdit, &'static str>,
+    profile: &UseStateHandle<ProfileDraft>,
+    draft: &UseStateHandle<ProfileRootDraft>,
+    edit: &UseStateHandle<Option<ProfileEdit>>,
+    error: &UseStateHandle<Option<&'static str>>,
+) {
+    match result {
+        Ok(loaded) => {
+            profile.set(ProfileDraft::from_request(&loaded.profile));
+            draft.set(ProfileRootDraft::from_request(&loaded.profile));
+            edit.set(Some(loaded));
+            error.set(None);
+        }
+        Err(message) => error.set(Some(message)),
+    }
+}
+
+fn build_new_profile_callback(
+    profile: &UseStateHandle<ProfileDraft>,
+    draft: &UseStateHandle<ProfileRootDraft>,
+    saved: &UseStateHandle<Option<i32>>,
+    error: &UseStateHandle<Option<&'static str>>,
+    edit: &UseStateHandle<Option<ProfileEdit>>,
+    props: &ProfileRootEditorProps,
+) -> Callback<MouseEvent> {
+    let profile = profile.clone();
+    let draft = draft.clone();
+    let saved = saved.clone();
+    let error = error.clone();
+    let edit = edit.clone();
+    let on_new = props.on_new.clone();
+    let selected = props.selected;
+    Callback::from(move |_| {
+        if selected.is_some() && saved.is_none() {
+            match web_sys::window()
+                .ok_or("Profile editor confirmation is unavailable.")
+                .and_then(|window| {
+                    window
+                        .confirm_with_message(
+                            "Discard the current profile draft and create a new profile?",
+                        )
+                        .map_err(|_| "Profile editor confirmation failed. The draft is preserved.")
+                }) {
+                Ok(true) => {}
+                Ok(false) => return,
+                Err(message) => {
+                    error.set(Some(message));
+                    return;
+                }
+            }
+        }
+        profile.set(ProfileDraft::default());
+        draft.set(ProfileRootDraft::default());
+        saved.set(None);
+        edit.set(None);
+        error.set(None);
+        on_new.emit(());
+    })
 }
 
 fn render_field(
