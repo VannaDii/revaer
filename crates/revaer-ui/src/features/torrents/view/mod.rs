@@ -140,6 +140,86 @@ struct RateValues {
     upload_bps: Option<u64>,
 }
 
+struct TorrentKeyboardContext {
+    visible_ids: Vec<Uuid>,
+    selected_idx: UseStateHandle<usize>,
+    on_select: Callback<Uuid>,
+    search_ref: NodeRef,
+    action_banner: UseStateHandle<Option<String>>,
+    confirm: UseStateHandle<Option<ConfirmKind>>,
+    on_action: Callback<(TorrentAction, Uuid)>,
+    on_search: Callback<String>,
+    bundle: TranslationBundle,
+}
+
+fn build_keyboard_callback(context: TorrentKeyboardContext) -> Callback<KeyboardEvent> {
+    Callback::from(move |event: KeyboardEvent| {
+        if let Some(target) = event.target()
+            && let Ok(element) = target.dyn_into::<HtmlElement>()
+            && matches!(element.tag_name().as_str(), "INPUT" | "TEXTAREA" | "SELECT")
+        {
+            return;
+        }
+        let Some(action) = interpret_shortcut(&event.key(), event.shift_key()) else {
+            return;
+        };
+        event.prevent_default();
+        match action {
+            ShortcutOutcome::FocusSearch => focus_search_input(&context.search_ref),
+            ShortcutOutcome::SelectNext | ShortcutOutcome::SelectPrev => {
+                advance_torrent_selection(action, &context);
+            }
+            ShortcutOutcome::TogglePauseResume => {
+                if let Some(id) = context.visible_ids.get(*context.selected_idx) {
+                    context
+                        .action_banner
+                        .set(Some(context.bundle.text("toast.pause")));
+                    context.on_action.emit((TorrentAction::Pause, *id));
+                }
+            }
+            ShortcutOutcome::ClearSearch => {
+                clear_search_input(&context.search_ref, &context.on_search);
+            }
+            ShortcutOutcome::ConfirmDelete => context.confirm.set(Some(ConfirmKind::Delete)),
+            ShortcutOutcome::ConfirmDeleteData => {
+                context.confirm.set(Some(ConfirmKind::DeleteData))
+            }
+            ShortcutOutcome::ConfirmRecheck => context.confirm.set(Some(ConfirmKind::Recheck)),
+        }
+    })
+}
+
+fn advance_torrent_selection(action: ShortcutOutcome, context: &TorrentKeyboardContext) {
+    if let Some(next) = crate::core::logic::advance_selection(
+        action,
+        *context.selected_idx,
+        context.visible_ids.len(),
+    ) {
+        context.selected_idx.set(next);
+        if let Some(id) = context.visible_ids.get(next) {
+            context.on_select.emit(*id);
+        }
+    }
+}
+
+fn focus_search_input(search_ref: &NodeRef) {
+    if let Some(input) = search_ref.cast::<web_sys::HtmlInputElement>() {
+        if let Err(err) = input.focus() {
+            console::error!("input focus failed", err);
+        }
+    }
+}
+
+fn clear_search_input(search_ref: &NodeRef, on_search: &Callback<String>) {
+    if let Some(input) = search_ref.cast::<web_sys::HtmlInputElement>() {
+        input.set_value("");
+        if let Err(err) = input.blur() {
+            console::error!("input blur failed", err);
+        }
+        on_search.emit(String::new());
+    }
+}
+
 #[function_component(TorrentView)]
 pub(crate) fn torrent_view(props: &TorrentProps) -> Html {
     let bundle = use_context::<TranslationBundle>()
@@ -376,82 +456,17 @@ pub(crate) fn torrent_view(props: &TorrentProps) -> Html {
     }
 
     // Keyboard shortcuts: j/k navigation, space pause/resume, delete/shift+delete confirmations, p recheck, / focus search.
-    let on_keydown = {
-        let visible_ids = display_ids.clone();
-        let selected_idx = selected_idx.clone();
-        let on_select = on_select.clone();
-        let search_ref = search_ref.clone();
-        let action_banner = action_banner.clone();
-        let confirm = confirm.clone();
-        let on_action = props.on_action.clone();
-        let on_search = props.on_search.clone();
-        let bundle = bundle.clone();
-        Callback::from(move |event: KeyboardEvent| {
-            if let Some(target) = event.target()
-                && let Ok(element) = target.dyn_into::<HtmlElement>()
-                && matches!(element.tag_name().as_str(), "INPUT" | "TEXTAREA" | "SELECT")
-            {
-                return;
-            }
-
-            if let Some(action) = interpret_shortcut(&event.key(), event.shift_key()) {
-                event.prevent_default();
-                match action {
-                    ShortcutOutcome::FocusSearch => {
-                        if let Some(input) = search_ref.cast::<web_sys::HtmlInputElement>() {
-                            if let Err(err) = input.focus() {
-                                console::error!("input focus failed", err);
-                            }
-                        }
-                    }
-                    ShortcutOutcome::SelectNext => {
-                        if let Some(next) = crate::core::logic::advance_selection(
-                            ShortcutOutcome::SelectNext,
-                            *selected_idx,
-                            visible_ids.len(),
-                        ) {
-                            selected_idx.set(next);
-                            if let Some(id) = visible_ids.get(next) {
-                                on_select.emit(*id);
-                            }
-                        }
-                    }
-                    ShortcutOutcome::SelectPrev => {
-                        if let Some(next) = crate::core::logic::advance_selection(
-                            ShortcutOutcome::SelectPrev,
-                            *selected_idx,
-                            visible_ids.len(),
-                        ) {
-                            selected_idx.set(next);
-                            if let Some(id) = visible_ids.get(next) {
-                                on_select.emit(*id);
-                            }
-                        }
-                    }
-                    ShortcutOutcome::TogglePauseResume => {
-                        if let Some(id) = visible_ids.get(*selected_idx) {
-                            action_banner.set(Some(bundle.text("toast.pause")));
-                            on_action.emit((TorrentAction::Pause, *id));
-                        }
-                    }
-                    ShortcutOutcome::ClearSearch => {
-                        if let Some(input) = search_ref.cast::<web_sys::HtmlInputElement>() {
-                            input.set_value("");
-                            if let Err(err) = input.blur() {
-                                console::error!("input blur failed", err);
-                            }
-                            on_search.emit(String::new());
-                        }
-                    }
-                    ShortcutOutcome::ConfirmDelete => confirm.set(Some(ConfirmKind::Delete)),
-                    ShortcutOutcome::ConfirmDeleteData => {
-                        confirm.set(Some(ConfirmKind::DeleteData))
-                    }
-                    ShortcutOutcome::ConfirmRecheck => confirm.set(Some(ConfirmKind::Recheck)),
-                }
-            }
-        })
-    };
+    let on_keydown = build_keyboard_callback(TorrentKeyboardContext {
+        visible_ids: display_ids.clone(),
+        selected_idx: selected_idx.clone(),
+        on_select: on_select.clone(),
+        search_ref: search_ref.clone(),
+        action_banner: action_banner.clone(),
+        confirm: confirm.clone(),
+        on_action: props.on_action.clone(),
+        on_search: props.on_search.clone(),
+        bundle: bundle.clone(),
+    });
 
     let drawer_open = props.selected_id.is_some();
     let close_drawer = {
