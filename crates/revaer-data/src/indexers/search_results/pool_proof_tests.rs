@@ -4,6 +4,7 @@ use std::str::FromStr;
 use anyhow::{Context, ensure};
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
+use tokio::io::AsyncWriteExt;
 
 use super::*;
 
@@ -203,11 +204,14 @@ async fn run(request: Request) -> anyhow::Result<()> {
     let result = observe(&pool).await;
     pool.close().await;
     let frames = result?;
-    let output = std::fs::OpenOptions::new()
+    let mut output = tokio::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(request.report_path)?;
-    serde_json::to_writer_pretty(output, &frames)?;
+        .open(request.report_path)
+        .await?;
+    output
+        .write_all(&serde_json::to_vec_pretty(&frames)?)
+        .await?;
     Ok(())
 }
 

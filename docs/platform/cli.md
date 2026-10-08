@@ -87,7 +87,7 @@ Each invocation bubbles a unique `x-request-id` through the API; the CLI can opt
 
 - Connects to `/v1/torrents/events` (falls back to `/v1/events/stream`).
 - Filters match the API query parameters and enforce UUID/event-kind validation before the request is made.
-- When `--resume-file` is supplied, the CLI persists the last event ID across reconnects so the stream can resume after transient failures.
+- When `--resume-file` is supplied, the CLI persists the last event ID across reconnects so the stream can resume after transient failures. A missing file starts a fresh stream; an unreadable file or malformed event ID fails explicitly.
 - `--retry-secs` controls the backoff between reconnect attempts (default: 5 seconds).
 
 All torrent commands require an API key. The CLI surfaces API problems exactly as the server returns them, including RFC9457 validation errors and rate-limit responses (`429 Too Many Requests` with retry metadata in the body).

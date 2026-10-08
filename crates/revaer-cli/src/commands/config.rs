@@ -40,7 +40,8 @@ pub(crate) async fn handle_config_set(ctx: &AppContext, args: ConfigSetArgs) -> 
         CliError::validation("API key is required (pass --api-key or set REVAER_API_KEY)")
     })?;
 
-    let payload = std::fs::read_to_string(&args.file)
+    let payload = tokio::fs::read_to_string(&args.file)
+        .await
         .with_context(|| format!("failed to read {}", args.file.display()))
         .map_err(CliError::failure)?;
 
