@@ -1044,6 +1044,170 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn native_session_rejects_insecure_tracker_auth_before_admission() -> Result<()> {
+        let mut harness = NativeSessionHarness::new()?;
+        harness
+            .session
+            .apply_config(&harness.runtime_config())
+            .await?;
+        let password = Uuid::new_v4().to_string();
+        for tracker in [
+            "http://localhost/announce",
+            "udp://localhost:6969/announce",
+            "ftp://localhost/announce",
+            "not-a-url",
+            "https:///announce",
+            "https://user@localhost/announce",
+            "https://@localhost/announce",
+        ] {
+            let descriptor = AddTorrent {
+                id: Uuid::new_v4(),
+                source: TorrentSource::magnet(MAGNET_URI_FOR_AUTH_TEST),
+                options: AddTorrentOptions {
+                    trackers: vec![tracker.to_string()],
+                    replace_trackers: true,
+                    tracker_auth: Some(TrackerAuth {
+                        password: Some(password.clone()),
+                        ..TrackerAuth::default()
+                    }),
+                    ..AddTorrentOptions::default()
+                },
+            };
+            let error = harness
+                .session
+                .add_torrent(&descriptor)
+                .await
+                .err()
+                .ok_or_else(|| anyhow!("insecure tracker was accepted"))?;
+            let message = native_failure_message(error)?;
+            assert!(!message.contains(&password));
+            assert!(!message.contains(tracker));
+            assert!(message.contains("tracker"));
+            // Rejection must not reserve the torrent identity.
+            let mut corrected = descriptor;
+            corrected.options.trackers = vec!["https://localhost/announce".to_string()];
+            harness.session.add_torrent(&corrected).await?;
+        }
+        Ok(())
+    }
+
+    const MAGNET_URI_FOR_AUTH_TEST: &str =
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567";
+
+    #[tokio::test]
+    async fn native_session_preserves_config_after_tracker_transport_rejection() -> Result<()> {
+        let mut harness = NativeSessionHarness::new()?;
+        let mut config = harness.runtime_config();
+        config.tracker.default = vec!["http://localhost/announce".to_string()];
+        harness.session.apply_config(&config).await?;
+        let mut rejected = config.clone();
+        rejected.tracker.auth = Some(crate::types::TrackerAuthRuntime {
+            username: Some(Uuid::new_v4().to_string()),
+            ..crate::types::TrackerAuthRuntime::default()
+        });
+        let error = harness
+            .session
+            .apply_config(&rejected)
+            .await
+            .err()
+            .ok_or_else(|| anyhow!("plaintext tracker authentication was accepted"))?;
+        assert_eq!(
+            native_failure_message(error)?,
+            "tracker authentication requires HTTPS"
+        );
+        let descriptor = AddTorrent {
+            id: Uuid::new_v4(),
+            source: TorrentSource::magnet(MAGNET_URI_FOR_AUTH_TEST),
+            options: AddTorrentOptions::default(),
+        };
+        harness.session.add_torrent(&descriptor).await?;
+        let update = revaer_torrent_core::model::TorrentTrackersUpdate {
+            trackers: vec!["https://user@localhost/announce".to_string()],
+            replace: true,
+        };
+        assert!(
+            harness
+                .session
+                .update_trackers(descriptor.id, &update)
+                .await
+                .is_err()
+        );
+        harness.session.reannounce(descriptor.id).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn native_session_keeps_tracker_credentials_out_of_events_and_resume() -> Result<()> {
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        let address = listener.local_addr()?;
+        listener.set_nonblocking(true)?;
+        let tracker = thread::spawn(move || serve_tracker_error(&listener));
+        let mut harness = NativeSessionHarness::new()?;
+        let password = Uuid::new_v4().to_string();
+        let username = Uuid::new_v4().to_string();
+        let mut config = harness.runtime_config();
+        let tracker_url = format!("https://{address}/announce");
+        config.tracker.default = vec![tracker_url.clone()];
+        config.tracker.auth = Some(crate::types::TrackerAuthRuntime {
+            username: Some(username.clone()),
+            password: Some(password.clone()),
+            ..crate::types::TrackerAuthRuntime::default()
+        });
+        harness.session.apply_config(&config).await?;
+        let descriptor = AddTorrent {
+            id: Uuid::new_v4(),
+            source: TorrentSource::magnet(MAGNET_URI_FOR_AUTH_TEST),
+            options: AddTorrentOptions::default(),
+        };
+        harness.session.add_torrent(&descriptor).await?;
+        let rejected = revaer_torrent_core::model::TorrentTrackersUpdate {
+            trackers: vec![format!("http://{address}/announce")],
+            replace: true,
+        };
+        assert!(
+            harness
+                .session
+                .update_trackers(descriptor.id, &rejected)
+                .await
+                .is_err()
+        );
+        harness.session.reannounce(descriptor.id).await?;
+        let mut saw_tracker = false;
+        let mut saw_resume = false;
+        for _ in 0..200 {
+            sleep(Duration::from_millis(25)).await;
+            for event in harness.session.poll_events().await? {
+                let text = format!("{event:?}");
+                assert!(!text.contains(&username));
+                assert!(!text.contains(&password));
+                match event {
+                    EngineEvent::TrackerStatus { trackers, .. } => {
+                        for status in trackers {
+                            assert_eq!(status.url, tracker_url);
+                            saw_tracker = true;
+                        }
+                    }
+                    EngineEvent::ResumeData { payload, .. } => {
+                        assert!(!contains_subsequence(&payload, username.as_bytes()));
+                        assert!(!contains_subsequence(&payload, password.as_bytes()));
+                        saw_resume = true;
+                    }
+                    _ => {}
+                }
+            }
+            if saw_tracker && saw_resume {
+                break;
+            }
+        }
+        tracker
+            .join()
+            .map_err(|_| anyhow!("tracker fixture thread panicked"))??;
+        assert!(saw_tracker, "expected sanitized tracker failure");
+        assert!(saw_resume, "expected sanitized resume payload");
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn native_session_reports_tracker_errors_without_invalid_memory_access()
     -> TorrentResult<()> {
         let listener = TcpListener::bind("127.0.0.1:0")?;

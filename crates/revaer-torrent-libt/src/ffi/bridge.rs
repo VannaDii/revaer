@@ -1,3 +1,38 @@
+/// Validate tracker transport before native admission or configuration mutation.
+fn validate_tracker_transport(tracker: &str, authenticated: bool) -> Result<(), String> {
+    let Some((_, authority)) = tracker.split_once("://") else {
+        return Err("invalid tracker URL".to_string());
+    };
+    if tracker
+        .chars()
+        .any(|ch| ch.is_whitespace() || ch.is_control())
+        || authority.is_empty()
+        || authority.starts_with('/')
+        || authority.contains('\\')
+    {
+        return Err("invalid tracker URL".to_string());
+    }
+    let Ok(parsed) = url::Url::parse(tracker) else {
+        return Err("invalid tracker URL".to_string());
+    };
+    if parsed.host_str().is_none_or(str::is_empty) {
+        return Err("invalid tracker URL".to_string());
+    }
+    let authority_end = authority
+        .find(['/', '?', '#'])
+        .map_or(authority.len(), |end| end);
+    let authority = &authority[..authority_end];
+    if authority.contains('@') || !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(
+            "tracker URL userinfo is forbidden; use dedicated authentication fields".to_string(),
+        );
+    }
+    if authenticated && parsed.scheme() != "https" {
+        return Err("tracker authentication requires HTTPS".to_string());
+    }
+    Ok(())
+}
+
 #[cxx::bridge(namespace = "revaer")]
 /// Native bridge types and functions exposed to Rust.
 pub mod ffi {
@@ -751,6 +786,11 @@ pub mod ffi {
         remote_interested: bool,
         /// Whether we are choking the peer.
         remote_choked: bool,
+    }
+
+    extern "Rust" {
+        /// Reject malformed or credential-bearing URLs and insecure Basic authentication.
+        fn validate_tracker_transport(tracker: &str, authenticated: bool) -> Result<()>;
     }
 
     unsafe extern "C++" {

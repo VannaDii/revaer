@@ -88,6 +88,33 @@ std::string to_std_string(const ::rust::String& value) {
     return static_cast<std::string>(value);
 }
 
+// Keep the native boundary on the same URL parser used by Rust callers.
+std::optional<std::string> validate_tracker_url(const std::string& tracker,
+                                              bool authenticated) {
+    try {
+        validate_tracker_transport(tracker, authenticated);
+    } catch (const ::rust::Error& error) {
+        return std::string(error.what());
+    }
+    return std::nullopt;
+}
+
+// Libtorrent may reflect its internal credential-bearing URL in alert messages.
+std::string sanitize_tracker_urls(std::string text) {
+    std::size_t cursor = 0;
+    while ((cursor = text.find("://", cursor)) != std::string::npos) {
+        const auto authority_start = cursor + 3;
+        const auto authority_end = text.find_first_of("/?# \t\r\n", authority_start);
+        const auto userinfo = text.find('@', authority_start);
+        if (userinfo != std::string::npos
+            && (authority_end == std::string::npos || userinfo < authority_end)) {
+            text.erase(authority_start, userinfo + 1 - authority_start);
+        }
+        cursor = authority_start;
+    }
+    return text;
+}
+
 std::string to_hex_string(const std::string& bytes) {
     constexpr std::array<char, 16> kHex = {
         '0', '1', '2', '3', '4', '5', '6', '7',
@@ -566,6 +593,18 @@ public:
 
     ::rust::String apply_engine_profile(const EngineOptions& options) {
         try {
+            const bool authenticated = options.tracker.auth.has_username
+                || options.tracker.auth.has_password;
+            for (const auto& tracker : options.tracker.default_trackers) {
+                if (const auto error = validate_tracker_url(to_std_string(tracker), authenticated)) {
+                    return ::rust::String(*error);
+                }
+            }
+            for (const auto& tracker : options.tracker.extra_trackers) {
+                if (const auto error = validate_tracker_url(to_std_string(tracker), authenticated)) {
+                    return ::rust::String(*error);
+                }
+            }
             lt::settings_pack pack;
             pack.set_bool(lt::settings_pack::enable_dht, options.network.enable_dht);
             pack.set_bool(lt::settings_pack::enable_lsd, options.network.enable_lsd);
@@ -1308,7 +1347,6 @@ public:
             if (resume_it != pending_resume_.end()) {
                 lt::error_code resume_ec;
                 auto resume_params = lt::read_resume_data(resume_it->second, resume_ec);
-                pending_resume_.erase(resume_it);
                 if (resume_ec) {
                     return ::rust::String(
                         "resume data parse failed: " + resume_ec.message());
@@ -1456,6 +1494,25 @@ public:
                     trackers.push_back(to_std_string(tracker));
                 }
             }
+            if (trackers.empty()) {
+                trackers = params.trackers;
+            }
+#if LIBTORRENT_VERSION_NUM < 20100
+            if (params.ti) {
+                for (const auto& tracker : params.ti->trackers()) {
+                    if (const auto error = validate_tracker_url(
+                            tracker.url, auth.has_username || auth.has_password)) {
+                        return ::rust::String(*error);
+                    }
+                }
+            }
+#endif
+            for (const auto& tracker : trackers) {
+                if (const auto error = validate_tracker_url(
+                        tracker, auth.has_username || auth.has_password)) {
+                    return ::rust::String(*error);
+                }
+            }
             if (!trackers.empty()) {
                 params.trackers = apply_tracker_auth(trackers, auth);
             }
@@ -1510,6 +1567,7 @@ public:
             const auto metainfo = extract_metainfo_details(params);
             lt::torrent_handle handle = session_->add_torrent(params);
             handles_[request_id] = handle;
+            pending_resume_.erase(request_id);
             TorrentSnapshot snapshot{};
             snapshot.metainfo = metainfo;
             snapshots_[request_id] = std::move(snapshot);
@@ -1710,6 +1768,12 @@ public:
             .has_username = has_tracker_username_,
             .has_password = has_tracker_password_,
         };
+        for (const auto& tracker : request.trackers) {
+            if (const auto error = validate_tracker_url(
+                    to_std_string(tracker), auth.has_username || auth.has_password)) {
+                return ::rust::String(*error);
+            }
+        }
         return mutate_handle(key, [&](lt::torrent_handle& handle) {
             std::vector<lt::announce_entry> trackers;
             if (!request.replace) {
@@ -1934,9 +1998,9 @@ public:
                     evt.state = NativeTorrentState::Downloading;
                     evt.tracker_statuses = rust::Vec<NativeTrackerStatus>();
                     NativeTrackerStatus status{};
-                    status.url = tracker_err->tracker_url();
+                    status.url = sanitize_tracker_urls(tracker_err->tracker_url());
                     status.status = "error";
-                    status.message = tracker_err->message();
+                    status.message = sanitize_tracker_urls(tracker_err->message());
                     evt.tracker_statuses.push_back(std::move(status));
                     events.push_back(evt);
                 }
@@ -1967,9 +2031,9 @@ public:
                     evt.state = NativeTorrentState::Downloading;
                     evt.tracker_statuses = rust::Vec<NativeTrackerStatus>();
                     NativeTrackerStatus status{};
-                    status.url = tracker_warn->tracker_url();
+                    status.url = sanitize_tracker_urls(tracker_warn->tracker_url());
                     status.status = "warning";
-                    status.message = tracker_warn->message();
+                    status.message = sanitize_tracker_urls(tracker_warn->message());
                     evt.tracker_statuses.push_back(std::move(status));
                     events.push_back(evt);
                 }
@@ -1977,7 +2041,7 @@ public:
             if (auto* tracker_err =
                     lt::alert_cast<lt::tracker_error_alert>(alert)) {
                 auto id = find_torrent_id(tracker_err->handle);
-                push_session_error("tracker", tracker_err->message(), id);
+                push_session_error("tracker", sanitize_tracker_urls(tracker_err->message()), id);
             }
             if (auto* peer_ban = lt::alert_cast<lt::peer_ban_alert>(alert)) {
                 auto id = find_torrent_id(peer_ban->handle);
@@ -2036,7 +2100,13 @@ public:
                 auto id = find_torrent_id(resume->handle);
                 auto snapshot = snapshots_.find(id);
                 if (!id.empty() && snapshot != snapshots_.end()) {
-                    auto buffer = lt::write_resume_data_buf(resume->params);
+                    auto params = resume->params;
+                    for (auto& tracker : params.trackers) {
+                        tracker = sanitize_tracker_urls(std::move(tracker));
+                    }
+                    // Dedicated authentication is reapplied from configuration on restart.
+                    params.trackerid.clear();
+                    auto buffer = lt::write_resume_data_buf(params);
                     NativeEvent evt{};
                     evt.id = id;
                     evt.kind = NativeEventKind::ResumeData;
@@ -2405,12 +2475,10 @@ private:
     }
 
     std::string inject_basic_auth(const std::string& tracker, const AuthView& auth) const {
-        const bool is_http = tracker.rfind("http://", 0) == 0;
-        const bool is_https = tracker.rfind("https://", 0) == 0;
-        if (!is_http && !is_https) {
+        if (!auth.has_username && !auth.has_password) {
             return tracker;
         }
-
+        // All callers validate HTTPS transport before reaching this boundary.
         const auto scheme_end = tracker.find("://");
         if (scheme_end == std::string::npos) {
             return tracker;

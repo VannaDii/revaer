@@ -95,7 +95,7 @@ The `/.well-known/revaer.json` endpoint, the authenticated `GET /v1/config` rout
 
 ### Tracker and filtering
 
-- `tracker` (user-agent, announce overrides).
+- `tracker` (user-agent, announce overrides). Username/password authentication requires HTTPS; HTTP and UDP remain available without Basic authentication. Tracker URLs must not contain userinfo: supply credentials through the dedicated authentication secrets. Invalid transport is rejected before tracker mutation. Temporary HTTPS userinfo is removed from tracker events and resume data; authentication is reapplied from configuration after restart.
 - `ip_filter` (inline rules plus optional remote blocklist).
 - `peer_classes` (per-class caps and throttles).
 
