@@ -1540,14 +1540,19 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(unix)]
     #[tokio::test]
-    async fn native_session_translates_authoring_exception_and_remains_usable() -> TorrentResult<()>
-    {
+    async fn native_session_translates_authoring_filesystem_exception_and_remains_usable()
+    -> TorrentResult<()> {
         let mut harness = NativeSessionHarness::new()?;
-        let file_path = harness.download_path().join("empty.txt");
-        fs::write(&file_path, b"")?;
+        let root_path = harness.download_path().join("authoring-loop");
+        fs::create_dir(&root_path)?;
+        let file_path = root_path.join("seed.txt");
+        fs::write(&file_path, b"revaer")?;
+        let loop_path = root_path.join("loop");
+        std::os::unix::fs::symlink("loop", &loop_path)?;
         let request = TorrentAuthorRequest {
-            root_path: file_path.to_string_lossy().into_owned(),
+            root_path: root_path.to_string_lossy().into_owned(),
             ..TorrentAuthorRequest::default()
         };
 
@@ -1576,9 +1581,9 @@ mod tests {
             .downcast::<LibtorrentError>()
             .map_err(|_| anyhow!("expected native failure"))?;
         assert!(matches!(*native, LibtorrentError::NativeFailure { .. }));
-        assert!(fs::read(&file_path)?.is_empty());
+        assert_eq!(fs::read(&file_path)?, b"revaer");
 
-        fs::write(&file_path, b"revaer")?;
+        fs::remove_file(&loop_path)?;
         let result = harness.session.create_torrent(&request).await?;
         assert!(!result.metainfo.is_empty());
         assert_eq!(fs::read(&file_path)?, b"revaer");
