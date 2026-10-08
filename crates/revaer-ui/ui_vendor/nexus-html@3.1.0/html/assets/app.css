@@ -13743,14 +13743,12 @@ input:-webkit-autofill:active {
     background-color: var(--color-base-content);
     width: 1px;
     position: absolute;
+    content: "";
 }
 @supports (color: color-mix(in lab, red, red)) {
     .sidebar-menu .collapse .collapse-content:before {
         background-color: color-mix(in oklab, var(--color-base-content) 10%, transparent);
     }
-}
-.sidebar-menu .collapse .collapse-content:before {
-    content: "";
 }
 #layout-sidebar {
     width: var(--layout-sidebar-width);
@@ -13907,53 +13905,18 @@ html:not([data-theme="material"], [data-theme="material-dark"]) #layout-topbar {
 @media (min-width: 80rem) {
     #components-layout-container {
         width: 100%;
-    }
-    @media (min-width: 40rem) {
-        #components-layout-container {
-            max-width: 40rem;
-        }
-    }
-    @media (min-width: 48rem) {
-        #components-layout-container {
-            max-width: 48rem;
-        }
-    }
-    @media (min-width: 64rem) {
-        #components-layout-container {
-            max-width: 64rem;
-        }
-    }
-    #components-layout-container {
         max-width: 80rem;
-    }
-    @media (min-width: 96rem) {
-        #components-layout-container {
-            max-width: 96rem;
-        }
-    }
-    #components-layout-container {
         margin-inline: auto;
-        padding-inline: 1rem;
-    }
-    @media (min-width: 48rem) {
-        #components-layout-container {
-            padding-inline: 2rem;
-        }
-    }
-    @media (min-width: 64rem) {
-        #components-layout-container {
-            padding-inline: 3rem;
-        }
-    }
-    #components-layout-container {
         padding-inline: 4rem;
     }
     @media (min-width: 96rem) {
         #components-layout-container {
+            max-width: 96rem;
             padding-inline: 6rem;
         }
     }
 }
+
 #components-layout-main {
     min-width: calc(var(--spacing) * 0);
     --tw-border-style: dashed;
@@ -14088,19 +14051,17 @@ html:not([data-theme="material"], [data-theme="material-dark"]) #layout-topbar {
 }
 .swiper-pagination .swiper-pagination-bullet {
     background-color: var(--color-base-content);
-}
-@supports (color: color-mix(in lab, red, red)) {
-    .swiper-pagination .swiper-pagination-bullet {
-        background-color: color-mix(in oklab, var(--color-base-content) 15%, transparent);
-    }
-}
-.swiper-pagination .swiper-pagination-bullet {
     opacity: 1;
     transition-property: all;
     transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
     transition-duration: var(--tw-duration, var(--default-transition-duration));
     --tw-duration: 0.3s;
     transition-duration: 0.3s;
+}
+@supports (color: color-mix(in lab, red, red)) {
+    .swiper-pagination .swiper-pagination-bullet {
+        background-color: color-mix(in oklab, var(--color-base-content) 15%, transparent);
+    }
 }
 .swiper-pagination .swiper-pagination-bullet.swiper-pagination-bullet-active {
     --tw-scale-x: 125%;
@@ -14413,6 +14374,7 @@ html:not([data-theme="material"], [data-theme="material-dark"]) #layout-topbar {
 }
 .simplebar-vertical .simplebar-scrollbar:before {
     background-color: var(--color-base-content) !important;
+    left: 3px !important;
 }
 @supports (color: color-mix(in lab, red, red)) {
     .simplebar-vertical .simplebar-scrollbar:before {
@@ -14423,11 +14385,9 @@ html:not([data-theme="material"], [data-theme="material-dark"]) #layout-topbar {
         ) !important;
     }
 }
-.simplebar-vertical .simplebar-scrollbar:before {
-    left: 3px !important;
-}
 .simplebar-vertical .simplebar-scrollbar:hover:before {
     background-color: var(--color-base-content) !important;
+    left: 3px !important;
 }
 @supports (color: color-mix(in lab, red, red)) {
     .simplebar-vertical .simplebar-scrollbar:hover:before {
@@ -14437,9 +14397,6 @@ html:not([data-theme="material"], [data-theme="material-dark"]) #layout-topbar {
             transparent
         ) !important;
     }
-}
-.simplebar-vertical .simplebar-scrollbar:hover:before {
-    left: 3px !important;
 }
 .choices.is-disabled .choices__inner {
     border-color: var(--color-base-200) !important;
@@ -14497,6 +14454,9 @@ html:not([data-theme="material"], [data-theme="material-dark"]) #layout-topbar {
 .choices:after {
     border-color: #0000 !important;
     border-top-color: var(--color-base-content) !important;
+    transition-property: all;
+    transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
+    transition-duration: var(--tw-duration, var(--default-transition-duration));
 }
 @supports (color: color-mix(in lab, red, red)) {
     .choices:after {
@@ -14506,11 +14466,6 @@ html:not([data-theme="material"], [data-theme="material-dark"]) #layout-topbar {
             transparent
         ) !important;
     }
-}
-.choices:after {
-    transition-property: all;
-    transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
-    transition-duration: var(--tw-duration, var(--default-transition-duration));
 }
 :is(.ql-toolbar, .ql-container) * {
     font-family: var(--font-sans);
