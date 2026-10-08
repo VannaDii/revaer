@@ -1164,34 +1164,23 @@ fn torrent_table_row(props: &TorrentTableRowProps) -> Html {
         return html! {};
     };
 
-    render_row(
-        &base,
-        &progress,
-        fsops.as_ref(),
-        props.active,
-        checked,
-        props.on_select.clone(),
-        props.on_toggle.clone(),
-        props.on_action.clone(),
-        props.on_prompt_remove.clone(),
-        props.on_prompt_rate.clone(),
-        props.bundle.clone(),
-    )
+    render_row(&base, &progress, fsops.as_ref(), checked, props)
 }
 
 fn render_row(
     base: &TorrentRowBase,
     progress: &TorrentProgressSlice,
     fsops: Option<&FsopsBadge>,
-    selected: bool,
     checked: bool,
-    on_select: Callback<Uuid>,
-    on_toggle: Callback<Uuid>,
-    on_action: Callback<(TorrentAction, Uuid)>,
-    on_prompt_remove: Callback<ActionTarget>,
-    on_prompt_rate: Callback<ActionTarget>,
-    bundle: TranslationBundle,
+    props: &TorrentTableRowProps,
 ) -> Html {
+    let selected = props.active;
+    let on_select = props.on_select.clone();
+    let on_toggle = props.on_toggle.clone();
+    let on_action = props.on_action.clone();
+    let on_prompt_remove = props.on_prompt_remove.clone();
+    let on_prompt_rate = props.on_prompt_rate.clone();
+    let bundle = props.bundle.clone();
     let t = |key: &str| bundle.text(key);
     let progress_percent = (progress.progress * 100.0).clamp(0.0, 100.0);
     let eta_label = progress
