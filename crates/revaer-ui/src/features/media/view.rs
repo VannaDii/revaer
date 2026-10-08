@@ -26,6 +26,15 @@ type MediaJobDiagnosticsRef = Rc<RefCell<MediaJobDiagnosticsMap>>;
 type ActiveDiagnosticsRequests = Rc<RefCell<HashMap<uuid::Uuid, uuid::Uuid>>>;
 type OpenedJobDiagnosticsRef = Rc<RefCell<HashSet<uuid::Uuid>>>;
 
+#[derive(Clone)]
+struct JobDiagnosticsHandles {
+    job_diagnostics: UseStateHandle<MediaJobDiagnosticsMap>,
+    job_diagnostics_ref: MediaJobDiagnosticsRef,
+    opened_job_diagnostics: UseStateHandle<HashSet<uuid::Uuid>>,
+    opened_job_diagnostics_ref: OpenedJobDiagnosticsRef,
+    active_diagnostics_requests: ActiveDiagnosticsRequests,
+}
+
 #[derive(Properties, PartialEq)]
 pub(crate) struct MediaPageProps {
     pub on_success_toast: Callback<String>,
@@ -124,26 +133,22 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
         verification_keyframe_seek: policy_verification_keyframe_seek.clone(),
         verification_playback_probe: policy_verification_playback_probe.clone(),
     };
+    let diagnostics = JobDiagnosticsHandles {
+        job_diagnostics: job_diagnostics.clone(),
+        job_diagnostics_ref,
+        opened_job_diagnostics: opened_job_diagnostics.clone(),
+        opened_job_diagnostics_ref,
+        active_diagnostics_requests,
+    };
     let on_refresh = build_refresh_callback(
         api.clone(),
         state.clone(),
-        job_diagnostics.clone(),
-        job_diagnostics_ref.clone(),
-        opened_job_diagnostics.clone(),
-        opened_job_diagnostics_ref.clone(),
-        active_diagnostics_requests.clone(),
+        diagnostics.clone(),
         busy.clone(),
         toasts.error.clone(),
     );
-    let on_toggle_job_diagnostics = build_job_diagnostics_toggle_callback(
-        api.clone(),
-        job_diagnostics.clone(),
-        job_diagnostics_ref.clone(),
-        opened_job_diagnostics.clone(),
-        opened_job_diagnostics_ref.clone(),
-        active_diagnostics_requests.clone(),
-        toasts.error.clone(),
-    );
+    let on_toggle_job_diagnostics =
+        build_job_diagnostics_toggle_callback(api.clone(), diagnostics, toasts.error.clone());
 
     {
         let on_refresh = on_refresh.clone();
@@ -640,14 +645,17 @@ fn emit_parse_error<T, E: ToString>(
 fn build_refresh_callback(
     api: Option<ApiCtx>,
     state: UseStateHandle<MediaViewState>,
-    job_diagnostics: UseStateHandle<MediaJobDiagnosticsMap>,
-    job_diagnostics_ref: MediaJobDiagnosticsRef,
-    opened_job_diagnostics: UseStateHandle<HashSet<uuid::Uuid>>,
-    opened_job_diagnostics_ref: OpenedJobDiagnosticsRef,
-    active_diagnostics_requests: ActiveDiagnosticsRequests,
+    diagnostics: JobDiagnosticsHandles,
     busy: UseStateHandle<bool>,
     on_error_toast: Callback<String>,
 ) -> Callback<()> {
+    let JobDiagnosticsHandles {
+        job_diagnostics,
+        job_diagnostics_ref,
+        opened_job_diagnostics,
+        opened_job_diagnostics_ref,
+        active_diagnostics_requests,
+    } = diagnostics;
     Callback::from(move |_| {
         let Some(api) = api_context(api.clone(), &on_error_toast) else {
             return;
@@ -1007,13 +1015,16 @@ fn upsert_policy_state(policies: &mut Vec<MediaPolicyResponse>, policy: MediaPol
 
 fn build_job_diagnostics_toggle_callback(
     api: Option<ApiCtx>,
-    job_diagnostics: UseStateHandle<MediaJobDiagnosticsMap>,
-    job_diagnostics_ref: MediaJobDiagnosticsRef,
-    opened_job_diagnostics: UseStateHandle<HashSet<uuid::Uuid>>,
-    opened_job_diagnostics_ref: OpenedJobDiagnosticsRef,
-    active_diagnostics_requests: ActiveDiagnosticsRequests,
+    diagnostics: JobDiagnosticsHandles,
     on_error_toast: Callback<String>,
 ) -> Callback<uuid::Uuid> {
+    let JobDiagnosticsHandles {
+        job_diagnostics,
+        job_diagnostics_ref,
+        opened_job_diagnostics,
+        opened_job_diagnostics_ref,
+        active_diagnostics_requests,
+    } = diagnostics;
     Callback::from(move |media_job_public_id| {
         let (next_opened, disclosure_was_open) = {
             let mut opened = opened_job_diagnostics_ref.borrow_mut();
