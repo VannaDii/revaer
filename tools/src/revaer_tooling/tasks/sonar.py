@@ -110,6 +110,7 @@ class SonarPrepareSources(Task):
             "crates/revaer-ui/dist-serve",
             "tests/test-results",
             "tests/playwright-report",
+            "tests/logs",
         )
         tracked = context.tools.git.files()
         for name in names:
@@ -118,17 +119,9 @@ class SonarPrepareSources(Task):
                     "Sonar source preparation refuses to remove tracked content: " + name
                 )
         with context.fs.lock(_scan_lock(context)):
-            retained = _evidence_path(context, Path("artifacts/sonar/browser-evidence"))
-            for name in ("test-results", "playwright-report"):
-                source = context.root / "tests" / name
-                if source.exists():
-                    context.fs.remove_owned(retained / name, context.root)
-                    context.fs.copy_tree(source, retained / name)
             for name in names:
                 context.fs.remove_owned(context.root / name, context.root)
-        return TaskResult(
-            "Sonar source inputs prepared; browser evidence retained in artifacts/sonar"
-        )
+        return TaskResult("Sonar source inputs prepared; disposable browser reports removed")
 
 
 class SonarScan(Task):

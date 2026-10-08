@@ -78,7 +78,7 @@ def test_input_task_requires_every_report_and_retained_header(preparation_contex
         SonarVerifyInputs.run(context)
 
 
-def test_source_preparation_retains_reports_and_never_deletes_authored_content(
+def test_source_preparation_preserves_coverage_and_never_deletes_authored_content(
     preparation_context: Context,
 ) -> None:
     context = preparation_context
@@ -89,6 +89,7 @@ def test_source_preparation_retains_reports_and_never_deletes_authored_content(
         "crates/revaer-ui/dist-serve/index.html",
         "tests/test-results/result.json",
         "tests/playwright-report/index.html",
+        "tests/logs/api.log",
     )
     for name in paths:
         context.fs.write(context.root / name, "generated\n")
@@ -102,9 +103,7 @@ def test_source_preparation_retains_reports_and_never_deletes_authored_content(
     SonarPrepareSources.run(context)
     assert all(not (context.root / path).exists() for path in paths)
     assert (context.root / "tools/src/revaer_tooling/cli.py").read_text() == "value = 1\n"
-    assert (
-        context.root / "artifacts/sonar/browser-evidence/test-results/result.json"
-    ).read_text() == "generated\n"
+    assert not (context.root / "artifacts/sonar/browser-evidence").exists()
     assert (context.root / "coverage/python.xml").is_file()
     # A checkout still tracking an older generated schema must be migrated
     # explicitly; cleanup cannot erase it to satisfy scanner policy.
@@ -132,7 +131,7 @@ def test_source_preparation_rejects_links_to_another_checkout(
     outside.mkdir()
     (outside / "keep.txt").write_text("keep\n")
     source.symlink_to(outside, target_is_directory=True)
-    with pytest.raises(ToolingError, match="symlink"):
+    with pytest.raises(ToolingError, match="Refusing cleanup outside"):
         SonarPrepareSources.run(context)
     assert (outside / "keep.txt").read_text() == "keep\n"
     source.unlink()

@@ -64,3 +64,5 @@ coverage setup profile, and one `rv sonar-scan` invocation. Produce bootstrap
 and Python coverage explicitly, merge completed E2E coverage, and retain both
 coverage and complete scanner evidence even when a gate fails. Update the
 complete source and YAML inventories when files change; do not narrow scope.
+
+- Source preparation removes disposable browser HTML reports and test outputs after coverage collection. Do not copy them into a separate proof collection; retain only explicitly requested scanner outputs and required coverage inputs under the root artifact policy.
