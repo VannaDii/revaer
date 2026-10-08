@@ -26,7 +26,6 @@ struct EngineStorageState;
 struct EnginePeerClassState;
 struct EngineSettingsState;
 struct NativePeerInfo;
-struct NativePeerInfo;
 
 class Session {
 public:

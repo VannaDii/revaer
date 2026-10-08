@@ -1075,7 +1075,7 @@ public:
                 }
             };
 
-            auto should_include = [&](const std::string& rel_path) -> bool {
+            auto should_include = [&](const std::string& rel_path) {
                 if (rel_path.size() > kMaxCreatePathLength) {
                     record_skip(rel_path);
                     return false;
@@ -1195,7 +1195,7 @@ public:
             }
 #endif
 
-            const auto normalize_piece = [&](std::uint32_t value) -> std::uint32_t {
+            const auto normalize_piece = [](std::uint32_t value) {
                 constexpr std::uint32_t kMinPiece = 16 * 1024;
                 constexpr std::uint32_t kMaxPiece = 16 * 1024 * 1024;
                 if (value < kMinPiece) {
@@ -1737,34 +1737,8 @@ public:
         if (request.has_source) {
             return ::rust::String("source updates are not supported");
         }
-        return mutate_handle(key, [&](const lt::torrent_handle& handle) {
-            if (request.has_max_connections) {
-                handle.set_max_connections(request.max_connections);
-            }
-            if (request.has_pex_enabled) {
-                if (request.pex_enabled) {
-                    handle.unset_flags(lt::torrent_flags::disable_pex);
-                } else {
-                    handle.set_flags(lt::torrent_flags::disable_pex);
-                }
-            }
-            if (request.has_super_seeding) {
-                if (request.super_seeding) {
-                    handle.set_flags(lt::torrent_flags::super_seeding);
-                } else {
-                    handle.unset_flags(lt::torrent_flags::super_seeding);
-                }
-            }
-            if (request.has_auto_managed) {
-                if (request.auto_managed) {
-                    handle.set_flags(lt::torrent_flags::auto_managed);
-                } else {
-                    handle.unset_flags(lt::torrent_flags::auto_managed);
-                }
-            }
-            if (request.has_queue_position) {
-                handle.queue_position_set(lt::queue_position_t{request.queue_position});
-            }
+        return mutate_handle(key, [&request](const lt::torrent_handle& handle) {
+            apply_torrent_options(handle, request);
         });
     }
 
@@ -1782,63 +1756,22 @@ public:
                 return ::rust::String(*error);
             }
         }
-        return mutate_handle(key, [&](const lt::torrent_handle& handle) {
-            std::vector<lt::announce_entry> trackers;
-            if (!request.replace) {
-                trackers = handle.trackers();
-            }
-            std::unordered_set<std::string> seen;
-            for (const auto& entry : trackers) {
-                seen.insert(entry.url);
-            }
-            for (const auto& tracker : request.trackers) {
-                auto url = to_std_string(tracker);
-                if (url.empty()) {
-                    continue;
-                }
-                auto rewritten = inject_basic_auth(url, auth);
-                if (seen.insert(rewritten).second) {
-                    trackers.emplace_back(rewritten);
-                }
-            }
-            if (!trackers.empty()) {
-                handle.replace_trackers(trackers);
-            }
+        return mutate_handle(key, [this, &request, &auth](const lt::torrent_handle& handle) {
+            apply_torrent_trackers(handle, request, auth);
         });
     }
 
     ::rust::String update_web_seeds(const UpdateWebSeedsRequest& request) {
         const auto key = to_std_string(request.id);
-        return mutate_handle(key, [&](const lt::torrent_handle& handle) {
-            std::unordered_set<std::string> seeds;
-            if (!request.replace) {
-                for (const auto& seed : handle.url_seeds()) {
-                    seeds.insert(seed);
-                }
-            }
-            for (const auto& seed : request.web_seeds) {
-                auto value = to_std_string(seed);
-                if (!value.empty()) {
-                    seeds.insert(std::move(value));
-                }
-            }
-            if (request.replace) {
-                for (const auto& existing : handle.url_seeds()) {
-                    if (seeds.find(existing) == seeds.end()) {
-                        handle.remove_url_seed(existing);
-                    }
-                }
-            }
-            for (const auto& seed : seeds) {
-                handle.add_url_seed(seed);
-            }
+        return mutate_handle(key, [&request](const lt::torrent_handle& handle) {
+            apply_torrent_web_seeds(handle, request);
         });
     }
 
     ::rust::String move_torrent(const MoveTorrentRequest& request) {
         const auto key = to_std_string(request.id);
         const auto target = to_std_string(request.download_dir);
-        return mutate_handle(key, [&](const lt::torrent_handle& handle) {
+        return mutate_handle(key, [&target](const lt::torrent_handle& handle) {
             handle.move_storage(target, lt::move_flags_t::dont_replace);
         });
     }
@@ -2351,15 +2284,15 @@ private:
     }
 
     static void push_session_error(rust::Vec<NativeEvent>& events,
-                                   std::string component,
-                                   std::string message,
-                                   std::string id) {
+                                   const std::string& component,
+                                   const std::string& message,
+                                   const std::string& id) {
         NativeEvent evt{};
-        evt.id = std::move(id);
+        evt.id = id;
         evt.kind = NativeEventKind::SessionError;
         evt.state = NativeTorrentState::Failed;
-        evt.component = std::move(component);
-        evt.message = std::move(message);
+        evt.component = component;
+        evt.message = message;
         events.push_back(std::move(evt));
     }
 
@@ -2475,6 +2408,89 @@ private:
         bool has_username{false};
         bool has_password{false};
     };
+
+    static void apply_torrent_options(const lt::torrent_handle& handle,
+                                      const UpdateOptionsRequest& request) {
+        if (request.has_max_connections) {
+            handle.set_max_connections(request.max_connections);
+        }
+        if (request.has_pex_enabled) {
+            if (request.pex_enabled) {
+                handle.unset_flags(lt::torrent_flags::disable_pex);
+            } else {
+                handle.set_flags(lt::torrent_flags::disable_pex);
+            }
+        }
+        if (request.has_super_seeding) {
+            if (request.super_seeding) {
+                handle.set_flags(lt::torrent_flags::super_seeding);
+            } else {
+                handle.unset_flags(lt::torrent_flags::super_seeding);
+            }
+        }
+        if (request.has_auto_managed) {
+            if (request.auto_managed) {
+                handle.set_flags(lt::torrent_flags::auto_managed);
+            } else {
+                handle.unset_flags(lt::torrent_flags::auto_managed);
+            }
+        }
+        if (request.has_queue_position) {
+            handle.queue_position_set(lt::queue_position_t{request.queue_position});
+        }
+    }
+
+    void apply_torrent_trackers(const lt::torrent_handle& handle,
+                                const UpdateTrackersRequest& request,
+                                const AuthView& auth) const {
+        std::vector<lt::announce_entry> trackers;
+        if (!request.replace) {
+            trackers = handle.trackers();
+        }
+        std::unordered_set<std::string> seen;
+        for (const auto& entry : trackers) {
+            seen.insert(entry.url);
+        }
+        for (const auto& tracker : request.trackers) {
+            auto url = to_std_string(tracker);
+            if (url.empty()) {
+                continue;
+            }
+            auto rewritten = inject_basic_auth(url, auth);
+            if (seen.insert(rewritten).second) {
+                trackers.emplace_back(rewritten);
+            }
+        }
+        if (!trackers.empty()) {
+            handle.replace_trackers(trackers);
+        }
+    }
+
+    static void apply_torrent_web_seeds(const lt::torrent_handle& handle,
+                                        const UpdateWebSeedsRequest& request) {
+        std::unordered_set<std::string> seeds;
+        if (!request.replace) {
+            for (const auto& seed : handle.url_seeds()) {
+                seeds.insert(seed);
+            }
+        }
+        for (const auto& seed : request.web_seeds) {
+            auto value = to_std_string(seed);
+            if (!value.empty()) {
+                seeds.insert(std::move(value));
+            }
+        }
+        if (request.replace) {
+            for (const auto& existing : handle.url_seeds()) {
+                if (seeds.find(existing) == seeds.end()) {
+                    handle.remove_url_seed(existing);
+                }
+            }
+        }
+        for (const auto& seed : seeds) {
+            handle.add_url_seed(seed);
+        }
+    }
 
     AuthView resolve_auth_view(const TrackerAuthOptions& request) const {
         AuthView view{
