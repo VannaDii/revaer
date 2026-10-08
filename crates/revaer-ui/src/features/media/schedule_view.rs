@@ -235,12 +235,23 @@ fn schedule_authoring(props: &ScheduleAuthoringProps) -> Html {
         || (*unit).clone(),
         |row| row.interval_unit.as_str().to_owned(),
     );
+    let unit_select = use_node_ref();
+    {
+        let unit_select = unit_select.clone();
+        let displayed_unit = displayed_unit.clone();
+        // Restore the draft after browsers reconcile the option children.
+        use_effect(move || {
+            if let Some(select) = unit_select.cast::<HtmlSelectElement>() {
+                select.set_value(&displayed_unit);
+            }
+        });
+    }
     html! {
         <div class="space-y-3" data-testid="media-schedule-authoring" aria-busy={busy.to_string()}>
             {saved.as_ref().map(|row| html! { <p role="status">{format!("Saved cadence: {} {} | association v{}", row.interval_quantity, row.interval_unit.as_str(), row.association_version)}</p> }).unwrap_or_default()}
             <div class="flex flex-wrap gap-3">
                 <label class="form-control"><span>{"Schedule interval"}</span><input type="number" min="1" step="1" class="input input-bordered" value={display_saved.map_or_else(|| (*quantity).clone(), |row| row.interval_quantity.to_string())} oninput={on_quantity} disabled={*busy || (saved.is_some() && !*editing)} /></label>
-                <label class="form-control"><span>{"Interval unit"}</span><select key={displayed_unit.clone()} aria-label="Interval unit" class="select select-bordered" value={displayed_unit.clone()} onchange={on_unit} disabled={*busy || (saved.is_some() && !*editing)}><option value="" selected={displayed_unit.is_empty()}>{"Select unit"}</option><option value="minutes" selected={displayed_unit == "minutes"}>{"Minutes"}</option><option value="hours" selected={displayed_unit == "hours"}>{"Hours"}</option></select></label>
+                <label class="form-control"><span>{"Interval unit"}</span><select ref={unit_select} key={displayed_unit.clone()} aria-label="Interval unit" class="select select-bordered" value={displayed_unit.clone()} onchange={on_unit} disabled={*busy || (saved.is_some() && !*editing)}><option value="" selected={displayed_unit.is_empty()}>{"Select unit"}</option><option value="minutes" selected={displayed_unit == "minutes"}>{"Minutes"}</option><option value="hours" selected={displayed_unit == "hours"}>{"Hours"}</option></select></label>
             </div>
             {error.map(|message| html! { <p role="alert">{message}</p> }).unwrap_or_default()}
             <button class="btn btn-primary" onclick={on_save} disabled={*busy || !*loaded || (saved.is_some() && !*editing)}>{"Save cadence"}</button>
