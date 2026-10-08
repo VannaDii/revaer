@@ -157,6 +157,10 @@ class CargoLlvmCov(ExternalTool):
             command.extend(("--package", args.package, "--summary-only"))
         else:
             command.extend(("--no-default-ignore-filename-regex", "--include-build-script"))
+        if args.format == CoverageFormat.LCOV:
+            # Rust's importer does not accept native BRDA '-' records. Native
+            # counts remain complete in the dedicated LLVM text/JSON streams.
+            command.extend(("--ignore-filename-regex", r"\.(c|cc|cpp|cxx|h|hpp|inl)$"))
         command.extend(
             (
                 f"--{args.format}",

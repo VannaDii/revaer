@@ -407,3 +407,4 @@ merge tasks validate the same completed phase set.
   against the existing extraction limit. Preserve signature and hash checks.
 
 - Native LLVM text supplied to Sonar retains measured line and branch counts without nested macro-expansion displays that its importer cannot parse.
+- Rust LCOV and native LLVM text target their respective language importers; preserve complete measured native counts in the native stream.

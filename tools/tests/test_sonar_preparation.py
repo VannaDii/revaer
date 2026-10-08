@@ -87,6 +87,7 @@ def test_source_preparation_preserves_coverage_and_never_deletes_authored_conten
         "release/node_modules/package/index.js",
         "tests/support/api/schema.ts",
         "crates/revaer-ui/dist-serve/index.html",
+        "crates/revaer-ui/dist/app.wasm",
         "tests/test-results/result.json",
         "tests/playwright-report/index.html",
         "tests/logs/api.log",

@@ -111,7 +111,7 @@ def test_native_and_rust_reports_preserve_other_producers_and_gate_each_crate(
     assert (output / "python.xml").read_text() == "other producer"
     assert (output / "html/index.html").is_file()
     report = (output / "lcov.info").read_text()
-    assert "src/fixture.cpp" in report
+    assert "src/fixture.cpp" not in report
     assert "crates/native/src/lib.rs" in report
     assert "crates/pure/src/lib.rs" in report
     assert "build.rs" in report
@@ -123,7 +123,7 @@ def test_native_and_rust_reports_preserve_other_producers_and_gate_each_crate(
     summaries = json.loads((output / "crates/native.json").read_text())
     assert summaries["data"][0]["totals"]["lines"]["percent"] >= 90
     # Adding native measurements must preserve the existing Rust-only numeric
-    # criterion. Uncovered C++ is still present in every diagnostic report.
+    # criterion. Uncovered C++ remains in the native text and complete package JSON.
     native = context.root / "crates/native/src/fixture.cpp"
     native.write_text(
         native.read_text().replace(
@@ -136,7 +136,8 @@ def test_native_and_rust_reports_preserve_other_producers_and_gate_each_crate(
     Coverage.run(context)
     native_report = json.loads((output / "crates/native.json").read_text())
     assert native_report["data"][0]["totals"]["lines"]["percent"] < 90
-    assert "src/fixture.cpp" in (output / "lcov.info").read_text()
+    assert "src/fixture.cpp" not in (output / "lcov.info").read_text()
+    assert "src/fixture.cpp" in (output / "llvm-cov.txt").read_text()
     # Introduce real uncovered Rust code. A workspace-wide average must not hide
     # a package regression, and failed gates must still leave inspectable output.
     library = context.root / "crates/pure/src/lib.rs"
@@ -148,7 +149,8 @@ def test_native_and_rust_reports_preserve_other_producers_and_gate_each_crate(
     )
     with pytest.raises(ToolingError, match=r"Coverage failed.*diagnostic reports retained"):
         Coverage.run(context)
-    assert "src/fixture.cpp" in (output / "lcov.info").read_text()
+    assert "src/fixture.cpp" not in (output / "lcov.info").read_text()
+    assert "src/fixture.cpp" in (output / "llvm-cov.txt").read_text()
     assert (output / "html/index.html").is_file()
     assert (output / "python.xml").read_text() == "other producer"
     failed = json.loads((output / "crates/pure.json").read_text())

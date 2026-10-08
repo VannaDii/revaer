@@ -108,6 +108,7 @@ class SonarPrepareSources(Task):
             "release/node_modules",
             "tests/support/api/schema.ts",
             "crates/revaer-ui/dist-serve",
+            "crates/revaer-ui/dist",
             "tests/test-results",
             "tests/playwright-report",
             "tests/logs",
