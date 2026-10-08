@@ -10,6 +10,7 @@ from tests.support.polling import eventually
 
 def test_event_resume_resets_conflict_and_persists_final_frame(app: AppShell, page: Page) -> None:
     resume_headers: list[str | None] = []
+    exercise_resume = False
 
     def respond(route: Route) -> None:
         request = route.request
@@ -23,6 +24,9 @@ def test_event_resume_resets_conflict_and_persists_final_frame(app: AppShell, pa
         }
         if request.method == "OPTIONS":
             route.fulfill(status=204, headers=headers)
+            return
+        if not exercise_resume:
+            route.fulfill(status=403, headers=headers)
             return
         resume_headers.append(request.header_value("last-event-id"))
         number = len(resume_headers)
@@ -49,7 +53,13 @@ def test_event_resume_resets_conflict_and_persists_final_frame(app: AppShell, pa
 
     page.route("**/v1/torrents/events*", respond)
     app.goto("/torrents")
+    # Startup health/configuration can replace the initial connection. Begin
+    # the resume sequence through the operator retry after those reads settle.
+    page.wait_for_load_state("networkidle")
+    exercise_resume = True
     indicator = page.locator(".sse-indicator").first
+    indicator.click()
+    page.get_by_role("button", name="Retry now", exact=True).click()
     eventually(
         lambda: (
             indicator.get_attribute("aria-label") == "Disconnected" and len(resume_headers) >= 4
