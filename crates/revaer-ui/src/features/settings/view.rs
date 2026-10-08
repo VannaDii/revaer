@@ -266,8 +266,7 @@ fn settings_connection_tab(props: &SettingsConnectionProps) -> Html {
         local_user.clone(),
         local_pass.clone(),
         auth_error.clone(),
-        props.allow_anonymous,
-        props.on_save_auth.clone(),
+        props,
     );
     let on_auth_mode_change = auth_mode_change_callback(auth_mode.clone());
     let test_label = test_button_label(&bundle, props.test_busy);
@@ -360,11 +359,12 @@ fn build_save_auth_callback(
     local_user: UseStateHandle<String>,
     local_pass: UseStateHandle<String>,
     auth_error: UseStateHandle<Option<String>>,
-    allow_anonymous: bool,
-    on_save_auth: Callback<AuthState>,
+    props: &SettingsConnectionProps,
 ) -> Callback<MouseEvent> {
     let auth_required = bundle.text("settings.auth_required");
     let auth_local_required = bundle.text("settings.auth_local_required");
+    let allow_anonymous = props.allow_anonymous;
+    let on_save_auth = props.on_save_auth.clone();
     Callback::from(move |_| match *auth_mode {
         AuthMode::ApiKey => {
             let value = (*api_key).trim().to_string();
