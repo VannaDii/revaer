@@ -160,7 +160,13 @@ class CargoLlvmCov(ExternalTool):
         if args.format == CoverageFormat.LCOV:
             # Rust's importer does not accept native BRDA '-' records. Native
             # counts remain complete in the dedicated LLVM text/JSON streams.
-            command.extend(("--ignore-filename-regex", r"\.(c|cc|cpp|cxx|h|hpp|inl)$"))
+            # Compiler and registry sources are outside the analyzed checkout.
+            command.extend(
+                (
+                    "--ignore-filename-regex",
+                    r"\.(c|cc|cpp|cxx|h|hpp|inl)$|/registry/src/|/lib/rustlib/src/rust/|^/rustc/",
+                )
+            )
         command.extend(
             (
                 f"--{args.format}",

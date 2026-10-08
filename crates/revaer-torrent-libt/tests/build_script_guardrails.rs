@@ -1,8 +1,9 @@
 use std::error::Error;
 use std::fs;
 
-#[path = "../build_support.rs"]
-mod build_support;
+mod build_support {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/build_support.rs"));
+}
 
 const BUILD_SCRIPT: &str = include_str!("../build.rs");
 const SESSION_CPP: &str = include_str!("../src/ffi/session.cpp");
