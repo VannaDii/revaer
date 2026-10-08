@@ -588,7 +588,7 @@ enum MediaDiscoveryRuntimeError {
 
 pub(crate) fn is_media_file(path: &Path) -> bool {
     path.extension()
-        .and_then(|extension| extension.to_str())
+        .and_then(std::ffi::OsStr::to_str)
         .is_some_and(|extension| {
             MEDIA_FILE_EXTENSIONS
                 .iter()

@@ -2573,11 +2573,11 @@ async fn insert_api_key(
         enabled: enabled_flag,
         burst: update
             .rate_limit
-            .and_then(|limit| limit.as_ref())
+            .and_then(Option::as_ref)
             .and_then(|limit| i32::try_from(limit.burst).ok()),
         per_seconds: update
             .rate_limit
-            .and_then(|limit| limit.as_ref())
+            .and_then(Option::as_ref)
             .and_then(|limit| i64::try_from(limit.replenish_period.as_secs()).ok()),
         expires_at: Some(expires_at),
     };

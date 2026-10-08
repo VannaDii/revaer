@@ -1047,7 +1047,7 @@ fn manifest_entries(entries: &[PreparedEntry]) -> Vec<ReplacementManifestEntry> 
 
 fn file_name_string(path: &Path) -> Option<String> {
     path.file_name()
-        .and_then(|value| value.to_str())
+        .and_then(std::ffi::OsStr::to_str)
         .map(str::to_string)
 }
 
@@ -1464,7 +1464,7 @@ fn read_manifest(path: &Path) -> Result<ReplacementManifest, ReplacementError> {
 
 fn transaction_job_key(path: &Path) -> Result<String, ReplacementError> {
     path.file_name()
-        .and_then(|value| value.to_str())
+        .and_then(std::ffi::OsStr::to_str)
         .map(str::to_string)
         .ok_or_else(|| ReplacementError::InvalidManifest(path.to_path_buf()))
 }

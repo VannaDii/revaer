@@ -286,7 +286,7 @@ impl SystemVerificationExecutor {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
-        if Path::new(bin).file_name().and_then(|name| name.to_str()) == Some("ffplay") {
+        if Path::new(bin).file_name().and_then(std::ffi::OsStr::to_str) == Some("ffplay") {
             command
                 .env("SDL_AUDIODRIVER", "dummy")
                 .env("SDL_VIDEODRIVER", "dummy");

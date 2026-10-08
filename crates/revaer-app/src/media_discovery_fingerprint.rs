@@ -691,7 +691,7 @@ fn logical_sidecar_key(name: &OsStr) -> Result<String, FingerprintError> {
 
 fn is_sidecar(path: &Path) -> bool {
     path.extension()
-        .and_then(|value| value.to_str())
+        .and_then(std::ffi::OsStr::to_str)
         .is_some_and(|value| {
             SIDECAR_EXTENSIONS
                 .iter()

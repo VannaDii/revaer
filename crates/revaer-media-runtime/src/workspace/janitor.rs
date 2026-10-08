@@ -55,7 +55,7 @@ pub fn cleanup_stale_workspaces(
         if !metadata.is_dir() {
             continue;
         }
-        let Some(job_key) = path.file_name().and_then(|name| name.to_str()) else {
+        let Some(job_key) = path.file_name().and_then(std::ffi::OsStr::to_str) else {
             continue;
         };
         if !is_revaer_workspace_key(job_key) {
@@ -176,7 +176,7 @@ fn cleanup_bounded_entry(
             return;
         }
     };
-    let Some(job_key) = path.file_name().and_then(|name| name.to_str()) else {
+    let Some(job_key) = path.file_name().and_then(std::ffi::OsStr::to_str) else {
         return;
     };
     if !is_revaer_workspace_key(job_key) {

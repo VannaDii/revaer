@@ -186,7 +186,7 @@ struct ParsedSuffix {
 fn normalized_source_stem(source_path: &Path) -> Result<String, SidecarDiscoveryError> {
     source_path
         .file_stem()
-        .and_then(|value| value.to_str())
+        .and_then(std::ffi::OsStr::to_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_ascii_lowercase)

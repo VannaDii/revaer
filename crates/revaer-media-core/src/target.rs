@@ -887,7 +887,7 @@ fn derive_sidecar_path(
     let media_path = Path::new(media_output_path);
     let stem = media_path
         .file_stem()
-        .and_then(|value| value.to_str())
+        .and_then(std::ffi::OsStr::to_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {

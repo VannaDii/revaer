@@ -4575,7 +4575,7 @@ fn resolve_workspace_output_path(
 ) -> Result<String, MediaJobRuntimeError> {
     let Some(file_name) = Path::new(final_output_path)
         .file_name()
-        .and_then(|value| value.to_str())
+        .and_then(std::ffi::OsStr::to_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
     else {
@@ -4962,7 +4962,7 @@ fn operation_audit_evidence(
 fn redacted_command_bin(bin: &str) -> String {
     Path::new(bin)
         .file_name()
-        .and_then(|value| value.to_str())
+        .and_then(std::ffi::OsStr::to_str)
         .filter(|value| !value.is_empty())
         .unwrap_or("command")
         .to_string()

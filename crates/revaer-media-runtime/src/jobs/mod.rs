@@ -493,7 +493,7 @@ fn resolve_managed_artifact_path(root: Option<&str>, source_path: &str) -> Optio
     let root = root.map(str::trim).filter(|value| !value.is_empty())?;
     let file_name = Path::new(source_path)
         .file_name()
-        .and_then(|value| value.to_str())
+        .and_then(std::ffi::OsStr::to_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())?;
     Some(format!("{root}/{file_name}"))

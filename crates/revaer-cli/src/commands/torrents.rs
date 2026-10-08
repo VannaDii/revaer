@@ -99,7 +99,7 @@ pub(crate) async fn handle_torrent_add(ctx: &AppContext, args: TorrentAddArgs) -
         if request.name.is_none() {
             request.name = path
                 .file_name()
-                .and_then(|name| name.to_str())
+                .and_then(std::ffi::OsStr::to_str)
                 .map(str::to_string);
         }
     }

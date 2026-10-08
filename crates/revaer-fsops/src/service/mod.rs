@@ -225,7 +225,7 @@ impl ArchiveFormat {
     fn detect(source: &Path) -> FsOpsResult<Self> {
         let file_name = source
             .file_name()
-            .and_then(|name| name.to_str())
+            .and_then(std::ffi::OsStr::to_str)
             .map(str::to_ascii_lowercase)
             .ok_or_else(|| FsOpsError::InvalidInput {
                 field: "archive_extension",
@@ -866,7 +866,7 @@ impl FsOpsService {
                     || {
                         let inferred = staging
                             .file_name()
-                            .and_then(|name| name.to_str())
+                            .and_then(std::ffi::OsStr::to_str)
                             .filter(|name| !name.is_empty())
                             .map_or_else(|| torrent_label.clone(), std::borrow::ToOwned::to_owned);
                         root_clone.join(inferred)
@@ -1497,7 +1497,7 @@ impl FsOpsService {
 
         let preferred_stem = source
             .file_stem()
-            .and_then(|stem| stem.to_str())
+            .and_then(std::ffi::OsStr::to_str)
             .map(str::to_ascii_lowercase);
         let mut candidates = Vec::new();
         for entry in WalkDir::new(search_root) {
@@ -1606,7 +1606,7 @@ impl FsOpsService {
             let checksum = Self::hash_file(artifact)?;
             let file_name = artifact
                 .file_name()
-                .and_then(|name| name.to_str())
+                .and_then(std::ffi::OsStr::to_str)
                 .map_or_else(
                     || artifact.display().to_string(),
                     std::borrow::ToOwned::to_owned,
