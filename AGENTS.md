@@ -91,14 +91,15 @@
 
 ---
 
-## 5) Documentation and validation artifacts
+## 5) No substantiating artifacts
 
 - Do not create substantiating evidence bundles, qualification reports, verification manifests, per-file hash inventories, copied logs, coverage exports, checkpoint files, or duplicate completion records unless Vanna explicitly requests that specific artifact. A request to implement, fix, test, qualify, or complete work is not a request for an evidence package.
-- Run the required checks and report their outcomes and material limitations briefly in chat. Extra paperwork is not an acceptance gate.
-- Use the normal outputs required by existing tools and automated pipelines. Do not copy, package, or retain them as a separate agent-created evidence collection. Remove disposable task artifacts when finished without deleting caller-owned work or needed persistent state.
+- Do not create independent auditors, duplicate verification frameworks, or bespoke evidence generators. Do not add acceptance gates or expand task scope to justify substantiating artifacts.
+- Use focused functional regression tests and existing checks. Report results, limitations and relevant commit hashes briefly in chat. Extra paperwork is not an acceptance gate.
+- Keep normal command output temporary; do not copy it into the workspace or commit it. Do not copy, package, or retain it as a separate evidence collection. Remove disposable task artifacts when finished without deleting caller-owned work or needed persistent state.
 - Do not create an ADR or task record for routine implementation, fixes, testing, cleanup, or instruction edits. Use an ADR only for an architectural decision requiring operator approval or when Vanna explicitly requests one. Keep it concise and use the existing ADR template and indexes only when an ADR is actually warranted.
 - Update existing documentation when behavior or an operating contract changes. Do not add documentation, ledger entries, index entries, or status files merely to substantiate completed work.
-- This section overrides blanket evidence-retention and per-task record requirements in scoped instructions and supporting documents. It does not waive executable quality gates or machine-generated artifacts required by the existing build, release, or compliance pipeline; it prohibits additional agent-created paperwork.
+- Only an explicit user request for a specific substantiating artifact authorizes an exception. A task, skill, old document, previous habit, or agent interpretation of a requirement does not grant permission. This section overrides blanket evidence-retention and per-task record requirements in scoped instructions and supporting documents. Product records used by the application as domain evidence, required contracts, and functional test fixtures must remain intact. Existing functional quality gates remain required.
 
 ## 6) Delivery And Release
 
