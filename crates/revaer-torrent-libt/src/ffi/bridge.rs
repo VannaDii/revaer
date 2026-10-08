@@ -810,10 +810,7 @@ pub mod ffi {
         fn add_torrent(self: Pin<&mut Session>, request: &AddTorrentRequest) -> String;
         /// Create a new `.torrent` metainfo payload.
         #[must_use]
-        fn create_torrent(
-            self: Pin<&mut Session>,
-            request: &CreateTorrentRequest,
-        ) -> CreateTorrentResult;
+        fn create_torrent(self: &Session, request: &CreateTorrentRequest) -> CreateTorrentResult;
         /// Remove a torrent and optionally its data.
         #[must_use]
         fn remove_torrent(self: Pin<&mut Session>, id: &str, with_data: bool) -> String;

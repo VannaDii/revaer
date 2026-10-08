@@ -34,7 +34,7 @@ public:
 
     ::rust::String apply_engine_profile(const EngineOptions& options);
     ::rust::String add_torrent(const AddTorrentRequest& request);
-    CreateTorrentResult create_torrent(const CreateTorrentRequest& request);
+    CreateTorrentResult create_torrent(const CreateTorrentRequest& request) const;
     ::rust::String remove_torrent(::rust::Str id, bool with_data);
     ::rust::String pause_torrent(::rust::Str id);
     ::rust::String resume_torrent(::rust::Str id);

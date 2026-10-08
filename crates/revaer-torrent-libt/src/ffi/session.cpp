@@ -1119,6 +1119,26 @@ void configure_add_web_seeds(lt::add_torrent_params& params,
     }
 }
 
+void configure_added_handle(lt::torrent_handle& handle,
+                            const AddTorrentRequest& request,
+                            bool sequential_default) {
+    if (request.has_queue_position && request.queue_position >= 0) {
+        handle.queue_position_set(lt::queue_position_t{request.queue_position});
+    }
+
+    if (request.has_max_connections && request.max_connections > 0) {
+        handle.set_max_connections(request.max_connections);
+    }
+
+    const bool sequential =
+        request.has_sequential_override ? request.sequential : sequential_default;
+    if (sequential) {
+        handle.set_flags(lt::torrent_flags::sequential_download);
+    } else {
+        handle.unset_flags(lt::torrent_flags::sequential_download);
+    }
+}
+
 struct AuthoringFileEntry {
     std::string path;
     std::uint64_t size;
@@ -1238,6 +1258,18 @@ std::uint32_t normalized_piece_length(std::uint32_t value) {
         next <<= 1;
     }
     return std::min(next, kMaxPiece);
+}
+
+std::uint32_t authoring_piece_length(const CreateTorrentRequest& request,
+                                    std::vector<std::string>& warnings) {
+    if (!request.has_piece_length) {
+        return 0;
+    }
+    const auto length = normalized_piece_length(request.piece_length);
+    if (length != request.piece_length) {
+        warnings.push_back("piece_length was adjusted to a supported value");
+    }
+    return length;
 }
 
 std::vector<std::string> unique_authoring_urls(const rust::Vec<rust::String>& values) {
@@ -1725,7 +1757,7 @@ public:
         session_->set_peer_class_type_filter(filter);
     }
 
-    CreateTorrentResult create_torrent(const CreateTorrentRequest& request) {
+    CreateTorrentResult create_torrent(const CreateTorrentRequest& request) const {
         CreateTorrentResult result{};
         result.metainfo = rust::Vec<std::uint8_t>();
         result.files = rust::Vec<CreateTorrentFile>();
@@ -1824,13 +1856,7 @@ public:
             }
 #endif
 
-            std::uint32_t piece_length = 0;
-            if (request.has_piece_length) {
-                piece_length = normalized_piece_length(request.piece_length);
-                if (piece_length != request.piece_length) {
-                    append_warning("piece_length was adjusted to a supported value");
-                }
-            }
+            const auto piece_length = authoring_piece_length(request, warnings);
 
             const auto trackers = unique_authoring_urls(request.trackers);
 
@@ -1941,23 +1967,7 @@ public:
             snapshot.metainfo = metainfo;
             snapshots_[request_id] = std::move(snapshot);
 
-            if (request.has_queue_position && request.queue_position >= 0) {
-                handle.queue_position_set(lt::queue_position_t{request.queue_position});
-            }
-
-            if (request.has_max_connections && request.max_connections > 0) {
-                handle.set_max_connections(request.max_connections);
-            }
-
-            bool sequential = sequential_default_;
-            if (request.has_sequential_override) {
-                sequential = request.sequential;
-            }
-            if (sequential) {
-                handle.set_flags(lt::torrent_flags::sequential_download);
-            } else {
-                handle.unset_flags(lt::torrent_flags::sequential_download);
-            }
+            configure_added_handle(handle, request, sequential_default_);
 
             (void)request.tags;
         } catch (const std::exception& ex) {
@@ -2766,7 +2776,7 @@ Session::~Session() = default;
     return impl_->add_torrent(request);
 }
 
-CreateTorrentResult Session::create_torrent(const CreateTorrentRequest& request) {
+CreateTorrentResult Session::create_torrent(const CreateTorrentRequest& request) const {
     return impl_->create_torrent(request);
 }
 
