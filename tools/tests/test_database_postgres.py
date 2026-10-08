@@ -52,7 +52,8 @@ def test_partial_startup_and_uncertain_creation_remove_owned_resources(
         runtime.open(contract, user="fixture", database="fixture", publish=True) as connection,
     ):
         connection.sql("SELECT 1;")
-    assert "remove" in docker.calls and not docker.exists
+    assert "remove" in docker.calls
+    assert not docker.exists
     evidence = receipt(contract)
     assert evidence["completed"] is False
     if failure != "volumes":
@@ -72,7 +73,8 @@ def test_cleanup_failure_retains_original_error_and_private_receipt(
     ):
         raise ToolingError("primary proof failure")
     evidence = receipt(contract)
-    assert evidence["storage_removed"] is False and cleanup in str(evidence["cleanup_error"])
+    assert evidence["storage_removed"] is False
+    assert cleanup in str(evidence["cleanup_error"])
 
 
 def test_interruption_and_readiness_timeout_cannot_leave_a_success_receipt(
@@ -84,7 +86,8 @@ def test_interruption_and_readiness_timeout_cannot_leave_a_success_receipt(
         runtime.open(contract, user="fixture", database="fixture"),
     ):
         raise KeyboardInterrupt
-    assert not docker.exists and receipt(contract)["completed"] is False
+    assert not docker.exists
+    assert receipt(contract)["completed"] is False
     runtime, docker, contract = database(contract_root)
     tokens = iter(("e" * 32, "f" * 32))
     runtime.token = lambda: next(tokens)
@@ -94,7 +97,8 @@ def test_interruption_and_readiness_timeout_cannot_leave_a_success_receipt(
         runtime.open(contract, user="fixture", database="fixture"),
     ):
         pytest.fail("Unready server was yielded")
-    assert docker.calls.count("ready") == 120 and not docker.exists
+    assert docker.calls.count("ready") == 120
+    assert not docker.exists
 
 
 @pytest.mark.parametrize(
@@ -135,7 +139,8 @@ def test_existing_ownership_receipt_is_never_reused(contract_root: Path) -> None
         runtime.open(contract, user="fixture", database="fixture"),
     ):
         pytest.fail("Existing ownership was reused")
-    assert not docker.calls and receipt(contract) == original
+    assert not docker.calls
+    assert receipt(contract) == original
 
 
 @pytest.mark.parametrize(

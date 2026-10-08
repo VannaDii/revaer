@@ -115,7 +115,8 @@ def test_native_parity_detects_schema_seed_and_generated_identity_drift(
             db, "proof_owner", lambda name, passed: checks.update({name: passed})
         )
         parity.verify()
-        assert len(checks) == 2 and all(checks.values()), checks
+        assert len(checks) == 2, checks
+        assert all(checks.values()), checks
         schema_check = "two-way legacy schema and extension parity"
         seed_check = "two-way seed parity excluding generated timestamp columns"
         for name in ("schema.sql", "seeds.jsonl"):
@@ -133,7 +134,8 @@ def test_native_parity_detects_schema_seed_and_generated_identity_drift(
             role="proof_owner",
         )
         parity.verify()
-        assert checks[schema_check] is True and checks[seed_check] is False
+        assert checks[schema_check] is True
+        assert checks[seed_check] is False
         db.sql(
             "UPDATE public.rate_limit_policy SET rate_limit_policy_public_id = "
             "'00000000-0000-1000-8000-000000000001'",

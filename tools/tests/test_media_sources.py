@@ -145,7 +145,8 @@ def test_fallback_rejects_bad_payload_before_publication(
     curl = SourceCurl(context.tools.curl, payloads)
     acquire(source, context.root, context.settings.fixtures, curl, messages.append)
     assert path.read_bytes() == b"fixture-data"
-    assert len(curl.calls) == 2 and curl.calls[0].deadline == 120
+    assert len(curl.calls) == 2
+    assert curl.calls[0].deadline == 120
     assert any("Discarding invalid cached" in item for item in messages)
     assert any("source 1 failed" in item for item in messages)
     assert not tuple(path.parent.glob(".acquire-*"))

@@ -53,7 +53,9 @@ def test_icon_controls(app: AppShell, page: Page) -> None:
     expect(logout).not_to_have_text(re.compile("Logout"))
     sidebar_box = page.locator("#layout-sidebar").bounding_box()
     logout_box, indicator_box = logout.bounding_box(), indicator.bounding_box()
-    assert sidebar_box is not None and logout_box is not None and indicator_box is not None
+    assert sidebar_box is not None
+    assert logout_box is not None
+    assert indicator_box is not None
     assert logout_box["x"] + logout_box["width"] <= sidebar_box["x"] + sidebar_box["width"] + 1
     assert abs(logout_box["width"] - indicator_box["width"]) <= 1
     assert abs(logout_box["height"] - indicator_box["height"]) <= 1

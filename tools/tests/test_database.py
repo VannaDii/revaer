@@ -291,7 +291,8 @@ def test_managed_database_preserves_data_and_resets_only_when_requested(
     )
     DatabaseStart.run(changed)
     replacement = context.tools.docker.database(database.name)
-    assert replacement is not None and replacement.identifier != initial.identifier
+    assert replacement is not None
+    assert replacement.identifier != initial.identifier
     assert database.query("SELECT sum(value) FROM fixture_rows") == "42"
     context.tools.docker.remove_database_container(replacement.identifier)
     DatabaseStart.run(context)
@@ -378,7 +379,8 @@ def test_managed_database_rejects_ambiguous_or_nonlocal_connections_before_creat
     with pytest.raises(ToolingError):
         DatabaseStart.run(context)
     directory = context.settings.database.data_directory
-    assert directory is not None and not directory.exists()
+    assert directory is not None
+    assert not directory.exists()
 
 
 def test_database_data_and_locks_cannot_be_adopted_by_accident(

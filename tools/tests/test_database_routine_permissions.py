@@ -68,7 +68,8 @@ def test_native_runtime_grant_inventory_rejects_independent_mutations(contract_r
         )
         proof = BaselineProof(db, "proof_owner", "proof_runtime", "a" * 64, check)
         proof.routine_permissions(EXPECTED)
-        assert len(checks) == 6 and all(checks.values()), checks
+        assert len(checks) == 6, checks
+        assert all(checks.values()), checks
         evidence = contract.output / "final-runtime-routines.json"
         stock = json.loads(evidence.read_text())
         assert any(row["extension"] for row in stock)

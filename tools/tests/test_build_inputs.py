@@ -42,7 +42,8 @@ def context(compliance_context: Context) -> Context:
 def test_reviewed_manifest_and_complete_runtime_declaration_pass(context: Context) -> None:
     inputs = BuildInputs.load(context.fs, context.root)
     verify_project_pins(context.fs, context.root, inputs)
-    assert inputs.uv_version == "0.12.13" and inputs.python_version == "3.13.12"
+    assert inputs.uv_version == "0.12.13"
+    assert inputs.python_version == "3.13.12"
     assert not media_compliance_findings(context)
     assert "passed" in MediaComplianceGuardrails.run(context).message
 

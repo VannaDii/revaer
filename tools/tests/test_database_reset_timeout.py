@@ -96,7 +96,8 @@ def test_native_reset_scopes_and_observer_cleanup(contract_root: Path) -> None:
                 role="proof_owner",
             )
             proof.success()
-            assert len(checks) == 2 and not any(checks.values())
+            assert len(checks) == 2
+            assert not any(checks.values())
             connection.sql(
                 "DROP TRIGGER proof_reset_timeout ON public.app_profile; "
                 "DROP FUNCTION revaer_system.proof_reset_observer();",

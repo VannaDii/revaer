@@ -139,7 +139,8 @@ def test_migration_parity(api: ApiClient, public_api: ApiClient, session: ApiSes
             Method.GET, API_ROUTE, path=path, query={"apikey": instance.api_key, "t": "caps"}
         )
     )
-    assert caps.status == 200 and "<caps>" in caps.text
+    assert caps.status == 200
+    assert "<caps>" in caps.text
     invalid = public_api.request(
         ApiRequest(
             Method.GET,
@@ -148,7 +149,8 @@ def test_migration_parity(api: ApiClient, public_api: ApiClient, session: ApiSes
             query={"apikey": instance.api_key, "t": "tvsearch", "ep": "2"},
         )
     )
-    assert invalid.status == 200 and 'torznab:response offset="0" total="0"' in invalid.text
+    assert invalid.status == 200
+    assert 'torznab:response offset="0" total="0"' in invalid.text
     download_path = {**path, "canonical_torrent_source_public_id": str(uuid.uuid4())}
     assert (
         public_api.request(

@@ -111,7 +111,8 @@ def test_restart_retires_previous_api_and_preserves_separate_logs(
     context, scenario = coordinator
     with pytest.raises(KeyboardInterrupt):
         run(context)
-    assert len(scenario.children) == 3 and all(child.stopped for child in scenario.children)
+    assert len(scenario.children) == 3
+    assert all(child.stopped for child in scenario.children)
     assert [args.log_path.name for args in scenario.arguments] == [
         "api-1.log",
         "trunk-serve.log",
@@ -140,7 +141,8 @@ def test_failed_or_exited_api_waits_for_an_edit_then_recovers(
         scenario.seconds = 10000  # An ended API does not spin or expire while awaiting an edit.
         yield frozenset()
         yield frozenset((context.root / "fixed.rs",))
-        assert len(scenario.children) == 3 and not scenario.children[2].stopped
+        assert len(scenario.children) == 3
+        assert not scenario.children[2].stopped
         raise KeyboardInterrupt
 
     monkeypatch.setattr(context.tools.watcher, "changes", changes)
@@ -183,7 +185,8 @@ def test_partial_startup_and_watcher_failures_stop_every_started_child(
         monkeypatch.setattr(context.tools.processes, "identity", identify)
     with pytest.raises(ToolingError):
         run(context)
-    assert scenario.children and all(child.stopped for child in scenario.children)
+    assert scenario.children
+    assert all(child.stopped for child in scenario.children)
     assert not (context.root / "target/rv-dev/session.json").exists()
 
 
@@ -264,9 +267,11 @@ def test_zombies_only_uses_the_selected_receipt(
     session.write(context.fs, state / "session.json")
 
     def stop(supervisor: ProcessIdentity, workers: tuple[ProcessIdentity, ...]) -> None:
-        assert supervisor == session.supervisor and workers == session.workers
+        assert supervisor == session.supervisor
+        assert workers == session.workers
         scenario.events.append("stop-owned")
 
     monkeypatch.setattr(context.tools.processes, "stop", stop)
     assert "stopped" in Zombies.run(context).message
-    assert scenario.events == ["stop-owned"] and not (state / "session.json").exists()
+    assert scenario.events == ["stop-owned"]
+    assert not (state / "session.json").exists()

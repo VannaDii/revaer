@@ -132,7 +132,8 @@ def test_real_dockerfile_uses_uv_and_keeps_tooling_out_of_the_runtime(tmp_path: 
         )
         uid = docker("run", "--rm", "--entrypoint", "/bin/busybox", tag, "id", "-u")
         gid = docker("run", "--rm", "--entrypoint", "/bin/busybox", tag, "id", "-g")
-        assert int(uid) > 0 and int(gid) > 0
+        assert int(uid) > 0
+        assert int(gid) > 0
         for path, permission in (
             ("/usr/local/bin/revaer-app", "555:0:0"),
             ("/app/compliance", "755:0:0"),

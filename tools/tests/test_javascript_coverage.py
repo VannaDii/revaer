@@ -215,4 +215,5 @@ def test_nonproduction_only_inventory_needs_no_fabricated_execution(measured: Co
     write_inventory(measured.fs, results / "javascript-baseline-main.json", scripts)
     JavaScriptCoverageMerge.run(measured)
     lines = lcov_lines((measured.root / "coverage/js-lcov.info").read_text())
-    assert lines and all(count == 0 for source in lines.values() for count in source.values())
+    assert lines
+    assert all(count == 0 for source in lines.values() for count in source.values())

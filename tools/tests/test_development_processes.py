@@ -51,7 +51,8 @@ def test_stop_preflights_every_checkout_before_signalling(tmp_path: Path) -> Non
         other = identified(manager(foreign), worker)
         with pytest.raises(ToolingError, match="another user or checkout"):
             processes.stop(supervisor, (other,))
-        assert parent.poll() is None and worker.poll() is None
+        assert parent.poll() is None
+        assert worker.poll() is None
     finally:
         parent.stop()
         worker.stop()
@@ -77,7 +78,8 @@ def test_owned_group_and_supervisor_stop_without_touching_foreign_process(tmp_pa
         supervisor, identity = identified(processes, parent), identified(processes, worker)
         assert {item.pid for item in processes.members(identity)} == {worker.pid}
         processes.stop(supervisor, (identity,))
-        assert parent.poll() is not None and worker.poll() is not None
+        assert parent.poll() is not None
+        assert worker.poll() is not None
         assert unrelated.poll() is None
     finally:
         for running in (parent, worker, unrelated):
@@ -155,7 +157,8 @@ def test_unknown_session_token_prevents_all_cleanup(tmp_path: Path, token: str) 
         identity = replace(identified(processes, worker), token=token)
         with pytest.raises(ToolingError, match="token"):
             processes.stop(supervisor, (identity,))
-        assert parent.poll() is None and worker.poll() is None
+        assert parent.poll() is None
+        assert worker.poll() is None
     finally:
         parent.stop()
         worker.stop()

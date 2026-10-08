@@ -113,7 +113,8 @@ def test_cleanup_refuses_tracked_or_linked_files_before_any_removal(media_contex
     link.symlink_to(foreign)
     with pytest.raises(ToolingError, match="symlinks"):
         CleanFixtures.run(context)
-    assert path.is_file() and foreign.is_dir()
+    assert path.is_file()
+    assert foreign.is_dir()
     link.unlink()
     CleanFixtures.run(context)
     assert not path.exists()
@@ -139,7 +140,8 @@ def test_media_cleanup_keeps_other_checkouts_and_old_global_temporary_data(
     foreign = context.root.parent / "revaer-media-conversion.other"
     foreign.mkdir()
     CleanTestMedia.run(context)
-    assert foreign.is_dir() and not owned.exists()
+    assert foreign.is_dir()
+    assert not owned.exists()
 
 
 def test_update_command_changes_only_declared_snapshots(media_context: Context) -> None:

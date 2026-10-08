@@ -167,7 +167,8 @@ def test_profile_target_policy_validation(api: ApiClient, lifecycle: Lifecycle) 
         201,
     )
     assert target["compatibility_target_key"] == target_key
-    assert target["audio_channels"] == 2 and target["audio_channel_layout"] == "stereo"
+    assert target["audio_channels"] == 2
+    assert target["audio_channel_layout"] == "stereo"
     desired_key = f"e2e-desired-target-{lifecycle.suffix}"
     desired = document(
         api,
@@ -235,7 +236,8 @@ def test_profile_target_policy_validation(api: ApiClient, lifecycle: Lifecycle) 
             "desired_target_version": 1,
         },
     )
-    assert pinned["desired_target_key"] == desired_key and pinned["desired_target_version"] == 1
+    assert pinned["desired_target_key"] == desired_key
+    assert pinned["desired_target_version"] == 1
     assert pinned["latest_version"] == 3
     assert find_row(rows(api, "/v1/media/policies", "policies"), "policy_key", "safe_dry_run")
     policy_key = f"e2e-policy-{lifecycle.suffix}"
@@ -266,7 +268,8 @@ def test_profile_target_policy_validation(api: ApiClient, lifecycle: Lifecycle) 
         ),
         201,
     )
-    assert policy["policy_key"] == policy_key and policy["verification_playback_probe"] is True
+    assert policy["policy_key"] == policy_key
+    assert policy["verification_playback_probe"] is True
     invalid: JsonObject = {
         **legacy_validation,
         "profile_key": f"invalid-{lifecycle.suffix}",
@@ -289,7 +292,8 @@ def test_profile_target_policy_validation(api: ApiClient, lifecycle: Lifecycle) 
             "policy_version": 1,
         },
     )
-    assert updated["policy_key"] == policy_key and updated["latest_version"] == 4
+    assert updated["policy_key"] == policy_key
+    assert updated["latest_version"] == 4
     for field, code in (
         ("desired_target_key", "media_desired_target_not_found"),
         ("policy_key", "media_policy_profile_not_found"),
@@ -320,7 +324,8 @@ def test_job_retention_settings(api: ApiClient) -> None:
     original = document(api, ApiRequest(Method.GET, route))
     assert original["completed_enabled"] is False
     assert original["completed_mode"] == "age"
-    assert isinstance(original["completed_limit"], int) and original["completed_limit"] > 0
+    assert isinstance(original["completed_limit"], int)
+    assert original["completed_limit"] > 0
     assert original["failed_diagnostic_enabled"] is True
     settings: JsonObject = {
         "completed_enabled": True,
@@ -447,7 +452,8 @@ def test_profile_yaml_import_export(api: ApiClient, lifecycle: Lifecycle) -> Non
     assert all(
         copied[key] == value for key, value in lifecycle.body.items() if key != "profile_key"
     )
-    assert copied["dry_run_only"] is True and copied["latest_version"] == 1
+    assert copied["dry_run_only"] is True
+    assert copied["latest_version"] == 1
     matched = document(
         api,
         ApiRequest(
@@ -491,10 +497,8 @@ def test_profile_yaml_import_export(api: ApiClient, lifecycle: Lifecycle) -> Non
     restored = replace_profile(
         api, lifecycle, {**lifecycle.body, "description": "After portable round trip"}
     )
-    assert (
-        restored["output_root_key"] == "ui-source"
-        and restored["workspace_root_key"] == "ui-workspace"
-    )
+    assert restored["output_root_key"] == "ui-source"
+    assert restored["workspace_root_key"] == "ui-workspace"
     lifecycle.unchanged()
 
 
@@ -667,7 +671,8 @@ def test_automated_association_discovery(
             ),
             201,
         )
-        assert cadence["interval_quantity"] == 120 and cadence["interval_unit"] == "minutes"
+        assert cadence["interval_quantity"] == 120
+        assert cadence["interval_unit"] == "minutes"
     result = discovery(api, lifecycle, enabled, collection, automation)
     one_discovery_outcome(result, ("media_discovery_source_unchanged",))
     lifecycle.unchanged()

@@ -24,7 +24,8 @@ def test_secret_rotation(api: ApiClient, public_api: ApiClient, session: ApiSess
             {"secret_public_id": identifier, "secret_value": secret + "-rotated"},
         )
     )
-    assert rotated.ok and rotated.object()["secret_public_id"] == identifier
+    assert rotated.ok
+    assert rotated.object()["secret_public_id"] == identifier
     assert (
         api.request(ApiRequest(Method.DELETE, route, {"secret_public_id": identifier})).status
         == 204
@@ -38,7 +39,8 @@ def test_tag_lifecycle(api: ApiClient, public_api: ApiClient, session: ApiSessio
     create = ApiRequest(Method.POST, route, {"tag_key": key, "display_name": name})
     requires_key(public_api, session, create)
     created = api.request(create)
-    assert created.status == 201 and created.object()["display_name"] == name
+    assert created.status == 201
+    assert created.object()["display_name"] == name
     identifier = string_value(created.object()["tag_public_id"])
     find_row(rows(api, route, "tags"), "tag_key", key)
     updated = api.request(
@@ -46,7 +48,8 @@ def test_tag_lifecycle(api: ApiClient, public_api: ApiClient, session: ApiSessio
             Method.PATCH, route, {"tag_public_id": identifier, "display_name": name + " Updated"}
         )
     )
-    assert updated.ok and updated.object()["display_name"] == name + " Updated"
+    assert updated.ok
+    assert updated.object()["display_name"] == name + " Updated"
     assert (
         api.request(ApiRequest(Method.DELETE, route + "/{tag_key}", path={"tag_key": key})).status
         == 204

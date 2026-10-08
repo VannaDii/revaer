@@ -6,7 +6,8 @@ from revaer_tooling.e2e.api import ApiClient, ApiRequest, ApiSession, Method
 def test_refresh_matches_auth_mode(api: ApiClient, session: ApiSession) -> None:
     response = api.request(ApiRequest(Method.POST, "/v1/auth/refresh"))
     if session.auth_mode == "api_key":
-        assert response.ok and response.object()["api_key_expires_at"]
+        assert response.ok
+        assert response.object()["api_key_expires_at"]
     else:
         assert response.status == 401
 

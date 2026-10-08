@@ -9,21 +9,25 @@ from revaer_tooling.json_data import array_value
 def test_dashboard_snapshot(api: ApiClient) -> None:
     response = api.request(ApiRequest(Method.GET, "/v1/dashboard"))
     assert response.ok
-    assert "download_bps" in response.object() and "upload_bps" in response.object()
+    assert "download_bps" in response.object()
+    assert "upload_bps" in response.object()
 
 
 def test_config_read_and_patch(api: ApiClient) -> None:
     assert api.request(ApiRequest(Method.GET, "/v1/config")).ok
     patched = api.request(ApiRequest(Method.PATCH, "/v1/config", {}))
-    assert patched.ok and "revision" in patched.object()
+    assert patched.ok
+    assert "revision" in patched.object()
 
 
 def test_admin_settings_patch(api: ApiClient) -> None:
     response = api.request(ApiRequest(Method.PATCH, "/admin/settings", {}))
-    assert response.ok and "revision" in response.object()
+    assert response.ok
+    assert "revision" in response.object()
 
 
 def test_filesystem_browse(api: ApiClient, fs_root: Path) -> None:
     response = api.request(ApiRequest(Method.GET, "/v1/fs/browse", query={"path": str(fs_root)}))
-    assert response.ok and response.object()["path"]
+    assert response.ok
+    assert response.object()["path"]
     array_value(response.object()["entries"])

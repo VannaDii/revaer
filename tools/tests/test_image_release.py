@@ -74,7 +74,8 @@ class ImageRunner(RecordingRunner):
             raise CommandError("Fixture manifest publication failed", 19)
         if args[0] == "image":
             ignore = Path(args[args.index("--ignorefile") + 1])
-            assert ignore.is_file() and ignore.read_bytes() == b""
+            assert ignore.is_file()
+            assert ignore.read_bytes() == b""
             if self.fail != "missing-report":
                 Path(args[args.index("--output") + 1]).write_text(self.scan_content)
             if self.fail == "scan":
@@ -160,8 +161,10 @@ def test_build_outputs_follow_registry_verification_and_keep_source_identity(
     }
     build = next(call.argv for call in runner.calls if call.argv[1:3] == ("buildx", "build"))
     assert f"REVISION={revision}" in build
-    assert "type=provenance,mode=max" in build and "type=sbom" in build
-    assert "--push" in build and "--load" not in build
+    assert "type=provenance,mode=max" in build
+    assert "type=sbom" in build
+    assert "--push" in build
+    assert "--load" not in build
     assert (context.root / "artifacts/image-build-amd64.json").is_file()
     output = context.root / "github-output"
     before = output.read_bytes()
@@ -398,7 +401,8 @@ def test_verification_only_manifest_and_category_preserve_existing_ci_identity(
 ) -> None:
     plan = ImageManifestVerify.run(configured(context, alias="dev", include_sha="true")).message
     assert plan.count("ghcr.io/vannadii/revaer:dev\n") == 1
-    assert "-amd64" in plan and "-arm64" in plan
+    assert "-amd64" in plan
+    assert "-arm64" in plan
     result = json.loads(ImageScanCategory.run(context).message)
     assert result["value"] == (
         ".github/workflows/ci.yml:build-images/arch_tag:amd64/name:amd64/needs_qemu:"

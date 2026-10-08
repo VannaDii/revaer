@@ -168,7 +168,8 @@ def test_explicit_proof_settings_are_loaded_at_the_boundary() -> None:
     assert values.pool_proof == Path("path with spaces/pool.json")
     assert values.cancellation_proof == Path("/tmp/cancellation.json")
     defaults = load_settings({}).database
-    assert defaults.pool_proof is None and defaults.cancellation_proof is None
+    assert defaults.pool_proof is None
+    assert defaults.cancellation_proof is None
 
 
 def test_baseline_command_preserves_selected_endpoint_and_failure(qualification: Context) -> None:

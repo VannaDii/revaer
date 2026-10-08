@@ -276,7 +276,8 @@ def test_real_git_blobs_complete_heads_and_stale_provider(
     provider = Provider([page(refs=refs)])
     guard = ChangedLineGuard(asset_contract, native, provider)
     result = guard.verify(Scope.STACK, base, head)
-    assert result.counts.total == 1 and result.asset_exception is not None
+    assert result.counts.total == 1
+    assert result.asset_exception is not None
     assert result.asset_exception["binary_deletions"] == 213
     with pytest.raises(ToolingError, match="binary or uncountable"):
         guard.verify(Scope.ASSEMBLY, base, head)

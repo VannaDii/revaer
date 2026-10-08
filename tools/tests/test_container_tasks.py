@@ -226,7 +226,8 @@ def test_runtime_pin_or_package_failure_prevents_accounts_and_permissions(
     runner.fail = "add"
     with pytest.raises(CommandError):
         ContainerRuntime.run(context)
-    assert not context.fs.permissions and not context.fs.directories
+    assert not context.fs.permissions
+    assert not context.fs.directories
     context.fs.alpine = ""
     with pytest.raises(ToolingError, match="requires Alpine Linux"):
         container_inputs(context)

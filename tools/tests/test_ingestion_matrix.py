@@ -71,12 +71,15 @@ def test_all_thirteen_cases_require_both_variants_and_do_not_certify_d3(tmp_path
     result = IngestionMatrix(
         runner, "SELECT 'helpers:known';", lambda _, passed: checks.append(passed)
     ).run()
-    assert len(result) == 13 and len(checks) == 26 and all(checks)
+    assert len(result) == 13
+    assert len(checks) == 26
+    assert all(checks)
     assert len(runner.calls) == 26
     assert sum(helpers for _, _, helpers in runner.calls) == 12
     assert object_value(result[-1])["approved_delta"] == "ADR 588 D4"
     assert report(tmp_path)["matrix_passed"] is True
-    assert report(tmp_path)["complete"] is False and report(tmp_path)["passed"] is False
+    assert report(tmp_path)["complete"] is False
+    assert report(tmp_path)["passed"] is False
     assert (tmp_path / "ingestion-matrix.json").stat().st_mode & 0o777 == 0o600
 
 
@@ -97,7 +100,8 @@ def test_failed_case_stops_and_replaces_old_success_receipt(
     with pytest.raises(ToolingError, match=reason):
         IngestionMatrix(runner, "SELECT 'helpers:known';", lambda *_: None).run()
     value = report(tmp_path)
-    assert value["matrix_passed"] is False and value["matrix_completed"] is False
+    assert value["matrix_passed"] is False
+    assert value["matrix_completed"] is False
     assert reason in string_value(value["stop_reason"])
     assert len(runner.calls) == (26 if failure == "wrong-warm" else 6)
 

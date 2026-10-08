@@ -157,7 +157,9 @@ def test_browser_retries_keep_evidence_closed_page_video_and_route_union(
     ]
     report = ET.parse(results / "junit.xml").getroot()
     suite = report.find("testsuite")
-    assert suite is not None and suite.get("failures") == "0" and suite.get("tests") == "2"
+    assert suite is not None
+    assert suite.get("failures") == "0"
+    assert suite.get("tests") == "2"
     assert len(report.findall(".//property[@name='artifacts']")) >= 2
     assert (browser_project.root / f"report/ui-{browser}/index.html").stat().st_size > 0
     assert (browser_project.root / "coverage/python.xml").stat().st_size > 0
@@ -238,8 +240,10 @@ def test_setup_and_timeout_failures_close_contexts_and_keep_artifacts(
     report = ET.parse(results / "junit.xml").getroot()
     errors = [element.get("message", "") for element in report.findall(".//error")]
     failures = [element.get("message", "") for element in report.findall(".//failure")]
-    assert len(errors) == 1 and "injected setup failure" in errors[0]
-    assert len(failures) == 1 and "Timeout" in failures[0]
+    assert len(errors) == 1
+    assert "injected setup failure" in errors[0]
+    assert len(failures) == 1
+    assert "Timeout" in failures[0]
 
 
 @pytest.mark.parametrize("phase", ("api-none", "ui-chromium"))

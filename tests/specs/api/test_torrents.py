@@ -44,7 +44,8 @@ def test_torrent_lifecycle(api: ApiClient, fs_root: Path) -> None:
         detail = api.request(
             ApiRequest(Method.GET, prefix + "/torrents/{id}", path={"id": torrent_id})
         )
-        assert detail.ok and detail.object()["id"] == torrent_id
+        assert detail.ok
+        assert detail.object()["id"] == torrent_id
         for collection, name in (("categories", "category"), ("tags", "tag")):
             key = f"e2e-{prefix[1:]}-{name}"
             route = f"{prefix}/torrents/{collection}"
@@ -61,7 +62,8 @@ def test_torrent_lifecycle(api: ApiClient, fs_root: Path) -> None:
             )
             assert author.ok
             if prefix == "/v1":
-                assert author.object()["metainfo"] and author.object()["magnet_uri"]
+                assert author.object()["metainfo"]
+                assert author.object()["magnet_uri"]
     assert (
         api.request(ApiRequest(Method.POST, "/v1/torrents/create", {"root_path": ""})).status == 400
     )

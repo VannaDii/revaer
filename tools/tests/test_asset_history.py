@@ -211,8 +211,10 @@ def test_native_graphql_adapter_keeps_cursor_literal_and_provider_explicit(tmp_p
     call = runner.calls[0]
     assert call.argv[1:5] == ("api", "--hostname", "github.com", "graphql")
     assert call.argv[-2:] == ("--raw-field", "cursor=" + str(args.cursor))
-    assert call.env["GH_HOST"] == "github.com" and call.env["GH_REPO"] == "VannaDii/revaer"
-    assert call.capture and call.timeout == 60
+    assert call.env["GH_HOST"] == "github.com"
+    assert call.env["GH_REPO"] == "VannaDii/revaer"
+    assert call.capture
+    assert call.timeout == 60
     assert not (tmp_path / "unwanted").exists()
     with pytest.raises(ToolingError):
         github.graphql(GraphqlArgs(args.repository, "", args.cursor))

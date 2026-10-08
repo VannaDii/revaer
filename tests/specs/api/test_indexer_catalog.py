@@ -26,8 +26,10 @@ def test_cardigann_import(api: ApiClient, public_api: ApiClient, session: ApiSes
     imported = api.request(request)
     assert imported.status == 201
     definition = object_value(imported.object()["definition"])
-    assert definition["upstream_source"] == "cardigann" and definition["upstream_slug"] == slug
-    assert imported.object()["field_count"] == 2 and imported.object()["option_count"] == 2
+    assert definition["upstream_source"] == "cardigann"
+    assert definition["upstream_slug"] == slug
+    assert imported.object()["field_count"] == 2
+    assert imported.object()["option_count"] == 2
     assert any(
         entry["upstream_source"] == "cardigann" and entry["upstream_slug"] == slug
         for entry in rows(api, "/v1/indexers/definitions", "definitions")

@@ -27,7 +27,8 @@ def test_search_request(api: ApiClient, public_api: ApiClient, session: ApiSessi
     assert pages.status == 200
     entries = array_value(pages.object()["pages"])
     number = object_value(entries[0])["page_number"] if entries else 1
-    assert isinstance(number, int) and not isinstance(number, bool)
+    assert isinstance(number, int)
+    assert not isinstance(number, bool)
     assert (
         api.request(
             ApiRequest(

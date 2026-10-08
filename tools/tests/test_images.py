@@ -99,7 +99,8 @@ def test_load_and_oci_exports_retain_platforms_bytes_and_builder_selection(
     metadata = json.loads((context.root / "artifacts/image-build.json").read_text())
     assert metadata["containerimage.digest"].startswith("sha256:")
     loaded = json.loads(docker("image", "inspect", context.settings.images.name + ":fixture"))[0]
-    assert loaded["Os"] == "linux" and loaded["Architecture"] == "arm64"
+    assert loaded["Os"] == "linux"
+    assert loaded["Architecture"] == "arm64"
     assert loaded["Config"]["User"] == "65532"
     assert selected_builders() == selected
     multi = replace(
@@ -176,7 +177,8 @@ def test_real_trivy_scan_preserves_failed_findings_and_rejects_missing_images(
     with pytest.raises(ToolingError, match="HIGH or CRITICAL"):
         TrivySarifVerify.run(workflow)
     sarif = context.root / "trivy-results.sarif"
-    assert sarif.is_file() and sarif.stat().st_size > 0
+    assert sarif.is_file()
+    assert sarif.stat().st_size > 0
     missing = replace(
         context,
         settings=replace(

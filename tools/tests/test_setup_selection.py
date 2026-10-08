@@ -45,13 +45,16 @@ def test_selections_preserve_pins_and_install_only_the_requested_capabilities(
     minimal = native_selection(fs, configured, (), ())
     assert minimal.toolchain == all_tools.toolchain
     assert minimal.components == all_tools.components
-    assert not minimal.cargo and not minimal.browsers and not minimal.wasm
+    assert not minimal.cargo
+    assert not minimal.browsers
+    assert not minimal.wasm
     assert minimal.nightly is None
     database = native_selection(fs, configured, ("sqlx-cli",), ("firefox",))
     assert database.cargo[0].version == "0.8.6"
     assert database.cargo[0].features == ("postgres",)
     assert database.cargo[0].no_default_features
-    assert not database.wasm and database.nightly is None
+    assert not database.wasm
+    assert database.nightly is None
     assert database.browsers == ("firefox",)
     assert native_selection(fs, configured, ("trunk",), ()).wasm
     assert native_selection(fs, configured, ("cargo-udeps",), ()).nightly == all_tools.nightly

@@ -102,7 +102,8 @@ def binding(rendered: list[Values], values: Values) -> Values:
     assert len(deployments) == 1
     template = deployments[0]["spec"]["template"]
     spec = template["spec"]
-    assert len(spec["containers"]) == 1 and "initContainers" not in spec
+    assert len(spec["containers"]) == 1
+    assert "initContainers" not in spec
     app = spec["containers"][0]
     assert app["image"] == values["image"]["repository"] + "@" + values["image"]["digest"]
     assert spec["nodeSelector"] == {
@@ -218,7 +219,8 @@ def test_valid_compliance_binding(chart: Chart, case: str) -> None:
             assert spec[key] == values[key]
         assert spec["serviceAccountName"] == "existing-account"
         assert template["metadata"]["labels"]["example.test/label"] == "retained"
-        assert values["extraEnv"][0] in app["env"] and app["envFrom"] == values["extraEnvFrom"]
+        assert values["extraEnv"][0] in app["env"]
+        assert app["envFrom"] == values["extraEnvFrom"]
         assert next(v for v in spec["volumes"] if v["name"] == "config")[
             "persistentVolumeClaim"
         ] == {"claimName": "existing-config"}

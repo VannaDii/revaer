@@ -94,7 +94,8 @@ def test_source_build_rechecks_cache_and_repairs_changed_executable(
     original = executable.read_bytes()
     root = executable.parents[2]
     receipt = json.loads((root / "receipt.json").read_text())
-    assert receipt["commit"] == COMMIT and "bin/kcov" in receipt["files"]
+    assert receipt["commit"] == COMMIT
+    assert "bin/kcov" in receipt["files"]
     assert kcov_command(context.root, context.settings.kcov, context.host) == str(executable)
     assert (root / "logs/configure.log").stat().st_size > 0
     modified = (root / "logs/build.log").stat().st_mtime_ns

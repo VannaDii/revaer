@@ -89,7 +89,8 @@ def test_native_watcher_filters_outputs_and_detects_create_modify_delete(tmp_pat
     finally:
         done.set()
         worker.join(timeout=5)
-    assert not worker.is_alive() and not errors
+    assert not worker.is_alive()
+    assert not errors
     # FSEvents can deliver an already-queued config event after subscription.
     # .gitignore is a legitimate input; generated paths must never be emitted.
     assert set().union(*batches) <= {source, tmp_path / ".gitignore"}
@@ -106,10 +107,12 @@ def test_development_settings_fail_before_startup(name: str, value: str) -> None
 
 def test_development_defaults_and_existing_overrides() -> None:
     settings = load_development_settings({})
-    assert settings.startup_timeout == 180 and not settings.skip_port_check
+    assert settings.startup_timeout == 180
+    assert not settings.skip_port_check
     assert (settings.api_log, settings.ui_log) == ("debug", "info")
     settings = load_development_settings(
         {"DEV_STARTUP_TIMEOUT": "60", "DEV_SKIP_PORT_CHECK": "1", "RUST_LOG": "trace"}
     )
-    assert settings.startup_timeout == 60 and settings.skip_port_check
+    assert settings.startup_timeout == 60
+    assert settings.skip_port_check
     assert settings.api_log == settings.ui_log == "trace"

@@ -112,7 +112,8 @@ def test_native_output_preserves_exact_bytes_and_line_endings(tmp_path: Path) ->
     logged = log.read_bytes()
     assert len(logged) == len(payload) * 2
     assert logged.count(b"\r\n") == 2
-    assert logged.count(b"\r") == 4 and logged.count(b"\x00") == 2
+    assert logged.count(b"\r") == 4
+    assert logged.count(b"\x00") == 2
 
 
 @pytest.mark.parametrize("status", (0, 7))
@@ -141,7 +142,9 @@ def test_binary_capture_preserves_blobs_without_logging_them(tmp_path: Path, sta
             log_path=log,
         )
     )
-    assert result.code == status and result.stdout_bytes == payload and result.stdout == ""
+    assert result.code == status
+    assert result.stdout_bytes == payload
+    assert result.stdout == ""
     assert result.stderr == token + "\n"
     assert log.read_text() == "[redacted]\n"
     assert token not in "\n".join(messages)

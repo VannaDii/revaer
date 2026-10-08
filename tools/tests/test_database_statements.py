@@ -25,7 +25,8 @@ def test_native_scanner_preserves_unicode_comments_and_nested_routine_bodies() -
     assert parsed.boundaries == tuple(expected)
     assert parsed.count == 4
     assert all(parsed.complete_prefix(boundary.byte_count) for boundary in expected)
-    assert not parsed.complete_prefix(0) and not parsed.complete_prefix(total - 1)
+    assert not parsed.complete_prefix(0)
+    assert not parsed.complete_prefix(total - 1)
     assert parsed.mapping().splitlines()[0] == "ordinal\tbyte_count\tline_number"
     assert parsed.mapping().splitlines()[-1] == f"4\t{total}\t{expected[-1].line_number}"
 

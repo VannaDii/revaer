@@ -15,7 +15,8 @@ def test_routing_credentials(api: ApiClient, public_api: ApiClient, session: Api
     create = ApiRequest(Method.POST, route, {"display_name": name, "mode": "http_proxy"})
     requires_key(public_api, session, create)
     created = api.request(create)
-    assert created.status == 201 and created.object()["display_name"] == name
+    assert created.status == 201
+    assert created.object()["display_name"] == name
     identifier = string_value(created.object()["routing_policy_public_id"])
     policy = find_row(rows(api, route, "routing_policies"), "routing_policy_public_id", identifier)
     assert policy["display_name"] == name
@@ -115,7 +116,8 @@ def test_health_notifications(api: ApiClient, public_api: ApiClient, session: Ap
             },
         )
     )
-    assert created.status == 201 and created.object()["channel"] == "webhook"
+    assert created.status == 201
+    assert created.object()["channel"] == "webhook"
     assert created.object()["webhook_url"] == "https://hooks.example.test/indexers"
     field = "indexer_health_notification_hook_public_id"
     identifier = string_value(created.object()[field])

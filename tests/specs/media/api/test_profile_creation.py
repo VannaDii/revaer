@@ -185,7 +185,8 @@ def test_metadata_update_preserves_roots_and_disabled_automation(
     assert response.object()["latest_version"] == 2
     assert read(api, created) == response.object()
     bound = association(api, profile, response.object())
-    assert bound["schedule_enabled"] is False and bound["watcher_enabled"] is False
+    assert bound["schedule_enabled"] is False
+    assert bound["watcher_enabled"] is False
     profile.unchanged()
 
 
@@ -250,19 +251,23 @@ def test_manual_discovery_and_diagnostics_preserve_dry_run(
             },
         )
     )
-    assert planning.status == 200 and planning.object()["accepted"] is True
+    assert planning.status == 200
+    assert planning.object()["accepted"] is True
     preview = api.request(ApiRequest(Method.POST, "/v1/media/discovery/preview", body))
     assert preview.status == 200
     assert object_value(array_value(preview.object()["previews"])[0])["accepted"] is True
     run = api.request(ApiRequest(Method.POST, "/v1/media/discovery/runs", body))
-    assert run.status == 201 and run.object()["skipped"] == []
+    assert run.status == 201
+    assert run.object()["skipped"] == []
     queued = array_value(run.object()["queued_jobs"])
     assert len(queued) == 1
     job = object_value(queued[0])
-    assert job["source_path"] == relative_source and job["dry_run"] is True
+    assert job["source_path"] == relative_source
+    assert job["dry_run"] is True
     job_id = string_value(job["media_job_public_id"])
     duplicate = api.request(ApiRequest(Method.POST, "/v1/media/discovery/runs", body))
-    assert duplicate.status == 201 and duplicate.object()["queued_jobs"] == []
+    assert duplicate.status == 201
+    assert duplicate.object()["queued_jobs"] == []
     assert duplicate.object()["skipped"] == [
         {"source_path": relative_source, "reason": "media_discovery_source_unchanged"}
     ]
@@ -274,7 +279,8 @@ def test_manual_discovery_and_diagnostics_preserve_dry_run(
     route = "/v1/media/jobs/{media_job_public_id}"
     job_path = {"media_job_public_id": job_id}
     detail = api.request(ApiRequest(Method.GET, route, path=job_path))
-    assert detail.status == 200 and detail.object()["source_path"] == relative_source
+    assert detail.status == 200
+    assert detail.object()["source_path"] == relative_source
     for suffix, collection in (
         ("phases", "phases"),
         ("operations", "operations"),
@@ -314,5 +320,6 @@ def test_disabled_automation_admits_no_jobs(
         "value": f"media_discovery_{automation[:-1]}_disabled",
     } in array_value(response.object()["context"])
     jobs = api.request(ApiRequest(Method.GET, "/v1/media/jobs", query=path))
-    assert jobs.status == 200 and jobs.object()["jobs"] == []
+    assert jobs.status == 200
+    assert jobs.object()["jobs"] == []
     profile.unchanged()

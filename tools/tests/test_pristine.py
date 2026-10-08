@@ -123,10 +123,12 @@ def test_native_identity_statistics_and_temporary_relations_normalize(
     baseline = snapshot.read()
     assert baseline == other.read() == (ROOT / "config/postgres-pristine-16.14.tsv").read_bytes()
     assert baseline.decode("utf-8").encode("utf-8") == baseline
-    assert baseline.endswith(b"\n") and b"\r" not in baseline
+    assert baseline.endswith(b"\n")
+    assert b"\r" not in baseline
     assert baseline.splitlines() == sorted(baseline.splitlines())
     assert sum(line.startswith(b"#catalog\t") for line in baseline.splitlines()) == 27
-    assert snapshot.database.encode() not in baseline and snapshot.owner.encode() not in baseline
+    assert snapshot.database.encode() not in baseline
+    assert snapshot.owner.encode() not in baseline
     catalogs.execute(
         snapshot,
         "UPDATE pg_class SET relpages=relpages+100, reltuples=reltuples+50, "
@@ -285,7 +287,8 @@ def test_commands_validate_exact_bytes_and_invalidate_stale_success_on_failure(
     with pytest.raises(ToolingError, match="Committed pristine snapshot differs"):
         PristineValidate.run(context)
     assert expected.read_bytes() == baseline + b"unexpected\n"
-    assert generated.read_bytes() == baseline and evidence.is_file()
+    assert generated.read_bytes() == baseline
+    assert evidence.is_file()
 
     def fail_read(snapshot: Snapshot, prefix: str = "") -> bytes:
         raise ToolingError("Interrupted catalog read")
@@ -293,7 +296,8 @@ def test_commands_validate_exact_bytes_and_invalidate_stale_success_on_failure(
     monkeypatch.setattr(Snapshot, "read", fail_read)
     with pytest.raises(ToolingError, match="Interrupted catalog read"):
         PristineGenerate.run(context)
-    assert not generated.exists() and not evidence.exists()
+    assert not generated.exists()
+    assert not evidence.exists()
     receipts = [json.loads(path.read_text()) for path in output.glob("postgres-*.json")]
     assert len(receipts) == 3
     assert sum(item["completed"] is True for item in receipts) == 2

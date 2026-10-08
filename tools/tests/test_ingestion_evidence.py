@@ -62,7 +62,8 @@ def success(helpers: bool = False) -> str:
 @pytest.mark.parametrize("helpers", (False, True))
 def test_valid_success_frames_and_helper_known_answers(helpers: bool) -> None:
     value = PARSER.parse(success(helpers), "", role="proof_runtime", helpers_first=helpers)
-    assert value["states"] == ["00000"] and value["results"] == [{"value": 1}]
+    assert value["states"] == ["00000"]
+    assert value["results"] == [{"value": 1}]
 
 
 @pytest.mark.parametrize(
@@ -124,7 +125,8 @@ def test_comparison_rewrites_only_committed_ids_and_observed_clocks() -> None:
     original = deepcopy(value)
     normalized = comparable(value)
     assert value == original
-    assert normalized["observed"] == "<transaction-time:0>" and "clocks" not in normalized
+    assert normalized["observed"] == "<transaction-time:0>"
+    assert "clocks" not in normalized
     assert normalized["results"] == [
         {
             "canonical_torrent_public_id": "<canonical_torrent:1>",
@@ -193,9 +195,8 @@ COMMIT;
                     observed_lines.append(
                         object_value(array_value(parsed["diagnostics"])[0])["line"]
                     )
-                    assert parsed["details"] == ["proof detail"] and parsed["hints"] == [
-                        "proof hint"
-                    ]
+                    assert parsed["details"] == ["proof detail"]
+                    assert parsed["hints"] == ["proof hint"]
                     for invalid in (
                         outcome.stderr + "WARNING: unexpected\n",
                         re.sub(r" line [0-9]+ at", " line 99999 at", outcome.stderr),
@@ -209,5 +210,6 @@ COMMIT;
                     ):
                         with pytest.raises(ToolingError):
                             PARSER.parse(outcome.stdout, invalid, role=role)
-        assert len(observed_lines) == 2 and observed_lines[0] == observed_lines[1]
+        assert len(observed_lines) == 2
+        assert observed_lines[0] == observed_lines[1]
     assert receipt(contract)["storage_removed"] is True

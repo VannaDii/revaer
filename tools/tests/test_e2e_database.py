@@ -71,7 +71,8 @@ def test_media_coordinator_uses_sealed_runtime_and_preserves_cleanup_order(
     selections: list[Context] = []
 
     def select(name: str, image: str) -> str:
-        assert name == "selected" and "@sha256:" in image
+        assert name == "selected"
+        assert "@sha256:" in image
         scenario.visit("select-container")
         return container
 

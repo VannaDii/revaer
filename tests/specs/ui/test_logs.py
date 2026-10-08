@@ -11,7 +11,8 @@ def test_log_shell(app: AppShell, page: Page) -> None:
     app.goto("/logs")
     LogsPage(app).expect_loaded()
     box = page.locator(".log-terminal").bounding_box()
-    assert box is not None and box["height"] > 160
+    assert box is not None
+    assert box["height"] > 160
     expect(page.get_by_text("No log lines yet.", exact=True)).to_be_visible()
 
 

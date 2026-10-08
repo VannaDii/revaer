@@ -30,7 +30,8 @@ def test_fixture_argument_boundary_and_case_matrix() -> None:
         session({}, helper_sql=" ")
     assert len(ARGUMENTS) == 24
     matrix = cases()
-    assert len(matrix) == 13 and len({case.name for case in matrix}) == 13
+    assert len(matrix) == 13
+    assert len({case.name for case in matrix}) == 13
     assert sum(case.helpers_first for case in matrix) == 6
     assert sum(case.repeat for case in matrix) == 1
     for case in matrix:
@@ -82,7 +83,8 @@ def test_native_warm_session_commits_and_rolls_back_only_the_failed_second_call(
     checks: dict[str, bool] = {}
     with runtime.open(contract, user="postgres", database="reference_proof") as connection:
         SessionControls(connection, lambda label, passed: checks.update({label: passed})).verify()
-        assert len(checks) == 3 and all(checks.values()), checks
+        assert len(checks) == 3, checks
+        assert all(checks.values()), checks
         for name, writes in (("2", "1,2"), ("3", "1,3"), ("1-0", "1")):
             prefix = contract.output / ("session-control-" + name)
             assert f"writes:{writes}\n" in prefix.with_suffix(".stdout").read_text()

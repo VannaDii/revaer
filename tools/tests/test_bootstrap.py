@@ -104,7 +104,8 @@ def run_bootstrap_case(case: str, tmp_path: Path, artifacts: Path | None) -> Non
     assert tuple(foreign.iterdir()) == (marker,)
     output = result.stdout + result.stderr
     if case == "stale-lock":
-        assert "lockfile" in output and "--locked" in output
+        assert "lockfile" in output
+        assert "--locked" in output
         assert "Python environment ready" not in output
     else:
         assert "Python environment ready" in output

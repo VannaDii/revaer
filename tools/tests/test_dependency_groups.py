@@ -79,11 +79,13 @@ def test_core_install_uses_the_same_locked_cli_and_audit_exports_all_groups(tmp_
         "pglast",
     }
     help_text = run("run", "--locked", "--no-default-groups", "--", "rv", "--help")
-    assert "workflow-metadata" in help_text and "ui-e2e" in help_text
+    assert "workflow-metadata" in help_text
+    assert "ui-e2e" in help_text
     metadata = json.loads(
         run("run", "--locked", "--no-default-groups", "--", "rv", "workflow-metadata")
     )
-    assert len(metadata["sha"]) == 40 and metadata["short_sha"] == metadata["sha"][:7]
+    assert len(metadata["sha"]) == 40
+    assert metadata["short_sha"] == metadata["sha"][:7]
     exported = run(
         "export", "--locked", "--all-groups", "--no-emit-project", "--format", "pylock.toml"
     )

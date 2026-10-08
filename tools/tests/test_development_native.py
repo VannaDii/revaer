@@ -92,7 +92,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         assert read_page(port, running) == "Rust API"
         listeners = Listeners("lsof", runner, tmp_path, environment)
         assert processes.require_listener(listeners.owners(port), identity)
-        assert "Running" in log.read_text() and any("Running" in message for message in messages)
+        assert "Running" in log.read_text()
+        assert any("Running" in message for message in messages)
     finally:
         running.stop()
         processes.stop_workers((identity,))
