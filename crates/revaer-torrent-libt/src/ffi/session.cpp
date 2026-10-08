@@ -1625,21 +1625,21 @@ public:
     }
 
     ::rust::String pause_torrent(::rust::Str id) {
-        return mutate_handle(to_std_string(id), [](lt::torrent_handle& handle) {
+        return mutate_handle(to_std_string(id), [](const lt::torrent_handle& handle) {
             handle.unset_flags(lt::torrent_flags::auto_managed);
             handle.pause();
         });
     }
 
     ::rust::String resume_torrent(::rust::Str id) {
-        return mutate_handle(to_std_string(id), [](lt::torrent_handle& handle) {
+        return mutate_handle(to_std_string(id), [](const lt::torrent_handle& handle) {
             handle.set_flags(lt::torrent_flags::auto_managed);
             handle.resume();
         });
     }
 
     ::rust::String set_sequential(::rust::Str id, bool sequential) {
-        return mutate_handle(to_std_string(id), [sequential](lt::torrent_handle& handle) {
+        return mutate_handle(to_std_string(id), [sequential](const lt::torrent_handle& handle) {
             if (sequential) {
                 handle.set_flags(lt::torrent_flags::sequential_download);
             } else {
@@ -1734,7 +1734,7 @@ public:
         if (request.has_source) {
             return ::rust::String("source updates are not supported");
         }
-        return mutate_handle(key, [&](lt::torrent_handle& handle) {
+        return mutate_handle(key, [&](const lt::torrent_handle& handle) {
             if (request.has_max_connections) {
                 handle.set_max_connections(request.max_connections);
             }
@@ -1779,7 +1779,7 @@ public:
                 return ::rust::String(*error);
             }
         }
-        return mutate_handle(key, [&](lt::torrent_handle& handle) {
+        return mutate_handle(key, [&](const lt::torrent_handle& handle) {
             std::vector<lt::announce_entry> trackers;
             if (!request.replace) {
                 trackers = handle.trackers();
@@ -1806,7 +1806,7 @@ public:
 
     ::rust::String update_web_seeds(const UpdateWebSeedsRequest& request) {
         const auto key = to_std_string(request.id);
-        return mutate_handle(key, [&](lt::torrent_handle& handle) {
+        return mutate_handle(key, [&](const lt::torrent_handle& handle) {
             std::unordered_set<std::string> seeds;
             if (!request.replace) {
                 for (const auto& seed : handle.url_seeds()) {
@@ -1835,25 +1835,25 @@ public:
     ::rust::String move_torrent(const MoveTorrentRequest& request) {
         const auto key = to_std_string(request.id);
         const auto target = to_std_string(request.download_dir);
-        return mutate_handle(key, [&](lt::torrent_handle& handle) {
+        return mutate_handle(key, [&](const lt::torrent_handle& handle) {
             handle.move_storage(target, lt::move_flags_t::dont_replace);
         });
     }
 
     ::rust::String reannounce(::rust::Str id) {
-        return mutate_handle(to_std_string(id), [](lt::torrent_handle& handle) {
+        return mutate_handle(to_std_string(id), [](const lt::torrent_handle& handle) {
             handle.force_reannounce();
         });
     }
 
     ::rust::String recheck(::rust::Str id) {
-        return mutate_handle(to_std_string(id), [](lt::torrent_handle& handle) {
+        return mutate_handle(to_std_string(id), [](const lt::torrent_handle& handle) {
             handle.force_recheck();
         });
     }
 
     ::rust::String set_piece_deadline(::rust::Str id, std::uint32_t piece, std::int32_t deadline_ms, bool has_deadline) {
-        return mutate_handle(to_std_string(id), [piece, deadline_ms, has_deadline](lt::torrent_handle& handle) {
+        return mutate_handle(to_std_string(id), [piece, deadline_ms, has_deadline](const lt::torrent_handle& handle) {
             lt::piece_index_t target{static_cast<int>(piece)};
             if (has_deadline) {
                 handle.set_piece_deadline(target, deadline_ms);
@@ -1982,7 +1982,7 @@ public:
         std::vector<lt::alert*> alerts;
         session_->pop_alerts(&alerts);
         for (lt::alert* alert : alerts) {
-            if (auto* err = lt::alert_cast<lt::torrent_error_alert>(alert)) {
+            if (const auto* err = lt::alert_cast<lt::torrent_error_alert>(alert)) {
                 auto id = find_torrent_id(err->handle);
                 if (!id.empty()) {
                     NativeEvent evt{};
@@ -1993,7 +1993,7 @@ public:
                     events.push_back(evt);
                 }
             }
-            if (auto* tracker_err = lt::alert_cast<lt::tracker_error_alert>(alert)) {
+            if (const auto* tracker_err = lt::alert_cast<lt::tracker_error_alert>(alert)) {
                 auto id = find_torrent_id(tracker_err->handle);
                 if (!id.empty()) {
                     NativeEvent evt{};
@@ -2009,13 +2009,13 @@ public:
                     events.push_back(evt);
                 }
             }
-            if (auto* listen_err = lt::alert_cast<lt::listen_failed_alert>(alert)) {
+            if (const auto* listen_err = lt::alert_cast<lt::listen_failed_alert>(alert)) {
                 push_session_error("network", listen_err->message(), std::string());
             }
-            if (auto* portmap_err = lt::alert_cast<lt::portmap_error_alert>(alert)) {
+            if (const auto* portmap_err = lt::alert_cast<lt::portmap_error_alert>(alert)) {
                 push_session_error("portmap", portmap_err->message(), std::string());
             }
-            if (auto* storage_err = lt::alert_cast<lt::file_error_alert>(alert)) {
+            if (const auto* storage_err = lt::alert_cast<lt::file_error_alert>(alert)) {
                 auto id = find_torrent_id(storage_err->handle);
                 NativeEvent evt{};
                 evt.id = id;
@@ -2026,7 +2026,7 @@ public:
                 events.push_back(evt);
                 push_session_error("storage", message, id);
             }
-            if (auto* tracker_warn = lt::alert_cast<lt::tracker_warning_alert>(alert)) {
+            if (const auto* tracker_warn = lt::alert_cast<lt::tracker_warning_alert>(alert)) {
                 auto id = find_torrent_id(tracker_warn->handle);
                 if (!id.empty()) {
                     NativeEvent evt{};
@@ -2042,29 +2042,29 @@ public:
                     events.push_back(evt);
                 }
             }
-            if (auto* tracker_err =
+            if (const auto* tracker_err =
                     lt::alert_cast<lt::tracker_error_alert>(alert)) {
                 auto id = find_torrent_id(tracker_err->handle);
                 push_session_error("tracker", sanitize_tracker_urls(tracker_err->message()), id);
             }
-            if (auto* peer_ban = lt::alert_cast<lt::peer_ban_alert>(alert)) {
+            if (const auto* peer_ban = lt::alert_cast<lt::peer_ban_alert>(alert)) {
                 auto id = find_torrent_id(peer_ban->handle);
                 push_session_error("peer", peer_ban->message(), id);
             }
-            if (auto* peer_error = lt::alert_cast<lt::peer_error_alert>(alert)) {
+            if (const auto* peer_error = lt::alert_cast<lt::peer_error_alert>(alert)) {
                 auto id = find_torrent_id(peer_error->handle);
                 push_session_error("peer", peer_error->message(), id);
             }
-            if (auto* peer_blocked =
+            if (const auto* peer_blocked =
                     lt::alert_cast<lt::peer_blocked_alert>(alert)) {
                 auto id = find_torrent_id(peer_blocked->handle);
                 push_session_error("peer", peer_blocked->message(), id);
             }
-            if (auto* cert = lt::alert_cast<lt::torrent_need_cert_alert>(alert)) {
+            if (const auto* cert = lt::alert_cast<lt::torrent_need_cert_alert>(alert)) {
                 auto id = find_torrent_id(cert->handle);
                 push_session_error("ssl", cert->message(), id);
             }
-            if (auto* moved = lt::alert_cast<lt::storage_moved_alert>(alert)) {
+            if (const auto* moved = lt::alert_cast<lt::storage_moved_alert>(alert)) {
                 auto id = find_torrent_id(moved->handle);
                 auto snapshot = snapshots_.find(id);
                 if (!id.empty() && snapshot != snapshots_.end()) {
@@ -2088,7 +2088,7 @@ public:
                     snapshot->second.last_download_dir = moved->storage_path();
                 }
             }
-            if (auto* move_failed = lt::alert_cast<lt::storage_moved_failed_alert>(alert)) {
+            if (const auto* move_failed = lt::alert_cast<lt::storage_moved_failed_alert>(alert)) {
                 auto id = find_torrent_id(move_failed->handle);
                 auto snapshot = snapshots_.find(id);
                 if (!id.empty() && snapshot != snapshots_.end()) {
@@ -2100,7 +2100,7 @@ public:
                     events.push_back(evt);
                 }
             }
-            if (auto* resume = lt::alert_cast<lt::save_resume_data_alert>(alert)) {
+            if (const auto* resume = lt::alert_cast<lt::save_resume_data_alert>(alert)) {
                 auto id = find_torrent_id(resume->handle);
                 auto snapshot = snapshots_.find(id);
                 if (!id.empty() && snapshot != snapshots_.end()) {
@@ -2124,7 +2124,7 @@ public:
                     snapshot->second.resume_requested = false;
                 }
             }
-            if (auto* resume_failed = lt::alert_cast<lt::save_resume_data_failed_alert>(alert)) {
+            if (const auto* resume_failed = lt::alert_cast<lt::save_resume_data_failed_alert>(alert)) {
                 auto id = find_torrent_id(resume_failed->handle);
                 auto snapshot = snapshots_.find(id);
                 if (!id.empty() && snapshot != snapshots_.end()) {
@@ -2367,7 +2367,7 @@ private:
     void note_invalid_handle(const std::string& id,
                              rust::Vec<NativeEvent>& events,
                              std::unordered_set<std::string>& stale_ids,
-                             const std::string& message) {
+                             const std::string& message) const {
         NativeEvent evt{};
         evt.id = id;
         evt.kind = NativeEventKind::Error;
@@ -2377,7 +2377,7 @@ private:
         stale_ids.insert(id);
     }
 
-    void apply_selection(const std::string& id, lt::torrent_handle& handle) {
+    void apply_selection(const std::string& id, const lt::torrent_handle& handle) {
         auto info = handle.torrent_file();
         if (!info) {
             return;
