@@ -47,3 +47,16 @@ def test_log_filters_and_search(app: AppShell, page: Page) -> None:
     logs.search("error")
     expect(terminal).to_contain_text(lines[4])
     expect(terminal).not_to_contain_text(lines[3])
+
+
+def test_log_stream_flushes_final_frame_and_reconnects(app: AppShell, page: Page) -> None:
+    mock_log_stream(page, "data: level=INFO final line\ndata: final continuation")
+    app.goto("/logs")
+    LogsPage(app).expect_loaded()
+    terminal = page.locator(".log-terminal")
+    expect(terminal).to_contain_text("level=INFO final line")
+    expect(terminal).to_contain_text("final continuation")
+    with page.expect_request(
+        lambda request: request.method == "GET" and request.url.endswith("/v1/logs/stream")
+    ):
+        expect(terminal).to_contain_text("final continuation")

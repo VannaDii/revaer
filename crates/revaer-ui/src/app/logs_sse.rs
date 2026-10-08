@@ -7,7 +7,7 @@
 
 use crate::core::auth::{AuthState, LocalAuth};
 use crate::core::logic::backoff_delay_ms;
-use crate::services::sse::SseParser;
+use crate::services::sse::{SseFrame, SseParser};
 use gloo::console;
 use gloo_timers::future::TimeoutFuture;
 use js_sys::{Reflect, Uint8Array};
@@ -54,88 +54,19 @@ async fn run_log_stream_loop(
     on_error: Callback<String>,
 ) {
     let mut attempt = 0u32;
-    loop {
-        if signal.aborted() {
-            break;
-        }
-
+    while !signal.aborted() {
         let reconnect = match open_stream(&base_url, &auth, &signal).await {
-            Ok(mut reader) => {
-                let mut parser = SseParser::default();
-                let decoder = match TextDecoder::new() {
-                    Ok(decoder) => decoder,
+            Ok(reader) => {
+                attempt = 0;
+                match consume_log_stream(reader, &signal, &on_line, &on_error).await {
+                    Ok(()) => true,
                     Err(err) => {
                         if signal.aborted() {
                             return;
                         }
-                        on_error.emit(format!("decoder error: {err:?}"));
-                        return;
-                    }
-                };
-                let decode_options = {
-                    let options = TextDecodeOptions::new();
-                    options.set_stream(true);
-                    options
-                };
-                attempt = 0;
-
-                loop {
-                    if signal.aborted() {
-                        return;
-                    }
-                    match read_chunk(&mut reader).await {
-                        Ok(Some(bytes)) => {
-                            let text = match decoder
-                                .decode_with_js_u8_array_and_options(&bytes, &decode_options)
-                            {
-                                Ok(text) => text,
-                                Err(err) => {
-                                    if signal.aborted() {
-                                        return;
-                                    }
-                                    on_error.emit(format!("decode error: {err:?}"));
-                                    break false;
-                                }
-                            };
-                            for frame in parser.push(&text) {
-                                let data = frame.data.trim();
-                                if !data.is_empty() {
-                                    on_line.emit(data.to_string());
-                                }
-                            }
-                        }
-                        Ok(None) => {
-                            match decoder.decode() {
-                                Ok(text) => {
-                                    for frame in parser.push(&text) {
-                                        let data = frame.data.trim();
-                                        if !data.is_empty() {
-                                            on_line.emit(data.to_string());
-                                        }
-                                    }
-                                }
-                                Err(err) => {
-                                    if signal.aborted() {
-                                        return;
-                                    }
-                                    on_error.emit(format!("decode error: {err:?}"));
-                                }
-                            }
-                            if let Some(frame) = parser.finish() {
-                                let data = frame.data.trim();
-                                if !data.is_empty() {
-                                    on_line.emit(data.to_string());
-                                }
-                            }
-                            break true;
-                        }
-                        Err(err) => {
-                            if signal.aborted() {
-                                return;
-                            }
-                            on_error.emit(err);
-                            break true;
-                        }
+                        let reconnect = matches!(&err, LogReadError::Read(_));
+                        on_error.emit(err.to_string());
+                        reconnect
                     }
                 }
             }
@@ -148,14 +79,81 @@ async fn run_log_stream_loop(
             }
         };
 
-        if !reconnect {
-            break;
-        }
-        if signal.aborted() {
+        if !reconnect || signal.aborted() {
             break;
         }
         attempt = attempt.saturating_add(1);
         schedule_reconnect(attempt).await;
+    }
+}
+
+#[derive(Debug)]
+enum LogReadError {
+    Decoder(JsValue),
+    Decode(JsValue),
+    Read(String),
+}
+
+impl std::fmt::Display for LogReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Decoder(err) => write!(f, "decoder error: {err:?}"),
+            Self::Decode(err) => write!(f, "decode error: {err:?}"),
+            Self::Read(err) => f.write_str(err),
+        }
+    }
+}
+
+async fn consume_log_stream(
+    mut reader: ReadableStreamDefaultReader,
+    signal: &AbortSignal,
+    on_line: &Callback<String>,
+    on_error: &Callback<String>,
+) -> Result<(), LogReadError> {
+    let mut parser = SseParser::default();
+    let decoder = TextDecoder::new().map_err(LogReadError::Decoder)?;
+    let options = TextDecodeOptions::new();
+    options.set_stream(true);
+    loop {
+        if signal.aborted() {
+            return Ok(());
+        }
+        let Some(bytes) = read_chunk(&mut reader).await.map_err(LogReadError::Read)? else {
+            finish_log_stream(&mut parser, &decoder, signal, on_line, on_error);
+            return Ok(());
+        };
+        let text = decoder
+            .decode_with_js_u8_array_and_options(&bytes, &options)
+            .map_err(LogReadError::Decode)?;
+        emit_log_frames(parser.push(&text), on_line);
+    }
+}
+
+fn finish_log_stream(
+    parser: &mut SseParser,
+    decoder: &TextDecoder,
+    signal: &AbortSignal,
+    on_line: &Callback<String>,
+    on_error: &Callback<String>,
+) {
+    match decoder.decode() {
+        Ok(text) => emit_log_frames(parser.push(&text), on_line),
+        Err(err) => {
+            if signal.aborted() {
+                return;
+            }
+            on_error.emit(format!("decode error: {err:?}"));
+        }
+    }
+    emit_log_frames(parser.finish(), on_line);
+}
+
+fn emit_log_frames(frames: impl IntoIterator<Item = SseFrame>, on_line: &Callback<String>) {
+    for frame in frames {
+        let data = frame.data.trim();
+        if !data.is_empty() {
+            on_line.emit(data.to_string());
+        }
     }
 }
 
