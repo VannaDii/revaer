@@ -191,3 +191,28 @@ def test_invalid_script_does_not_turn_into_a_zero_coverage_success(tmp_path: Pat
     syntax = JavaScriptSyntax(Parser(Language(tree_sitter_javascript.language())))
     with pytest.raises(ToolingError, match="parse error"):
         parse_inventory(syntax, tmp_path, ("invalid.js",))
+
+
+def test_nonproduction_only_inventory_needs_no_fabricated_execution(measured: Context) -> None:
+    results = measured.root / "tests/test-results"
+    for path in (results / "ui-chromium").glob("*/javascript-page-*.json"):
+        record = json.loads(path.read_text())
+        for capture in record["captures"]:
+            for function in capture["functions"]:
+                for span in function["ranges"]:
+                    span["count"] = 0
+        path.write_text(json.dumps(record))
+    with pytest.raises(ToolingError, match="production locations"):
+        JavaScriptCoverageMerge.run(measured)
+    documentation = measured.root / "docs"
+    documentation.mkdir()
+    for name in ("app.js", "mirror.js", "unused.js"):
+        (measured.root / name).rename(documentation / name)
+    syntax = JavaScriptSyntax(Parser(Language(tree_sitter_javascript.language())))
+    scripts = parse_inventory(
+        syntax, measured.root, ("docs/app.js", "docs/mirror.js", "docs/unused.js")
+    )
+    write_inventory(measured.fs, results / "javascript-baseline-main.json", scripts)
+    JavaScriptCoverageMerge.run(measured)
+    lines = lcov_lines((measured.root / "coverage/js-lcov.info").read_text())
+    assert lines and all(count == 0 for source in lines.values() for count in source.values())

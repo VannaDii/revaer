@@ -142,7 +142,8 @@ class JavaScriptCoverageMerge(Task):
             if any(read_inventory(context, path, sources) != scripts for path in baselines[1:]):
                 raise ToolingError("Chromium workers disagree on JavaScript source locations")
             document = merge_captures(context, captures, scripts)
-            if not lcov_counts(document).covered:
-                raise ToolingError("JavaScript coverage contains no executed authored locations")
+            counts = lcov_counts(document, production=True)
+            if counts.total and not counts.covered:
+                raise ToolingError("JavaScript coverage contains no executed production locations")
             context.fs.write(target, document)
         return TaskResult("Merged syntax locations and browser execution: coverage/js-lcov.info")

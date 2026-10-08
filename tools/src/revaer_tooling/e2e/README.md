@@ -178,7 +178,10 @@ when at least one of its code locations ran. Identical source copies share the
 same measurement but retain distinct checkout paths. Generated Trunk loaders
 without matching authored bytes keep their raw captures; their execution is not
 attributed to an unrelated source file. This reports line coverage, not an
-independent statement or branch percentage.
+independent statement or branch percentage. Sonar coverage concerns apply only
+to production code. When the production Rust/Wasm UI has no authored JavaScript,
+the complete browser run may produce honest zero-hit records for nonproduction
+scripts; the merger never requires documentation execution to manufacture hits.
 
 The `page` fixture is instrumented before a scenario receives it. Scenarios that
 need another page request `new_page: Callable[[], Page]`; scenarios that close a
