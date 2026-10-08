@@ -1019,6 +1019,12 @@ public:
 
         std::vector<std::string> warnings;
         try {
+            for (const auto& tracker : request.trackers) {
+                if (const auto error = validate_tracker_url(to_std_string(tracker), false)) {
+                    result.error = ::rust::String(*error);
+                    return result;
+                }
+            }
             const std::string root = to_std_string(request.root_path);
             if (root.empty()) {
                 result.error = "root_path is required";

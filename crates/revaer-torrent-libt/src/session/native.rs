@@ -1536,6 +1536,19 @@ mod tests {
         assert!(result.private);
         assert_eq!(result.comment.as_deref(), Some("note"));
         assert_eq!(result.source.as_deref(), Some("source"));
+        let secret = Uuid::new_v4().to_string();
+        let mut rejected = request;
+        rejected.trackers = vec![format!("https://{secret}@tracker.example/announce")];
+        let error = harness
+            .session
+            .create_torrent(&rejected)
+            .await
+            .err()
+            .ok_or_else(|| anyhow!("credential-bearing metainfo was authored"))?;
+        let message = native_failure_message(error)?;
+        assert!(message.contains("userinfo is forbidden"));
+        assert!(!message.contains(&secret));
+        assert_eq!(tokio::fs::read(file_path).await?, b"revaer");
         Ok(())
     }
 
