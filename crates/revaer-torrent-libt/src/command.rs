@@ -10,7 +10,6 @@ use tokio::sync::oneshot;
 use uuid::Uuid;
 
 /// Command definitions and runtime configuration inputs for the libtorrent worker.
-
 #[derive(Debug)]
 pub enum EngineCommand {
     /// Add a torrent to the session.

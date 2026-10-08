@@ -152,7 +152,7 @@ where
 }
 
 pub(super) fn configure_nonblocking(descriptor: BorrowedFd<'_>) -> Result<(), io::Error> {
-    let flags = rustix::fs::fcntl_getfl(descriptor).map_err(io::Error::from)?;
+    let flags = rustix::fs::fcntl_getfl(descriptor)?;
     rustix::fs::fcntl_setfl(descriptor, flags | rustix::fs::OFlags::NONBLOCK)
         .map_err(io::Error::from)
 }
