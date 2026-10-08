@@ -36,6 +36,11 @@ applyTo:
 
 # Native Shim Rules
 
+- The pinned `cxxbridge-macro` is patched locally to preserve each documentation
+  fragment’s source span. Rust 1.96 Clippy otherwise discards the generated
+  documentation and rejects correctly documented fallible bridge methods. Keep
+  the error sections and lint rules intact; the patch changes no native ABI.
+
 - Keep C++ exception translation narrow and explicit where possible.
 - Native operation replies catch expected libtorrent system errors or torrent
   authoring errors. Their CXX `Result` declarations translate unexpected foreign

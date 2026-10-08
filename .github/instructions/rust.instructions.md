@@ -66,6 +66,10 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 
 # Documentation
 
+- `vendor/cxxbridge-macro` retains the existing pinned CXX macro dependency with
+  a documentation source-span fix, avoiding a lint suppression for fallible
+  native methods. Its local manifest uses Rust 2024; preserve upstream behavior.
+
 - Public crates need crate-level rustdoc that explains purpose, invariants, and a realistic usage example.
 - Externally consumed public items should document:
   - behavior

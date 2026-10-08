@@ -1,4 +1,9 @@
 /// Validate tracker transport before native admission or configuration mutation.
+///
+/// # Errors
+///
+/// Returns an error for malformed URLs, embedded credentials, or
+/// authenticated trackers that do not use HTTPS.
 fn validate_tracker_transport(tracker: &str, authenticated: bool) -> Result<(), String> {
     let Some((_, authority)) = tracker.split_once("://") else {
         return Err("invalid tracker URL".to_string());
@@ -35,6 +40,11 @@ fn validate_tracker_transport(tracker: &str, authenticated: bool) -> Result<(), 
 
 #[cxx::bridge(namespace = "revaer")]
 /// Native bridge types and functions exposed to Rust.
+///
+/// # Errors
+///
+/// Fallible operations return unexpected native exceptions through CXX errors.
+/// Expected operation failures retain the documented native reply contracts.
 pub mod ffi {
     /// Options used when constructing a libtorrent session.
     #[derive(Debug)]
@@ -790,6 +800,11 @@ pub mod ffi {
 
     extern "Rust" {
         /// Reject malformed or credential-bearing URLs and insecure Basic authentication.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error for malformed URLs, embedded credentials, or
+        /// authenticated trackers that do not use HTTPS.
         fn validate_tracker_transport(tracker: &str, authenticated: bool) -> Result<()>;
     }
 
@@ -806,68 +821,136 @@ pub mod ffi {
         #[must_use]
         fn new_session(options: &SessionOptions) -> UniquePtr<Session>;
         /// Apply an engine profile to the running session.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn apply_engine_profile(self: Pin<&mut Session>, options: &EngineOptions)
         -> Result<String>;
         /// Add a torrent to the session.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn add_torrent(self: Pin<&mut Session>, request: &AddTorrentRequest) -> Result<String>;
         /// Create a new `.torrent` metainfo payload.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn create_torrent(
             self: &Session,
             request: &CreateTorrentRequest,
         ) -> Result<CreateTorrentResult>;
         /// Remove a torrent and optionally its data.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn remove_torrent(self: Pin<&mut Session>, id: &str, with_data: bool) -> Result<String>;
         /// Pause a torrent in the session.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn pause_torrent(self: Pin<&mut Session>, id: &str) -> Result<String>;
         /// Resume a paused torrent.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn resume_torrent(self: Pin<&mut Session>, id: &str) -> Result<String>;
         /// Toggle sequential mode for a torrent.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn set_sequential(self: Pin<&mut Session>, id: &str, sequential: bool) -> Result<String>;
         /// Load fast-resume payload for a torrent.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn load_fastresume(self: Pin<&mut Session>, id: &str, payload: &[u8]) -> Result<String>;
         /// Apply rate limits to the session or a specific torrent.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn update_limits(self: Pin<&mut Session>, request: &LimitRequest) -> Result<String>;
         /// Update selection rules for a torrent.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn update_selection(self: Pin<&mut Session>, request: &SelectionRules) -> Result<String>;
         /// Update per-torrent options after admission.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn update_options(
             self: Pin<&mut Session>,
             request: &UpdateOptionsRequest,
         ) -> Result<String>;
         /// Update trackers for a torrent.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn update_trackers(
             self: Pin<&mut Session>,
             request: &UpdateTrackersRequest,
         ) -> Result<String>;
         /// Update web seeds for a torrent.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn update_web_seeds(
             self: Pin<&mut Session>,
             request: &UpdateWebSeedsRequest,
         ) -> Result<String>;
         /// Move torrent storage to a new download directory.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn move_torrent(self: Pin<&mut Session>, request: &MoveTorrentRequest) -> Result<String>;
         /// Trigger tracker reannounce.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn reannounce(self: Pin<&mut Session>, id: &str) -> Result<String>;
         /// Recheck on-disk data for a torrent.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn recheck(self: Pin<&mut Session>, id: &str) -> Result<String>;
         /// Set or clear a deadline for a piece.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn set_piece_deadline(
             self: Pin<&mut Session>,
             id: &str,
@@ -885,10 +968,18 @@ pub mod ffi {
         #[must_use]
         fn inspect_settings_state(self: &Session) -> EngineSettingsState;
         /// Poll pending events from the session.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn poll_events(self: Pin<&mut Session>) -> Result<Vec<NativeEvent>>;
         /// Retrieve connected peers for a torrent.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when the native operation throws a C++ exception
+        /// outside its expected error reply.
         fn list_peers(self: Pin<&mut Session>, id: &str) -> Result<Vec<NativePeerInfo>>;
     }
 }

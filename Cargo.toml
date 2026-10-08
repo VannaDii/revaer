@@ -86,6 +86,7 @@ revaer-test-support = { path = "crates/revaer-test-support" }
 strip = "none"
 
 [patch.crates-io]
+cxxbridge-macro = { path = "vendor/cxxbridge-macro" }
 gloo = { path = "vendor/gloo" }
 yew-macro = { path = "vendor/yew-macro" }
 yewdux = { path = "vendor/yewdux/crates/yewdux" }
