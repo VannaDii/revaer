@@ -36,7 +36,10 @@ class LifecycleDocker(ExternalTool):
 
     def stage(self, container: str, directory: str) -> None:
         # mkdir without -p refuses collisions; cleanup is armed only afterward.
-        self._invoke(("exec", container_id(container), "mkdir", "--", directory), capture=True)
+        self._invoke(
+            ("exec", container_id(container), "mkdir", "--mode=700", "--", directory),
+            capture=True,
+        )
 
     def copy(self, container: str, source: Path, destination: str) -> None:
         # Docker's archive-copy endpoint cannot reliably address tmpfs staging.
