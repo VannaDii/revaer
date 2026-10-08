@@ -19,7 +19,8 @@ from test_e2e_coordinator import coordinator as coordinator
 
 @pytest.mark.parametrize("host", ("localhost", "127.0.0.1", "host.docker.internal"))
 def test_local_endpoint_requires_exact_loopback_binding(host: str) -> None:
-    verify_endpoint(f"postgresql://user@{host}:5450/postgres", "127.0.0.1:5450\n")
+    password = secrets.token_hex(24)
+    verify_endpoint(f"postgresql://user:{password}@{host}:5450/postgres", "127.0.0.1:5450\n")
 
 
 @pytest.mark.parametrize(

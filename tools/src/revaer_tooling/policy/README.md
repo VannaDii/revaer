@@ -50,7 +50,8 @@ tracked, empty `.sonar-test-scope/.gitkeep`, with no extra directory entries.
 Tests use `tools/tests/fixtures/workflow-contracts.json`, derived from media
 revision `f1a8624f8c9c80325bfd14769bc1305c0fa5b793`. Adaptations replace Just commands
 with `rv`, replace retired release-JavaScript coverage with Python tooling
-coverage, retain scanner steps in their producing job, and add Python evidence.
+coverage, retain scanner steps in their producing job, add Python inputs, and
+replace fixed disposable database credentials with isolated run-context values.
 The fixture records the source revision. It is a semantic contract fixture;
 remaining legacy setup blocks in it do not claim compliance with the new
 single-command workflow syntax. The final migrated workflows must satisfy both

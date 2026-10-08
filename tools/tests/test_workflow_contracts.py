@@ -1,7 +1,8 @@
 """Mutation checks against the media workflow snapshot adapted to rv commands.
 
 The fixture records its source commit. Adaptations replace executable recipes,
-add Python coverage, and keep scanner inputs together in their producing job.
+add Python coverage and run-context database credentials, and keep scanner
+inputs together in their producing job.
 The tests independently remove or alter executable steps, dependencies, source
 bindings and evidence paths. Comments or duplicate command text cannot satisfy
 these checks.
