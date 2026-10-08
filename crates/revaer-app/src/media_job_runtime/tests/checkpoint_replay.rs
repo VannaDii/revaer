@@ -278,10 +278,11 @@ async fn real_process_replay_with_fixture(fixture: &super::RuntimeFixture) -> an
         !intermediate.exists(),
         "resumed consumer removes its completed input"
     );
-    let probe = std::process::Command::new("ffprobe")
+    let probe = tokio::process::Command::new("ffprobe")
         .args(["-v", "error", "-show_format"])
         .arg(candidate)
-        .output()?;
+        .output()
+        .await?;
     assert!(probe.status.success(), "restarted output is not probeable");
     assert_eq!(fs::read(&job.source_path)?, original_source);
     Ok(())

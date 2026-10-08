@@ -276,7 +276,7 @@ async fn checkpoint_fault_restart(fixture: &Fixture, fault: CheckpointFault) -> 
         let attempt = fixture.attempt(job).await?;
         let checkpoint = wait_checkpoint(fixture, job, attempt.1).await?;
         let child = wait_for_ffmpeg(fixture, job, first.id().context("checkpoint PID")?).await?;
-        let command = fs::read(format!("/proc/{child}/cmdline"))?;
+        let command = tokio::fs::read(format!("/proc/{child}/cmdline")).await?;
         anyhow::ensure!(
             command
                 .split(|byte| *byte == 0)
@@ -315,7 +315,7 @@ async fn checkpoint_fault_restart(fixture: &Fixture, fault: CheckpointFault) -> 
         fixture.ready().await?;
         let child =
             wait_for_ffmpeg(fixture, job, second.id().context("checkpoint replay PID")?).await?;
-        let command = fs::read(format!("/proc/{child}/cmdline"))?;
+        let command = tokio::fs::read(format!("/proc/{child}/cmdline")).await?;
         anyhow::ensure!(
             command.split(|byte| *byte == 0).any(|arg| match fault {
                 CheckpointFault::PreparedReplacement | CheckpointFault::CommittedReplacement =>
@@ -433,7 +433,7 @@ async fn source_fault_restart(
     fault: SourceFault,
 ) -> Result<()> {
     let source = fixture.directory.path().join("source").join(fault.name());
-    fs::write(&source, &fixture.original)?;
+    tokio::fs::write(&source, &fixture.original).await?;
     let first = fixture.start().await?;
     let initial = async {
         fixture.ready().await?;
@@ -482,8 +482,8 @@ async fn source_fault_restart(
         "interruption changed source"
     );
     match fault {
-        SourceFault::Changed => fs::write(&source, b"operator changed source")?,
-        SourceFault::Missing => fs::remove_file(&source)?,
+        SourceFault::Changed => tokio::fs::write(&source, b"operator changed source").await?,
+        SourceFault::Missing => tokio::fs::remove_file(&source).await?,
     }
     let second = fixture.start().await?;
     let replay = async {
@@ -529,7 +529,7 @@ async fn cancel_active(
     server: u32,
 ) -> Result<(Uuid, (i32, i64))> {
     let source = fixture.directory.path().join("source/cancel.mkv");
-    fs::write(&source, &fixture.original)?;
+    tokio::fs::write(&source, &fixture.original).await?;
     let admitted = fixture
         .request(
             "POST",
@@ -644,8 +644,8 @@ impl Fixture {
             .tempdir_in(root)?;
         for name in ["source", "workspace"] {
             let path = directory.path().join(name);
-            fs::create_dir(&path)?;
-            fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+            tokio::fs::create_dir(&path).await?;
+            tokio::fs::set_permissions(path, fs::Permissions::from_mode(0o700)).await?;
         }
         write_catalog(&directory)?;
         let source = directory.path().join("source/video.mkv");
@@ -668,7 +668,7 @@ impl Fixture {
             ]
             .map(str::to_owned),
         )?;
-        let original = fs::read(&source)?;
+        let original = tokio::fs::read(&source).await?;
         let mut postgres = start_postgres()?;
         postgres
             .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
@@ -948,15 +948,15 @@ async fn wait_for_ffmpeg(fixture: &Fixture, job: Uuid, server: u32) -> Result<u3
                 row.status_text != "failed" && row.status_text != "cancelled",
                 "{row:?}"
             );
-            for task in fs::read_dir(format!("/proc/{server}/task"))? {
-                let task = task?;
-                let children = match fs::read_to_string(task.path().join("children")) {
+            let mut tasks = tokio::fs::read_dir(format!("/proc/{server}/task")).await?;
+            while let Some(task) = tasks.next_entry().await? {
+                let children = match tokio::fs::read_to_string(task.path().join("children")).await {
                     Ok(children) => children,
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
                     Err(error) => return Err(error.into()),
                 };
                 for child in children.split_whitespace() {
-                    let command = match fs::read(format!("/proc/{child}/cmdline")) {
+                    let command = match tokio::fs::read(format!("/proc/{child}/cmdline")).await {
                         Ok(command) => command,
                         Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
                         Err(error) => return Err(error.into()),
