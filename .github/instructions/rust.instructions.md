@@ -229,10 +229,3 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
   in minimal-feature mode. Metadata yield with no admitted candidates retains the
   bounded batch and EOF without publishing an empty presence list; the next tick
   completes admission before acknowledging the census.
-
-- The real Linux service-recovery selection also qualifies API-key configuration
-  and persisted authentication across restart, completed manual dry-run with no
-  source effects, and logical scratch exhaustion/deferral/recovery on the same
-  attempt. Its sparse blocker proves logical-byte budgeting, not physical disk
-  exhaustion. Require fresh full CI/UI and workflow results on one unchanged
-  source identity for goal 7.1; historical per-worktree passes do not combine.

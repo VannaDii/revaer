@@ -12,16 +12,6 @@
 - Follow-up: The integrating agent reviews this record, attaches exact-revision
   validation, and assigns reviewed PRs after stack reconciliation.
 
-## Goal 7.1 qualification candidate (2026-10-07)
-
-[ADR 598](598-complete-operator-workflow.md) owns combined operator workflow
-qualification from `116891c7`. The native selection now adds authenticated
-configuration/restart, completed dry-run and scratch deferral/recovery to the
-existing processing, cancellation and replacement-recovery scenarios. Acceptance
-requires fresh workflow and full CI/UI results bound to one unchanged source
-identity. Results belong in `target/operator-qualification/`; this candidate
-entry does not claim package, Sonar, merge or release acceptance.
-
 ## Evidence Boundary
 
 ### Current Delivery Entry Point (2026-09-11)

@@ -91,33 +91,21 @@
 
 ---
 
-## 5) Task Record And ADR Rules
+## 5) Documentation and validation artifacts
 
-- Every task persists a task record alongside the change as an ADR under [`docs/adr/`](./docs/adr/).
-- Start from [`docs/adr/template.md`](./docs/adr/template.md), number sequentially, and keep the file name concise and searchable.
-- Architectural decisions use `Proposed` until the operator gives explicit, decision-specific approval. Only then may the ADR use `Accepted`, and its operator-approval field must record the approval evidence and date.
-- Completed nonarchitectural task records use `Recorded` with `Operator approval: Not applicable: nonarchitectural task record`. `Recorded` documents completed corrective work; it does not imply an architectural decision or operator approval.
-- `Superseded` identifies a record replaced by a later ADR and must name the replacement. Do not use status changes to imply approval that was not given.
-- Every task record must include:
-  - Motivation
-  - Design notes
-  - Test coverage summary
-  - Observability updates
-  - Risk and rollback plan
-  - Dependency rationale
-  - Stale-policy check
-- The stale-policy check must record:
-  - which instruction files were reviewed
-  - whether drift was found
-  - which contradictions or stale references were removed
-- Update [`docs/adr/index.md`](./docs/adr/index.md) and [`docs/SUMMARY.md`](./docs/SUMMARY.md) in the same change that adds the ADR.
+- Do not create substantiating evidence bundles, qualification reports, verification manifests, per-file hash inventories, copied logs, coverage exports, checkpoint files, or duplicate completion records unless Vanna explicitly requests that specific artifact. A request to implement, fix, test, qualify, or complete work is not a request for an evidence package.
+- Run the required checks and report their outcomes and material limitations briefly in chat. Extra paperwork is not an acceptance gate.
+- Use the normal outputs required by existing tools and automated pipelines. Do not copy, package, or retain them as a separate agent-created evidence collection. Remove disposable task artifacts when finished without deleting caller-owned work or needed persistent state.
+- Do not create an ADR or task record for routine implementation, fixes, testing, cleanup, or instruction edits. Use an ADR only for an architectural decision requiring operator approval or when Vanna explicitly requests one. Keep it concise and use the existing ADR template and indexes only when an ADR is actually warranted.
+- Update existing documentation when behavior or an operating contract changes. Do not add documentation, ledger entries, index entries, or status files merely to substantiate completed work.
+- This section overrides blanket evidence-retention and per-task record requirements in scoped instructions and supporting documents. It does not waive executable quality gates or machine-generated artifacts required by the existing build, release, or compliance pipeline; it prohibits additional agent-created paperwork.
 
-## 6) Delivery And Release Evidence
+## 6) Delivery And Release
 
 - Use the complete operator journey to order deliverables. The [media completion ledger](./docs/adr/564-media-completion-ledger.md) is the single requirement-to-evidence tracker; the specification and approved ADRs remain scope authority. A working vertical slice is a milestone, not permission to omit remaining included features.
 - Work single-agent; do not launch subagents unless the operator explicitly changes this instruction. Prioritize the next mergeable deliverable and its demonstrated prerequisites. Do not multiply speculative branches, competing architecture, or duplicate investigations.
 - Keep one linear, outside-in PR stack. Conventional commit-style titles are mandatory; never use `codex` or variants in branch names or PRs. Assign VannaDii, request Copilot review, read back actual review state, resolve actionable feedback, and run the canonical `rv stack-changed-lines` gate against each actual base/head pair. The size limit is a ceiling, not a target; no binary or ancestry exception is implied.
-- Evidence must name the requirement, test/command, exact tested source commit, dirty-tree delta if any, environment/package digest, result including warnings/skips/teardown, and remaining limitations. Track implemented, locally verified, package verified, and merged separately. Revalidate after relevant source/base/package changes; historical passes do not certify a new revision.
+- Report actual check results and material limitations briefly in chat. Distinguish implementation, local verification, package verification and merged state. Follow section 5; do not create additional substantiating artifacts. Historical passes do not certify a changed implementation.
 - Preserve originals and prove failure/recovery behavior with real media and persisted-state assertions. The [release verification matrix](./docs/media-release-verification.md) organizes required cases without replacing the specification or existing gates. Delete acquired/generated test media after every turn and remove completed owned worktrees without touching user work or unrelated resources.
 - Publish only evidence-backed support claims for codecs, containers, hardware, filesystems, resources, and Linux amd64/arm64 packages. Measure operator outcomes and present evidence-backed numerical reliability/resource targets for approval; do not invent limits or use error budgets to permit corruption or bypass acceptance criteria.
 - Before release, rehearse clean installation, backup/restore, package replacement, and recovery in disposable environments. ADR 591 authorizes first-release development against the single init script and supersedes legacy-parity and pre-cutover feature-schema holds. Do not pursue migration, backward-compatibility or legacy-equivalence work for this unreleased product. No reset of caller-owned data or weakening of unrelated gates is authorized.
@@ -133,7 +121,7 @@
 - Keep safeguards proportional to the operation. An edge case must not block configuration, inspection, or dry-run planning without a concrete risk in that operation.
 - Respect operator responsibility. Document reasonable operating assumptions; require new configuration or attestations only when they materially improve safety and have explicit operator approval.
 - Bound every investigation with a specific question and stopping condition. Stop when further analysis would not change the implementation decision. Do not pursue adjacent hypothetical problems.
-- Minimize token use: use focused searches and targeted tests, reuse verified evidence until relevant inputs change, and avoid broad rereads, repeated reports, and polling without actionable changes. Maintain a short checkpoint of completed work, current failure, and next action.
+- Minimize token use: use focused searches and targeted tests, reuse verified evidence until relevant inputs change, and avoid broad rereads, repeated reports, and polling without actionable changes. Keep progress updates brief in chat; do not create checkpoint files.
 - Escalate concisely: state the decision, recommended approach, practical consequences, and exact approval needed. Keep architecture proposals legible; do not bury the choice in an exhaustive ADR.
 - Measure progress by usable operator behavior. Investigation, documentation, and test counts support delivery but are not product completion.
 - Pragmatism does not waive security, source preservation, recovery, tests, coverage, or release gates. If an existing requirement is disproportionate, propose an explicit revision and obtain approval before changing it. These process rules do not themselves supersede an approved technical ADR.
