@@ -1596,6 +1596,39 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn native_session_rejects_unreadable_authoring_subdirectory() -> TorrentResult<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut harness = NativeSessionHarness::new()?;
+        let root_path = harness.download_path().join("unreadable-authoring-root");
+        let blocked_path = root_path.join("blocked");
+        fs::create_dir_all(&blocked_path)?;
+        fs::write(root_path.join("readable.txt"), b"preserved source")?;
+        fs::write(blocked_path.join("hidden.txt"), b"unreadable source")?;
+        fs::set_permissions(&blocked_path, fs::Permissions::from_mode(0))?;
+        let request = TorrentAuthorRequest {
+            root_path: root_path.to_string_lossy().into_owned(),
+            ..TorrentAuthorRequest::default()
+        };
+        let outcome = harness.session.create_torrent(&request).await;
+        fs::set_permissions(&blocked_path, fs::Permissions::from_mode(0o700))?;
+        let error = outcome
+            .err()
+            .ok_or_else(|| anyhow!("an incomplete directory torrent was authored"))?;
+        assert!(native_failure_message(error)?.contains("failed to traverse root_path"));
+        assert_eq!(
+            fs::read(root_path.join("readable.txt"))?,
+            b"preserved source"
+        );
+        assert_eq!(
+            fs::read(blocked_path.join("hidden.txt"))?,
+            b"unreadable source"
+        );
+        Ok(())
+    }
+
     #[tokio::test]
     async fn native_session_authors_directory_torrent_with_root_name() -> TorrentResult<()> {
         let mut harness = NativeSessionHarness::new()?;

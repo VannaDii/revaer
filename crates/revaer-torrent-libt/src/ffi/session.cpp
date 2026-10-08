@@ -18,6 +18,7 @@
 #include <iomanip>
 #include <regex>
 #include <string>
+#include <stdexcept>
 #include <unordered_set>
 #include <set>
 #include <utility>
@@ -79,6 +80,11 @@ constexpr std::array<const char*, 5> kSkipFluffPatterns = {
 };
 constexpr const char* kInvalidHandleMessage = "invalid torrent handle used";
 constexpr std::size_t kMaxCreatePathLength = 4096;
+
+class TorrentAuthoringError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 
 std::string to_std_string(::rust::Str value) {
     return std::string(value.data(), value.length());
@@ -1102,12 +1108,12 @@ public:
                     return;
                 }
                 if (!seen.insert(rel).second) {
-                    throw std::runtime_error("duplicate file path: " + rel);
+                    throw TorrentAuthoringError("duplicate file path: " + rel);
                 }
                 std::error_code size_ec;
                 const auto size = std::filesystem::file_size(full_path, size_ec);
                 if (size_ec) {
-                    throw std::runtime_error("failed to read file size for " + rel);
+                    throw TorrentAuthoringError("failed to read file size for " + rel);
                 }
                 files.push_back(FileEntry{rel, static_cast<std::uint64_t>(size)});
             };
@@ -1118,14 +1124,15 @@ public:
                 for (std::filesystem::recursive_directory_iterator it(root_path, fs_ec), end;
                      it != end;
                      it.increment(fs_ec)) {
-                    if (fs_ec) {
-                        throw std::runtime_error("failed to traverse root_path");
-                    }
                     if (!it->is_regular_file()) {
                         continue;
                     }
                     const auto rel_path = it->path().lexically_relative(root_path);
                     add_file(it->path(), rel_path);
+                }
+                if (fs_ec) {
+                    result.error = "failed to traverse root_path";
+                    return result;
                 }
             }
 
