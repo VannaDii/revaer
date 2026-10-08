@@ -124,13 +124,15 @@ class CargoLlvmCov(ExternalTool):
             (
                 "llvm-cov",
                 *(
-                    ("--package", "revaer-app", "--lib", "--no-clean")
+                    ("--package", "revaer-app", "--lib")
                     if recovery
                     else ("--workspace",)
                 ),
                 "--all-features",
                 "--locked",
                 "--include-ffi",
+                # --no-report already preserves collected profiles; the pinned
+                # engine rejects combining it with an explicit --no-clean.
                 "--no-report",
                 *(
                     (
