@@ -35,6 +35,9 @@ applyTo:
 
 # UI And E2E Maintenance
 
+- Keep the SSE store exhaustive over media lifecycle events and request refreshed
+  state for those events, preserving the existing refresh behavior.
+
 - Keep selectors and test affordances stable. Update E2E fixtures deliberately when UI structure changes.
 - Treat generated API clients and synchronized assets as generated artifacts; regenerate them intentionally and keep authored wrappers separate.
 - `asset_sync` must fail closed unless every required runtime SVG exists, runtime text is UTF-8, SVG files have a complete namespaced root envelope, and `crates/revaer-ui/static` contains no raster-extension assets.
