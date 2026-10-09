@@ -6,6 +6,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use revaer_media_core::model::StreamKind;
+
 use super::parse::{parse_source, validate_sidecar_output};
 use super::*;
 use crate::sidecar::{SidecarDiscoverer, SidecarDiscoveryError, SidecarFormat, SidecarSubtitle};
@@ -194,6 +196,79 @@ fn normalizes_full_technical_metadata_and_dispositions() -> Result<(), Box<dyn s
     assert_eq!(inspection.streams[0].side_data_types, ["hdr10+"]);
     assert_eq!(inspection.streams[0].metadata.len(), 2);
 
+    remove_temp_directory(&directory)
+}
+
+#[test]
+fn accepts_unindexed_frame_records_without_attributing_side_data()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = temp_directory("unindexed-frame")?;
+    let source = write_source(&directory)?;
+    let inspection = parse_source(
+        &source,
+        br#"{
+          "frames":[{
+            "media_type":"subtitle",
+            "side_data_list":[{"side_data_type":"unattributed"}]
+          }],
+          "streams":[{
+            "index":0,"codec_type":"subtitle","codec_name":"webvtt"
+          }],
+          "format":{"format_name":"matroska,webm"}
+        }"#,
+    )?;
+    assert_eq!(inspection.graph.streams[0].kind, StreamKind::Subtitle);
+    assert!(inspection.streams[0].side_data_types.is_empty());
+    remove_temp_directory(&directory)
+}
+
+#[test]
+fn merges_only_indexed_frame_side_data_into_its_stream() -> Result<(), Box<dyn std::error::Error>> {
+    let directory = temp_directory("indexed-frame")?;
+    let source = write_source(&directory)?;
+    let inspection = parse_source(
+        &source,
+        br#"{
+          "frames":[
+            {"side_data_list":[{"side_data_type":"unattributed"}]},
+            {"stream_index":1,"side_data_list":[
+              {"side_data_type":"HDR10+"},{"side_data_type":"hdr10+"}]}
+          ],
+          "streams":[
+            {"index":0,"codec_type":"video","codec_name":"h264"},
+            {"index":1,"codec_type":"video","codec_name":"hevc"}
+          ],
+          "format":{"format_name":"matroska"}
+        }"#,
+    )?;
+    assert!(inspection.streams[0].side_data_types.is_empty());
+    assert_eq!(inspection.streams[1].side_data_types, ["hdr10+"]);
+    remove_temp_directory(&directory)
+}
+
+#[test]
+fn source_probe_requests_a_bounded_frame_sample() -> Result<(), Box<dyn std::error::Error>> {
+    let directory = temp_directory("frame-probe-args")?;
+    let source = write_source(&directory)?;
+    let executor = Arc::new(QueueExecutor::from_stdout([SOURCE_JSON
+        .as_bytes()
+        .to_vec()]));
+    let adapter = adapter(
+        Arc::clone(&executor),
+        Vec::new(),
+        InspectionLimits::reviewed(),
+    );
+    inspect_active(&adapter, &source)?;
+    let requests = executor
+        .requests
+        .lock()
+        .map_err(|error| InspectError::probe_failed(error.to_string()))?;
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].args.windows(2).any(|arguments| {
+        arguments == [OsString::from("-read_intervals"), OsString::from("%+#1")]
+    }));
+    assert!(requests[0].args.contains(&OsString::from("-show_frames")));
+    drop(requests);
     remove_temp_directory(&directory)
 }
 

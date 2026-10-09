@@ -6,8 +6,17 @@ use serde::Deserialize;
 pub(super) struct FfprobeOutput {
     pub(super) streams: Vec<FfprobeStream>,
     #[serde(default)]
+    pub(super) frames: Vec<FfprobeFrame>,
+    #[serde(default)]
     pub(super) chapters: Vec<FfprobeChapter>,
     pub(super) format: Option<FfprobeFormat>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct FfprobeFrame {
+    pub(super) stream_index: Option<u32>,
+    #[serde(default)]
+    pub(super) side_data_list: Vec<FfprobeSideData>,
 }
 
 #[derive(Debug, Deserialize)]
