@@ -1,5 +1,6 @@
 """Collect complete Rust/native coverage and retain reports on a threshold failure."""
 
+import re
 import tomllib
 
 from ..context import Context, TaskResult
@@ -121,6 +122,9 @@ class CoverageReport(Task):
 class Coverage(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
+        recovery_root = context.settings.coverage.native_recovery_root
+        if recovery_root is not None and context.host.system != "linux":
+            raise ToolingError("Native media recovery coverage requires Linux")
         database = test_environment(context)
         environment = {**coverage_environment(context), **database, "REVAER_NATIVE_IT": "1"}
         # A compile/test failure must not leave yesterday's reports looking like
@@ -128,4 +132,25 @@ class Coverage(Task):
         reset_reports(context)
         context.tools.cargo_llvm_cov.clean(environment)
         context.tools.cargo_llvm_cov.collect(environment)
+        if "revaer-app" in context.tools.cargo.metadata().workspace_packages:
+            result = context.tools.cargo_llvm_cov.collect(
+                environment,
+                test_filter="media_job_runtime::tests::production_media_job_runtime_executes_and_persists_verified_replacement",
+            )
+            context.emit(result.stdout)
+            if not re.search(
+                r"(?m)^test result: ok\. 1 passed; 0 failed; 0 ignored;", result.stdout
+            ):
+                raise ToolingError("Production worker coverage did not execute one passing test")
+        if recovery_root is not None:
+            # Keep the workspace profiles and use the same all-feature FFI instrumentation.
+            result = context.tools.cargo_llvm_cov.collect(
+                {**environment, "REVAER_NATIVE_RECOVERY_ROOT": str(recovery_root)},
+                test_filter="bootstrap::service_recovery_tests::native_service_shutdown_resumes_active_ffmpeg",
+            )
+            context.emit(result.stdout)
+            if not re.search(
+                r"(?m)^test result: ok\. 1 passed; 0 failed; 0 ignored;", result.stdout
+            ):
+                raise ToolingError("Native recovery coverage did not execute one passing test")
         return CoverageReport.run(context)
