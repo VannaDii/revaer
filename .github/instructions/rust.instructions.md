@@ -86,6 +86,9 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
   isolates functional filesystem regression fixtures.
 - Command execution and managed scratch workspaces retain cooperative cancellation,
   live resource limits, capacity admission and terminal cleanup policy.
+- Job planning, output verification and replacement retain source-identity and
+  recovery checks. The `media_fixtures` integration target executes real conversions
+  and verifies their resulting media graphs.
 
 - `revaer-media-core` owns deterministic media graph compilation, planning,
   compliance and verification. Keep filesystem, process and database access in
