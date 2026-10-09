@@ -19,14 +19,19 @@
 //! `FFmpeg` toolchain, adjacent subtitle sidecars, normalized media inspection
 //! and trusted root catalogs with retained descriptor and mount checks. Command
 //! execution observes cancellation and resource limits; managed scratch workspaces
-//! enforce capacity, retention and cleanup policy.
+//! enforce capacity, retention and cleanup policy. Job preflight validates planned
+//! operations before execution; output verification and replacement primitives
+//! preserve source identity and recovery boundaries.
 //! Runtime collaborators are injected; bootstrap
 //! code may select the concrete system adapters.
 
 pub mod capabilities;
 pub mod execute;
 pub mod inspect;
+pub mod jobs;
 pub mod process;
+pub mod replacement;
 pub mod root_catalog;
 pub mod sidecar;
+pub mod verification;
 pub mod workspace;
