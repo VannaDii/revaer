@@ -39,8 +39,8 @@ use crate::features::torrents::view::modals::CopyKind;
 use crate::features::torrents::view::{TorrentView, demo_rows};
 use crate::i18n::{DEFAULT_LOCALE, LocaleCode, TranslationBundle};
 use crate::models::{
-    AddTorrentInput, AppAuthMode, FilePriorityOverride, NavLabels, Toast, ToastKind,
-    TorrentAuthorRequest, TorrentOptionsRequest, TorrentSelectionRequest, demo_detail,
+    AddTorrentInput, AppAuthMode, DashboardSnapshot, FilePriorityOverride, NavLabels, Toast,
+    ToastKind, TorrentAuthorRequest, TorrentOptionsRequest, TorrentSelectionRequest, demo_detail,
     demo_snapshot,
 };
 use crate::services::sse::SseDecodeError;
@@ -243,53 +243,8 @@ pub fn revaer_app() -> Html {
         });
     }
 
-    {
-        let dispatch = dispatch.clone();
-        let location = location.clone();
-        use_effect_with((location.clone(), current_route.clone()), move |deps| {
-            let (location, route) = deps;
-            let Some(location) = location.as_ref() else {
-                return;
-            };
-            if !matches!(route, Route::Torrents | Route::TorrentDetail { .. }) {
-                return;
-            }
-            let parsed = parse_torrent_filter_query(location.query_str());
-            if parsed != dispatch.get().torrents.filters {
-                dispatch.reduce_mut(|store| {
-                    store.torrents.filters = parsed;
-                    store.torrents.paging.cursor = None;
-                    store.torrents.paging.next_cursor = None;
-                });
-            }
-        });
-    }
-    {
-        let location = location.clone();
-        let filters = filters.clone();
-        use_effect_with(
-            (filters.clone(), location.clone(), current_route.clone()),
-            move |deps| {
-                let (filters, location, route) = deps;
-                let Some(location) = location.as_ref() else {
-                    return;
-                };
-                if !matches!(route, Route::Torrents | Route::TorrentDetail { .. }) {
-                    return;
-                }
-                let desired = build_torrent_filter_query(&**filters);
-                let desired_query = if desired.is_empty() {
-                    String::new()
-                } else {
-                    format!("?{desired}")
-                };
-                if desired_query == location.query_str() {
-                    return;
-                }
-                replace_url_query(location.path(), location.hash(), &desired);
-            },
-        );
-    }
+    use_app_filter_from_location(dispatch.clone(), location.clone(), current_route.clone());
+    use_app_filter_url(filters.clone(), location.clone(), current_route.clone());
 
     {
         let dispatch = dispatch.clone();
@@ -419,30 +374,12 @@ pub fn revaer_app() -> Html {
             || ()
         });
     }
-    {
-        let dashboard = dashboard.clone();
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        use_effect_with(auth_state.clone(), move |auth_state| {
-            if auth_state.as_ref().is_some() {
-                let dashboard_client = api_ctx.client.clone();
-                let dispatch = dispatch.clone();
-                yew::platform::spawn_local(async move {
-                    if let Ok(snapshot) = dashboard_client.fetch_dashboard().await {
-                        let rates = SystemRates {
-                            download_bps: snapshot.download_bps,
-                            upload_bps: snapshot.upload_bps,
-                        };
-                        dispatch.reduce_mut(|store| {
-                            store.system.rates = rates;
-                        });
-                        dashboard.set(snapshot);
-                    }
-                });
-            }
-            || ()
-        });
-    }
+    use_app_dashboard(
+        dashboard.clone(),
+        dispatch.clone(),
+        api_ctx.clone(),
+        auth_state.clone(),
+    );
     use_app_labels(dispatch.clone(), api_ctx.clone(), auth_state.clone());
     {
         let dispatch = dispatch.clone();
@@ -530,31 +467,11 @@ pub fn revaer_app() -> Html {
         toast_id.clone(),
         bundle.clone(),
     );
-    {
-        let dispatch = dispatch.clone();
-        let progress_buffer = progress_buffer.clone();
-        let progress_flush = progress_flush.clone();
-        use_effect_with((), move |_| {
-            let handle = Interval::new(80, move || {
-                let patches = {
-                    let mut buffer = progress_buffer.borrow_mut();
-                    if buffer.is_empty() {
-                        return;
-                    }
-                    buffer.drain().map(|(_, patch)| patch).collect::<Vec<_>>()
-                };
-                dispatch.reduce_mut(|store| {
-                    for patch in patches {
-                        apply_progress_patch(&mut store.torrents, patch);
-                    }
-                });
-            });
-            *progress_flush.borrow_mut() = Some(handle);
-            move || {
-                progress_flush.borrow_mut().take();
-            }
-        });
-    }
+    use_app_progress_flush(
+        dispatch.clone(),
+        progress_buffer.clone(),
+        progress_flush.clone(),
+    );
 
     let sse_query = {
         let view = if matches!(current_route, Route::TorrentDetail { .. }) {
@@ -1128,6 +1045,127 @@ pub fn revaer_app() -> Html {
             </ContextProvider<TranslationBundle>>
         </ContextProvider<ApiCtx>>
     }
+}
+
+#[hook]
+fn use_app_filter_from_location(
+    dispatch: Dispatch<AppStore>,
+    location: Option<Location>,
+    current_route: Route,
+) {
+    let dispatch = dispatch.clone();
+    let location = location.clone();
+    use_effect_with((location.clone(), current_route.clone()), move |deps| {
+        let (location, route) = deps;
+        let Some(location) = location.as_ref() else {
+            return;
+        };
+        if !matches!(route, Route::Torrents | Route::TorrentDetail { .. }) {
+            return;
+        }
+        let parsed = parse_torrent_filter_query(location.query_str());
+        if parsed != dispatch.get().torrents.filters {
+            dispatch.reduce_mut(|store| {
+                store.torrents.filters = parsed;
+                store.torrents.paging.cursor = None;
+                store.torrents.paging.next_cursor = None;
+            });
+        }
+    });
+}
+
+#[hook]
+fn use_app_filter_url(
+    filters: Rc<TorrentsQueryModel>,
+    location: Option<Location>,
+    current_route: Route,
+) {
+    let location = location.clone();
+    let filters = filters.clone();
+    use_effect_with(
+        (filters.clone(), location.clone(), current_route.clone()),
+        move |deps| {
+            let (filters, location, route) = deps;
+            let Some(location) = location.as_ref() else {
+                return;
+            };
+            if !matches!(route, Route::Torrents | Route::TorrentDetail { .. }) {
+                return;
+            }
+            let desired = build_torrent_filter_query(&**filters);
+            let desired_query = if desired.is_empty() {
+                String::new()
+            } else {
+                format!("?{desired}")
+            };
+            if desired_query == location.query_str() {
+                return;
+            }
+            replace_url_query(location.path(), location.hash(), &desired);
+        },
+    );
+}
+
+#[hook]
+fn use_app_dashboard(
+    dashboard: UseStateHandle<DashboardSnapshot>,
+    dispatch: Dispatch<AppStore>,
+    api_ctx: Rc<ApiCtx>,
+    auth_state: Rc<Option<AuthState>>,
+) {
+    let dashboard = dashboard.clone();
+    let dispatch = dispatch.clone();
+    let api_ctx = (*api_ctx).clone();
+    use_effect_with(auth_state.clone(), move |auth_state| {
+        if auth_state.as_ref().is_some() {
+            let dashboard_client = api_ctx.client.clone();
+            let dispatch = dispatch.clone();
+            yew::platform::spawn_local(async move {
+                if let Ok(snapshot) = dashboard_client.fetch_dashboard().await {
+                    let rates = SystemRates {
+                        download_bps: snapshot.download_bps,
+                        upload_bps: snapshot.upload_bps,
+                    };
+                    dispatch.reduce_mut(|store| {
+                        store.system.rates = rates;
+                    });
+                    dashboard.set(snapshot);
+                }
+            });
+        }
+        || ()
+    });
+}
+
+#[hook]
+fn use_app_progress_flush(
+    dispatch: Dispatch<AppStore>,
+    progress_buffer: Rc<RefCell<HashMap<Uuid, ProgressPatch>>>,
+    progress_flush: Rc<RefCell<Option<Interval>>>,
+) {
+    let dispatch = dispatch.clone();
+    let progress_buffer = progress_buffer.clone();
+    let progress_flush = progress_flush.clone();
+    use_effect_with((), move |_| {
+        let handle = Interval::new(80, move || {
+            let patches = {
+                let mut buffer = progress_buffer.borrow_mut();
+                if buffer.is_empty() {
+                    return;
+                }
+                buffer.drain().map(|(_, patch)| patch).collect::<Vec<_>>()
+            };
+            dispatch.reduce_mut(|store| {
+                for patch in patches {
+                    apply_progress_patch(&mut store.torrents, patch);
+                }
+            });
+        });
+        *progress_flush.borrow_mut() = Some(handle);
+        move || {
+            progress_flush.borrow_mut().take();
+        }
+    });
 }
 
 #[hook]
