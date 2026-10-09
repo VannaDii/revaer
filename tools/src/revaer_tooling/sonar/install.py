@@ -7,6 +7,7 @@ tree, so a modified cache executable is never accepted by version text alone.
 """
 
 import hashlib
+import posixpath
 import re
 import stat
 import tempfile
@@ -54,14 +55,39 @@ def scanner_command(root: Path, settings: SonarSettings, host: HostIdentity) -> 
     return "sonar-scanner"
 
 
+def archive_file(
+    source: zipfile.ZipFile, entry: zipfile.ZipInfo, directory: str
+) -> zipfile.ZipInfo:
+    """Materialize upstream's internal JRE license links as regular files."""
+    if stat.S_IFMT(entry.external_attr >> 16) != stat.S_IFLNK:
+        return entry
+    if entry.file_size > 4096:
+        raise ToolingError("Scanner archive contains an unsafe link")
+    try:
+        link = source.read(entry).decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ToolingError("Scanner archive contains an unsafe link") from error
+    target = posixpath.normpath(posixpath.join(posixpath.dirname(entry.filename), link))
+    if not link or link.startswith("/") or "\\" in link or not target.startswith(directory + "/"):
+        raise ToolingError("Scanner archive contains an unsafe link")
+    try:
+        member = source.getinfo(target)
+    except KeyError as error:
+        raise ToolingError("Scanner archive contains an unsafe link") from error
+    if member.is_dir() or stat.S_IFMT(member.external_attr >> 16) not in (0, stat.S_IFREG):
+        raise ToolingError("Scanner archive contains an unsafe link")
+    return member
+
+
 def extract_archive(archive: Path, destination: Path, directory: str) -> Path:
-    """Extract only regular entries inside the verified archive's named root."""
+    """Extract regular files without creating filesystem links."""
     try:
         with zipfile.ZipFile(archive) as source:
             entries = source.infolist()
             if not entries or sum(entry.file_size for entry in entries) > 1024**3:
                 raise ToolingError("Scanner archive is empty or exceeds its expanded byte limit")
             names: set[str] = set()
+            expanded_bytes = 0
             for entry in entries:
                 path = PurePosixPath(entry.filename)
                 mode = entry.external_attr >> 16
@@ -74,7 +100,7 @@ def extract_archive(archive: Path, destination: Path, directory: str) -> Path:
                     or "\\" in entry.filename
                     or path.as_posix() != entry.filename.rstrip("/")
                     or path.as_posix() in names
-                    or kind not in (0, stat.S_IFREG, stat.S_IFDIR)
+                    or kind not in (0, stat.S_IFREG, stat.S_IFDIR, stat.S_IFLNK)
                     or (kind == stat.S_IFDIR and not entry.is_dir())
                 ):
                     raise ToolingError("Scanner archive contains an unsafe or duplicate entry")
@@ -83,11 +109,15 @@ def extract_archive(archive: Path, destination: Path, directory: str) -> Path:
                 if entry.is_dir():
                     target.mkdir(parents=True, exist_ok=True)
                 else:
+                    member = archive_file(source, entry, directory)
+                    expanded_bytes += member.file_size
+                    if expanded_bytes > 1024**3:
+                        raise ToolingError("Scanner archive exceeds its expanded byte limit")
                     target.parent.mkdir(parents=True, exist_ok=True)
-                    with source.open(entry) as incoming, target.open("xb") as outgoing:
+                    with source.open(member) as incoming, target.open("xb") as outgoing:
                         while chunk := incoming.read(128 * 1024):
                             outgoing.write(chunk)
-                    target.chmod(mode & 0o777 or 0o644)
+                    target.chmod((member.external_attr >> 16) & 0o777 or 0o644)
     except zipfile.BadZipFile as error:
         raise ToolingError("Scanner archive is not a valid ZIP") from error
     executable = destination / directory / "bin/sonar-scanner"

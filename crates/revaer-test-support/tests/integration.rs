@@ -237,6 +237,11 @@ fn initialized_fixture_seals_runtime_identity_and_cleans_owned_roles()
     let admin_url = admin_database_url(fixture.connection_string())?;
     test_runtime()?.block_on(async {
         fixture.initialize_runtime(INITIALIZER).await?;
+        let credentials = Url::parse(fixture.connection_string())?;
+        let password = credentials
+            .password()
+            .ok_or_else(|| anyhow::anyhow!("initialized fixture password is missing"))?;
+        assert!(!format!("{fixture:?}").contains(password));
         let mut runtime = PgConnection::connect(fixture.connection_string()).await?;
         let identity: String = sqlx::query_scalar("SELECT current_user")
             .fetch_one(&mut runtime)

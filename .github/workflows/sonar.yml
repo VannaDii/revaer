@@ -43,7 +43,7 @@ jobs:
           fetch-depth: '0'
           ref: ${{ github.sha }}
       - uses: ./.github/actions/setup-revaer
-        timeout-minutes: 20
+        timeout-minutes: 40
         with:
           apt-profile: coverage
           sonar-scanner: 'true'

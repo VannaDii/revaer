@@ -11,6 +11,11 @@
       "mirror": "https://github.com/chromium/chromium",
       "revision": "98a04f617f22fdc3621924151b877b19b87cd5fd",
       "license": "BSD-3-Clause"
+    },
+    "matroska": {
+      "repository": "https://github.com/ietf-wg-cellar/matroska-test-files",
+      "revision": "e6965e5ca666322ed93e2748a10a4f132309e005",
+      "license": "CC-BY-3.0"
     }
   },
   "sources": [
@@ -26,6 +31,165 @@
       ]
     },
     {
+      "id": "bbb-h265-mp4",
+      "path": "test-fixtures/source/bbb-h265.mp4",
+      "encoding": "raw",
+      "sha256": "1002dc56cbc487595252b86a088cbf6ba03eb434c33c27a31ca46254310fb05b",
+      "minimumBytes": 1057627,
+      "maximumBytes": 1057627,
+      "urls": [
+        "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h265/360/Big_Buck_Bunny_360_10s_1MB.mp4",
+        "https://web.archive.org/web/20240905220700id_/https://test-videos.co.uk/vids/bigbuckbunny/mp4/h265/360/Big_Buck_Bunny_360_10s_1MB.mp4"
+      ]
+    },
+    {
+      "id": "bbb-av1-mp4",
+      "path": "test-fixtures/source/bbb-av1.mp4",
+      "encoding": "raw",
+      "sha256": "eab9caae4eb4bcdaba925225d13233b580f39de57ad50a8453831b49dc17bbb1",
+      "minimumBytes": 1045545,
+      "maximumBytes": 1045545,
+      "urls": [
+        "https://test-videos.co.uk/vids/bigbuckbunny/mp4/av1/360/Big_Buck_Bunny_360_10s_1MB.mp4",
+        "https://web.archive.org/web/20220722194410id_/https://test-videos.co.uk/vids/bigbuckbunny/mp4/av1/360/Big_Buck_Bunny_360_10s_1MB.mp4"
+      ]
+    },
+    {
+      "id": "bbb-vp8-webm",
+      "path": "test-fixtures/source/bbb-vp8.webm",
+      "encoding": "raw",
+      "sha256": "7673250a57b48bf7da5830b766d4e3c08e93bce2809fec7667b8e2344f4c95ae",
+      "minimumBytes": 1049824,
+      "maximumBytes": 1049824,
+      "urls": [
+        "https://test-videos.co.uk/vids/bigbuckbunny/webm/vp8/360/Big_Buck_Bunny_360_10s_1MB.webm",
+        "https://web.archive.org/web/20201003184509id_/https://test-videos.co.uk/vids/bigbuckbunny/webm/vp8/360/Big_Buck_Bunny_360_10s_1MB.webm"
+      ]
+    },
+    {
+      "id": "bbb-vp9-webm",
+      "path": "test-fixtures/source/bbb-vp9.webm",
+      "encoding": "raw",
+      "sha256": "6b2afedd9fa041fdff5d9e1d6d909c393268669005041c572abcc5923c939c58",
+      "minimumBytes": 1052940,
+      "maximumBytes": 1052940,
+      "urls": [
+        "https://test-videos.co.uk/vids/bigbuckbunny/webm/vp9/360/Big_Buck_Bunny_360_10s_1MB.webm",
+        "https://web.archive.org/web/20220722194413id_/https://test-videos.co.uk/vids/bigbuckbunny/webm/vp9/360/Big_Buck_Bunny_360_10s_1MB.webm"
+      ]
+    },
+    {
+      "id": "bbb-h264-mkv",
+      "path": "test-fixtures/source/bbb-h264.mkv",
+      "encoding": "raw",
+      "sha256": "8d8c580e2b0e8632bcf28b8591b6d18b47d0c86b684f6fe1cd5022b4462069da",
+      "minimumBytes": 957162,
+      "maximumBytes": 957162,
+      "urls": [
+        "https://test-videos.co.uk/vids/bigbuckbunny/mkv/360/Big_Buck_Bunny_360_10s_1MB.mkv",
+        "https://web.archive.org/web/20220722194409id_/https://test-videos.co.uk/vids/bigbuckbunny/mkv/360/Big_Buck_Bunny_360_10s_1MB.mkv"
+      ]
+    },
+    {
+      "id": "mkv-basic-divx-mp3",
+      "path": "test-fixtures/matroska/mkv-basic-divx-mp3.mkv",
+      "encoding": "raw",
+      "sha256": "0996a309ff2095910b9d30d5253b044d637154297ddf7d0bda7f3adedf5addc1",
+      "minimumBytes": 23339337,
+      "maximumBytes": 23339337,
+      "urls": [
+        "https://raw.githubusercontent.com/ietf-wg-cellar/matroska-test-files/e6965e5ca666322ed93e2748a10a4f132309e005/test_files/test1.mkv"
+      ]
+    },
+    {
+      "id": "mkv-h264-aac-weird-timecode",
+      "path": "test-fixtures/matroska/mkv-h264-aac-weird-timecode.mkv",
+      "encoding": "raw",
+      "sha256": "5b53d306e56f9bda6e80c3fbd9f3ccd20cc885770449d1fc0b5bec35c71d61e2",
+      "minimumBytes": 21142764,
+      "maximumBytes": 21142764,
+      "urls": [
+        "https://raw.githubusercontent.com/ietf-wg-cellar/matroska-test-files/e6965e5ca666322ed93e2748a10a4f132309e005/test_files/test2.mkv"
+      ]
+    },
+    {
+      "id": "mkv-h264-mp3-header-stripping",
+      "path": "test-fixtures/matroska/mkv-h264-mp3-header-stripping.mkv",
+      "encoding": "raw",
+      "sha256": "1722b0d93a6ef1a14dd513bd031cd5901c233b45aa3e3c87be0b0d7348d7d1b5",
+      "minimumBytes": 21061472,
+      "maximumBytes": 21061472,
+      "urls": [
+        "https://raw.githubusercontent.com/ietf-wg-cellar/matroska-test-files/e6965e5ca666322ed93e2748a10a4f132309e005/test_files/test3.mkv"
+      ]
+    },
+    {
+      "id": "mkv-theora-vorbis-live-style",
+      "path": "test-fixtures/matroska/mkv-theora-vorbis-live-style.mkv",
+      "encoding": "raw",
+      "sha256": "43df750a2a01a37949791b717051b41522081a266b71d113be4b713063843699",
+      "minimumBytes": 21313902,
+      "maximumBytes": 21313902,
+      "urls": [
+        "https://raw.githubusercontent.com/ietf-wg-cellar/matroska-test-files/e6965e5ca666322ed93e2748a10a4f132309e005/test_files/test4.mkv"
+      ]
+    },
+    {
+      "id": "mkv-multi-audio-multi-subtitles",
+      "path": "test-fixtures/matroska/mkv-multi-audio-multi-subtitles.mkv",
+      "encoding": "raw",
+      "sha256": "92acdc33bb0b5d7a4d9b0d6ca792230a78c786a30179dc9999cee41c28642842",
+      "minimumBytes": 31762747,
+      "maximumBytes": 31762747,
+      "urls": [
+        "https://raw.githubusercontent.com/ietf-wg-cellar/matroska-test-files/e6965e5ca666322ed93e2748a10a4f132309e005/test_files/test5.mkv"
+      ]
+    },
+    {
+      "id": "mkv-audio-gap",
+      "path": "test-fixtures/matroska/mkv-audio-gap.mkv",
+      "encoding": "raw",
+      "sha256": "9dddcd1550b814dae44d62e2b9f27c0eca31d5e190df2220cbf7492e3d6c63da",
+      "minimumBytes": 21224737,
+      "maximumBytes": 21224737,
+      "urls": [
+        "https://raw.githubusercontent.com/ietf-wg-cellar/matroska-test-files/e6965e5ca666322ed93e2748a10a4f132309e005/test_files/test8.mkv"
+      ]
+    },
+    {
+      "id": "chromium-bear-320x240-webm",
+      "path": "test-fixtures/chromium/bear-320x240.webm",
+      "encoding": "raw",
+      "sha256": "834dbadab368d6dbdeaf973d8f2398a36d6fe584965781877ee46ffcc570ed59",
+      "minimumBytes": 219229,
+      "maximumBytes": 219229,
+      "urls": [
+        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x240.webm"
+      ]
+    },
+    {
+      "id": "chromium-bear-vp9-opus-webm",
+      "path": "test-fixtures/chromium/bear-vp9-opus.webm",
+      "encoding": "raw",
+      "sha256": "c7fd18fbb644ca6f49c56cf386e679c0290e79cd50234ddfed9945f71bf07deb",
+      "minimumBytes": 101414,
+      "maximumBytes": 101414,
+      "urls": [
+        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-vp9-opus.webm"
+      ]
+    },
+    {
+      "id": "chromium-bear-vp8-webvtt-webm",
+      "path": "test-fixtures/chromium/bear-vp8-webvtt.webm",
+      "encoding": "raw",
+      "sha256": "ec7dfcfeb2867af14307a81b099d70c03d2fb7e3d3bfad2b6130ac8b402e6925",
+      "minimumBytes": 219285,
+      "maximumBytes": 219285,
+      "urls": [
+        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-vp8-webvtt.webm"
+      ]
+    },
+    {
       "id": "chromium-bear-1280x720-av-frag-mp4",
       "path": "test-fixtures/chromium/bear-1280x720_av_frag.mp4",
       "encoding": "raw",
@@ -34,6 +198,72 @@
       "maximumBytes": 764465,
       "urls": [
         "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-1280x720-av_frag.mp4"
+      ]
+    },
+    {
+      "id": "chromium-bear-320x180-hi10p-mp4",
+      "path": "test-fixtures/chromium/bear-320x180-hi10p.mp4",
+      "encoding": "raw",
+      "sha256": "04ff92825f6c903e0bc1c662e38f45f9cc50177b7bc82c0e1aacca4ec5dd5610",
+      "minimumBytes": 157833,
+      "maximumBytes": 157833,
+      "urls": [
+        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x180-hi10p.mp4"
+      ]
+    },
+    {
+      "id": "chromium-bear-vp9-profile2-webm",
+      "path": "test-fixtures/chromium/bear-320x240-vp9_profile2.webm",
+      "encoding": "raw",
+      "sha256": "49e4c269afd8ce0be6786cc7fb898c4e958cd749cdfb13ed3ecd37a046bc8f82",
+      "minimumBytes": 80621,
+      "maximumBytes": 80621,
+      "urls": [
+        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x240-vp9_profile2.webm"
+      ]
+    },
+    {
+      "id": "chromium-bear-v-frag-hevc-mp4",
+      "path": "test-fixtures/chromium/bear-320x240-v_frag-hevc.mp4",
+      "encoding": "raw",
+      "sha256": "731890bd0da00cb5eba43602ca0572cda022992d4e4c79cd1d62e01a5daea0dc",
+      "minimumBytes": 49803,
+      "maximumBytes": 49803,
+      "urls": [
+        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x240-v_frag-hevc.mp4"
+      ]
+    },
+    {
+      "id": "chromium-bear-1280x720-aac-he-ts",
+      "path": "test-fixtures/chromium/bear-1280x720-aac_he.ts",
+      "encoding": "raw",
+      "sha256": "f5533452bd980f8971f619887f1bcd24b19344cd975b2352b9ab5d8bb7fe21bc",
+      "minimumBytes": 849760,
+      "maximumBytes": 849760,
+      "urls": [
+        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-1280x720-aac_he.ts"
+      ]
+    },
+    {
+      "id": "chromium-bbb-2video-2audio-mp4",
+      "path": "test-fixtures/chromium/bbb-320x240-2video-2audio.mp4",
+      "encoding": "raw",
+      "sha256": "080b9eabdc9c309b40b0a97ad38a2eb950bb4ab0980679d806ea5d0d8210e934",
+      "minimumBytes": 1047608,
+      "maximumBytes": 1047608,
+      "urls": [
+        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bbb-320x240-2video-2audio.mp4"
+      ]
+    },
+    {
+      "id": "chromium-multitrack-3video-2audio-webm",
+      "path": "test-fixtures/chromium/multitrack-3video-2audio.webm",
+      "encoding": "raw",
+      "sha256": "072202594bb39408086bee2ba1c841ff8735cdb787d7bb66c2077aff995ff7cf",
+      "minimumBytes": 190935,
+      "maximumBytes": 190935,
+      "urls": [
+        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/multitrack-3video-2audio.webm"
       ]
     }
   ]

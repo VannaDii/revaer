@@ -21,15 +21,16 @@ already exist. It verifies locked source integrity and reviewed probe snapshots,
 then writes a Markdown report to `target/media-conversion-report.md` by default; set
 `REVAER_MEDIA_CONVERSION_REPORT` to write it somewhere else.
 
-The foundation suite covers exact-byte acquisition, fragmented MP4 diagnostics,
-real FFmpeg subtitle muxing, stream metadata and disposition, and canonical
-probe comparison.
+The catalog covers common and unusual container, codec, multi-stream, subtitle,
+fragmentation, timecode, and generated-audio combinations. Runtime layers may
+consume the same immutable catalog for production planner and executor tests.
 
 ## CI Setup
 
 CI should restore a cache for these ignored directories when available:
 
 - `test-fixtures/source/`
+- `test-fixtures/matroska/`
 - `test-fixtures/chromium/`
 - `test-fixtures/derived/`
 
@@ -69,8 +70,9 @@ Ignored files:
 - generated derived media
 - temporary script workspaces
 
-The prepared fixture set is expected to stay small enough for CI caching. Run
-`du -sh test-fixtures/source test-fixtures/chromium test-fixtures/derived`
+The prepared fixture set is expected to stay small enough for CI caching. Exact
+size depends on upstream corpus revisions and generated outputs; run
+`du -sh test-fixtures/source test-fixtures/matroska test-fixtures/chromium test-fixtures/derived`
 after preparation for the local total.
 
 ## Verification
@@ -85,11 +87,33 @@ explicit operator action:
 just update-test-fixture-probes
 ```
 
-`just test-media-conversion` records fixture validation and bounded diagnostic
-counts in the Markdown report. Any mismatch exits non-zero with the fixture id
-and field name.
+`just test-media-conversion` records source, generated-fixture, and bounded
+diagnostic counts in the Markdown report. Any mismatch exits non-zero with the
+fixture id and field name.
 
-Fixture preparation fails rather than skipping media coverage when a documented
-source is unavailable. Downloads use exclusive files inside a private temporary
-directory, enforce connection and total deadlines, cap transferred and decoded
-bytes, and install a file only after its hash and byte bounds pass.
+ADR 578 F1 is the only exact recovery-diagnostic contract. It is bound to the
+unchanged `mkv-theora-vorbis-live-style` source, reviewed snapshot, single native
+error line, and two approved full FFprobe version-report hashes. Unknown or
+conflicting contracts fail closed; `allowProbeDiagnostics` is forbidden for
+this fixture. Empty stderr retains normal strict acceptance. Neither the
+contract nor the explicit snapshot-update recipe can replace its snapshot.
+
+For each F1 admission, the verifier prints the original native error, full tool
+report and an explicit classification/count. It retains byte-identical `probe.stderr`,
+`ffprobe-version.txt`, and hash-bound `classification.json` in a private unique
+directory beneath `${REVAER_MEDIA_CONVERSION_REPORT}.probe-evidence` (default
+`target/media-conversion-report.md.probe-evidence`). Conversion preparation uses
+the recipe's `.preparation` report suffix. Preserve that evidence alongside the
+run log; failure to retain it is fatal. This is test-only preparation evidence,
+not executable attestation, a conversion pass, or production error suppression.
+Any identity, snapshot, message/framing, build-report or scope change expires F1
+and requires renewed operator approval. Existing Just conversion selection and
+positive video/audio/failure-count checks remain mandatory and unchanged.
+
+Fixture preparation tries primary upstream URLs first. Some Test-Videos entries
+also declare exact Internet Archive captures of the same URLs as fallbacks in
+`lock.json`; preparation fails rather than skipping media coverage when all
+documented sources for a fixture are unavailable. Downloads use exclusive files
+inside a private temporary directory, enforce connection and total deadlines,
+cap transferred and decoded bytes, and install a file only after its hash and
+byte bounds pass.

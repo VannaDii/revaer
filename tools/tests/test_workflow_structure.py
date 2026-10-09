@@ -42,6 +42,36 @@ def test_valid_workflow_and_reusable_dependencies(workflow: Document) -> None:
     assert not findings(workflow)
 
 
+@pytest.mark.parametrize(
+    ("profile", "timeout", "accepted"),
+    (
+        ("coverage", "40", True),
+        ("coverage", "20", False),
+        ("coverage", "41", False),
+        ("base", "20", True),
+        ("base", "40", False),
+    ),
+)
+def test_setup_keeps_the_selected_profile_timeout(
+    profile: str, timeout: str, accepted: bool
+) -> None:
+    document: Document = {
+        "jobs": {
+            "check": {
+                "timeout-minutes": "60",
+                "steps": [
+                    {
+                        "uses": "./.github/actions/setup-revaer",
+                        "timeout-minutes": timeout,
+                        "with": {"apt-profile": profile},
+                    }
+                ],
+            }
+        },
+    }
+    assert (not findings(document)) == accepted
+
+
 @pytest.mark.parametrize("position", ("absent", "conditional", "late"))
 def test_every_command_requires_completed_setup(workflow: Document, position: str) -> None:
     jobs = workflow["jobs"]
