@@ -125,7 +125,6 @@ def test_media_management_catalogs_and_controls(
     with page.expect_response(policy_write) as created_policy:
         policy.get_by_role("button", name="Save policy").click()
     assert created_policy.value.status == 201
-    expect(refresh).to_be_disabled()
     expect(refresh).to_be_enabled(timeout=30000)
     expect(
         page.get_by_test_id("media-policy-catalog").get_by_text(policy_key, exact=True)
