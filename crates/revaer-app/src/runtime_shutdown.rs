@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use tokio::sync::watch;
-use tokio::time::{Instant, sleep_until};
+use tokio::time::{Instant, sleep, sleep_until};
 
 const APPLICATION_SHUTDOWN_BUDGET: Duration = Duration::from_secs(30);
 
@@ -119,5 +119,18 @@ pub(crate) async fn changed(receiver: &mut RuntimeShutdownReceiver) {
         if receiver.state.changed().await.is_err() {
             return;
         }
+    }
+}
+
+/// Sleep for a duration unless shutdown is requested first.
+///
+/// Returns `true` when shutdown interrupted the sleep.
+pub(crate) async fn sleep_or_requested(
+    duration: Duration,
+    receiver: &mut RuntimeShutdownReceiver,
+) -> bool {
+    tokio::select! {
+        () = sleep(duration) => false,
+        () = changed(receiver) => true,
     }
 }

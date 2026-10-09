@@ -74,7 +74,13 @@ fn assert_preflight_result(result: Poll<AppResult<()>>) -> anyhow::Result<()> {
             };
             assert_eq!(source.category(), expected.category());
         }
-        Ok(_) => assert!(matches!(result, Poll::Ready(Err(AppError::Config { .. })))),
+        Ok(_) => assert!(matches!(
+            result,
+            Poll::Ready(Err(AppError::InvalidConfig {
+                field: "REVAER_MEDIA_WORKSPACE_ROOT",
+                ..
+            }))
+        )),
     }
     Ok(())
 }
@@ -100,11 +106,11 @@ fn real_process_exits_nonzero_with_one_bounded_origin_diagnostic() -> anyhow::Re
                 expected.category()
             )
         ),
-        // A packaged host can pass preflight. The deliberately invalid database
-        // URL then fails configuration before infrastructure starts.
+        // A genuinely packaged host can pass preflight. The cleared environment
+        // then rejects workspace configuration before infrastructure starts.
         Ok(_) => {
             assert!(!diagnostic.contains("compliance_metadata_startup_failed"));
-            assert!(diagnostic.contains("configuration operation failed"));
+            assert!(diagnostic.contains("REVAER_MEDIA_WORKSPACE_ROOT"));
         }
     }
     Ok(())
