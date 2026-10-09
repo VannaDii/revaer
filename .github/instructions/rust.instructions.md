@@ -47,6 +47,9 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 
 # CI And Recipe Maintenance
 
+- Native discovery must invalidate Cargo when `PATH`, pkg-config search variables,
+  or target-qualified pkg-config variables change.
+
 - Keep the workspace MSRV aligned with the pinned Rust toolchain. Release build
   dependencies retain symbols (`strip = "none"`) for the pinned Rust 1.96 LLVM
   loader workaround; this setting applies only to build dependencies.
