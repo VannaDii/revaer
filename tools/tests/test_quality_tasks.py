@@ -5,10 +5,12 @@ composition boundary to prove that failure cannot reach a later release build
 and that every gate receives the selected, locked database connection.
 """
 
+import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 from revaer_tooling.cli import make_context
@@ -22,15 +24,29 @@ from revaer_tooling.tasks.database import DatabaseStart
 
 @pytest.mark.parametrize("failure", [None, "start", "gate", "build"])
 @pytest.mark.parametrize("explicit", [False, True])
+@pytest.mark.parametrize("single_init", [False, True])
 def test_ci_holds_connection_until_gates_finish_and_never_builds_after_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str | None, explicit: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str | None,
+    explicit: bool,
+    single_init: bool,
 ) -> None:
     context = make_context(Options())
     database = replace(
         context.settings.database,
         test_url="postgres://tests@disposable/postgres" if explicit else None,
     )
-    context = replace(context, settings=replace(context.settings, database=database))
+    # This matrix supplies its own database selection; the caller's E2E admin
+    # endpoint must not supply a different fallback in the unit fixture.
+    context = replace(
+        context,
+        settings=replace(
+            context.settings,
+            database=database,
+            e2e=replace(context.settings.e2e, admin_url=None),
+        ),
+    )
     calls: list[str] = []
     lock = tmp_path / "database.lock"
     normalized = "postgres://local@127.0.0.1:5441/revaer?sslmode=disable"
@@ -43,6 +59,10 @@ def test_ci_holds_connection_until_gates_finish_and_never_builds_after_failure(
 
     @contextmanager
     def connection(active: Context) -> Iterator[str]:
+        if single_init:
+            calls.append("start")
+            if failure == "start":
+                raise ToolingError("start failure")
         with active.fs.lock(lock):
             yield normalized
 
@@ -68,6 +88,8 @@ def test_ci_holds_connection_until_gates_finish_and_never_builds_after_failure(
                 raise ToolingError("build failure")
         return TaskResult()
 
+    monkeypatch.setattr(quality, "uses_single_init", lambda active: single_init)
+    monkeypatch.setattr(quality, "single_init_database", connection)
     monkeypatch.setattr(DatabaseStart, "run", start)
     monkeypatch.setattr(quality, "database_connection", connection)
     monkeypatch.setattr(quality, "VALIDATION_STEPS", {"first": gate, "second": gate})
@@ -86,8 +108,10 @@ def test_ci_holds_connection_until_gates_finish_and_never_builds_after_failure(
 
 
 def test_database_selection_preserves_options_and_encodes_the_name() -> None:
-    assert with_database("postgresql://user:p%40ss@[::1]/old?sslmode=require", "new/name") == (
-        "postgresql://user:p%40ss@[::1]/new%2Fname?sslmode=require"
+    password = quote(secrets.token_hex(12) + "@", safe="")
+    assert (
+        with_database(f"postgresql://user:{password}@[::1]/old?sslmode=require", "new/name")
+        == f"postgresql://user:{password}@[::1]/new%2Fname?sslmode=require"
     )
 
 

@@ -2,6 +2,12 @@ set shell := ["bash", "-c"]
 
 # Compatibility only: rv owns every implementation and gate.
 
+db-baseline-verify *args:
+    uv run --locked -- rv db-baseline-verify {{args}}
+
+cargo-lock:
+    uv run --locked -- rv cargo-lock
+
 db-pristine-catalog-generate *args:
     uv run --locked -- rv db-pristine-catalog-generate {{args}}
 

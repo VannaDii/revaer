@@ -105,6 +105,7 @@ from .tasks.database import DatabaseMigrate, DatabaseReset, DatabaseSeed, Databa
 from .tasks.database_lifecycle import DatabaseTestDrop, DatabaseTestInit
 from .tasks.database_probes import (
     DatabaseBaselineRead,
+    DatabaseBaselineVerify,
     DatabaseCancellationProbe,
     DatabasePoolProbe,
 )
@@ -151,7 +152,7 @@ from .tasks.native import SonarCompileDatabase
 from .tasks.policy import InstructionDrift, Lint, Policy
 from .tasks.pristine import PristineGenerate, PristineTest, PristineValidate
 from .tasks.python_coverage import PythonCoverageMerge
-from .tasks.quality import Ci, Lock, Validate
+from .tasks.quality import CargoLock, Ci, Lock, Validate
 from .tasks.release import ReleasePreview, ReleasePublish, ReleaseResume
 from .tasks.setup import Doctor, Setup
 from .tasks.sonar import (
@@ -174,6 +175,8 @@ from .tasks.testing import (
 )
 
 COMMANDS: dict[str, Callable[[Context], TaskResult]] = {
+    "cargo-lock": CargoLock.run,
+    "db-baseline-verify": DatabaseBaselineVerify.run,
     "test-media-service-recovery": TestMediaServiceRecovery.run,
     "test-media-recovery": TestMediaRecovery.run,
     "db-pristine-catalog-generate": PristineGenerate.run,

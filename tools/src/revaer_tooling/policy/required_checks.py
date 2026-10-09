@@ -40,6 +40,7 @@ def required_check_findings(
     documents: Mapping[str, Document],
     recorded_contexts: tuple[str, ...],
     database_rebaseline: bool,
+    single_init: bool = False,
 ) -> list[str]:
     policy = workflow(documents, "pr")
     policy.require(recorded_contexts == AUDITED_CONTEXTS, "required PR context snapshot drifted")
@@ -83,7 +84,23 @@ def required_check_findings(
     _media_conversion(policy)
     _udeps(policy)
     _ui_coverage(policy)
-    if database_rebaseline:
+    if single_init:
+        feature = policy.job("feature-matrix")
+        initialized = policy.step(feature, "Single-init application fixtures")
+        policy.require(
+            runs(initialized, "ui-e2e-app-test"),
+            "Feature Matrix must exercise initialized application fixtures",
+        )
+        policy.order(
+            feature,
+            ("Single-init application fixtures", "Feature matrix tests (no default features)"),
+        )
+        for job_value in mapping(policy.document.get("jobs")).values():
+            policy.require(
+                not any(runs(step, "db-migrate") for step in steps(mapping(job_value))),
+                "Single-init PR jobs must not replay historical migrations",
+            )
+    elif database_rebaseline:
         feature = policy.job("feature-matrix")
         candidate = policy.step(feature, "Database rebaseline contract")
         policy.require(
