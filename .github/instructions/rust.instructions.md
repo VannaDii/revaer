@@ -78,6 +78,10 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 
 # Maintainability And Layout
 
+- `revaer-media-core` owns deterministic media graph compilation, planning,
+  compliance and verification. Keep filesystem, process and database access in
+  injected runtime adapters.
+
 - Keep files single-purpose and cohesive.
 - Target roughly 300-400 non-test LOC per production file. Split large files instead of silencing `too_many_lines`.
 - `lib.rs` should stay limited to crate docs, module declarations, light re-exports, and tiny crate-boundary glue.
