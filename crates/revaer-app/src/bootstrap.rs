@@ -1006,3 +1006,7 @@ mod runtime_tests;
 #[cfg(test)]
 #[path = "bootstrap/shutdown_tests.rs"]
 mod shutdown_tests;
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "bootstrap/service_recovery_tests.rs"]
+mod service_recovery_tests;
