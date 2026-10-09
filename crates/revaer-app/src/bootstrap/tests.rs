@@ -262,7 +262,12 @@ async fn build_api_server_accepts_bootstrapped_config() -> AppResult<()> {
 
     let source_compliance = super::compliance_tests::fixture_metadata()
         .map_err(|source| AppError::Compliance { source })?;
-    let server = build_api_server(&config, &events, None, telemetry, source_compliance)?;
+    let media = Arc::new(build_media_service(
+        &config,
+        telemetry.clone(),
+        Arc::new(SystemNativeProcessSupervisor),
+    ));
+    let server = build_api_server(&config, &events, None, telemetry, media, source_compliance)?;
     drop(server);
     Ok(())
 }

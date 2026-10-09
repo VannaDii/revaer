@@ -16,6 +16,8 @@ tracing.workspace = true
 revaer-api = { path = "../revaer-api" }
 revaer-config = { path = "../revaer-config" }
 revaer-fsops = { path = "../revaer-fsops" }
+revaer-media-core = { path = "../revaer-media-core" }
+revaer-media-runtime = { path = "../revaer-media-runtime" }
 revaer-telemetry = { path = "../revaer-telemetry", features = ["otel"] }
 revaer-torrent-core = { path = "../revaer-torrent-core" }
 revaer-torrent-libt = { path = "../revaer-torrent-libt", default-features = false }
@@ -30,6 +32,10 @@ serde_json.workspace = true
 serde.workspace = true
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip"] }
 serde_yaml = "0.9"
+yaml-rust2 = { version = "0.11.0", default-features = false }
+rustix.workspace = true
+sha2.workspace = true
+notify.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true

@@ -10,16 +10,32 @@ use crate::error::{AppError, AppResult};
 use crate::import_job_runtime::ImportJobRuntime;
 use crate::indexer_runtime::IndexerRuntime;
 use crate::indexers::IndexerService;
+use crate::media::MediaService;
+use crate::media::native_discovery::NativeDiscovery;
+use crate::media_discovery_runtime::{MediaDiscoveryRuntime, WATCH_EVENT_CAPACITY};
+use crate::media_discovery_watcher::{MediaWatchEventBuffer, NotifyMediaWatcher};
+use crate::runtime_shutdown;
 use revaer_api::TorrentHandles;
 use revaer_api::app::compliance::{
     ComplianceMetadataError, SOURCE_COMPLIANCE_BUNDLE_PATH, SourceComplianceMetadata,
 };
+use revaer_api::app::media::{MediaCapabilityRefreshParams, MediaFacade};
 use revaer_config::{AppMode, ConfigService, ConfigSnapshot, DbSessionConfig};
 use revaer_events::EventBus;
+use revaer_media_runtime::capabilities::{
+    FfmpegCapabilityDetector, SupervisedCapabilityProbeExecutor,
+};
+use revaer_media_runtime::process::{
+    NativeProcessSupervisor, NeverStopNativeProcess, SystemNativeProcessSupervisor,
+};
+use revaer_runtime::media::MediaStore;
 use revaer_telemetry::{GlobalContextGuard, LoggingConfig, Metrics, OpenTelemetryConfig};
 use tracing::{error, info, warn};
 
 use revaer_runtime::RuntimeStore;
+use uuid::Uuid;
+
+mod root_catalog;
 
 #[cfg(feature = "libtorrent")]
 use crate::orchestrator::{
@@ -344,11 +360,16 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         None
     };
 
+    let media = prepare_media_service(&config, &events, &telemetry).await?;
+    let (shutdown, receiver) = runtime_shutdown::channel();
+    let media_discovery_task =
+        spawn_media_discovery_task(&config, &telemetry, receiver, Arc::clone(&media));
     let api = build_api_server(
         &config,
         &events,
         torrent_handles,
         telemetry.clone(),
+        media,
         source_compliance,
     )?;
     let indexer_runtime_task =
@@ -358,6 +379,13 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     info!(addr = %addr, "Launching API listener");
 
     let serve_result = api.serve(addr).await;
+
+    if runtime_shutdown::request(&shutdown) {
+        info!("media runtime shutdown requested");
+    } else {
+        warn!("media runtime shutdown requested after receivers closed");
+    }
+    stop_runtime_task_gracefully(media_discovery_task, "media_discovery", &shutdown).await;
 
     if !indexer_runtime_task.is_finished() {
         indexer_runtime_task.abort();
@@ -404,6 +432,48 @@ fn bootstrap_listener_addr(
     Ok(SocketAddr::new(app_profile.bind_addr, port))
 }
 
+async fn stop_runtime_task_gracefully<T>(
+    mut task: tokio::task::JoinHandle<T>,
+    task_name: &'static str,
+    shutdown: &runtime_shutdown::RuntimeShutdownSender,
+) {
+    if task.is_finished() {
+        if let Err(err) = task.await {
+            log_runtime_task_join_error(&err, task_name, false);
+        }
+        return;
+    }
+    tokio::select! {
+        result = &mut task => {
+            if let Err(err) = result {
+                log_runtime_task_join_error(&err, task_name, false);
+            }
+        }
+        elapsed = runtime_shutdown::deadline_elapsed(shutdown) => {
+            task.abort();
+            match elapsed {
+                Ok(()) => warn!(task = task_name, "runtime task aborted after graceful shutdown timeout"),
+                Err(error) => warn!(error = %error, task = task_name, "runtime shutdown authority closed before deadline observation"),
+            }
+            if let Err(err) = task.await {
+                log_runtime_task_join_error(&err, task_name, true);
+            }
+        }
+    }
+}
+
+fn log_runtime_task_join_error(
+    error: &tokio::task::JoinError,
+    task_name: &'static str,
+    abort_requested: bool,
+) {
+    if abort_requested && error.is_cancelled() {
+        info!(error = %error, task = task_name, "runtime task cancelled after shutdown abort request");
+    } else {
+        warn!(error = %error, task = task_name, "runtime task join failed");
+    }
+}
+
 fn bootstrap_http_port(http_port: i32) -> AppResult<u16> {
     let port = u16::try_from(http_port).map_err(|_| AppError::InvalidConfig {
         field: "http_port",
@@ -425,21 +495,122 @@ fn build_api_server(
     events: &EventBus,
     torrent_handles: Option<TorrentHandles>,
     telemetry: Metrics,
+    media: Arc<MediaService>,
     source_compliance: SourceComplianceMetadata,
 ) -> AppResult<revaer_api::ApiServer> {
     let indexers = Arc::new(IndexerService::new(
         Arc::new(config.clone()),
         telemetry.clone(),
     ));
-    revaer_api::ApiServer::new(
+    revaer_api::ApiServer::new_with_media(
         config.clone(),
         indexers,
+        media,
         events.clone(),
         torrent_handles,
         telemetry,
         source_compliance,
     )
     .map_err(|err| AppError::api_server("api_server.new", err))
+}
+
+async fn prepare_media_service(
+    config: &ConfigService,
+    events: &EventBus,
+    telemetry: &Metrics,
+) -> AppResult<Arc<MediaService>> {
+    let media_roots = root_catalog::start(config, root_catalog::source_from_env()).await?;
+    let media = Arc::new(
+        build_media_service(
+            config,
+            telemetry.clone(),
+            Arc::new(SystemNativeProcessSupervisor),
+        )
+        .with_association_source(media_roots.as_ref().map(Arc::clone)),
+    );
+    refresh_startup_media_capabilities(&media, events, telemetry).await;
+    Ok(media)
+}
+
+fn spawn_media_discovery_task(
+    config: &ConfigService,
+    telemetry: &Metrics,
+    receiver: runtime_shutdown::RuntimeShutdownReceiver,
+    media: Arc<MediaService>,
+) -> tokio::task::JoinHandle<()> {
+    let watch_events = Arc::new(MediaWatchEventBuffer::new(WATCH_EVENT_CAPACITY));
+    MediaDiscoveryRuntime::new(
+        MediaStore::new(config.pool().clone()),
+        telemetry.clone(),
+        Box::new(NotifyMediaWatcher::new(Arc::clone(&watch_events))),
+        watch_events,
+        NativeDiscovery::new(media),
+    )
+    .spawn(receiver)
+}
+
+fn build_media_service(
+    config: &ConfigService,
+    telemetry: Metrics,
+    native_process_supervisor: Arc<dyn NativeProcessSupervisor>,
+) -> MediaService {
+    MediaService::new(
+        MediaStore::new(config.pool().clone()),
+        Arc::new(FfmpegCapabilityDetector::new(
+            Arc::new(SupervisedCapabilityProbeExecutor::new(
+                native_process_supervisor,
+                Arc::new(NeverStopNativeProcess),
+            )),
+            "ffmpeg",
+            "ffprobe",
+            "ffplay",
+        )),
+        telemetry,
+    )
+}
+
+async fn refresh_startup_media_capabilities(
+    media: &MediaService,
+    events: &EventBus,
+    telemetry: &Metrics,
+) {
+    match media
+        .media_capability_refresh(MediaCapabilityRefreshParams {
+            actor_user_public_id: Uuid::from_u128(0),
+        })
+        .await
+    {
+        Ok(snapshot_id) => {
+            info!(
+                media_capability_snapshot_id = snapshot_id,
+                "startup media capability refresh completed"
+            );
+            publish_event(
+                events,
+                revaer_events::Event::MediaCapabilitiesRefreshed {
+                    media_capability_snapshot_id: snapshot_id,
+                },
+            );
+        }
+        Err(error) => {
+            let code = error
+                .code()
+                .unwrap_or("media_capability_refresh_failed")
+                .to_string();
+            warn!(error = %error, code = %code, "startup media capability refresh failed; media execution remains not ready");
+            telemetry.inc_event("media_capability_refresh_failed");
+            publish_event(
+                events,
+                revaer_events::Event::MediaCapabilitiesRefreshFailed { reason: code },
+            );
+            publish_event(
+                events,
+                revaer_events::Event::HealthChanged {
+                    degraded: vec!["media_capability".to_string()],
+                },
+            );
+        }
+    }
 }
 
 fn load_otel_config_from_env() -> Option<OpenTelemetryConfig<'static>> {

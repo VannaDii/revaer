@@ -30,9 +30,18 @@ pub mod import_job_runtime;
 pub mod indexer_runtime;
 /// Indexer service wiring for API facade.
 pub mod indexers;
+/// Media service wiring for the operator API facade.
+pub mod media;
+mod media_discovery_fingerprint;
+/// In-process media discovery runtime wiring.
+pub mod media_discovery_runtime;
+mod media_discovery_scan;
+mod media_discovery_watcher;
 /// Torrent orchestrator wiring.
 #[cfg(feature = "libtorrent")]
 pub mod orchestrator;
+/// Cooperative background runtime shutdown helpers.
+pub mod runtime_shutdown;
 
 pub use bootstrap::{run_app, run_app_with_database_url};
 pub use error::{AppError, AppResult};
