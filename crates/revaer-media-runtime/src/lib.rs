@@ -17,12 +17,16 @@
 //!
 //! The runtime provides deterministic, bounded discovery of the deployed
 //! `FFmpeg` toolchain, adjacent subtitle sidecars, normalized media inspection
-//! and trusted root catalogs with retained descriptor and mount checks.
+//! and trusted root catalogs with retained descriptor and mount checks. Command
+//! execution observes cancellation and resource limits; managed scratch workspaces
+//! enforce capacity, retention and cleanup policy.
 //! Runtime collaborators are injected; bootstrap
 //! code may select the concrete system adapters.
 
 pub mod capabilities;
+pub mod execute;
 pub mod inspect;
 pub mod process;
 pub mod root_catalog;
 pub mod sidecar;
+pub mod workspace;

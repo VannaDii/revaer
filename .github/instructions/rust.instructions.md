@@ -84,6 +84,8 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 - Root catalogs retain descriptor, mount, source identity and root-lock checks.
   Their restored `sha2` dependency computes canonical identities; `tempfile`
   isolates functional filesystem regression fixtures.
+- Command execution and managed scratch workspaces retain cooperative cancellation,
+  live resource limits, capacity admission and terminal cleanup policy.
 
 - `revaer-media-core` owns deterministic media graph compilation, planning,
   compliance and verification. Keep filesystem, process and database access in
