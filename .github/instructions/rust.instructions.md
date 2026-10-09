@@ -78,6 +78,9 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 - `revaer-media-runtime` owns injected native process, capability and inspection
   adapters. Its restored `rustix` dependency provides safe Unix descriptor and
   process operations without authored unsafe code.
+- Root catalogs retain descriptor, mount, source identity and root-lock checks.
+  Their restored `sha2` dependency computes canonical identities; `tempfile`
+  isolates functional filesystem regression fixtures.
 
 - `revaer-media-core` owns deterministic media graph compilation, planning,
   compliance and verification. Keep filesystem, process and database access in
