@@ -13,7 +13,7 @@ authors.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-revaer-api = { path = "../revaer-api" }
+revaer-api = { path = "../revaer-api", default-features = false }
 revaer-config = { path = "../revaer-config" }
 revaer-fsops = { path = "../revaer-fsops" }
 revaer-media-core = { path = "../revaer-media-core" }
@@ -44,5 +44,6 @@ revaer-test-support = { path = "../revaer-test-support" }
 sqlx.workspace = true
 
 [features]
-default = ["libtorrent"]
+default = ["compat-qb", "libtorrent"]
+compat-qb = ["revaer-api/compat-qb"]
 libtorrent = ["revaer-torrent-libt/libtorrent"]

@@ -47,6 +47,10 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 
 # CI And Recipe Maintenance
 
+- The application's default `compat-qb` feature forwards the API compatibility
+  feature explicitly. Disable API dependency defaults so the application's
+  no-default-feature gate exercises the actual compatibility-free configuration.
+
 - Native discovery must invalidate Cargo when `PATH`, pkg-config search variables,
   or target-qualified pkg-config variables change.
 
