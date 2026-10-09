@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,6 +11,9 @@ use crate::import_job_runtime::ImportJobRuntime;
 use crate::indexer_runtime::IndexerRuntime;
 use crate::indexers::IndexerService;
 use revaer_api::TorrentHandles;
+use revaer_api::app::compliance::{
+    ComplianceMetadataError, SOURCE_COMPLIANCE_BUNDLE_PATH, SourceComplianceMetadata,
+};
 use revaer_config::{AppMode, ConfigService, ConfigSnapshot, DbSessionConfig};
 use revaer_events::EventBus;
 use revaer_telemetry::{GlobalContextGuard, LoggingConfig, Metrics, OpenTelemetryConfig};
@@ -26,6 +30,7 @@ use revaer_torrent_core::{TorrentEngine, TorrentInspector, TorrentWorkflow};
 
 /// Dependencies required to bootstrap the Revaer application.
 pub(crate) struct BootstrapDependencies {
+    source_compliance: SourceComplianceMetadata,
     logging: LoggingConfig<'static>,
     otel_config: Option<OpenTelemetryConfig<'static>>,
     config: ConfigService,
@@ -39,12 +44,15 @@ pub(crate) struct BootstrapDependencies {
 
 impl BootstrapDependencies {
     /// Construct production dependencies from the environment for the binary entrypoint.
-    pub(crate) async fn from_env() -> AppResult<Self> {
+    pub(crate) async fn from_env(source_compliance: SourceComplianceMetadata) -> AppResult<Self> {
         let database_url = database_url_from_env()?;
-        Self::from_database_url(database_url).await
+        Self::from_database_url(database_url, source_compliance).await
     }
 
-    pub(crate) async fn from_database_url(database_url: String) -> AppResult<Self> {
+    pub(crate) async fn from_database_url(
+        database_url: String,
+        source_compliance: SourceComplianceMetadata,
+    ) -> AppResult<Self> {
         let logging = LoggingConfig::default();
         let otel_config = load_otel_config_from_env();
 
@@ -77,6 +85,7 @@ impl BootstrapDependencies {
         )?);
 
         Ok(Self {
+            source_compliance,
             logging,
             otel_config,
             config,
@@ -211,22 +220,60 @@ fn validate_trimmed_field<'a>(
 }
 
 /// Entry point for the Revaer application boot sequence.
+/// Required packaged metadata is checked before constructing any dependencies.
 ///
 /// # Errors
 ///
 /// Returns an error if dependency construction or application startup fails.
 pub async fn run_app() -> AppResult<()> {
-    let dependencies = BootstrapDependencies::from_env().await?;
-    Box::pin(run_app_with(dependencies)).await
+    run_app_with_compliance_loader(None, load_packaged_compliance, &mut std::io::stderr()).await
 }
 
 /// Boot sequence using a provided database URL.
+/// Required packaged metadata is checked before constructing any dependencies.
 ///
 /// # Errors
 ///
 /// Returns an error if dependency construction or application startup fails.
 pub async fn run_app_with_database_url(database_url: String) -> AppResult<()> {
-    let dependencies = BootstrapDependencies::from_database_url(database_url).await?;
+    run_app_with_compliance_loader(
+        Some(database_url),
+        load_packaged_compliance,
+        &mut std::io::stderr(),
+    )
+    .await
+}
+
+fn load_packaged_compliance() -> Result<SourceComplianceMetadata, ComplianceMetadataError> {
+    SourceComplianceMetadata::load(std::path::Path::new(SOURCE_COMPLIANCE_BUNDLE_PATH))
+}
+
+async fn run_app_with_compliance_loader(
+    database_url: Option<String>,
+    loader: impl FnOnce() -> Result<SourceComplianceMetadata, ComplianceMetadataError>,
+    diagnostic: &mut impl Write,
+) -> AppResult<()> {
+    // This synchronous preflight must precede even dependency construction:
+    // configuration and native dependency constructors already start work.
+    let source_compliance = match loader() {
+        Ok(metadata) => metadata,
+        Err(compliance) => {
+            return Err(
+                match writeln!(
+                    diagnostic,
+                    "compliance_metadata_startup_failed cause={}",
+                    compliance.category(),
+                ) {
+                    Ok(()) => AppError::Compliance { source: compliance },
+                    Err(source) => AppError::ComplianceDiagnostic { compliance, source },
+                },
+            );
+        }
+    };
+    let dependencies = match database_url {
+        Some(url) => BootstrapDependencies::from_database_url(url, source_compliance).await?,
+        None => BootstrapDependencies::from_env(source_compliance).await?,
+    };
     Box::pin(run_app_with(dependencies)).await
 }
 
@@ -251,6 +298,7 @@ fn init_bootstrap_logging(
 
 async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResult<()> {
     let BootstrapDependencies {
+        source_compliance,
         logging: _,
         otel_config: _,
         config,
@@ -296,7 +344,13 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         None
     };
 
-    let api = build_api_server(&config, &events, torrent_handles, telemetry.clone())?;
+    let api = build_api_server(
+        &config,
+        &events,
+        torrent_handles,
+        telemetry.clone(),
+        source_compliance,
+    )?;
     let indexer_runtime_task =
         IndexerRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
     let import_job_runtime_task =
@@ -371,6 +425,7 @@ fn build_api_server(
     events: &EventBus,
     torrent_handles: Option<TorrentHandles>,
     telemetry: Metrics,
+    source_compliance: SourceComplianceMetadata,
 ) -> AppResult<revaer_api::ApiServer> {
     let indexers = Arc::new(IndexerService::new(
         Arc::new(config.clone()),
@@ -382,6 +437,7 @@ fn build_api_server(
         events.clone(),
         torrent_handles,
         telemetry,
+        source_compliance,
     )
     .map_err(|err| AppError::api_server("api_server.new", err))
 }
@@ -596,3 +652,7 @@ fn publish_event(events: &EventBus, event: revaer_events::Event) {
 #[cfg(test)]
 #[path = "bootstrap/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "bootstrap/compliance_tests.rs"]
+mod compliance_tests;
