@@ -200,6 +200,32 @@ fn normalizes_full_technical_metadata_and_dispositions() -> Result<(), Box<dyn s
 }
 
 #[test]
+fn attachment_without_codec_name_uses_stable_marker() -> Result<(), Box<dyn std::error::Error>> {
+    let directory = temp_directory("attachment-no-codec")?;
+    let source = write_source(&directory)?;
+    let inspection = parse_source(
+        &source,
+        br#"{"streams":[{"index":0,"codec_type":"attachment","tags":{"filename":"note.txt"}}],"format":{"format_name":"matroska"}}"#,
+    )?;
+    assert_eq!(inspection.graph.streams[0].kind, StreamKind::Attachment);
+    assert_eq!(inspection.graph.streams[0].codec, "attachment");
+    remove_temp_directory(&directory)
+}
+
+#[test]
+fn attachment_codec_name_is_normalized_to_stable_marker() -> Result<(), Box<dyn std::error::Error>>
+{
+    let directory = temp_directory("attachment-codec")?;
+    let source = write_source(&directory)?;
+    let inspection = parse_source(
+        &source,
+        br#"{"streams":[{"index":0,"codec_type":"attachment","codec_name":"text"}],"format":{"format_name":"matroska"}}"#,
+    )?;
+    assert_eq!(inspection.graph.streams[0].codec, "attachment");
+    remove_temp_directory(&directory)
+}
+
+#[test]
 fn accepts_unindexed_frame_records_without_attributing_side_data()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = temp_directory("unindexed-frame")?;
