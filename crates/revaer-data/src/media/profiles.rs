@@ -671,11 +671,15 @@ mod tests {
             "media initializer must reject discovery roots claimed by another active profile"
         );
         assert!(
-            migration_body.contains("LOCK TABLE media_profile IN SHARE ROW EXCLUSIVE MODE"),
+            migration_body.contains(
+                "pg_advisory_xact_lock(hashtextextended('media_profile_all_root_overlap_v1', 0))"
+            ),
             "media profile overlap validation must serialize profile writes"
         );
         assert!(
-            migration_body.contains("pg_advisory_xact_lock"),
+            migration_body.contains(
+                "pg_advisory_xact_lock(hashtextextended('media_profile_root_identity_v1', 0))"
+            ),
             "media profile root validation must serialize all write paths"
         );
         assert!(
