@@ -18,6 +18,7 @@ from ..media.model import FIXTURE_DIRECTORIES, owned_path, regular_file
 from ..media.probes import probe_catalog
 from .automation import outputs
 from .base import Task
+from .testing import test_environment
 
 
 @contextmanager
@@ -176,6 +177,25 @@ class TestMediaConversion(Task):
             )
             verify(preparation, catalog)
             context.fs.mkdir(temporary)
+            if "revaer-app" in packages:
+                result = context.tools.cargo.execute(
+                    CargoArgs(
+                        CargoOperation.TEST,
+                        packages=("revaer-app",),
+                        test_filter="media_job_runtime::tests::production_media_job_runtime_executes_and_persists_verified_replacement",
+                        include_ignored=True,
+                        test_threads=1,
+                    ),
+                    test_environment(context),
+                    capture=True,
+                )
+                context.emit(result.stdout)
+                if not re.search(
+                    r"(?m)^test result: ok\. 1 passed; 0 failed; 0 ignored;", result.stdout
+                ):
+                    raise ToolingError(
+                        "Media conversion did not execute one production worker test"
+                    )
             context.tools.cargo.execute(
                 CargoArgs(
                     CargoOperation.TEST,
