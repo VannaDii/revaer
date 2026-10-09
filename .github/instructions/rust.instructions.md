@@ -64,6 +64,9 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 
 # Documentation
 
+- The media fixture catalog retains all 30 declared fixtures and their expected
+  probe snapshots so runtime integration tests use the complete qualified inputs.
+
 - Public crates need crate-level rustdoc that explains purpose, invariants, and a realistic usage example.
 - Externally consumed public items should document:
   - behavior

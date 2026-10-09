@@ -142,11 +142,14 @@ class WorkflowPolicy:
                 if self.path.startswith(".github/workflows/") and not prepared:
                     self.error(label, "run requires an earlier unconditional setup-revaer step")
                 self.validate_run(label, step["run"])
-            if (
-                step.get("uses") == "./.github/actions/setup-revaer"
-                and step.get("timeout-minutes") != "20"
-            ):
-                self.error(label, "setup-revaer requires timeout-minutes: 20")
+            if step.get("uses") == "./.github/actions/setup-revaer":
+                # The full coverage environment includes cold builds of every
+                # pinned Cargo tool; ordinary setup keeps its shorter bound.
+                timeout = (
+                    "40" if mapping(step.get("with", {})).get("apt-profile") == "coverage" else "20"
+                )
+                if step.get("timeout-minutes") != timeout:
+                    self.error(label, f"setup-revaer requires timeout-minutes: {timeout}")
 
     def validate_uses(self, owner: str, value: Value) -> None:
         if not isinstance(value, str) or not (

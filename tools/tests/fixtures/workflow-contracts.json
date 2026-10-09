@@ -124,7 +124,7 @@
             },
             {
               "name": "Set up Helm",
-              "uses": "Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4",
+              "uses": "Azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310",
               "with": {
                 "version": "v3.19.0"
               }
@@ -184,7 +184,7 @@
             },
             {
               "uses": "./.github/actions/setup-revaer",
-              "timeout-minutes": "20",
+              "timeout-minutes": "40",
               "with": {
                 "apt-profile": "coverage",
                 "sonar-scanner": "true"
@@ -942,7 +942,7 @@
             },
             {
               "uses": "./.github/actions/setup-revaer",
-              "timeout-minutes": "20",
+              "timeout-minutes": "40",
               "with": {
                 "apt-profile": "coverage",
                 "sonar-scanner": "true"
@@ -1570,7 +1570,7 @@
           {
             "name": "Install Helm",
             "if": "inputs.helm == 'true'",
-            "uses": "Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4",
+            "uses": "Azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310",
             "with": {
               "version": "v3.19.0"
             }

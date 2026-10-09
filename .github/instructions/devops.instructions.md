@@ -352,7 +352,10 @@ The ordinary PR gates (instruction drift, formatting, lint, check, audit, deny,
 unused dependencies, supply-chain aggregation and release build) invoke the
 locked `rv` CLI through the shared uv setup action. Select native tools through
 its supported inputs; retain each gate, dependency, condition and failure result.
-Setup has a 20-minute bound, and each job retains an explicit bounded timeout.
+Ordinary setup has a 20-minute bound. Full coverage setup has a 40-minute bound
+because a cold runner builds every pinned Cargo tool; each job retains its
+explicit bounded timeout. The shared setup action retains the operator's
+Node 24-compatible Helm setup pin (`Azure/setup-helm` v5.0.1).
 
 All PR jobs now use the shared setup inputs and locked Python executor. The
 scanner job owns coverage collection and analysis in one checkout, including
