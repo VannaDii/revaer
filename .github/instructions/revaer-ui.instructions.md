@@ -35,6 +35,11 @@ applyTo:
 
 # UI And E2E Maintenance
 
+- Keep the media operator route connected to the normalized root, profile,
+  association and job APIs. Conditional writes require their server ETag;
+  private configuration reads must disable browser caching. Retain the media
+  authoring, readiness, discovery and job-action regression tests.
+
 - Keep the SSE store exhaustive over media lifecycle events and request refreshed
   state for those events, preserving the existing refresh behavior.
 

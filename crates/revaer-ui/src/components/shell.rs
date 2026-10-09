@@ -1,7 +1,7 @@
 use crate::app::Route;
 use crate::components::atoms::IconButton;
 use crate::components::atoms::icons::{
-    IconDownload, IconHome, IconLogOut, IconMenu, IconMoon, IconPanelLeftClose,
+    IconDownload, IconFileVideo, IconHome, IconLogOut, IconMenu, IconMoon, IconPanelLeftClose,
     IconPanelLeftDashed, IconSearch, IconServer, IconSettings, IconSun,
 };
 use crate::components::connectivity::{ConnectivityIndicator, ConnectivityModal};
@@ -37,6 +37,7 @@ pub(crate) fn app_shell(props: &ShellProps) -> Html {
     let home_active = matches!(props.active, Route::Dashboard);
     let indexers_active = matches!(props.active, Route::Indexers);
     let search_active = matches!(props.active, Route::Search);
+    let media_active = matches!(props.active, Route::Media);
     let torrents_active = matches!(props.active, Route::Torrents | Route::TorrentDetail { .. });
     let settings_active = matches!(props.active, Route::Settings);
     let logs_active = matches!(props.active, Route::Logs);
@@ -145,6 +146,14 @@ pub(crate) fn app_shell(props: &ShellProps) -> Html {
                                     <IconSearch size={Some(AttrValue::from("4"))} />
                                     <span class="sidebar-nav__label grow">
                                         {props.nav.search.clone()}
+                                    </span>
+                                </Link<Route>>
+                                <Link<Route>
+                                    to={Route::Media}
+                                    classes={classes!("menu-item", menu_item_state_class(media_active))}>
+                                    <IconFileVideo size={Some(AttrValue::from("4"))} />
+                                    <span class="sidebar-nav__label grow">
+                                        {props.nav.media.clone()}
                                     </span>
                                 </Link<Route>>
                                 <Link<Route>
