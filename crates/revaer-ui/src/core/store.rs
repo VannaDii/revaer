@@ -532,7 +532,19 @@ pub(crate) fn apply_sse_envelope(
             }
             CoreEvent::SelectionReconciled { .. }
             | CoreEvent::SettingsChanged { .. }
-            | CoreEvent::HealthChanged { .. } => SseApplyOutcome::Refresh,
+            | CoreEvent::HealthChanged { .. }
+            | CoreEvent::MediaProfileChanged { .. }
+            | CoreEvent::MediaCapabilitiesRefreshed { .. }
+            | CoreEvent::MediaCapabilitiesRefreshFailed { .. }
+            | CoreEvent::MediaDiscoveryPreviewed { .. }
+            | CoreEvent::MediaJobQueued { .. }
+            | CoreEvent::MediaJobInspected { .. }
+            | CoreEvent::MediaJobPlanned { .. }
+            | CoreEvent::MediaJobExecutionStarted { .. }
+            | CoreEvent::MediaJobVerificationFailed { .. }
+            | CoreEvent::MediaJobCompleted { .. }
+            | CoreEvent::MediaJobFailed { .. }
+            | CoreEvent::MediaJobHistoryPruned { .. } => SseApplyOutcome::Refresh,
         },
     }
 }
