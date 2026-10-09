@@ -9,6 +9,8 @@ pub(crate) enum Route {
     Indexers,
     #[at("/search")]
     Search,
+    #[at("/media")]
+    Media,
     #[at("/torrents")]
     Torrents,
     #[at("/torrents/:id")]
