@@ -15,6 +15,10 @@ applyTo:
 
 # Database Rules
 
+- Configuration bootstrap verifies the packaged baseline without applying
+  migrations. Runtime stores construct from the verified caller-owned pool;
+  their construction performs no database operations.
+
 - Packaged baseline verification is read-only and checks the exact initializer
   digest and restricted runtime identity. It does not adopt or repair databases.
   Root catalog and immutable profile adapters retain stored-procedure access.

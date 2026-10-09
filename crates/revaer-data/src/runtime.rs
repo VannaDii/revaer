@@ -51,19 +51,13 @@ const FS_JOB_FAILED_CALL: &str =
 const SELECT_FS_JOB_STATE_CALL: &str = "SELECT status, attempt, src_path, dst_path, transfer_mode, last_error, updated_at FROM revaer_runtime.fs_job_state(_torrent_id => $1)";
 
 impl RuntimeStore {
-    /// Initialise the runtime store, applying pending migrations.
+    /// Construct the runtime store from a caller-owned pool.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if migrations fail or the database is unreachable.
-    pub async fn new(pool: PgPool) -> Result<Self> {
-        let mut migrator = sqlx::migrate!("./migrations");
-        migrator.set_ignore_missing(true);
-        migrator
-            .run(&pool)
-            .await
-            .map_err(|source| DataError::MigrationFailed { source })?;
-        Ok(Self { pool })
+    /// Bootstrap verifies the packaged baseline before supplying this pool.
+    /// Construction performs no database operation or schema changes.
+    #[must_use]
+    pub const fn new(pool: PgPool) -> Self {
+        Self { pool }
     }
 
     /// Access the underlying connection pool.
