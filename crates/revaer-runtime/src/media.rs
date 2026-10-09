@@ -782,6 +782,7 @@ impl MediaStore {
 
 #[cfg(test)]
 mod tests {
+    mod admission;
     use super::MediaStore;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
     use revaer_data::media::capabilities::{
@@ -1069,45 +1070,18 @@ mod tests {
         let (postgres, store) = test_store().await?;
         let actor = system_actor(store.pool()).await?;
 
-        let profile_id = store
-            .upsert_profile(&UpsertMediaProfileInput {
-                actor_public_id: actor,
-                profile_key: "tv-runtime",
-                source_root: "/input/tv",
-                output_root: "/output/tv",
-                dry_run_only: true,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            })
-            .await?;
+        let (profile_id, job_id) =
+            admission::enqueue(&postgres, &store, actor, "tv-runtime").await?;
 
-        let profiles = store.list_profiles().await?;
+        let profiles =
+            revaer_data::media::profile_versions::read_profile_page(store.pool(), 10, None, None)
+                .await?;
         assert!(
             profiles
                 .iter()
                 .any(|profile| profile.media_profile_public_id == profile_id)
         );
 
-        let job_id = store
-            .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
-                actor_public_id: actor,
-                media_profile_public_id: profile_id,
-                source_path: "/input/tv/show.mkv",
-                output_path: Some("/output/tv/show.mkv"),
-                dry_run: true,
-                source_identity: "0000000000000001:0000000000000001",
-                source_size_bytes: 1,
-                source_modified_ns: 1,
-                source_changed_ns: 1,
-                source_sha256: &"1".repeat(64),
-            })
-            .await?
-            .map(|job| job.media_job_public_id)
-            .ok_or_else(|| anyhow::anyhow!("runtime test job should be queued"))?;
         let claim_generation = claim_job(&store, job_id).await?;
         append_and_assert_job_records(&store, profile_id, job_id, claim_generation).await?;
 
@@ -1153,37 +1127,7 @@ mod tests {
         let (postgres, store) = test_store().await?;
         let actor = system_actor(store.pool()).await?;
 
-        let profile_id = store
-            .upsert_profile(&UpsertMediaProfileInput {
-                actor_public_id: actor,
-                profile_key: "retained-runtime",
-                source_root: "/input/runtime",
-                output_root: "/output/runtime",
-                dry_run_only: true,
-                retention_days: 1,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            })
-            .await?;
-        let job_id = store
-            .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
-                actor_public_id: actor,
-                media_profile_public_id: profile_id,
-                source_path: "/input/runtime/finished.mkv",
-                output_path: Some("/output/runtime/finished.mkv"),
-                dry_run: true,
-                source_identity: "0000000000000002:0000000000000002",
-                source_size_bytes: 2,
-                source_modified_ns: 2,
-                source_changed_ns: 2,
-                source_sha256: &"2".repeat(64),
-            })
-            .await?
-            .map(|job| job.media_job_public_id)
-            .ok_or_else(|| anyhow::anyhow!("completed runtime test job should be queued"))?;
+        let (_, job_id) = admission::enqueue(&postgres, &store, actor, "retained-runtime").await?;
 
         store.mark_job_completed(job_id).await?;
         store
@@ -1281,55 +1225,38 @@ mod tests {
     async fn media_store_cleans_up_failed_terminal_diagnostics() -> anyhow::Result<()> {
         let (postgres, store) = test_store().await?;
         let actor = system_actor(store.pool()).await?;
-        let profile_id = store
-            .upsert_profile(&UpsertMediaProfileInput {
-                actor_public_id: actor,
-                profile_key: "diagnostic-runtime",
-                source_root: "/input/diagnostic-runtime",
-                output_root: "/output/diagnostic-runtime",
-                dry_run_only: true,
-                retention_days: 3650,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            })
-            .await?;
-        let job_id = store
-            .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
-                actor_public_id: actor,
-                media_profile_public_id: profile_id,
-                source_path: "/input/diagnostic-runtime/cancelled.mkv",
-                output_path: Some("/output/diagnostic-runtime/cancelled.mkv"),
-                dry_run: true,
-                source_identity: "0000000000000003:0000000000000003",
-                source_size_bytes: 3,
-                source_modified_ns: 3,
-                source_changed_ns: 3,
-                source_sha256: &"3".repeat(64),
-            })
-            .await?
-            .map(|job| job.media_job_public_id)
-            .ok_or_else(|| anyhow::anyhow!("diagnostic runtime test job should be queued"))?;
+        let (_, job_id) =
+            admission::enqueue(&postgres, &store, actor, "diagnostic-runtime").await?;
         let claim_generation = claim_job(&store, job_id).await?;
         append_cleanup_diagnostics(&store, job_id, claim_generation).await?;
         store.cancel_job(job_id).await?;
         store
             .acknowledge_job_cancel(job_id, claim_generation, 0)
             .await?;
+        assert_eq!(
+            store.list_job_desired_target_streams(job_id).await?.len(),
+            1
+        );
 
         let outcome = store
             .run_job_retention(chrono::Utc::now() + chrono::Duration::days(31))
             .await?;
 
         assert_eq!(outcome.failed_jobs_pruned, 1);
-        assert_eq!(outcome.failed_detail_rows_deleted, 4);
+        // Native admission snapshots one target stream in addition to the four
+        // explicitly appended diagnostic rows; retention removes all five.
+        assert_eq!(outcome.failed_detail_rows_deleted, 5);
         assert!(store.get_job(job_id).await?.is_some());
         assert!(store.list_job_violations(job_id).await?.is_empty());
         assert!(store.list_job_plan_reasons(job_id).await?.is_empty());
         assert!(store.list_job_verification_checks(job_id).await?.is_empty());
         assert!(store.list_job_artifacts(job_id).await?.is_empty());
+        assert!(
+            store
+                .list_job_desired_target_streams(job_id)
+                .await?
+                .is_empty()
+        );
         assert_eq!(store.list_job_compact_audits(job_id).await?.len(), 1);
         store.pool().close().await;
         postgres.close()?;
