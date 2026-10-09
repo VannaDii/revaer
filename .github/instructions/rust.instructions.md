@@ -47,6 +47,9 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 
 # CI And Recipe Maintenance
 
+- Source inspection retains the bounded ffprobe frame sample and attributes
+  frame side data only to its reported stream index; unindexed frames are ignored.
+
 - The application's default `compat-qb` feature forwards the API compatibility
   feature explicitly. Disable API dependency defaults so the application's
   no-default-feature gate exercises the actual compatibility-free configuration.
