@@ -9,7 +9,7 @@ use crate::core::auth::{AuthState, LocalAuth};
 use crate::core::events::UiEventEnvelope;
 use crate::core::logic::{SseEndpoint, SseQuery, backoff_delay_ms, build_sse_url};
 use crate::core::store::{SseConnectionState, SseError, SseStatus};
-use crate::services::sse::{SseDecodeError, SseParser, decode_frame};
+use crate::services::sse::{SseDecodeError, SseFrame, SseParser, decode_frame};
 use gloo::console;
 use gloo_timers::future::TimeoutFuture;
 use js_sys::Date;
@@ -51,6 +51,19 @@ pub(crate) fn connect_sse(
     Some(SseHandle { controller })
 }
 
+struct SseLoopState {
+    auth_label: Option<String>,
+    attempt: u32,
+    retry_hint_ms: Option<u64>,
+    last_event_id: Option<u64>,
+}
+
+struct SseCallbacks {
+    on_event: Callback<UiEventEnvelope>,
+    on_error: Callback<SseDecodeError>,
+    on_state: Callback<SseStatus>,
+}
+
 async fn run_sse_loop(
     base_url: String,
     auth: Option<AuthState>,
@@ -60,251 +73,227 @@ async fn run_sse_loop(
     on_error: Callback<SseDecodeError>,
     on_state: Callback<SseStatus>,
 ) {
-    let auth_label = auth_label(&auth);
-    let mut attempt = 0u32;
-    let mut retry_hint_ms: Option<u64> = None;
-    let mut last_event_id = load_last_event_id();
-
-    loop {
-        if signal.aborted() {
-            break;
-        }
-
-        emit_status(
-            &on_state,
+    let mut state = SseLoopState {
+        auth_label: auth_label(&auth),
+        attempt: 0,
+        retry_hint_ms: None,
+        last_event_id: load_last_event_id(),
+    };
+    let callbacks = SseCallbacks {
+        on_event,
+        on_error,
+        on_state,
+    };
+    while !signal.aborted() {
+        emit_stream_state(
+            &callbacks,
+            &state,
             SseConnectionState::Reconnecting,
-            &auth_label,
-            last_event_id,
-            None,
-            None,
             Some(SseError {
                 message: "connecting".to_string(),
                 status_code: None,
             }),
         );
-
-        match open_stream(&base_url, &auth, &query, last_event_id, &signal).await {
-            Ok(mut reader) => {
-                let mut parser = SseParser::default();
-                let decoder = match TextDecoder::new() {
-                    Ok(decoder) => decoder,
-                    Err(err) => {
-                        if signal.aborted() {
-                            return;
-                        }
-                        let error = SseError {
-                            message: format!("decoder error: {err:?}"),
-                            status_code: None,
-                        };
-                        emit_status(
-                            &on_state,
-                            SseConnectionState::Disconnected,
-                            &auth_label,
-                            last_event_id,
-                            None,
-                            None,
-                            Some(error),
-                        );
-                        return;
-                    }
+        match open_stream(&base_url, &auth, &query, state.last_event_id, &signal).await {
+            Ok(reader) => {
+                let Err(error) = consume_sse_stream(reader, &signal, &mut state, &callbacks).await
+                else {
+                    return;
                 };
-                attempt = 0;
-                retry_hint_ms = None;
-                emit_status(
-                    &on_state,
-                    SseConnectionState::Connected,
-                    &auth_label,
-                    last_event_id,
-                    None,
-                    None,
-                    None,
-                );
-
-                loop {
-                    if signal.aborted() {
-                        return;
-                    }
-                    match read_chunk(&mut reader).await {
-                        Ok(Some(bytes)) => {
-                            let text = match decoder.decode_with_js_u8_array(&bytes) {
-                                Ok(text) => text,
-                                Err(err) => {
-                                    if signal.aborted() {
-                                        return;
-                                    }
-                                    let error = SseError {
-                                        message: format!("decode error: {err:?}"),
-                                        status_code: None,
-                                    };
-                                    emit_status(
-                                        &on_state,
-                                        SseConnectionState::Disconnected,
-                                        &auth_label,
-                                        last_event_id,
-                                        None,
-                                        None,
-                                        Some(error),
-                                    );
-                                    return;
-                                }
-                            };
-                            for frame in parser.push(&text) {
-                                if let Some(retry) = frame.retry {
-                                    retry_hint_ms = Some(retry);
-                                }
-                                match decode_frame(&frame) {
-                                    Ok(envelope) => {
-                                        if let Some(id) = envelope.id {
-                                            last_event_id = Some(id);
-                                            persist_last_event_id(id);
-                                        }
-                                        emit_status(
-                                            &on_state,
-                                            SseConnectionState::Connected,
-                                            &auth_label,
-                                            last_event_id,
-                                            None,
-                                            None,
-                                            None,
-                                        );
-                                        on_event.emit(envelope);
-                                    }
-                                    Err(err) => {
-                                        on_error.emit(err);
-                                    }
-                                }
-                            }
-                        }
-                        Ok(None) => {
-                            if let Some(frame) = parser.finish() {
-                                match decode_frame(&frame) {
-                                    Ok(envelope) => {
-                                        if let Some(id) = envelope.id {
-                                            last_event_id = Some(id);
-                                            persist_last_event_id(id);
-                                        }
-                                        emit_status(
-                                            &on_state,
-                                            SseConnectionState::Connected,
-                                            &auth_label,
-                                            last_event_id,
-                                            None,
-                                            None,
-                                            None,
-                                        );
-                                        on_event.emit(envelope);
-                                    }
-                                    Err(err) => {
-                                        if signal.aborted() {
-                                            return;
-                                        }
-                                        on_error.emit(err);
-                                    }
-                                }
-                            }
-                            let error = SseError {
-                                message: "stream ended".to_string(),
-                                status_code: None,
-                            };
-                            emit_status(
-                                &on_state,
-                                SseConnectionState::Disconnected,
-                                &auth_label,
-                                last_event_id,
-                                None,
-                                None,
-                                Some(error.clone()),
-                            );
-                            if signal.aborted() {
-                                return;
-                            }
-                            schedule_reconnect(
-                                &on_state,
-                                &auth_label,
-                                retry_hint_ms,
-                                attempt,
-                                last_event_id,
-                                error,
-                            )
-                            .await;
-                            break;
-                        }
-                        Err(err) => {
-                            let error = SseError {
-                                message: format!("read error: {err}"),
-                                status_code: None,
-                            };
-                            emit_status(
-                                &on_state,
-                                SseConnectionState::Disconnected,
-                                &auth_label,
-                                last_event_id,
-                                None,
-                                None,
-                                Some(error.clone()),
-                            );
-                            if signal.aborted() {
-                                return;
-                            }
-                            schedule_reconnect(
-                                &on_state,
-                                &auth_label,
-                                retry_hint_ms,
-                                attempt,
-                                last_event_id,
-                                error,
-                            )
-                            .await;
-                            break;
-                        }
-                    }
-                }
-            }
-            Err(err) => {
-                if signal.aborted() {
+                if reconnect_after_read_error(error, &signal, &state, &callbacks)
+                    .await
+                    .is_err()
+                {
                     return;
                 }
-                if matches!(err, ConnectError::Conflict) {
-                    clear_last_event_id();
-                    last_event_id = None;
-                    retry_hint_ms = None;
-                }
-                let error = connect_error_to_sse_error(&err);
-                emit_status(
-                    &on_state,
-                    SseConnectionState::Disconnected,
-                    &auth_label,
-                    last_event_id,
-                    None,
-                    None,
-                    Some(error.clone()),
-                );
-                if matches!(err, ConnectError::Conflict) || should_reconnect(&err) {
-                    let reconnect_attempt = if matches!(err, ConnectError::Conflict) {
-                        0
-                    } else {
-                        attempt
-                    };
-                    if signal.aborted() {
-                        return;
-                    }
-                    schedule_reconnect(
-                        &on_state,
-                        &auth_label,
-                        retry_hint_ms,
-                        reconnect_attempt,
-                        last_event_id,
-                        error,
-                    )
-                    .await;
-                } else {
+            }
+            Err(error) => {
+                if reconnect_after_open_error(error, &signal, &mut state, &callbacks)
+                    .await
+                    .is_err()
+                {
                     return;
                 }
             }
         }
-
-        attempt = attempt.saturating_add(1);
+        state.attempt = state.attempt.saturating_add(1);
     }
+}
+
+#[derive(Debug)]
+enum SseReadError {
+    Decoder(JsValue),
+    Decode(JsValue),
+    Read(String),
+    Ended,
+}
+
+impl std::fmt::Display for SseReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Decoder(error) => write!(f, "decoder error: {error:?}"),
+            Self::Decode(error) => write!(f, "decode error: {error:?}"),
+            Self::Read(error) => write!(f, "read error: {error}"),
+            Self::Ended => f.write_str("stream ended"),
+        }
+    }
+}
+
+async fn consume_sse_stream(
+    mut reader: ReadableStreamDefaultReader,
+    signal: &AbortSignal,
+    state: &mut SseLoopState,
+    callbacks: &SseCallbacks,
+) -> Result<(), SseReadError> {
+    let mut parser = SseParser::default();
+    let decoder = TextDecoder::new().map_err(SseReadError::Decoder)?;
+    state.attempt = 0;
+    state.retry_hint_ms = None;
+    emit_stream_state(callbacks, state, SseConnectionState::Connected, None);
+    loop {
+        if signal.aborted() {
+            return Ok(());
+        }
+        match read_chunk(&mut reader).await.map_err(SseReadError::Read)? {
+            Some(bytes) => {
+                let text = decoder
+                    .decode_with_js_u8_array(&bytes)
+                    .map_err(SseReadError::Decode)?;
+                dispatch_sse_frames(parser.push(&text), state, callbacks);
+            }
+            None => {
+                if let Some(frame) = parser.finish()
+                    && let Err(error) = dispatch_sse_frame(&frame, state, callbacks)
+                {
+                    if signal.aborted() {
+                        return Ok(());
+                    }
+                    callbacks.on_error.emit(error);
+                }
+                return Err(SseReadError::Ended);
+            }
+        }
+    }
+}
+
+fn dispatch_sse_frames(
+    frames: impl IntoIterator<Item = SseFrame>,
+    state: &mut SseLoopState,
+    callbacks: &SseCallbacks,
+) {
+    for frame in frames {
+        if let Some(retry) = frame.retry {
+            state.retry_hint_ms = Some(retry);
+        }
+        if let Err(error) = dispatch_sse_frame(&frame, state, callbacks) {
+            callbacks.on_error.emit(error);
+        }
+    }
+}
+
+fn dispatch_sse_frame(
+    frame: &SseFrame,
+    state: &mut SseLoopState,
+    callbacks: &SseCallbacks,
+) -> Result<(), SseDecodeError> {
+    let envelope = decode_frame(frame)?;
+    if let Some(id) = envelope.id {
+        state.last_event_id = Some(id);
+        persist_last_event_id(id);
+    }
+    emit_stream_state(callbacks, state, SseConnectionState::Connected, None);
+    callbacks.on_event.emit(envelope);
+    Ok(())
+}
+
+fn emit_stream_state(
+    callbacks: &SseCallbacks,
+    state: &SseLoopState,
+    connection: SseConnectionState,
+    error: Option<SseError>,
+) {
+    emit_status(
+        &callbacks.on_state,
+        connection,
+        &state.auth_label,
+        state.last_event_id,
+        None,
+        None,
+        error,
+    );
+}
+
+async fn reconnect_after_read_error(
+    error: SseReadError,
+    signal: &AbortSignal,
+    state: &SseLoopState,
+    callbacks: &SseCallbacks,
+) -> Result<(), SseReadError> {
+    let fatal = matches!(&error, SseReadError::Decoder(_) | SseReadError::Decode(_));
+    if fatal && signal.aborted() {
+        return Err(error);
+    }
+    let status_error = SseError {
+        message: error.to_string(),
+        status_code: None,
+    };
+    emit_stream_state(
+        callbacks,
+        state,
+        SseConnectionState::Disconnected,
+        Some(status_error.clone()),
+    );
+    if fatal || signal.aborted() {
+        return Err(error);
+    }
+    schedule_reconnect(
+        &callbacks.on_state,
+        &state.auth_label,
+        state.retry_hint_ms,
+        state.attempt,
+        state.last_event_id,
+        status_error,
+    )
+    .await;
+    Ok(())
+}
+
+async fn reconnect_after_open_error(
+    error: ConnectError,
+    signal: &AbortSignal,
+    state: &mut SseLoopState,
+    callbacks: &SseCallbacks,
+) -> Result<(), ConnectError> {
+    if signal.aborted() {
+        return Err(error);
+    }
+    let conflict = matches!(&error, ConnectError::Conflict);
+    if conflict {
+        clear_last_event_id();
+        state.last_event_id = None;
+        state.retry_hint_ms = None;
+    }
+    let status_error = connect_error_to_sse_error(&error);
+    emit_stream_state(
+        callbacks,
+        state,
+        SseConnectionState::Disconnected,
+        Some(status_error.clone()),
+    );
+    if !(conflict || should_reconnect(&error)) || signal.aborted() {
+        return Err(error);
+    }
+    let attempt = if conflict { 0 } else { state.attempt };
+    schedule_reconnect(
+        &callbacks.on_state,
+        &state.auth_label,
+        state.retry_hint_ms,
+        attempt,
+        state.last_event_id,
+        status_error,
+    )
+    .await;
+    Ok(())
 }
 
 async fn open_stream(
