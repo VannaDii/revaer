@@ -693,6 +693,8 @@ checksum = "61c618f09812e388d1d065fd43fdc4340fade506ab2e0903397bf238650fce45"
 [[package]]
 name = "cxxbridge-macro"
 version = "1.0.195"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "415b113deba00cc605302b9b0b4974ab3d57c41135d81737cd47b89dbaa17c38"
 dependencies = [
  "indexmap",
  "proc-macro2",

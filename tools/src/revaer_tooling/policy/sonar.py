@@ -98,7 +98,7 @@ REQUIRED_VALUES = {
     "sonar.scm.exclusions.disabled": "true",
     "sonar.scm.disabled": "false",
     "sonar.scm.provider": "git",
-    "sonar.scm.forceReloadAll": "true",
+    "sonar.scm.forceReloadAll": "false",
     "sonar.sensor.cache.project.enable": "true",
     "sonar.scanner.keepReport": "true",
     "sonar.tests": ".sonar-test-scope",
