@@ -1,11 +1,24 @@
 use super::*;
 use revaer_config::{SettingsChangeset, SettingsFacade};
 use revaer_events::Event;
+use revaer_media_runtime::capabilities::{
+    CapabilityDetectError, CapabilityDetector, CapabilitySnapshot,
+};
 use revaer_test_support::postgres::start_postgres;
 use std::net::TcpListener;
 use tokio::runtime::Runtime;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
+
+struct FailingCapabilityDetector;
+
+impl CapabilityDetector for FailingCapabilityDetector {
+    fn detect(&self) -> Result<CapabilitySnapshot, CapabilityDetectError> {
+        Err(CapabilityDetectError::CommandFailed(
+            "deterministic startup probe failure".to_string(),
+        ))
+    }
+}
 
 fn test_media_workspace() -> AppResult<tempfile::TempDir> {
     tempfile::tempdir().map_err(|source| AppError::Io {
@@ -292,6 +305,54 @@ async fn build_api_server_accepts_bootstrapped_config() -> anyhow::Result<()> {
         .map_err(|source| AppError::Compliance { source })?;
     let server = build_api_server(&config, &events, None, telemetry, media, source_compliance)?;
     drop(server);
+    postgres.close()?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn startup_media_capability_failure_degrades_without_failing_bootstrap() -> anyhow::Result<()>
+{
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
+    let config = ConfigService::new(postgres.connection_string().to_string()).await?;
+    let events = EventBus::with_capacity(4);
+    let mut stream = events.subscribe(None);
+    let telemetry = Metrics::new()?;
+    let media = Arc::new(MediaService::new(
+        MediaStore::new(config.pool().clone()),
+        Arc::new(FailingCapabilityDetector),
+        telemetry.clone(),
+    ));
+
+    refresh_startup_media_capabilities(&media, &events, &telemetry).await;
+
+    let failure = timeout(Duration::from_secs(1), stream.next())
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("missing capability refresh failure event"))??;
+    assert!(matches!(
+        failure.event,
+        Event::MediaCapabilitiesRefreshFailed { .. }
+    ));
+    let health = timeout(Duration::from_secs(1), stream.next())
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("missing degraded health event"))??;
+    assert!(matches!(
+        health.event,
+        Event::HealthChanged { degraded }
+            if degraded == vec!["media_capability".to_string()]
+    ));
+    assert!(
+        telemetry
+            .render()?
+            .contains("events_emitted_total{type=\"media_capability_refresh_failed\"} 1")
+    );
+
+    let source_compliance = super::compliance_tests::fixture_metadata()?;
+    let server = build_api_server(&config, &events, None, telemetry, media, source_compliance)?;
+    drop(server);
+    drop(stream);
     postgres.close()?;
     Ok(())
 }
