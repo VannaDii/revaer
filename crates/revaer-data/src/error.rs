@@ -17,6 +17,11 @@ pub(crate) fn try_op(operation: &'static str) -> impl FnOnce(sqlx::Error) -> Dat
 /// Errors raised by the data access layer.
 #[derive(Debug)]
 pub enum DataError {
+    /// The runtime database does not satisfy the packaged baseline contract.
+    BaselineFailed {
+        /// Credential-free baseline failure.
+        source: crate::baseline::BaselineReadError,
+    },
     /// Migration execution failed.
     MigrationFailed {
         /// Underlying migration error.
@@ -82,6 +87,9 @@ impl DataError {
 impl Display for DataError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
+            Self::BaselineFailed { .. } => {
+                formatter.write_str("database baseline verification failed")
+            }
             Self::MigrationFailed { .. } => formatter.write_str("migration failed"),
             Self::QueryFailed { .. } => formatter.write_str("database operation failed"),
             Self::JobFailed { .. } => formatter.write_str("job run failed"),
@@ -93,6 +101,7 @@ impl Display for DataError {
 impl Error for DataError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::BaselineFailed { source } => Some(source),
             Self::MigrationFailed { source } => Some(source),
             Self::QueryFailed { source, .. } => Some(source),
             Self::JobFailed { .. } | Self::PathNotUtf8 { .. } => None,
