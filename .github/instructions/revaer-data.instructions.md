@@ -18,6 +18,8 @@ applyTo:
 - Packaged baseline verification is read-only and checks the exact initializer
   digest and restricted runtime identity. It does not adopt or repair databases.
   Root catalog and immutable profile adapters retain stored-procedure access.
+- Capability, profile and import adapters use the complete sealed initializer
+  in their database regressions, including restricted runtime verification.
 
 - Runtime application code must call stored procedures for database behavior. Do not embed inline business SQL in Rust.
 - `rv lint` mechanically enforces that `sqlx::query*` usage stays confined to `crates/revaer-data/src`, except for the disposable test-database provisioning helper at `crates/revaer-test-support/src/postgres.rs` and its integration test. Inline DDL/DML text must not appear in authored Rust.
