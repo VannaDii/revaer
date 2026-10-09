@@ -105,6 +105,80 @@ impl ApiError {
         .with_detail(message)
     }
 
+    pub(crate) fn media_method_not_allowed() -> Self {
+        Self::new(
+            StatusCode::METHOD_NOT_ALLOWED,
+            "urn:revaer:problem:media_method_not_allowed",
+            "method not allowed",
+        )
+        .with_context_field("error_code", "media_method_not_allowed")
+    }
+
+    pub(crate) fn media_profile_body_too_large() -> Self {
+        Self::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            PROBLEM_BAD_REQUEST,
+            "profile body too large",
+        )
+        .with_context_field("error_code", "media_configuration_bound_exceeded")
+    }
+
+    pub(crate) fn media_yaml_body_too_large() -> Self {
+        Self::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            PROBLEM_BAD_REQUEST,
+            "configuration bundle body too large",
+        )
+        .with_context_field("error_code", "media_configuration_bound_exceeded")
+    }
+
+    pub(crate) fn media_yaml_precondition_required() -> Self {
+        Self::new(
+            StatusCode::PRECONDITION_REQUIRED,
+            PROBLEM_BAD_REQUEST,
+            "configuration import preconditions required",
+        )
+        .with_context_field("error_code", "media_configuration_precondition_required")
+    }
+
+    pub(crate) fn media_create_precondition_required() -> Self {
+        Self::new(
+            StatusCode::PRECONDITION_REQUIRED,
+            "urn:revaer:problem:media_configuration_invalid",
+            "precondition required",
+        )
+        .with_detail("profile creation requires If-None-Match: *")
+        .with_context_field("error_code", "media_configuration_invalid")
+    }
+
+    pub(crate) fn media_replace_precondition_required() -> Self {
+        Self::new(
+            StatusCode::PRECONDITION_REQUIRED,
+            "urn:revaer:problem:media_configuration_invalid",
+            "precondition required",
+        )
+        .with_detail("configuration replacement requires the current strong If-Match")
+        .with_context_field("error_code", "media_configuration_invalid")
+    }
+
+    pub(crate) fn media_profile_version_conflict() -> Self {
+        Self::new(
+            StatusCode::PRECONDITION_FAILED,
+            "urn:revaer:problem:media_configuration_version_conflict",
+            "profile version changed",
+        )
+        .with_context_field("error_code", "media_configuration_version_conflict")
+    }
+
+    pub(crate) fn media_schedule_revision_conflict() -> Self {
+        Self::new(
+            StatusCode::PRECONDITION_FAILED,
+            "urn:revaer:problem:media_configuration_version_conflict",
+            "schedule cadence changed",
+        )
+        .with_context_field("error_code", "media_schedule_configuration_stale")
+    }
+
     pub(crate) fn unauthorized(detail: impl Into<String>) -> Self {
         Self::new(
             StatusCode::UNAUTHORIZED,

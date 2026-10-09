@@ -35,6 +35,7 @@ pub use openapi::{openapi_document, openapi_output_path};
 mod tests {
     use super::*;
     use crate::app::indexers::test_indexers;
+    use crate::app::media::noop_media;
     use crate::app::state::ApiState;
     use crate::config::{ConfigFacade, SharedConfig};
     use crate::http::auth::{AuthContext, ClientIp, map_config_error};
@@ -68,14 +69,14 @@ mod tests {
     use async_trait::async_trait;
     #[cfg(feature = "compat-qb")]
     use axum::extract::Form;
-    use axum::http::header::RETRY_AFTER;
+    use axum::http::header::{CONTENT_TYPE, RETRY_AFTER};
     #[cfg(feature = "compat-qb")]
     use axum::http::{HeaderMap, HeaderValue, header::COOKIE};
     use axum::{
         Extension, Json,
         body::Body,
         extract::{Path as AxumPath, Query, State},
-        http::{Request, StatusCode},
+        http::{Method, Request, StatusCode},
         response::IntoResponse,
     };
     use chrono::{DateTime, Duration as ChronoDuration, Utc};
@@ -1196,9 +1197,10 @@ mod tests {
     async fn api_state_tracks_health_and_sessions() -> Result<()> {
         let config: SharedConfig = Arc::new(MockConfig::new()?);
         let telemetry = Metrics::new().map_err(|_| anyhow!("metrics init"))?;
-        let state = ApiServer::build_state(
+        let state = ApiServer::build_state_with_media(
             config,
             test_indexers(),
+            noop_media(),
             telemetry,
             Arc::new(json!({ "openapi": "stub" })),
             EventBus::with_capacity(8),
@@ -1242,8 +1244,15 @@ mod tests {
                 }),
             )
         };
-        let server =
-            ApiServer::with_config_at(config, test_indexers(), events, None, telemetry, &openapi)?;
+        let server = ApiServer::with_config_at_with_media(
+            config,
+            test_indexers(),
+            noop_media(),
+            events,
+            None,
+            telemetry,
+            &openapi,
+        )?;
 
         let request = Request::builder()
             .uri("/health")
@@ -1260,6 +1269,163 @@ mod tests {
             persisted.load(Ordering::SeqCst),
             "OpenAPI persistence should be invoked"
         );
+        for method in ["POST", "PUT"] {
+            let request = Request::builder()
+                .method("OPTIONS")
+                .uri("/v1/media/profiles")
+                .header("origin", "http://127.0.0.1:8080")
+                .header("access-control-request-method", method)
+                .header(
+                    "access-control-request-headers",
+                    "content-type,x-revaer-api-key,if-match,if-none-match",
+                )
+                .body(Body::empty())?;
+            let response = server.router().clone().oneshot(request).await?;
+            assert!(response.status().is_success());
+            assert_eq!(
+                response.headers()["access-control-allow-origin"],
+                "http://127.0.0.1:8080"
+            );
+            let headers = response.headers()["access-control-allow-headers"].to_str()?;
+            for required in [
+                "content-type",
+                "x-revaer-api-key",
+                "if-match",
+                "if-none-match",
+            ] {
+                assert!(headers.split(',').any(|header| header.trim() == required));
+            }
+            assert!(!headers.split(',').any(|header| header.trim() == "*"));
+            assert!(
+                response.headers()["access-control-allow-methods"]
+                    .to_str()?
+                    .split(',')
+                    .any(|allowed| allowed.trim() == method)
+            );
+        }
+        let response = server
+            .router()
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .header("origin", "http://127.0.0.1:8080")
+                    .body(Body::empty())?,
+            )
+            .await?;
+        let exposed = response.headers()["access-control-expose-headers"].to_str()?;
+        for required in ["etag", "location"] {
+            assert!(exposed.split(',').any(|header| header.trim() == required));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn association_preview_route_enforces_auth_shape_body_bound_and_no_store() -> Result<()> {
+        let config = MockConfig::new()?;
+        config.set_app_mode(AppMode::Active).await;
+        config.insert_api_key("operator", "secret").await;
+        let events = EventBus::with_capacity(8);
+        let telemetry = Metrics::new().map_err(|_| anyhow!("metrics init"))?;
+        let openapi = OpenApiDependencies::new(
+            Arc::new(json!({"openapi": "stub"})),
+            server_root()?.join("preview-route.json"),
+            Arc::new(|_, _| Ok(())),
+        );
+        let server = ApiServer::with_config_at_with_media(
+            config.shared(),
+            test_indexers(),
+            noop_media(),
+            events,
+            None,
+            telemetry,
+            &openapi,
+        )?;
+        for (route, valid, retired, positional) in [
+            ("/v1/media/discovery/runs",
+             json!({"media_discovery_association_public_id": Uuid::from_u128(1), "source_paths": ["Movies/a.mkv"]}).to_string(),
+             json!({"media_profile_public_id": Uuid::from_u128(1), "source_paths": ["/private/a"]}).to_string(),
+             format!("[\"{}\",[\"a\"]]", Uuid::from_u128(1))),
+            ("/v1/media/discovery/preview",
+             json!({"media_discovery_association_public_id": Uuid::from_u128(1), "source_paths": ["Movies/a.mkv"]}).to_string(),
+             json!({"media_profile_public_id": Uuid::from_u128(1), "source_paths": ["/private/a"]}).to_string(),
+             format!("[\"{}\",[\"a\"]]", Uuid::from_u128(1))),
+            ("/v1/media/planning/preview",
+             json!({"media_discovery_association_public_id": Uuid::from_u128(1), "source_path": "Movies/a.mkv"}).to_string(),
+             json!({"media_profile_public_id": Uuid::from_u128(1), "source_path": "/private/a"}).to_string(),
+             format!("[\"{}\",\"a\"]", Uuid::from_u128(1))),
+        ] {
+        for (body, authenticated, expected) in [
+            ("not-json".to_owned(), false, StatusCode::UNAUTHORIZED),
+            ("not-json".to_owned(), true, StatusCode::BAD_REQUEST),
+            (retired, true, StatusCode::BAD_REQUEST),
+            (positional, true, StatusCode::BAD_REQUEST),
+            ("x".repeat(1024 * 1024 + 1), true, StatusCode::PAYLOAD_TOO_LARGE),
+            (valid, true, StatusCode::SERVICE_UNAVAILABLE),
+        ] {
+            let mut request = Request::post(route).header("content-type", "application/json")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 3000))));
+            if authenticated {
+                request = request.header("x-revaer-api-key", "operator:secret");
+            }
+            let response = server.router().clone().oneshot(request.body(Body::from(body))?).await?;
+            assert_eq!(response.status(), expected);
+            assert_eq!(response.headers()["cache-control"], "no-store");
+        }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_evidence_routes_are_read_only_over_http() -> Result<()> {
+        let config = MockConfig::new()?;
+        config.set_app_mode(AppMode::Active).await;
+        config.insert_api_key("operator", "secret").await;
+        let telemetry = Metrics::new().map_err(|_| anyhow!("metrics init"))?;
+        let events = EventBus::with_capacity(8);
+        let openapi_path = server_root()?.join("revaer-openapi-evidence-route-test.json");
+        let document = Arc::new(json!({ "openapi": "stub" }));
+        let openapi = OpenApiDependencies::new(document, openapi_path, Arc::new(|_, _| Ok(())));
+        let server = ApiServer::with_config_at_with_media(
+            config.shared(),
+            test_indexers(),
+            noop_media(),
+            events,
+            None,
+            telemetry,
+            &openapi,
+        )?;
+        let job_id = Uuid::new_v4();
+        for (collection, expected_status) in [
+            ("phases", StatusCode::METHOD_NOT_ALLOWED),
+            ("operations", StatusCode::METHOD_NOT_ALLOWED),
+            ("violations", StatusCode::METHOD_NOT_ALLOWED),
+            ("plan-reasons", StatusCode::METHOD_NOT_ALLOWED),
+            ("verification-checks", StatusCode::METHOD_NOT_ALLOWED),
+            ("artifacts", StatusCode::METHOD_NOT_ALLOWED),
+            ("compact-audits", StatusCode::METHOD_NOT_ALLOWED),
+        ] {
+            let request = Request::builder()
+                .method(Method::POST)
+                .uri(format!("/v1/media/jobs/{job_id}/{collection}"))
+                .header("x-revaer-api-key", "operator:secret")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from("{}"))
+                .map_err(|_| anyhow!("request build"))?;
+
+            let response = server
+                .router()
+                .clone()
+                .oneshot(request)
+                .await
+                .map_err(|_| anyhow!("request failed"))?;
+
+            assert_eq!(
+                response.status(),
+                expected_status,
+                "{collection} must remain read-only over HTTP"
+            );
+        }
         Ok(())
     }
 

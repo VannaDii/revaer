@@ -196,7 +196,12 @@ async fn bootstrap_dependencies_from_database_url_track_persisted_settings_chang
         events,
         telemetry,
         ..
-    } = BootstrapDependencies::from_database_url(postgres.connection_string().to_string()).await?;
+    } = BootstrapDependencies::from_database_url(
+        postgres.connection_string().to_string(),
+        super::compliance_tests::fixture_metadata()
+            .map_err(|source| AppError::Compliance { source })?,
+    )
+    .await?;
     watcher.disable_listen();
 
     assert!(
@@ -255,7 +260,9 @@ async fn build_api_server_accepts_bootstrapped_config() -> AppResult<()> {
     let events = EventBus::with_capacity(4);
     let telemetry = Metrics::new().map_err(|err| AppError::telemetry("telemetry.metrics", err))?;
 
-    let server = build_api_server(&config, &events, None, telemetry)?;
+    let source_compliance = super::compliance_tests::fixture_metadata()
+        .map_err(|source| AppError::Compliance { source })?;
+    let server = build_api_server(&config, &events, None, telemetry, source_compliance)?;
     drop(server);
     Ok(())
 }
@@ -272,8 +279,12 @@ async fn run_bootstrap_services_rejects_public_setup_bind_from_dependencies() ->
         }
     };
 
-    let mut dependencies =
-        BootstrapDependencies::from_database_url(postgres.connection_string().to_string()).await?;
+    let mut dependencies = BootstrapDependencies::from_database_url(
+        postgres.connection_string().to_string(),
+        super::compliance_tests::fixture_metadata()
+            .map_err(|source| AppError::Compliance { source })?,
+    )
+    .await?;
     dependencies.snapshot.app_profile.mode = AppMode::Setup;
     dependencies.snapshot.app_profile.bind_addr = IpAddr::from([10, 0, 0, 1]);
 
@@ -303,8 +314,12 @@ async fn run_bootstrap_services_rejects_zero_http_port_from_dependencies() -> Ap
         }
     };
 
-    let mut dependencies =
-        BootstrapDependencies::from_database_url(postgres.connection_string().to_string()).await?;
+    let mut dependencies = BootstrapDependencies::from_database_url(
+        postgres.connection_string().to_string(),
+        super::compliance_tests::fixture_metadata()
+            .map_err(|source| AppError::Compliance { source })?,
+    )
+    .await?;
     dependencies.snapshot.app_profile.http_port = 0;
 
     let err = Box::pin(run_bootstrap_services(dependencies))
@@ -350,8 +365,12 @@ async fn run_bootstrap_services_surfaces_bind_failures_for_valid_snapshot() -> A
             .port(),
     );
 
-    let mut dependencies =
-        BootstrapDependencies::from_database_url(postgres.connection_string().to_string()).await?;
+    let mut dependencies = BootstrapDependencies::from_database_url(
+        postgres.connection_string().to_string(),
+        super::compliance_tests::fixture_metadata()
+            .map_err(|source| AppError::Compliance { source })?,
+    )
+    .await?;
     dependencies.snapshot.app_profile.mode = AppMode::Setup;
     dependencies.snapshot.app_profile.bind_addr = IpAddr::from([127, 0, 0, 1]);
     dependencies.snapshot.app_profile.http_port = reserved_port;

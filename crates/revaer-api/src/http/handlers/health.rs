@@ -385,22 +385,29 @@ mod tests {
         }
     }
 
+    fn api_state_with_handles(
+        config: Arc<dyn ConfigFacade>,
+        inspector: StubInspector,
+    ) -> Result<ApiState> {
+        let telemetry = Metrics::new()?;
+        let handles = TorrentHandles::new(StdArc::new(StubWorkflow), StdArc::new(inspector));
+        Ok(ApiState::new(
+            config,
+            test_indexers(),
+            telemetry,
+            Arc::new(serde_json::json!({})),
+            EventBus::new(),
+            Some(handles),
+        ))
+    }
+
     fn state_with_handles(
         config: Arc<dyn ConfigFacade>,
         inspector: StubInspector,
     ) -> Result<Arc<ApiState>> {
-        let telemetry = Metrics::new()?;
-        let handles = TorrentHandles::new(StdArc::new(StubWorkflow), StdArc::new(inspector));
         Ok(Arc::new(
-            ApiState::new(
-                config,
-                test_indexers(),
-                telemetry,
-                Arc::new(serde_json::json!({})),
-                EventBus::new(),
-                Some(handles),
-            )
-            .with_dashboard_disk_usage(deterministic_dashboard_disk_usage),
+            api_state_with_handles(config, inspector)?
+                .with_dashboard_disk_usage(deterministic_dashboard_disk_usage),
         ))
     }
 
@@ -525,49 +532,52 @@ mod tests {
             snapshot,
             fail: false,
         });
-        let state = state_with_handles(
-            config,
-            StubInspector {
-                statuses: vec![
-                    TorrentStatus {
-                        id: Uuid::new_v4(),
-                        state: revaer_events::TorrentState::Downloading,
-                        rates: TorrentRates {
-                            download_bps: 128,
-                            upload_bps: 64,
-                            ratio: 0.5,
+        let state = Arc::new(
+            api_state_with_handles(
+                config,
+                StubInspector {
+                    statuses: vec![
+                        TorrentStatus {
+                            id: Uuid::new_v4(),
+                            state: revaer_events::TorrentState::Downloading,
+                            rates: TorrentRates {
+                                download_bps: 128,
+                                upload_bps: 64,
+                                ratio: 0.5,
+                            },
+                            progress: TorrentProgress {
+                                bytes_downloaded: 5,
+                                bytes_total: 10,
+                                eta_seconds: Some(5),
+                            },
+                            ..TorrentStatus::default()
                         },
-                        progress: TorrentProgress {
-                            bytes_downloaded: 5,
-                            bytes_total: 10,
-                            eta_seconds: Some(5),
+                        TorrentStatus {
+                            id: Uuid::new_v4(),
+                            state: revaer_events::TorrentState::Stopped,
+                            ..TorrentStatus::default()
                         },
-                        ..TorrentStatus::default()
-                    },
-                    TorrentStatus {
-                        id: Uuid::new_v4(),
-                        state: revaer_events::TorrentState::Stopped,
-                        ..TorrentStatus::default()
-                    },
-                    TorrentStatus {
-                        id: Uuid::new_v4(),
-                        state: revaer_events::TorrentState::Completed,
-                        rates: TorrentRates {
-                            download_bps: 1,
-                            upload_bps: 2,
-                            ratio: 1.0,
+                        TorrentStatus {
+                            id: Uuid::new_v4(),
+                            state: revaer_events::TorrentState::Completed,
+                            rates: TorrentRates {
+                                download_bps: 1,
+                                upload_bps: 2,
+                                ratio: 1.0,
+                            },
+                            progress: TorrentProgress {
+                                bytes_downloaded: 10,
+                                bytes_total: 10,
+                                eta_seconds: None,
+                            },
+                            ..TorrentStatus::default()
                         },
-                        progress: TorrentProgress {
-                            bytes_downloaded: 10,
-                            bytes_total: 10,
-                            eta_seconds: None,
-                        },
-                        ..TorrentStatus::default()
-                    },
-                ],
-                fail_list: false,
-            },
-        )?;
+                    ],
+                    fail_list: false,
+                },
+            )?
+            .with_dashboard_disk_usage(deterministic_dashboard_disk_usage),
+        );
 
         let Json(body) = dashboard(State(state)).await?;
         assert_eq!(body.download_bps, 129);
