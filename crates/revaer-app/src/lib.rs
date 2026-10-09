@@ -30,7 +30,7 @@ pub mod import_job_runtime;
 pub mod indexer_runtime;
 /// Indexer service wiring for API facade.
 pub mod indexers;
-/// Media service wiring for the operator API facade.
+/// Media service wiring for API facade.
 pub mod media;
 mod media_discovery_fingerprint;
 /// In-process media discovery runtime wiring.
