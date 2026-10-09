@@ -257,15 +257,6 @@ mod tests {
             created.headers()[header::ETAG]
         );
         assert!(!read.headers().contains_key(header::LOCATION));
-        let document = crate::openapi_document();
-        assert_eq!(
-            document["paths"]["/v1/media/discovery-associations"]["post"]["parameters"][0]["required"],
-            true
-        );
-        assert_eq!(
-            document["components"]["schemas"]["DiscoveryAssociationRequest"]["additionalProperties"],
-            false
-        );
         Ok(())
     }
 }

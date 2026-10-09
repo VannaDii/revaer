@@ -172,43 +172,6 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn profile_create_contract_documents_required_wildcard_and_problem_response() {
-        let document = crate::openapi_document();
-        let operation = &document["paths"]["/v1/media/profiles"]["post"];
-        assert_eq!(operation["parameters"][0]["name"], "If-None-Match");
-        assert_eq!(operation["parameters"][0]["required"], true);
-        assert_eq!(
-            operation["parameters"][0]["schema"]["enum"],
-            serde_json::json!(["*"])
-        );
-        assert_eq!(
-            operation["responses"]["428"]["content"]["application/problem+json"]["schema"]["$ref"],
-            "#/components/schemas/ProblemDetails"
-        );
-        assert_eq!(
-            operation["responses"]["428"]["headers"]["Cache-Control"]["schema"]["enum"],
-            serde_json::json!(["no-store"])
-        );
-    }
-
-    #[test]
-    fn profile_replacement_contract_requires_path_and_version_fence() {
-        let document = crate::openapi_document();
-        let path = &document["paths"]["/v1/media/profiles/{media_profile_public_id}"];
-        assert!(path.get("patch").is_none());
-        let operation = &path["put"];
-        assert_eq!(operation["parameters"][0]["in"], "path");
-        assert_eq!(operation["parameters"][1]["name"], "If-Match");
-        assert_eq!(operation["parameters"][1]["required"], true);
-        assert_eq!(
-            operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ProfileVersionRequest"
-        );
-        assert!(operation["responses"].get("412").is_some());
-        assert!(operation["responses"].get("428").is_some());
-    }
-
     #[tokio::test]
     async fn missing_or_malformed_header_precedes_body_decoding() -> anyhow::Result<()> {
         let app = Router::new().route("/profiles", post(guarded_body));

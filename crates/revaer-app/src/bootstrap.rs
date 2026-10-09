@@ -656,3 +656,7 @@ mod tests;
 #[cfg(test)]
 #[path = "bootstrap/compliance_tests.rs"]
 mod compliance_tests;
+
+#[cfg(test)]
+#[path = "bootstrap/entrypoint_tests.rs"]
+mod entrypoint_tests;
