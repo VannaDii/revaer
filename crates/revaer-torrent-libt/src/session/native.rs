@@ -28,7 +28,27 @@ pub(super) fn create_session() -> TorrentResult<Box<dyn LibTorrentSession>> {
 }
 
 impl NativeSession {
-    fn map_error(operation: &'static str, message: String) -> TorrentResult<()> {
+    fn native_result<T>(
+        operation: &'static str,
+        result: Result<T, cxx::Exception>,
+    ) -> TorrentResult<T> {
+        result.map_err(|error| {
+            op_failed(
+                operation,
+                None,
+                LibtorrentError::NativeFailure {
+                    operation,
+                    message: error.to_string(),
+                },
+            )
+        })
+    }
+
+    fn map_error(
+        operation: &'static str,
+        result: Result<String, cxx::Exception>,
+    ) -> TorrentResult<()> {
+        let message = Self::native_result(operation, result)?;
         if message.is_empty() {
             Ok(())
         } else {
@@ -391,7 +411,8 @@ impl LibTorrentSession for NativeSession {
     ) -> TorrentResult<TorrentAuthorResult> {
         let create_request = map_author_request(request);
         let session = self.inner.pin_mut();
-        let result = session.create_torrent(&create_request);
+        let result =
+            Self::native_result("create_torrent", session.create_torrent(&create_request))?;
         if !result.error.is_empty() {
             return Err(op_failed(
                 "create_torrent",
@@ -578,7 +599,7 @@ impl LibTorrentSession for NativeSession {
     async fn peers(&mut self, id: Uuid) -> TorrentResult<Vec<PeerSnapshot>> {
         let key = id.to_string();
         let session = self.inner.pin_mut();
-        let peers = session.list_peers(&key);
+        let peers = Self::native_result("list_peers", session.list_peers(&key))?;
         Ok(peers.into_iter().map(map_peer_info).collect())
     }
 
@@ -657,7 +678,7 @@ impl LibTorrentSession for NativeSession {
 
     async fn poll_events(&mut self) -> TorrentResult<Vec<EngineEvent>> {
         let session = self.inner.pin_mut();
-        let raw_events = session.poll_events();
+        let raw_events = Self::native_result("poll_events", session.poll_events())?;
         let mut events = Vec::with_capacity(raw_events.len());
 
         for native in raw_events {
@@ -820,8 +841,8 @@ mod tests {
         assert!(!options.enable_dht);
         assert!(!options.sequential_default);
 
-        assert!(NativeSession::map_error("apply_config", String::new()).is_ok());
-        let err = NativeSession::map_error("apply_config", "native failure".to_string())
+        assert!(NativeSession::map_error("apply_config", Ok(String::new())).is_ok());
+        let err = NativeSession::map_error("apply_config", Ok("native failure".to_string()))
             .err()
             .ok_or_else(|| anyhow!("expected native error"))?;
         let revaer_torrent_core::TorrentError::OperationFailed { source, .. } = err else {
@@ -979,9 +1000,10 @@ mod tests {
 
     #[test]
     fn native_failure_message_validates_error_shape() -> TorrentResult<()> {
-        let native = NativeSession::map_error("apply_config", "cache_size unsupported".to_string())
-            .err()
-            .ok_or_else(|| anyhow!("expected native failure"))?;
+        let native =
+            NativeSession::map_error("apply_config", Ok("cache_size unsupported".to_string()))
+                .err()
+                .ok_or_else(|| anyhow!("expected native failure"))?;
         assert_eq!(native_failure_message(native)?, "cache_size unsupported");
 
         let unsupported = revaer_torrent_core::TorrentError::Unsupported {
@@ -1044,6 +1066,170 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn native_session_rejects_insecure_tracker_auth_before_admission() -> Result<()> {
+        let mut harness = NativeSessionHarness::new()?;
+        harness
+            .session
+            .apply_config(&harness.runtime_config())
+            .await?;
+        let password = Uuid::new_v4().to_string();
+        for tracker in [
+            "http://localhost/announce",
+            "udp://localhost:6969/announce",
+            "ftp://localhost/announce",
+            "not-a-url",
+            "https:///announce",
+            "https://user@localhost/announce",
+            "https://@localhost/announce",
+        ] {
+            let descriptor = AddTorrent {
+                id: Uuid::new_v4(),
+                source: TorrentSource::magnet(MAGNET_URI_FOR_AUTH_TEST),
+                options: AddTorrentOptions {
+                    trackers: vec![tracker.to_string()],
+                    replace_trackers: true,
+                    tracker_auth: Some(TrackerAuth {
+                        password: Some(password.clone()),
+                        ..TrackerAuth::default()
+                    }),
+                    ..AddTorrentOptions::default()
+                },
+            };
+            let error = harness
+                .session
+                .add_torrent(&descriptor)
+                .await
+                .err()
+                .ok_or_else(|| anyhow!("insecure tracker was accepted"))?;
+            let message = native_failure_message(error)?;
+            assert!(!message.contains(&password));
+            assert!(!message.contains(tracker));
+            assert!(message.contains("tracker"));
+            // Rejection must not reserve the torrent identity.
+            let mut corrected = descriptor;
+            corrected.options.trackers = vec!["https://localhost/announce".to_string()];
+            harness.session.add_torrent(&corrected).await?;
+        }
+        Ok(())
+    }
+
+    const MAGNET_URI_FOR_AUTH_TEST: &str =
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567";
+
+    #[tokio::test]
+    async fn native_session_preserves_config_after_tracker_transport_rejection() -> Result<()> {
+        let mut harness = NativeSessionHarness::new()?;
+        let mut config = harness.runtime_config();
+        config.tracker.default = vec!["http://localhost/announce".to_string()];
+        harness.session.apply_config(&config).await?;
+        let mut rejected = config.clone();
+        rejected.tracker.auth = Some(crate::types::TrackerAuthRuntime {
+            username: Some(Uuid::new_v4().to_string()),
+            ..crate::types::TrackerAuthRuntime::default()
+        });
+        let error = harness
+            .session
+            .apply_config(&rejected)
+            .await
+            .err()
+            .ok_or_else(|| anyhow!("plaintext tracker authentication was accepted"))?;
+        assert_eq!(
+            native_failure_message(error)?,
+            "tracker authentication requires HTTPS"
+        );
+        let descriptor = AddTorrent {
+            id: Uuid::new_v4(),
+            source: TorrentSource::magnet(MAGNET_URI_FOR_AUTH_TEST),
+            options: AddTorrentOptions::default(),
+        };
+        harness.session.add_torrent(&descriptor).await?;
+        let update = revaer_torrent_core::model::TorrentTrackersUpdate {
+            trackers: vec!["https://user@localhost/announce".to_string()],
+            replace: true,
+        };
+        assert!(
+            harness
+                .session
+                .update_trackers(descriptor.id, &update)
+                .await
+                .is_err()
+        );
+        harness.session.reannounce(descriptor.id).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn native_session_keeps_tracker_credentials_out_of_events_and_resume() -> Result<()> {
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        let address = listener.local_addr()?;
+        listener.set_nonblocking(true)?;
+        let tracker = thread::spawn(move || serve_tracker_error(&listener));
+        let mut harness = NativeSessionHarness::new()?;
+        let password = Uuid::new_v4().to_string();
+        let username = Uuid::new_v4().to_string();
+        let mut config = harness.runtime_config();
+        let tracker_url = format!("https://{address}/announce");
+        config.tracker.default = vec![tracker_url.clone()];
+        config.tracker.auth = Some(crate::types::TrackerAuthRuntime {
+            username: Some(username.clone()),
+            password: Some(password.clone()),
+            ..crate::types::TrackerAuthRuntime::default()
+        });
+        harness.session.apply_config(&config).await?;
+        let descriptor = AddTorrent {
+            id: Uuid::new_v4(),
+            source: TorrentSource::magnet(MAGNET_URI_FOR_AUTH_TEST),
+            options: AddTorrentOptions::default(),
+        };
+        harness.session.add_torrent(&descriptor).await?;
+        let rejected = revaer_torrent_core::model::TorrentTrackersUpdate {
+            trackers: vec![format!("http://{address}/announce")],
+            replace: true,
+        };
+        assert!(
+            harness
+                .session
+                .update_trackers(descriptor.id, &rejected)
+                .await
+                .is_err()
+        );
+        harness.session.reannounce(descriptor.id).await?;
+        let mut saw_tracker = false;
+        let mut saw_resume = false;
+        for _ in 0..200 {
+            sleep(Duration::from_millis(25)).await;
+            for event in harness.session.poll_events().await? {
+                let text = format!("{event:?}");
+                assert!(!text.contains(&username));
+                assert!(!text.contains(&password));
+                match event {
+                    EngineEvent::TrackerStatus { trackers, .. } => {
+                        for status in trackers {
+                            assert_eq!(status.url, tracker_url);
+                            saw_tracker = true;
+                        }
+                    }
+                    EngineEvent::ResumeData { payload, .. } => {
+                        assert!(!contains_subsequence(&payload, username.as_bytes()));
+                        assert!(!contains_subsequence(&payload, password.as_bytes()));
+                        saw_resume = true;
+                    }
+                    _ => {}
+                }
+            }
+            if saw_tracker && saw_resume {
+                break;
+            }
+        }
+        tracker
+            .join()
+            .map_err(|_| anyhow!("tracker fixture thread panicked"))??;
+        assert!(saw_tracker, "expected sanitized tracker failure");
+        assert!(saw_resume, "expected sanitized resume payload");
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn native_session_reports_tracker_errors_without_invalid_memory_access()
     -> TorrentResult<()> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
@@ -1077,6 +1263,15 @@ mod tests {
                 .iter()
                 .any(|event| is_tracker_error(event, descriptor.id));
             if tracker_error {
+                assert!(
+                    events.windows(2).any(|pair| matches!(
+                        pair,
+                        [status, EngineEvent::SessionError { component, .. }]
+                            if is_tracker_error(status, descriptor.id)
+                                && component.as_deref() == Some("tracker")
+                    )),
+                    "tracker status must precede its session error"
+                );
                 break;
             }
         }
@@ -1345,6 +1540,56 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn native_session_translates_authoring_filesystem_exception_and_remains_usable()
+    -> TorrentResult<()> {
+        let mut harness = NativeSessionHarness::new()?;
+        let root_path = harness.download_path().join("authoring-loop");
+        fs::create_dir(&root_path)?;
+        let file_path = root_path.join("seed.txt");
+        fs::write(&file_path, b"revaer")?;
+        let loop_path = root_path.join("loop");
+        std::os::unix::fs::symlink("loop", &loop_path)?;
+        let request = TorrentAuthorRequest {
+            root_path: root_path.to_string_lossy().into_owned(),
+            ..TorrentAuthorRequest::default()
+        };
+
+        assert!(
+            harness
+                .session
+                .inner
+                .as_ref()
+                .create_torrent(&map_author_request(&request))
+                .is_err()
+        );
+        let error = harness
+            .session
+            .create_torrent(&request)
+            .await
+            .err()
+            .ok_or_else(|| anyhow!("expected authoring exception"))?;
+        let revaer_torrent_core::TorrentError::OperationFailed {
+            operation, source, ..
+        } = error
+        else {
+            return Err(anyhow!("expected authoring operation failure"));
+        };
+        assert_eq!(operation, "create_torrent");
+        let native = source
+            .downcast::<LibtorrentError>()
+            .map_err(|_| anyhow!("expected native failure"))?;
+        assert!(matches!(*native, LibtorrentError::NativeFailure { .. }));
+        assert_eq!(fs::read(&file_path)?, b"revaer");
+
+        fs::remove_file(&loop_path)?;
+        let result = harness.session.create_torrent(&request).await?;
+        assert!(!result.metainfo.is_empty());
+        assert_eq!(fs::read(&file_path)?, b"revaer");
+        Ok(())
+    }
+
     #[tokio::test]
     async fn native_session_authors_torrent_from_file() -> TorrentResult<()> {
         let mut harness = NativeSessionHarness::new()?;
@@ -1372,6 +1617,87 @@ mod tests {
         assert!(result.private);
         assert_eq!(result.comment.as_deref(), Some("note"));
         assert_eq!(result.source.as_deref(), Some("source"));
+        let secret = Uuid::new_v4().to_string();
+        let mut rejected = request;
+        rejected.trackers = vec![format!("https://{secret}@tracker.example/announce")];
+        let error = harness
+            .session
+            .create_torrent(&rejected)
+            .await
+            .err()
+            .ok_or_else(|| anyhow!("credential-bearing metainfo was authored"))?;
+        let message = native_failure_message(error)?;
+        assert!(message.contains("userinfo is forbidden"));
+        assert!(!message.contains(&secret));
+        assert_eq!(tokio::fs::read(file_path).await?, b"revaer");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn native_session_authors_single_file_directory_with_default_piece_length()
+    -> TorrentResult<()> {
+        let mut harness = NativeSessionHarness::new()?;
+        let config = harness.runtime_config();
+        harness.session.apply_config(&config).await?;
+
+        let root_path = harness.download_path().join("e2e-author-single-file");
+        fs::create_dir(&root_path)?;
+        fs::write(root_path.join("seed.txt"), b"revaer e2e")?;
+
+        let request = TorrentAuthorRequest {
+            root_path: root_path.to_string_lossy().into_owned(),
+            ..TorrentAuthorRequest::default()
+        };
+        let result = harness.session.create_torrent(&request).await?;
+        assert!(!result.metainfo.is_empty());
+        assert!(result.magnet_uri.starts_with("magnet:?"));
+        assert_eq!(result.total_size, 10);
+        assert_eq!(result.files.len(), 1);
+        assert_eq!(result.files[0].path, "seed.txt");
+        assert_eq!(result.files[0].size_bytes, 10);
+        assert!(result.piece_length >= 16_384);
+        assert!(result.warnings.is_empty());
+        assert_eq!(
+            bencoded_string_field(&result.metainfo, b"name")?,
+            b"e2e-author-single-file"
+        );
+        assert!(contains_subsequence(
+            &result.metainfo,
+            b"4:pathl8:seed.txte"
+        ));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn native_session_rejects_unreadable_authoring_subdirectory() -> TorrentResult<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut harness = NativeSessionHarness::new()?;
+        let root_path = harness.download_path().join("unreadable-authoring-root");
+        let blocked_path = root_path.join("blocked");
+        fs::create_dir_all(&blocked_path)?;
+        fs::write(root_path.join("readable.txt"), b"preserved source")?;
+        fs::write(blocked_path.join("hidden.txt"), b"unreadable source")?;
+        fs::set_permissions(&blocked_path, fs::Permissions::from_mode(0o0))?;
+        let request = TorrentAuthorRequest {
+            root_path: root_path.to_string_lossy().into_owned(),
+            ..TorrentAuthorRequest::default()
+        };
+        let outcome = harness.session.create_torrent(&request).await;
+        fs::set_permissions(&blocked_path, fs::Permissions::from_mode(0o700))?;
+        let error = outcome
+            .err()
+            .ok_or_else(|| anyhow!("an incomplete directory torrent was authored"))?;
+        assert!(native_failure_message(error)?.contains("failed to traverse root_path"));
+        assert_eq!(
+            fs::read(root_path.join("readable.txt"))?,
+            b"preserved source"
+        );
+        assert_eq!(
+            fs::read(blocked_path.join("hidden.txt"))?,
+            b"unreadable source"
+        );
         Ok(())
     }
 

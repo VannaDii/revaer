@@ -10,8 +10,8 @@ use chrono::{DateTime, Datelike, Timelike, Utc};
 use revaer_events::{DiscoveredFile, Event, EventBus, TorrentState};
 use revaer_torrent_core::{
     AddTorrent, EngineEvent, FilePriorityOverride, FileSelectionRules, FileSelectionUpdate,
-    RemoveTorrent, StorageMode, TorrentFile, TorrentProgress, TorrentRateLimit, TorrentRates,
-    TorrentResult, TorrentSource,
+    RemoveTorrent, StorageMode, TorrentError, TorrentFile, TorrentProgress, TorrentRateLimit,
+    TorrentRates, TorrentResult, TorrentSource,
     model::{TorrentOptionsUpdate, TorrentTrackersUpdate, TorrentWebSeedsUpdate, TrackerStatus},
 };
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -44,9 +44,7 @@ pub fn spawn(
                     match command {
                         Some(command) => {
                             if let Err(err) = worker.handle(command).await {
-                                let detail = err.to_string();
-                                worker.mark_degraded("session", Some(&detail));
-                                warn!(error = %err, "libtorrent command handling failed");
+                                worker.report_command_error(&err);
                             }
                         }
                         None => break,
@@ -240,9 +238,18 @@ impl Worker {
             EngineCommand::SetSequential { id, sequential } => {
                 self.handle_set_sequential(id, sequential).await?;
             }
-            EngineCommand::UpdateLimits { id, limits } => {
-                self.handle_update_limits(id, limits).await?;
-            }
+            EngineCommand::UpdateLimits {
+                id,
+                limits,
+                respond_to,
+            } => match self.handle_update_limits(id, limits).await {
+                Ok(()) => Self::send_response(respond_to, Ok(()), operation, id),
+                Err(err) => {
+                    self.report_command_error(&err);
+                    Self::send_response(respond_to, Err(err), operation, id);
+                    return Ok(());
+                }
+            },
             EngineCommand::UpdateSelection { id, rules } => {
                 self.handle_update_selection(id, rules).await?;
             }
@@ -271,8 +278,17 @@ impl Worker {
             } => {
                 self.handle_piece_deadline(id, piece, deadline_ms).await?;
             }
-            EngineCommand::ApplyConfig(config) => {
-                self.handle_apply_config(*config).await?;
+            EngineCommand::ApplyConfig { config, respond_to } => {
+                match self.handle_apply_config(*config).await {
+                    Ok(()) => Self::send_response(respond_to, Ok(()), operation, None),
+                    Err(err) => {
+                        self.report_command_error(&err);
+                        Self::send_response(respond_to, Err(err), operation, None);
+                        // The failure was reported and replied to; preserve the skipped
+                        // event flush so it cannot immediately clear degraded health.
+                        return Ok(());
+                    }
+                }
             }
             EngineCommand::QueryPeers { id, respond_to } => {
                 let result = self.session.peers(id).await;
@@ -285,6 +301,12 @@ impl Worker {
         }
 
         self.flush_session_events().await
+    }
+
+    fn report_command_error(&mut self, err: &TorrentError) {
+        let detail = err.to_string();
+        self.mark_degraded("session", Some(&detail));
+        warn!(error = %err, "libtorrent command handling failed");
     }
 
     async fn handle_add(&mut self, request: AddTorrent) -> TorrentResult<()> {
@@ -387,68 +409,69 @@ impl Worker {
     }
 
     fn backfill_request_from_resume(&self, request: &mut AddTorrent) {
-        if let Some(stored) = self.resume_cache.get(&request.id) {
-            if request.options.trackers.is_empty() && !stored.trackers.is_empty() {
-                request.options.trackers.clone_from(&stored.trackers);
-                request.options.replace_trackers = stored.replace_trackers;
-            }
-            if request.options.web_seeds.is_empty() && !stored.web_seeds.is_empty() {
-                request.options.web_seeds.clone_from(&stored.web_seeds);
-                request.options.replace_web_seeds = stored.replace_web_seeds;
-            }
-            if request.options.tags.is_empty() && !stored.tags.is_empty() {
-                request.options.tags.clone_from(&stored.tags);
-            }
-            if request.options.category.is_none() && stored.category.is_some() {
-                request.options.category.clone_from(&stored.category);
-            }
-            if request.options.comment.is_none() && stored.comment.is_some() {
-                request.options.comment.clone_from(&stored.comment);
-            }
-            if request.options.source.is_none() && stored.source.is_some() {
-                request.options.source.clone_from(&stored.source);
-            }
-            if request.options.private.is_none() && stored.private.is_some() {
-                request.options.private = stored.private;
-            }
-            if request.options.cleanup.is_none() && stored.cleanup.is_some() {
-                request.options.cleanup.clone_from(&stored.cleanup);
-            }
-            if request.options.connections_limit.is_none() {
-                request.options.connections_limit = stored.connections_limit;
-            }
-            if !has_rate_limit(&request.options.rate_limit)
-                && let Some(limit) = &stored.rate_limit
-            {
-                request.options.rate_limit = limit.clone();
-            }
-            if request.options.seed_mode.is_none() {
-                request.options.seed_mode = stored.seed_mode;
-            }
-            if request.options.hash_check_sample_pct.is_none() {
-                request.options.hash_check_sample_pct = stored.hash_check_sample_pct;
-            }
-            if request.options.super_seeding.is_none() {
-                request.options.super_seeding = stored.super_seeding;
-            }
-            if request.options.auto_managed.is_none() {
-                request.options.auto_managed = stored.auto_managed;
-            }
-            if request.options.queue_position.is_none() {
-                request.options.queue_position = stored.queue_position;
-            }
-            if request.options.pex_enabled.is_none() {
-                request.options.pex_enabled = stored.pex_enabled;
-            }
-            if request.options.storage_mode.is_none() {
-                request.options.storage_mode = stored.storage_mode;
-            }
-            if request.options.download_dir.is_none() && stored.download_dir.is_some() {
-                request
-                    .options
-                    .download_dir
-                    .clone_from(&stored.download_dir);
-            }
+        let Some(stored) = self.resume_cache.get(&request.id) else {
+            return;
+        };
+        if request.options.trackers.is_empty() && !stored.trackers.is_empty() {
+            request.options.trackers.clone_from(&stored.trackers);
+            request.options.replace_trackers = stored.replace_trackers;
+        }
+        if request.options.web_seeds.is_empty() && !stored.web_seeds.is_empty() {
+            request.options.web_seeds.clone_from(&stored.web_seeds);
+            request.options.replace_web_seeds = stored.replace_web_seeds;
+        }
+        if request.options.tags.is_empty() && !stored.tags.is_empty() {
+            request.options.tags.clone_from(&stored.tags);
+        }
+        if request.options.category.is_none() && stored.category.is_some() {
+            request.options.category.clone_from(&stored.category);
+        }
+        if request.options.comment.is_none() && stored.comment.is_some() {
+            request.options.comment.clone_from(&stored.comment);
+        }
+        if request.options.source.is_none() && stored.source.is_some() {
+            request.options.source.clone_from(&stored.source);
+        }
+        if request.options.private.is_none() && stored.private.is_some() {
+            request.options.private = stored.private;
+        }
+        if request.options.cleanup.is_none() && stored.cleanup.is_some() {
+            request.options.cleanup.clone_from(&stored.cleanup);
+        }
+        if request.options.connections_limit.is_none() {
+            request.options.connections_limit = stored.connections_limit;
+        }
+        if !has_rate_limit(&request.options.rate_limit)
+            && let Some(limit) = &stored.rate_limit
+        {
+            request.options.rate_limit = limit.clone();
+        }
+        if request.options.seed_mode.is_none() {
+            request.options.seed_mode = stored.seed_mode;
+        }
+        if request.options.hash_check_sample_pct.is_none() {
+            request.options.hash_check_sample_pct = stored.hash_check_sample_pct;
+        }
+        if request.options.super_seeding.is_none() {
+            request.options.super_seeding = stored.super_seeding;
+        }
+        if request.options.auto_managed.is_none() {
+            request.options.auto_managed = stored.auto_managed;
+        }
+        if request.options.queue_position.is_none() {
+            request.options.queue_position = stored.queue_position;
+        }
+        if request.options.pex_enabled.is_none() {
+            request.options.pex_enabled = stored.pex_enabled;
+        }
+        if request.options.storage_mode.is_none() {
+            request.options.storage_mode = stored.storage_mode;
+        }
+        if request.options.download_dir.is_none() && stored.download_dir.is_some() {
+            request
+                .options
+                .download_dir
+                .clone_from(&stored.download_dir);
         }
     }
 
@@ -1574,6 +1597,7 @@ mod tests {
         TorrentSource,
         model::{TorrentAuthorRequest, TorrentOptionsUpdate},
     };
+    use std::collections::VecDeque;
     use std::fs;
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
@@ -1623,13 +1647,15 @@ mod tests {
             .tempdir_in(server_root()?)?)
     }
 
-    #[derive(Clone, Default)]
-    struct DeadlineSession {
+    #[derive(Default)]
+    struct ControlledSession {
         deadlines: DeadlineLog,
+        apply_result: Option<oneshot::Receiver<TorrentResult<()>>>,
+        limits_results: VecDeque<oneshot::Receiver<TorrentResult<()>>>,
     }
 
     #[async_trait]
-    impl LibTorrentSession for DeadlineSession {
+    impl LibTorrentSession for ControlledSession {
         async fn add_torrent(&mut self, _request: &AddTorrent) -> TorrentResult<()> {
             Ok(())
         }
@@ -1670,7 +1696,12 @@ mod tests {
             _id: Option<Uuid>,
             _limits: &TorrentRateLimit,
         ) -> TorrentResult<()> {
-            Ok(())
+            match self.limits_results.pop_front() {
+                Some(result) => result
+                    .await
+                    .map_err(|err| op_failed("update_limits", None, err))?,
+                None => Ok(()),
+            }
         }
 
         async fn update_selection(
@@ -1726,7 +1757,12 @@ mod tests {
         }
 
         async fn apply_config(&mut self, _config: &EngineRuntimeConfig) -> TorrentResult<()> {
-            Ok(())
+            match self.apply_result.take() {
+                Some(result) => result
+                    .await
+                    .map_err(|err| op_failed("apply_config", None, err))?,
+                None => Ok(()),
+            }
         }
 
         async fn inspect_settings(&mut self) -> TorrentResult<EngineSettingsSnapshot> {
@@ -2148,7 +2184,7 @@ mod tests {
     #[tokio::test]
     async fn piece_deadline_command_invokes_session() -> Result<()> {
         let bus = EventBus::with_capacity(4);
-        let session = DeadlineSession::default();
+        let session = ControlledSession::default();
         let log = session.deadlines.clone();
         let mut worker = Worker::new(bus, Box::new(session), None);
         let torrent_id = Uuid::new_v4();
@@ -3086,18 +3122,8 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn alt_speed_schedule_applies_and_reverts() -> Result<()> {
-        let bus = EventBus::with_capacity(4);
-        let session: Box<dyn LibTorrentSession> = Box::new(StubSession::default());
-        let mut worker = Worker::new(bus, session, None);
-
-        let schedule = AltSpeedSchedule {
-            days: vec![Weekday::Mon],
-            start_minutes: 60,
-            end_minutes: 180,
-        };
-        let config = EngineRuntimeConfig {
+    fn runtime_config_template(schedule: AltSpeedSchedule) -> EngineRuntimeConfig {
+        EngineRuntimeConfig {
             download_root: ".server_root/downloads".into(),
             resume_dir: ".server_root/resume".into(),
             storage_mode: StorageMode::Sparse.into(),
@@ -3140,7 +3166,7 @@ mod tests {
             alt_speed: Some(AltSpeedRuntimeConfig {
                 download_bps: Some(10_000),
                 upload_bps: None,
-                schedule: schedule.clone(),
+                schedule,
             }),
             stats_interval_ms: None,
             connections_limit: None,
@@ -3158,11 +3184,28 @@ mod tests {
             super_seeding: false.into(),
             peer_classes: Vec::new(),
             default_peer_classes: Vec::new(),
-        };
+        }
+    }
+
+    #[tokio::test]
+    async fn alt_speed_schedule_applies_and_reverts() -> Result<()> {
+        let bus = EventBus::with_capacity(4);
+        let session: Box<dyn LibTorrentSession> = Box::new(StubSession::default());
+        let mut worker = Worker::new(bus, session, None);
+        let config = runtime_config_template(AltSpeedSchedule {
+            days: vec![Weekday::Mon],
+            start_minutes: 60,
+            end_minutes: 180,
+        });
+        let (respond_to, response) = oneshot::channel();
 
         worker
-            .handle(EngineCommand::ApplyConfig(Box::new(config)))
+            .handle(EngineCommand::ApplyConfig {
+                config: Box::new(config),
+                respond_to,
+            })
             .await?;
+        response.await??;
 
         let active_monday = Utc
             .with_ymd_and_hms(2024, 1, 1, 1, 30, 0)
@@ -3181,6 +3224,442 @@ mod tests {
             .await?;
         assert_eq!(worker.global_limits.download_bps, Some(100_000));
         assert!(!worker.alt_speed.as_ref().is_some_and(|plan| plan.active));
+        Ok(())
+    }
+
+    fn always_active_config() -> EngineRuntimeConfig {
+        runtime_config_template(AltSpeedSchedule {
+            days: vec![
+                Weekday::Mon,
+                Weekday::Tue,
+                Weekday::Wed,
+                Weekday::Thu,
+                Weekday::Fri,
+                Weekday::Sat,
+                Weekday::Sun,
+            ],
+            start_minutes: 0,
+            end_minutes: 0,
+        })
+    }
+
+    fn assert_pending<F: std::future::Future>(future: std::pin::Pin<&mut F>) {
+        assert!(
+            future
+                .poll(&mut std::task::Context::from_waker(std::task::Waker::noop()))
+                .is_pending()
+        );
+    }
+
+    fn limits_failure(id: Option<Uuid>) -> TorrentError {
+        op_failed(
+            "native.update_limits",
+            id,
+            LibtorrentError::NativeFailure {
+                operation: "update_limits",
+                message: "injected limits failure".into(),
+            },
+        )
+    }
+
+    fn assert_limits_failure(result: TorrentResult<()>, id: Option<Uuid>) -> Result<()> {
+        let Err(TorrentError::OperationFailed {
+            operation,
+            torrent_id,
+            source,
+        }) = result
+        else {
+            return Err(anyhow!("expected original limits failure"));
+        };
+        assert_eq!(operation, "native.update_limits");
+        assert_eq!(torrent_id, id);
+        let Some(LibtorrentError::NativeFailure { operation, message }) = source.downcast_ref()
+        else {
+            return Err(anyhow!("native limits failure type lost"));
+        };
+        assert_eq!(*operation, "update_limits");
+        assert_eq!(message, "injected limits failure");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_limits_ack_waits_for_completed_updates_for_both_targets() -> Result<()> {
+        for id in [None, Some(Uuid::new_v4())] {
+            let (release, result) = oneshot::channel();
+            let session = ControlledSession {
+                limits_results: VecDeque::from([result]),
+                ..ControlledSession::default()
+            };
+            let mut worker = Worker::new(EventBus::new(), Box::new(session), None);
+            let limits = TorrentRateLimit {
+                download_bps: Some(1_000),
+                upload_bps: None,
+            };
+            let (respond_to, mut response) = oneshot::channel();
+            let mut handling = Box::pin(worker.handle(EngineCommand::UpdateLimits {
+                id,
+                limits: limits.clone(),
+                respond_to,
+            }));
+            assert_pending(handling.as_mut());
+            assert!(matches!(
+                response.try_recv(),
+                Err(oneshot::error::TryRecvError::Empty)
+            ));
+            release
+                .send(Ok(()))
+                .map_err(|reply| anyhow!("session reply lost: {reply:?}"))?;
+            handling.await?;
+            response.await??;
+            if let Some(id) = id {
+                assert_eq!(worker.per_torrent_limits.get(&id), Some(&limits));
+            } else {
+                assert_eq!(worker.base_limits, limits);
+                assert_eq!(worker.global_limits, limits);
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_limits_ack_waits_for_global_reconciliation_and_returns_its_result() -> Result<()>
+    {
+        for fails in [false, true] {
+            let (first_release, first_result) = oneshot::channel();
+            let (reconcile_release, reconcile_result) = oneshot::channel();
+            first_release
+                .send(Ok(()))
+                .map_err(|reply| anyhow!("session reply lost: {reply:?}"))?;
+            let session = ControlledSession {
+                limits_results: VecDeque::from([first_result, reconcile_result]),
+                ..ControlledSession::default()
+            };
+            let mut worker = Worker::new(EventBus::new(), Box::new(session), None);
+            worker.alt_speed = always_active_config().alt_speed.and_then(alt_speed_plan);
+            assert!(worker.alt_speed.is_some());
+            let limits = TorrentRateLimit {
+                download_bps: Some(50_000),
+                upload_bps: None,
+            };
+            let (respond_to, mut response) = oneshot::channel();
+            let mut handling = Box::pin(worker.handle(EngineCommand::UpdateLimits {
+                id: None,
+                limits: limits.clone(),
+                respond_to,
+            }));
+            assert_pending(handling.as_mut());
+            assert!(matches!(
+                response.try_recv(),
+                Err(oneshot::error::TryRecvError::Empty)
+            ));
+            reconcile_release
+                .send(if fails {
+                    Err(limits_failure(None))
+                } else {
+                    Ok(())
+                })
+                .map_err(|reply| anyhow!("reconciliation reply lost: {reply:?}"))?;
+            handling.await?;
+            if fails {
+                assert_limits_failure(response.await?, None)?;
+                assert_eq!(worker.global_limits, limits);
+            } else {
+                response.await??;
+                assert_eq!(worker.global_limits.download_bps, Some(10_000));
+            }
+            assert_eq!(worker.health.contains("session"), fails);
+            assert_eq!(worker.base_limits, limits);
+            assert!(
+                worker
+                    .alt_speed
+                    .as_ref()
+                    .is_some_and(|plan| plan.active != fails)
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_limits_ack_preserves_health_and_results_with_or_without_receiver() -> Result<()>
+    {
+        for id in [None, Some(Uuid::new_v4())] {
+            for fails in [false, true] {
+                for receiver_lost in [false, true] {
+                    assert_update_limits_ack(id, fails, receiver_lost).await?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn assert_update_limits_ack(
+        id: Option<Uuid>,
+        fails: bool,
+        receiver_lost: bool,
+    ) -> Result<()> {
+        let (release, result) = oneshot::channel();
+        release
+            .send(if fails {
+                Err(limits_failure(id))
+            } else {
+                Ok(())
+            })
+            .map_err(|reply| anyhow!("session reply lost: {reply:?}"))?;
+        let session = ControlledSession {
+            limits_results: VecDeque::from([result]),
+            ..ControlledSession::default()
+        };
+        let mut worker = Worker::new(EventBus::new(), Box::new(session), None);
+        let limits = TorrentRateLimit {
+            download_bps: Some(1_000),
+            upload_bps: None,
+        };
+        let (respond_to, response) = oneshot::channel();
+        let response = if receiver_lost {
+            drop(response);
+            None
+        } else {
+            Some(response)
+        };
+        worker
+            .handle(EngineCommand::UpdateLimits {
+                id,
+                limits: limits.clone(),
+                respond_to,
+            })
+            .await?;
+        assert_eq!(worker.health.contains("session"), fails);
+        if let Some(response) = response {
+            if fails {
+                assert_limits_failure(response.await?, id)?;
+            } else {
+                response.await??;
+            }
+        }
+        if let Some(id) = id {
+            assert_eq!(
+                worker.per_torrent_limits.get(&id),
+                if fails { None } else { Some(&limits) }
+            );
+        } else {
+            assert_eq!(
+                worker.global_limits.download_bps,
+                if fails { None } else { limits.download_bps }
+            );
+        }
+        let (respond_to, response) = oneshot::channel();
+        worker
+            .handle(EngineCommand::InspectSettings { respond_to })
+            .await?;
+        response.await??;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_limits_ack_does_not_replace_result_with_later_poll_failure() -> Result<()> {
+        for id in [None, Some(Uuid::new_v4())] {
+            let mut worker = Worker::new(EventBus::new(), Box::new(ErrorSession), None);
+            let (respond_to, response) = oneshot::channel();
+            let result = worker
+                .handle(EngineCommand::UpdateLimits {
+                    id,
+                    limits: TorrentRateLimit::default(),
+                    respond_to,
+                })
+                .await;
+            assert!(matches!(
+                result,
+                Err(TorrentError::OperationFailed {
+                    operation: "poll_events",
+                    ..
+                })
+            ));
+            response.await??;
+            assert!(worker.health.contains("session"));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn apply_config_ack_waits_for_session_and_reconciliation() -> Result<()> {
+        use std::{
+            future::Future,
+            task::{Context, Waker},
+        };
+
+        let (apply_release, apply_result) = oneshot::channel();
+        let (limits_release, limits_result) = oneshot::channel();
+        let session = ControlledSession {
+            apply_result: Some(apply_result),
+            limits_results: VecDeque::from([limits_result]),
+            ..ControlledSession::default()
+        };
+        let mut worker = Worker::new(EventBus::new(), Box::new(session), None);
+        let (respond_to, mut response) = oneshot::channel();
+        let mut handling = Box::pin(worker.handle(EngineCommand::ApplyConfig {
+            config: Box::new(always_active_config()),
+            respond_to,
+        }));
+        assert!(
+            handling
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_pending()
+        );
+        assert!(matches!(
+            response.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        apply_release
+            .send(Ok(()))
+            .map_err(|result| anyhow!("session receiver lost: {result:?}"))?;
+        assert!(
+            handling
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_pending()
+        );
+        assert!(matches!(
+            response.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        limits_release
+            .send(Ok(()))
+            .map_err(|result| anyhow!("limits receiver lost: {result:?}"))?;
+        handling.await?;
+        response.await??;
+        assert_eq!(worker.base_limits.download_bps, Some(100_000));
+        assert_eq!(worker.global_limits.download_bps, Some(10_000));
+        assert!(worker.alt_speed.as_ref().is_some_and(|plan| plan.active));
+        assert!(worker.health.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn apply_config_ack_preserves_failures_and_health_with_or_without_receiver() -> Result<()>
+    {
+        for operation in ["apply_config", "update_limits"] {
+            for receiver_lost in [false, true] {
+                let (result_sender, result_receiver) = oneshot::channel();
+                result_sender
+                    .send(Err(op_failed(
+                        operation,
+                        None,
+                        LibtorrentError::NativeFailure {
+                            operation,
+                            message: "injected configuration failure".into(),
+                        },
+                    )))
+                    .map_err(|result| anyhow!("session receiver lost: {result:?}"))?;
+                let mut session = ControlledSession::default();
+                if operation == "apply_config" {
+                    session.apply_result = Some(result_receiver);
+                } else {
+                    session.limits_results.push_back(result_receiver);
+                }
+                let bus = EventBus::new();
+                let mut stream = bus.subscribe(None);
+                let mut worker = Worker::new(bus, Box::new(session), None);
+                let (respond_to, response) = oneshot::channel();
+                let response = if receiver_lost {
+                    drop(response);
+                    None
+                } else {
+                    Some(response)
+                };
+                worker
+                    .handle(EngineCommand::ApplyConfig {
+                        config: Box::new(always_active_config()),
+                        respond_to,
+                    })
+                    .await?;
+                assert!(worker.health.contains("session"));
+                match next_event_with_timeout(&mut stream, 50).await {
+                    Some(Event::HealthChanged { degraded }) => {
+                        assert_eq!(degraded, vec!["session"]);
+                    }
+                    event => {
+                        return Err(anyhow!("expected config failure health event: {event:?}"));
+                    }
+                }
+                if let Some(response) = response {
+                    let Err(TorrentError::OperationFailed {
+                        operation: actual,
+                        torrent_id,
+                        source,
+                    }) = response.await?
+                    else {
+                        return Err(anyhow!("expected actual configuration failure"));
+                    };
+                    assert_eq!(actual, operation);
+                    assert_eq!(torrent_id, None);
+                    let Some(LibtorrentError::NativeFailure {
+                        operation: native_operation,
+                        message,
+                    }) = source.downcast_ref()
+                    else {
+                        return Err(anyhow!("original native failure type was lost"));
+                    };
+                    assert_eq!(*native_operation, operation);
+                    assert_eq!(message, "injected configuration failure");
+                }
+                if operation == "apply_config" {
+                    assert_eq!(worker.base_limits.download_bps, None);
+                } else {
+                    // Reconciliation failure does not roll back the preceding application.
+                    assert_eq!(worker.base_limits.download_bps, Some(100_000));
+                    assert_eq!(worker.global_limits.download_bps, Some(100_000));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn apply_config_ack_receiver_loss_does_not_cancel_application_or_stop_worker()
+    -> Result<()> {
+        let mut worker = Worker::new(
+            EventBus::new(),
+            Box::new(ControlledSession::default()),
+            None,
+        );
+        let (respond_to, response) = oneshot::channel();
+        drop(response);
+        worker
+            .handle(EngineCommand::ApplyConfig {
+                config: Box::new(always_active_config()),
+                respond_to,
+            })
+            .await?;
+        assert_eq!(worker.global_limits.download_bps, Some(10_000));
+        assert!(worker.health.is_empty());
+        let (respond_to, response) = oneshot::channel();
+        worker
+            .handle(EngineCommand::InspectSettings { respond_to })
+            .await?;
+        response.await??;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn apply_config_ack_does_not_replace_result_with_later_poll_failure() -> Result<()> {
+        let mut worker = Worker::new(EventBus::new(), Box::new(ErrorSession), None);
+        let (respond_to, response) = oneshot::channel();
+        let result = worker
+            .handle(EngineCommand::ApplyConfig {
+                config: Box::new(always_active_config()),
+                respond_to,
+            })
+            .await;
+        assert!(matches!(
+            result,
+            Err(TorrentError::OperationFailed {
+                operation: "poll_events",
+                ..
+            })
+        ));
+        response.await??;
+        assert!(worker.health.contains("session"));
         Ok(())
     }
 
