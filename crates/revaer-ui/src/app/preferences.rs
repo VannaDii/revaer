@@ -250,6 +250,10 @@ fn is_local_host() -> bool {
 }
 
 pub(crate) fn api_base_url() -> String {
+    if let Some(configured) = configured_api_base_url() {
+        return configured;
+    }
+
     let href = window()
         .location()
         .href()
@@ -279,6 +283,13 @@ pub(crate) fn api_base_url() -> String {
     }
 
     "http://localhost:7070".to_string()
+}
+
+fn configured_api_base_url() -> Option<String> {
+    option_env!("REVAER_UI_API_BASE_URL")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 fn set_storage<T: Serialize>(key: &'static str, value: T) {

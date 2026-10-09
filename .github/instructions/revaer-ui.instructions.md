@@ -62,6 +62,9 @@ applyTo:
 - Use native Playwright storage state and locator operations where available.
   Record failures and retries without replacing browser storage methods with
   authored JavaScript. Do not claim browser parity from runner fixture tests.
+- Keep component hooks unconditional. Auth refresh, dashboard polling and SSE
+  effects must retain their cleanup and authentication dependencies when views
+  change; configured API origins belong in the app bootstrap layer.
 - OpenAPI response validation must fail with an operation-specific diagnostic
   for missing paths, methods or statuses. Correct the contract against existing
   handlers and Serde models when drift is found; do not bypass validation to
