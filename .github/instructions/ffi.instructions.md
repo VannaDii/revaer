@@ -36,6 +36,12 @@ applyTo:
 
 # Native Shim Rules
 
+- The operator-approved `clippy::missing_errors_doc` exception applies only to
+  the generated `cxx::bridge` module in `src/ffi/bridge.rs`. Keep `# Errors`
+  documentation on the declarations and authored wrappers. The source policy
+  rejects other locations or lints. Remove this exception when upstream
+  documentation spans are fixed.
+
 - Keep C++ exception translation narrow and explicit where possible.
 - Native operation replies catch expected libtorrent system errors or torrent
   authoring errors. Their CXX `Result` declarations translate unexpected foreign

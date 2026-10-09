@@ -38,6 +38,8 @@ fn validate_tracker_transport(tracker: &str, authenticated: bool) -> Result<(), 
     Ok(())
 }
 
+// CXX loses documentation spans in generated bindings; authored wrappers remain linted.
+#[allow(clippy::missing_errors_doc)]
 #[cxx::bridge(namespace = "revaer")]
 /// Native bridge types and functions exposed to Rust.
 ///

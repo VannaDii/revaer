@@ -8,7 +8,7 @@
 > 4. **The `rv` CLI is canonical**. Local and CI build/test/lint/release gates run through the [Python task registry](./tools/src/revaer_tooling/cli.py).
 > 5. **Stored procedures or bust**. Runtime database access goes through stored procedures; raw SQL belongs only in migrations and tightly scoped operational bootstrap scripts.
 > 6. **Deterministic, panic-free production code**. No `panic!`, `unwrap()`, `expect()`, `unreachable!()`, or silent error suppression in authored production or bootstrap code.
-> 7. **No source-level lint suppressions**. `#[allow(...)]` and `#[expect(...)]` are not permitted in authored code.
+> 7. **No source-level lint suppressions**. `#[allow(...)]` and `#[expect(...)]` are not permitted in authored code, except for the operator-approved generated CXX documentation exception defined in the FFI instructions.
 > 8. **`rv ci` and `rv ui-e2e` before every hand-off**. A task is not complete until both pass cleanly.
 > 9. **Dependencies are injected**. Runtime logic receives collaborators from callers; only bootstrap/wiring code constructs concrete implementations or reads the environment.
 >
@@ -65,7 +65,7 @@
 - `Option<T>` is allowed only for legitimate absence semantics or partial-function domains where `None` is the complete, expected result.
 - `Result<T, E>` is required for recoverable failure. Do not hide failure in `Option`, booleans, sentinel values, or logs.
 - `std::panic::catch_unwind` is forbidden everywhere except documented FFI boundary shims covered by [`.github/instructions/ffi.instructions.md`](./.github/instructions/ffi.instructions.md).
-- If a rule cannot be satisfied cleanly, redesign, split, delete, or isolate the code behind the documented FFI boundary. Do not silence the rule.
+- If a rule cannot be satisfied cleanly, redesign, split, delete, or isolate the code behind the documented FFI boundary. Do not silence the rule. The sole approved generated-code exception is `clippy::missing_errors_doc` on the CXX bridge module, as scoped in [`.github/instructions/ffi.instructions.md`](./.github/instructions/ffi.instructions.md); authored Rust remains subject to the lint.
 
 ---
 

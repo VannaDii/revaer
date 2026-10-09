@@ -37,7 +37,9 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 - `tools/src/revaer_tooling/tasks/policy.py` currently enforces empty advisory-ignore lists, no source-level lint suppressions, no authored stubs, FFI-only `unsafe`/`catch_unwind`, and the stored-procedure-only runtime SQL boundary. The `sqlx::query*` scan allows only `crates/revaer-data/src/**` plus the disposable test-database provisioning helper at `crates/revaer-test-support/src/postgres.rs` and its integration test. The inline DDL/DML scan is case-insensitive, excludes test-only sidecar modules at `crates/**/src/**/tests.rs`, and must keep working when `rg` is unavailable by falling back to the tracked Rust file list.
 - `rv lint` also runs a production-target Clippy pass on workspace libs, bins, and examples that forbids `panic!`, `unwrap()`, `expect()`, `unreachable!()`, `todo!()`, and `unimplemented!()` without applying those restrictions to test targets.
 - Keep repo-level Clippy exceptions in `rv lint`, not in crate source. Today that includes the ADR-backed `clippy::multiple_crate_versions` exception and the workspace `pub(crate)` style exception for `clippy::redundant_pub_crate`. The owning `clippy::cargo` and `clippy::nursery` groups are enforced from the task registry for the same reason.
-- `#[allow(...)]` and `#[expect(...)]` are not permitted in authored code. Split or redesign the code instead.
+- `#[allow(...)]` and `#[expect(...)]` are not permitted in authored code, except
+  for the exact generated CXX documentation exception in `ffi.instructions.md`.
+  Split or redesign authored code instead.
 - Committed vendored Rust is part of the Sonar source gate. Fix reported vendor findings with behavior-preserving private refactors and upstream-compatible public APIs; vendored ownership is not permission to exclude paths, suppress issues, or accept open findings.
 - If custom cfgs are introduced, register them with `cargo::rustc-check-cfg` in `build.rs` or the manifest lint configuration. Do not silence `unexpected_cfgs`.
 - Prefer `#[must_use]` for important return values and `pub(crate)` for internal APIs.
