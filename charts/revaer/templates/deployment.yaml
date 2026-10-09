@@ -1,3 +1,4 @@
+{{- include "revaer.validateCompliance" . -}}
 {{- if and (not .Values.database.existingSecret) (not .Values.database.url) -}}
 {{- fail "Either database.url or database.existingSecret must be set." -}}
 {{- end }}
@@ -20,15 +21,14 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- $secretChecksum := include "revaer.databaseSecretChecksum" . | trim }}
-      {{- if or .Values.podAnnotations $secretChecksum }}
       annotations:
+        checksum/compliance-manifest: {{ .Values.compliance.manifestDigest | quote }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
         {{- if $secretChecksum }}
         checksum/database-secret: {{ $secretChecksum | quote }}
         {{- end }}
-      {{- end }}
     spec:
       serviceAccountName: {{ include "revaer.serviceAccountName" . }}
       {{- with .Values.imagePullSecrets }}
@@ -39,7 +39,7 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: revaer
-          image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+          image: {{ include "revaer.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
@@ -101,6 +101,10 @@ spec:
               mountPath: /config
             - name: data
               mountPath: /data
+            - name: compliance
+              mountPath: /app/compliance
+              subPath: {{ printf "%s/%s" (trimPrefix "sha256:" .Values.image.digest) (trimPrefix "sha256:" .Values.compliance.manifestDigest) | quote }}
+              readOnly: true
       volumes:
         - name: config
           {{- if .Values.configPersistence.enabled }}
@@ -116,10 +120,15 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
-      {{- with .Values.nodeSelector }}
+        - name: compliance
+          persistentVolumeClaim:
+            claimName: {{ .Values.compliance.existingClaim | quote }}
+            readOnly: true
       nodeSelector:
+        kubernetes.io/arch: {{ .Values.image.architecture | quote }}
+        {{- with omit .Values.nodeSelector "kubernetes.io/arch" }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       {{- with .Values.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
