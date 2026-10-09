@@ -341,3 +341,6 @@ fn issue(issues: &mut Vec<MediaYamlIssue>, code: &str, pointer: &str) {
 fn invalid() -> MediaServiceError {
     MediaServiceError::new(MediaServiceErrorKind::Invalid).with_code("media_yaml_invalid")
 }
+
+#[cfg(test)]
+mod tests;

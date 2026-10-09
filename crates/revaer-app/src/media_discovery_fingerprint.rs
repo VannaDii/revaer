@@ -179,6 +179,32 @@ pub(crate) fn fingerprint_media_aggregate_cancellable(
     fingerprint_media_aggregate_at_cancellable(media_path, root, opened.directory, cancelled)
 }
 
+#[cfg(test)]
+pub(crate) fn fingerprint_media_aggregate_measured(
+    media_path: &Path,
+    root: &Path,
+    cancelled: &dyn Fn() -> bool,
+    hash_elapsed: &mut Duration,
+) -> Result<Option<MediaAggregateFingerprint>, FingerprintError> {
+    let opened = open_media_parent(media_path, root)?;
+    fingerprint_media_aggregate_at_measured(
+        media_path,
+        root,
+        opened.directory,
+        cancelled,
+        hash_elapsed,
+    )
+}
+
+#[cfg(test)]
+fn fingerprint_media_aggregate_at(
+    media_path: &Path,
+    root: &Path,
+    parent: OwnedFd,
+) -> Result<Option<MediaAggregateFingerprint>, FingerprintError> {
+    fingerprint_media_aggregate_at_cancellable(media_path, root, parent, &|| false)
+}
+
 pub(crate) fn fingerprint_media_aggregate_at_cancellable(
     media_path: &Path,
     root: &Path,
@@ -685,4 +711,326 @@ fn is_sidecar(path: &Path) -> bool {
                 .iter()
                 .any(|extension| value.eq_ignore_ascii_case(extension))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        FingerprintError, MAX_LOGICAL_SIDECARS, fingerprint_media_aggregate,
+        owner_for_changed_path, revalidate_media_aggregate,
+    };
+    use std::fs::{self, File};
+
+    #[test]
+    fn directory_inventory_counts_all_raw_names_and_rejects_partial_results() -> anyhow::Result<()>
+    {
+        let temp = tempfile::tempdir()?;
+        fs::write(temp.path().join("zz"), b"")?;
+        fs::write(temp.path().join("aa"), b"")?;
+        let directory = super::open_directory(temp.path())?;
+        assert_eq!(
+            super::enumerate_directory_names(&directory, 2, 4)?,
+            [
+                std::ffi::OsString::from("aa"),
+                std::ffi::OsString::from("zz")
+            ]
+        );
+        assert!(matches!(
+            super::enumerate_directory_names(&directory, 1, 4),
+            Err(FingerprintError::ResourceLimit("directory entries"))
+        ));
+        assert!(matches!(
+            super::enumerate_directory_names(&directory, 2, 3),
+            Err(FingerprintError::ResourceLimit("directory name bytes"))
+        ));
+        fs::write(temp.path().join("\u{e9}"), b"")?;
+        assert_eq!(super::enumerate_directory_names(&directory, 3, 6)?.len(), 3);
+        assert!(matches!(
+            super::enumerate_directory_names(&directory, 3, 5),
+            Err(FingerprintError::ResourceLimit("directory name bytes"))
+        ));
+        temp.close()?;
+        Ok(())
+    }
+
+    #[test]
+    fn directory_inventory_rejects_mutation_and_invalid_components() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let directory = super::open_directory(temp.path())?;
+        let before = super::directory_observation(&directory)?;
+        assert!(super::directory_names(&directory)?.is_empty());
+        fs::write(temp.path().join("new-name"), b"")?;
+        assert!(matches!(
+            super::validate_directory_observation(&directory, &before),
+            Err(FingerprintError::DirectoryChanged)
+        ));
+        fs::write(temp.path().join("invalid\\name"), b"")?;
+        assert!(matches!(
+            super::directory_names(&directory),
+            Err(FingerprintError::InvalidPath(_))
+        ));
+        temp.close()?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn directory_inventory_rejects_invalid_utf8() -> anyhow::Result<()> {
+        use std::os::unix::ffi::OsStringExt;
+
+        let temp = tempfile::tempdir()?;
+        let directory = super::open_directory(temp.path())?;
+        fs::write(
+            temp.path().join(std::ffi::OsString::from_vec(vec![0xff])),
+            b"",
+        )?;
+        assert!(matches!(
+            super::directory_names(&directory),
+            Err(FingerprintError::InvalidPath(_))
+        ));
+        temp.close()?;
+        Ok(())
+    }
+
+    #[test]
+    fn aggregate_at_retained_parent_does_not_reopen_a_replaced_path() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let directory = temp.path().join("Movies");
+        fs::create_dir(&directory)?;
+        let media = directory.join("movie.mkv");
+        fs::write(&media, b"original media")?;
+        fs::write(directory.join("movie.srt"), b"original subtitles")?;
+        let expected = fingerprint_media_aggregate(&media, temp.path())?;
+        let parent = super::open_directory(&directory)?;
+        fs::rename(&directory, temp.path().join("moved"))?;
+        fs::create_dir(&directory)?;
+        fs::write(&media, b"replacement media")?;
+        let retained = super::fingerprint_media_aggregate_at(&media, temp.path(), parent)?;
+        assert_eq!(retained, expected);
+        assert_ne!(fingerprint_media_aggregate(&media, temp.path())?, expected);
+        fs::remove_file(temp.path().join("moved/movie.mkv"))?;
+        let parent = super::open_directory(&temp.path().join("moved"))?;
+        assert!(super::fingerprint_media_aggregate_at(&media, temp.path(), parent)?.is_none());
+        temp.close()?;
+        Ok(())
+    }
+
+    #[test]
+    fn sidecars_change_identity_and_vobsub_pairs_share_one_owner() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let media = temp.path().join("movie.mkv");
+        let idx = temp.path().join("movie.idx");
+        let sub = temp.path().join("movie.sub");
+        fs::write(&media, b"media")?;
+        fs::write(&idx, b"index")?;
+        fs::write(&sub, b"bitmap")?;
+        assert_eq!(
+            owner_for_changed_path(&idx, temp.path()),
+            Some(media.clone())
+        );
+        assert_eq!(
+            owner_for_changed_path(&sub, temp.path()),
+            Some(media.clone())
+        );
+        let first = fingerprint_media_aggregate(&media, temp.path())?
+            .ok_or_else(|| anyhow::anyhow!("missing fingerprint"))?;
+        fs::write(&sub, b"changed")?;
+        let changed = fingerprint_media_aggregate(&media, temp.path())?
+            .ok_or_else(|| anyhow::anyhow!("missing fingerprint"))?;
+        assert_ne!(first.sha256, changed.sha256);
+        fs::remove_file(&idx)?;
+        let deleted = fingerprint_media_aggregate(&media, temp.path())?
+            .ok_or_else(|| anyhow::anyhow!("missing fingerprint"))?;
+        assert_ne!(changed.sha256, deleted.sha256);
+        fs::write(temp.path().join("movie.mp4"), b"other")?;
+        assert_eq!(owner_for_changed_path(&sub, temp.path()), None);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn aggregate_revalidation_rejects_symlink_rename_create_and_delete_swaps() -> anyhow::Result<()>
+    {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let media = temp.path().join("movie.mkv");
+        let sidecar = temp.path().join("movie.srt");
+        fs::write(&media, b"media")?;
+        fs::write(&sidecar, b"subtitle")?;
+        let expected = fingerprint_media_aggregate(&media, temp.path())?
+            .ok_or_else(|| anyhow::anyhow!("missing aggregate"))?;
+        assert!(revalidate_media_aggregate(&media, temp.path(), &expected)?);
+
+        fs::rename(&sidecar, temp.path().join("movie.en.srt"))?;
+        assert!(!revalidate_media_aggregate(&media, temp.path(), &expected)?);
+        fs::write(&sidecar, b"replacement")?;
+        assert!(!revalidate_media_aggregate(&media, temp.path(), &expected)?);
+        fs::remove_file(&sidecar)?;
+        fs::remove_file(temp.path().join("movie.en.srt"))?;
+        assert!(!revalidate_media_aggregate(&media, temp.path(), &expected)?);
+
+        let outside = tempfile::NamedTempFile::new()?;
+        symlink(outside.path(), &sidecar)?;
+        assert!(!revalidate_media_aggregate(&media, temp.path(), &expected)?);
+        Ok(())
+    }
+
+    #[test]
+    fn aggregate_rejects_excess_sidecars_and_sidecar_bytes() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let media = temp.path().join("movie.mkv");
+        fs::write(&media, b"media")?;
+        for index in 0..=MAX_LOGICAL_SIDECARS {
+            fs::write(temp.path().join(format!("movie.{index}.srt")), b"x")?;
+        }
+        assert!(matches!(
+            fingerprint_media_aggregate(&media, temp.path()),
+            Err(FingerprintError::ResourceLimit("logical sidecars"))
+        ));
+        for index in 0..=MAX_LOGICAL_SIDECARS {
+            fs::remove_file(temp.path().join(format!("movie.{index}.srt")))?;
+        }
+        for index in 0..4 {
+            File::create(temp.path().join(format!("movie.{index}.srt")))?
+                .set_len(super::MAX_SIDECAR_FILE_BYTES)?;
+        }
+        fs::write(temp.path().join("movie.4.srt"), b"x")?;
+        assert!(matches!(
+            fingerprint_media_aggregate(&media, temp.path()),
+            Err(FingerprintError::ResourceLimit("sidecar bytes"))
+        ));
+        Ok(())
+    }
+    struct CountingFile<'a> {
+        file: std::fs::File,
+        read_bytes: &'a std::cell::Cell<usize>,
+    }
+    impl std::io::Read for CountingFile<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let count = self.file.read(buffer)?;
+            self.read_bytes.set(self.read_bytes.get() + count);
+            Ok(count)
+        }
+    }
+
+    #[test]
+    fn aggregate_read_cancellation_stops_physical_reads_and_preserves_source() -> anyhow::Result<()>
+    {
+        let root = tempfile::tempdir()?;
+        let media = root.path().join("movie.mkv");
+        let original = vec![0x35_u8; 1024 * 1024];
+        fs::write(&media, &original)?;
+        let read_bytes = std::cell::Cell::new(0_usize);
+        let mut reader = CountingFile {
+            file: std::fs::File::open(&media)?,
+            read_bytes: &read_bytes,
+        };
+        let mut digest = sha2::Sha256::default();
+        let result = super::hash_member(
+            &mut reader,
+            &media,
+            &mut digest,
+            &|| read_bytes.get() >= super::HASH_BUFFER_BYTES,
+            u64::try_from(original.len())?,
+        );
+        assert!(matches!(result, Err(FingerprintError::Cancelled)));
+        assert_eq!(read_bytes.get(), super::HASH_BUFFER_BYTES);
+        assert_eq!(fs::read(&media)?, original);
+        assert!(matches!(
+            super::fingerprint_media_aggregate_cancellable(&media, root.path(), &|| true),
+            Err(FingerprintError::Cancelled)
+        ));
+        assert_eq!(
+            super::fingerprint_media_aggregate_cancellable(&media, root.path(), &|| false)?,
+            fingerprint_media_aggregate(&media, root.path())?
+        );
+        Ok(())
+    }
+    #[test]
+    fn aggregate_initial_size_limits_reject_sparse_oversize_before_reading() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let media = root.path().join("movie.mkv");
+        File::create(&media)?.set_len(super::MAX_PRIMARY_BYTES + 1)?;
+        assert!(matches!(
+            fingerprint_media_aggregate(&media, root.path()),
+            Err(FingerprintError::ResourceLimit("primary bytes"))
+        ));
+        fs::write(&media, b"source")?;
+        let sidecar = root.path().join("movie.srt");
+        File::create(&sidecar)?.set_len(super::MAX_SIDECAR_FILE_BYTES + 1)?;
+        assert!(matches!(
+            fingerprint_media_aggregate(&media, root.path()),
+            Err(FingerprintError::ResourceLimit("sidecar file bytes"))
+        ));
+        let mut sidecars = 0;
+        super::validate_member_size(super::MAX_PRIMARY_BYTES, true, &mut sidecars)?;
+        for _ in 0..4 {
+            super::validate_member_size(super::MAX_SIDECAR_FILE_BYTES, false, &mut sidecars)?;
+        }
+        assert_eq!(sidecars, super::MAX_SIDECAR_BYTES);
+        assert!(matches!(
+            super::validate_member_size(1, false, &mut sidecars),
+            Err(FingerprintError::ResourceLimit("sidecar bytes"))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn aggregate_initial_member_limits_accept_pairs_and_reject_extra_case_variant()
+    -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let media = root.path().join("movie.mkv");
+        fs::write(&media, b"source")?;
+        for index in 0..super::MAX_LOGICAL_SIDECARS {
+            fs::write(root.path().join(format!("movie.{index}.idx")), b"index")?;
+            fs::write(root.path().join(format!("movie.{index}.sub")), b"payload")?;
+        }
+        assert!(fingerprint_media_aggregate(&media, root.path())?.is_some());
+        fs::write(root.path().join("movie.0.IDX"), b"extra")?;
+        // This distinct physical case variant exists on Linux's case-sensitive filesystem.
+        if fs::read_dir(root.path())?
+            .collect::<Result<Vec<_>, _>>()?
+            .len()
+            > super::MAX_PHYSICAL_MEMBERS
+        {
+            assert!(matches!(
+                fingerprint_media_aggregate(&media, root.path()),
+                Err(FingerprintError::ResourceLimit("physical members"))
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn aggregate_hash_reads_only_observed_length_and_rejects_truncation() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let media = root.path().join("movie.mkv");
+        fs::write(&media, b"source-grew")?;
+        let read_bytes = std::cell::Cell::new(0);
+        let mut reader = CountingFile {
+            file: File::open(&media)?,
+            read_bytes: &read_bytes,
+        };
+        super::hash_member(
+            &mut reader,
+            &media,
+            &mut sha2::Sha256::default(),
+            &|| false,
+            6,
+        )?;
+        assert_eq!(read_bytes.get(), 6);
+        let mut reader = File::open(&media)?;
+        assert!(matches!(
+            super::hash_member(
+                &mut reader,
+                &media,
+                &mut sha2::Sha256::default(),
+                &|| false,
+                12
+            ),
+            Err(FingerprintError::DirectoryChanged)
+        ));
+        Ok(())
+    }
 }

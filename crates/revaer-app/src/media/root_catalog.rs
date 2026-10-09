@@ -162,3 +162,6 @@ fn hex(bytes: &[u8]) -> Result<String, RootCatalogError> {
     }
     Ok(value)
 }
+
+#[cfg(test)]
+mod tests;

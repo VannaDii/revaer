@@ -165,3 +165,6 @@ fn same_profile(left: &ProfileVersionRow, right: &ProfileVersionRow) -> bool {
         && left.created_at == right.created_at
         && left.updated_at == right.updated_at
 }
+
+#[cfg(test)]
+pub(super) mod tests;

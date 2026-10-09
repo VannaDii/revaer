@@ -408,3 +408,6 @@ const fn kind_name(kind: RootKind) -> &'static str {
         RootKind::Quarantine => "quarantine",
     }
 }
+
+#[cfg(test)]
+mod tests;

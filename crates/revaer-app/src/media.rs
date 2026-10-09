@@ -1,6 +1,8 @@
 //! Media service wiring for API facade.
 
 use async_trait::async_trait;
+#[cfg(test)]
+use revaer_api::app::media::MediaYamlProfile;
 use revaer_api::app::media::{
     MediaCapabilityReadinessResponse as AppMediaCapabilityReadinessResponse,
     MediaCapabilityRefreshParams,
@@ -45,6 +47,8 @@ use revaer_data::media::jobs::EnqueueDiscoveredMediaJobInput;
 use revaer_data::media::profiles::{
     MediaProfileRow, UpdateMediaProfileInput, UpsertMediaProfileInput,
 };
+#[cfg(test)]
+use revaer_media_core::compile::{MediaProfile, validate_profiles};
 use revaer_media_core::model::StreamKind;
 use revaer_media_core::normalize::{
     audio_channel_count_for_layout, normalize_audio_channel_layout,
@@ -2099,6 +2103,321 @@ fn feature_supported(features: &[CapabilityFeatureRow], family: &str, name: &str
     })
 }
 
+#[cfg(test)]
+fn parse_yaml_bundle(yaml_payload: &str) -> Result<MediaYamlBundle, MediaServiceError> {
+    let trimmed = yaml_payload.trim();
+    if trimmed.is_empty() {
+        return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+            .with_code("media_yaml_payload_missing"));
+    }
+
+    serde_yaml::from_str::<MediaYamlBundle>(trimmed).map_err(|_| {
+        MediaServiceError::new(MediaServiceErrorKind::Invalid).with_code("media_yaml_invalid")
+    })
+}
+
+#[cfg(test)]
+fn is_unresolved_export_root(root: &str) -> bool {
+    let trimmed = root.trim();
+    trimmed.starts_with("${revaer.") && trimmed.ends_with('}')
+}
+
+#[cfg(test)]
+fn validate_yaml_bundle(
+    bundle: &MediaYamlBundle,
+    existing_compatibility_targets: &[AppMediaCompatibilityTargetResponse],
+    existing_desired_targets: &[AppMediaDesiredTargetResponse],
+    existing_policies: &[AppMediaPolicyResponse],
+) -> Vec<MediaYamlIssue> {
+    let mut issues = Vec::new();
+    validate_yaml_header(&mut issues, bundle);
+    validate_yaml_profiles(&mut issues, &bundle.profiles);
+    validate_yaml_catalogs(
+        &mut issues,
+        bundle,
+        existing_compatibility_targets,
+        existing_desired_targets,
+        existing_policies,
+    );
+    issues.sort_by(|left, right| {
+        left.pointer
+            .cmp(&right.pointer)
+            .then_with(|| left.code.cmp(&right.code))
+    });
+    issues.dedup();
+    issues
+}
+
+#[cfg(test)]
+fn validate_yaml_header(issues: &mut Vec<MediaYamlIssue>, bundle: &MediaYamlBundle) {
+    if bundle.format_version != 1 {
+        push_yaml_issue(
+            issues,
+            "media_yaml_version_unsupported",
+            "/format_version",
+            true,
+        );
+    }
+    if bundle.kind != "revaer.media.profile_bundle" {
+        push_yaml_issue(issues, "media_yaml_kind_unsupported", "/kind", true);
+    }
+    if bundle.metadata.name.trim().is_empty() {
+        push_yaml_issue(
+            issues,
+            "media_yaml_metadata_name_missing",
+            "/metadata/name",
+            true,
+        );
+    }
+}
+
+#[cfg(test)]
+fn validate_yaml_profiles(issues: &mut Vec<MediaYamlIssue>, yaml_profiles: &[MediaYamlProfile]) {
+    let mut profiles = Vec::with_capacity(yaml_profiles.len());
+    let mut profile_keys = BTreeSet::new();
+    for (index, profile) in yaml_profiles.iter().enumerate() {
+        validate_yaml_profile(issues, &mut profile_keys, &mut profiles, index, profile);
+    }
+
+    if let Err(err) = validate_profiles(&profiles) {
+        push_yaml_issue(
+            issues,
+            yaml_profile_validation_code(&err),
+            "/profiles",
+            true,
+        );
+    }
+}
+
+#[cfg(test)]
+fn validate_yaml_profile(
+    issues: &mut Vec<MediaYamlIssue>,
+    profile_keys: &mut BTreeSet<String>,
+    profiles: &mut Vec<MediaProfile>,
+    index: usize,
+    profile: &MediaYamlProfile,
+) {
+    let pointer = format!("/profiles/{index}");
+    if !profile_keys.insert(profile.profile_key.trim().to_ascii_lowercase()) {
+        push_yaml_issue(
+            issues,
+            "media_yaml_profile_key_duplicate",
+            &format!("{pointer}/profile_key"),
+            true,
+        );
+    }
+    if !(1..=3650).contains(&profile.retention_days) {
+        push_yaml_issue(
+            issues,
+            "media_yaml_profile_retention_days_out_of_bounds",
+            &format!("{pointer}/retention_days"),
+            true,
+        );
+    }
+    for (root_kind, root) in [
+        ("source_root", &profile.source_root),
+        ("output_root", &profile.output_root),
+    ] {
+        if is_unresolved_export_root(root) {
+            push_yaml_issue(
+                issues,
+                "media_yaml_local_path_mapping_required",
+                &format!("{pointer}/{root_kind}"),
+                false,
+            );
+        }
+    }
+    if profile.desired_target_key.is_some() != profile.desired_target_version.is_some() {
+        push_yaml_issue(
+            issues,
+            "media_yaml_desired_target_reference_incomplete",
+            &format!("{pointer}/desired_target_key"),
+            true,
+        );
+    }
+    if !is_unresolved_export_root(&profile.source_root)
+        && !is_unresolved_export_root(&profile.output_root)
+    {
+        profiles.push(MediaProfile {
+            key: profile.profile_key.clone(),
+            source_root: profile.source_root.clone(),
+            output_root: profile.output_root.clone(),
+            dry_run_only: true,
+        });
+    }
+}
+
+#[cfg(test)]
+const fn yaml_profile_validation_code(
+    error: &revaer_media_core::compile::ValidationError,
+) -> &'static str {
+    match error {
+        revaer_media_core::compile::ValidationError::OverlappingRoots
+        | revaer_media_core::compile::ValidationError::OverlappingProfileRoots => {
+            "media_yaml_profile_roots_overlap"
+        }
+        revaer_media_core::compile::ValidationError::EmptyProfileKey => {
+            "media_yaml_profile_key_missing"
+        }
+        revaer_media_core::compile::ValidationError::ProfileKeyTooLong => {
+            "media_yaml_profile_key_too_long"
+        }
+        revaer_media_core::compile::ValidationError::EmptySourceRoot
+        | revaer_media_core::compile::ValidationError::EmptyOutputRoot => {
+            "media_yaml_profile_root_missing"
+        }
+        revaer_media_core::compile::ValidationError::ProfileRootTooLong => {
+            "media_yaml_profile_root_too_long"
+        }
+        revaer_media_core::compile::ValidationError::InvalidProfileRoot => {
+            "media_yaml_profile_root_invalid"
+        }
+        revaer_media_core::compile::ValidationError::DuplicateProfileKey => {
+            "media_yaml_profile_key_duplicate"
+        }
+        revaer_media_core::compile::ValidationError::YamlPayloadTooLarge => {
+            "media_yaml_payload_too_large"
+        }
+        revaer_media_core::compile::ValidationError::InvalidYaml => "media_yaml_invalid",
+        revaer_media_core::compile::ValidationError::TooManyProfiles => {
+            "media_yaml_profile_count_exceeded"
+        }
+    }
+}
+
+#[cfg(test)]
+fn validate_yaml_catalogs(
+    issues: &mut Vec<MediaYamlIssue>,
+    bundle: &MediaYamlBundle,
+    existing_compatibility_targets: &[AppMediaCompatibilityTargetResponse],
+    existing_desired_targets: &[AppMediaDesiredTargetResponse],
+    existing_policies: &[AppMediaPolicyResponse],
+) {
+    let compatibility_keys = bundle
+        .compatibility_targets
+        .iter()
+        .map(|target| normalize_catalog_key(&target.compatibility_target_key))
+        .chain(
+            existing_compatibility_targets
+                .iter()
+                .map(|target| normalize_catalog_key(&target.compatibility_target_key)),
+        )
+        .collect::<BTreeSet<_>>();
+    let policy_keys = bundle
+        .policies
+        .iter()
+        .map(|policy| policy.policy_key.trim().to_ascii_lowercase())
+        .chain(
+            existing_policies
+                .iter()
+                .map(|policy| policy.policy_key.trim().to_ascii_lowercase()),
+        )
+        .collect::<BTreeSet<_>>();
+    let desired_keys = bundle
+        .targets
+        .iter()
+        .map(|target| {
+            (
+                target.target_key.trim().to_ascii_lowercase(),
+                target.version,
+            )
+        })
+        .chain(existing_desired_targets.iter().map(|target| {
+            (
+                target.target_key.trim().to_ascii_lowercase(),
+                target.version,
+            )
+        }))
+        .collect::<BTreeSet<_>>();
+
+    validate_yaml_catalog_rows(
+        issues,
+        bundle,
+        existing_compatibility_targets,
+        existing_desired_targets,
+        existing_policies,
+    );
+    for (index, profile) in bundle.profiles.iter().enumerate() {
+        let pointer = format!("/profiles/{index}");
+        if profile
+            .compatibility_target_key
+            .as_deref()
+            .and_then(trim_nonempty)
+            .is_some_and(|target| !compatibility_keys.contains(&normalize_catalog_key(target)))
+        {
+            push_yaml_issue(
+                issues,
+                "media_yaml_compatibility_target_not_found",
+                &format!("{pointer}/compatibility_target_key"),
+                true,
+            );
+        }
+        if !policy_keys.contains(&profile.policy_key.trim().to_ascii_lowercase()) {
+            push_yaml_issue(
+                issues,
+                "media_yaml_policy_profile_not_found",
+                &format!("{pointer}/policy_key"),
+                true,
+            );
+        }
+        if let (Some(key), Some(version)) = (
+            profile.desired_target_key.as_deref(),
+            profile.desired_target_version,
+        ) && !desired_keys.contains(&(key.trim().to_ascii_lowercase(), version))
+        {
+            push_yaml_issue(
+                issues,
+                "media_yaml_desired_target_not_found",
+                &format!("{pointer}/desired_target_key"),
+                true,
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+fn validate_yaml_catalog_rows(
+    issues: &mut Vec<MediaYamlIssue>,
+    bundle: &MediaYamlBundle,
+    existing_compatibility_targets: &[AppMediaCompatibilityTargetResponse],
+    existing_desired_targets: &[AppMediaDesiredTargetResponse],
+    existing_policies: &[AppMediaPolicyResponse],
+) {
+    validate_unique_catalog_keys(
+        issues,
+        "/compatibility_targets",
+        bundle.compatibility_targets.iter().map(|row| {
+            (
+                normalize_catalog_key(&row.compatibility_target_key),
+                row.version,
+            )
+        }),
+    );
+    validate_unique_catalog_keys(
+        issues,
+        "/policies",
+        bundle
+            .policies
+            .iter()
+            .map(|row| (row.policy_key.trim().to_ascii_lowercase(), row.version)),
+    );
+    validate_unique_catalog_keys(
+        issues,
+        "/targets",
+        bundle
+            .targets
+            .iter()
+            .map(|row| (row.target_key.trim().to_ascii_lowercase(), row.version)),
+    );
+    validate_yaml_compatibility_rows(
+        issues,
+        &bundle.compatibility_targets,
+        existing_compatibility_targets,
+    );
+    validate_yaml_policy_rows(issues, &bundle.policies, existing_policies);
+    validate_yaml_desired_rows(issues, &bundle.targets, existing_desired_targets);
+}
+
 fn validate_yaml_compatibility_rows(
     issues: &mut Vec<MediaYamlIssue>,
     targets: &[MediaYamlCompatibilityTarget],
@@ -3006,4 +3325,3536 @@ pub(crate) fn build_discovery_previews(
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        DiscoveryRunMode, MediaService, ensure_discovery_mode_enabled,
+        ensure_execution_capability_snapshot, ensure_profile_compatibility_target_readiness,
+        ensure_profile_desired_target_readiness, map_data_error, map_detect_error,
+        parse_yaml_bundle, validate_yaml_bundle, yaml_desired_target_shape_invalid,
+    };
+    use anyhow::Context as _;
+    use revaer_api::app::media::{
+        MediaCapabilityRefreshParams, MediaCompatibilityTargetUpsertParams,
+        MediaDesiredTargetCreateParams, MediaDesiredTargetStreamParams,
+        MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryRunParams,
+        MediaFacade, MediaJobRetentionUpdateParams, MediaPolicyUpsertParams,
+        MediaProfileDesiredTargetParams, MediaProfilePatchParams, MediaProfileUpsertParams,
+        MediaYamlDesiredTarget,
+    };
+    use revaer_api::app::media::{MediaServiceError, MediaServiceErrorKind};
+    use revaer_data::DataError;
+    use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
+    use revaer_data::media::capabilities::{
+        CapabilityCodecRow, CapabilityFeatureRow, CapabilitySnapshotRow,
+    };
+    use revaer_data::media::configuration::{
+        AppendMediaDesiredTargetStreamInput, MediaCompatibilityTargetRow, MediaPolicyProfileRow,
+        append_media_desired_target_stream_with_executor,
+    };
+    use revaer_data::media::jobs::{
+        AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput, AppendMediaJobOperationInput,
+        AppendMediaJobPlanReasonInput, AppendMediaJobVerificationCheckInput,
+    };
+    use revaer_data::media::profiles::MediaProfileRow;
+    use revaer_media_core::target::MAX_DESIRED_TARGET_STREAMS;
+    use revaer_media_runtime::capabilities::CapabilityDetectError;
+    use revaer_media_runtime::capabilities::CapabilityDetector;
+    use revaer_media_runtime::capabilities::{CapabilitySnapshot, CodecCapability};
+    use revaer_runtime::media::MediaStore;
+    use revaer_telemetry::Metrics;
+    use revaer_test_support::postgres::{TestDatabase, start_postgres};
+    use sqlx::postgres::PgPoolOptions;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+    use tempfile::TempDir;
+    use uuid::Uuid;
+
+    #[derive(Clone)]
+    struct StaticDetector {
+        snapshot: CapabilitySnapshot,
+    }
+
+    impl CapabilityDetector for StaticDetector {
+        fn detect(&self) -> Result<CapabilitySnapshot, CapabilityDetectError> {
+            Ok(self.snapshot.clone())
+        }
+    }
+
+    #[derive(Clone)]
+    struct PanicDetector;
+
+    impl CapabilityDetector for PanicDetector {
+        fn detect(&self) -> Result<CapabilitySnapshot, CapabilityDetectError> {
+            panic!("detector panic");
+        }
+    }
+
+    struct TestMediaService {
+        service: MediaService,
+        postgres: TestDatabase,
+    }
+
+    struct TestMediaSource {
+        _temp_dir: TempDir,
+        source_root: String,
+        output_root: String,
+        source_path: String,
+    }
+
+    impl std::ops::Deref for TestMediaService {
+        type Target = MediaService;
+
+        fn deref(&self) -> &Self::Target {
+            &self.service
+        }
+    }
+
+    async fn setup_media_service(
+        detector: Arc<dyn CapabilityDetector>,
+    ) -> anyhow::Result<(TestMediaService, Uuid)> {
+        let mut postgres = start_postgres()?;
+        postgres
+            .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+            .await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(postgres.connection_string())
+            .await?;
+
+        let store = MediaStore::new(pool);
+        let email = format!("media-app-{}@example.invalid", Uuid::new_v4());
+        let actor_user_public_id = app_user_create(store.pool(), &email, "Media App").await?;
+        app_user_verify_email(store.pool(), actor_user_public_id).await?;
+        Ok((
+            TestMediaService {
+                service: MediaService::new(store, detector, Metrics::new()?),
+                postgres,
+            },
+            actor_user_public_id,
+        ))
+    }
+
+    fn static_detector() -> Arc<dyn CapabilityDetector> {
+        Arc::new(StaticDetector {
+            snapshot: CapabilitySnapshot {
+                ffmpeg_version: "7.1".to_string(),
+                ffprobe_version: "7.1".to_string(),
+                codecs: vec!["h264".to_string(), "hevc".to_string()],
+                codec_support: vec![
+                    CodecCapability {
+                        name: "h264".to_string(),
+                        encode_supported: false,
+                        decode_supported: true,
+                    },
+                    CodecCapability {
+                        name: "hevc".to_string(),
+                        encode_supported: true,
+                        decode_supported: true,
+                    },
+                ],
+                encoders: vec!["libx265".to_string()],
+                decoders: vec!["hevc".to_string()],
+                muxers: vec!["matroska".to_string()],
+                demuxers: vec!["matroska".to_string()],
+                hardware_accelerators: Vec::new(),
+                subtitle_support: vec!["subrip".to_string()],
+                filesystem_utilities: vec!["atomic_rename".to_string()],
+                utility_capabilities: vec![
+                    "ffmpeg".to_string(),
+                    "ffprobe".to_string(),
+                    "ffplay".to_string(),
+                ],
+                license_mode: "gpl".to_string(),
+                ffmpeg_license_mode: "gpl".to_string(),
+                ffmpeg_enable_gpl: true,
+                ffmpeg_enable_version3: true,
+                ffmpeg_enable_nonfree: false,
+                compliance_links: vec!["/app/compliance/SOURCE-OFFER.txt".to_string()],
+                absent_capabilities: vec!["--enable-nonfree".to_string()],
+            },
+        })
+    }
+
+    fn valid_capability_features() -> Vec<CapabilityFeatureRow> {
+        [
+            ("decoder", "hevc", true),
+            ("muxer", "matroska", true),
+            ("demuxer", "matroska", true),
+            ("filesystem", "atomic_rename", true),
+            ("utility", "ffmpeg", true),
+            ("utility", "ffprobe", true),
+            ("utility", "ffplay", true),
+            ("license", "gpl", true),
+            ("ffmpeg_license", "gpl", true),
+            ("ffmpeg_build_flag", "--enable-gpl", true),
+            ("ffmpeg_build_flag", "--enable-version3", true),
+            ("ffmpeg_build_flag", "--enable-nonfree", false),
+        ]
+        .into_iter()
+        .map(
+            |(feature_family, feature_name, supported)| CapabilityFeatureRow {
+                feature_family: feature_family.to_string(),
+                feature_name: feature_name.to_string(),
+                supported,
+                detail_text: None,
+            },
+        )
+        .collect()
+    }
+
+    #[test]
+    fn reject_missing_capability_snapshot() {
+        let result = ensure_execution_capability_snapshot(None);
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_capability_snapshot_missing".to_string())
+        );
+    }
+
+    #[test]
+    fn reject_invalid_capability_snapshot() {
+        let row = CapabilitySnapshotRow {
+            media_capability_snapshot_id: 1,
+            snapshot_run_public_id: Uuid::new_v4(),
+            ffmpeg_version: String::new(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec![revaer_data::media::capabilities::CapabilityCodecRow {
+                codec_name: "h264".to_string(),
+                encode_supported: true,
+                decode_supported: true,
+            }],
+            encoders: vec!["libx265".to_string()],
+            features: Vec::new(),
+            observed_at: chrono::Utc::now(),
+        };
+        let result = ensure_execution_capability_snapshot(Some(&row));
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_capability_snapshot_invalid".to_string())
+        );
+    }
+
+    #[test]
+    fn accept_valid_capability_snapshot() {
+        let row = CapabilitySnapshotRow {
+            media_capability_snapshot_id: 1,
+            snapshot_run_public_id: Uuid::new_v4(),
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec![revaer_data::media::capabilities::CapabilityCodecRow {
+                codec_name: "h264".to_string(),
+                encode_supported: true,
+                decode_supported: true,
+            }],
+            encoders: vec!["libx265".to_string()],
+            features: valid_capability_features(),
+            observed_at: chrono::Utc::now(),
+        };
+        assert!(ensure_execution_capability_snapshot(Some(&row)).is_ok());
+    }
+
+    #[test]
+    fn profile_compatibility_readiness_rejects_missing_encode_support() {
+        let profile = media_profile_with_compatibility_target("hevc-aac");
+        let snapshot = capability_snapshot_with_codecs(&[
+            capability_codec("hevc", true, true),
+            capability_codec("aac", false, true),
+        ]);
+        let targets = vec![compatibility_target("hevc-aac", 1, "hevc", "aac")];
+
+        let result = ensure_profile_compatibility_target_readiness(&profile, &snapshot, &targets);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_compatibility_target_unsupported".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_compatibility_readiness_accepts_supported_codecs() {
+        let profile = media_profile_with_compatibility_target("hevc-aac");
+        let snapshot = capability_snapshot_with_codecs(&[
+            capability_codec("hevc", true, true),
+            capability_codec("aac", true, true),
+        ]);
+        let targets = vec![compatibility_target("hevc-aac", 1, "hevc", "aac")];
+
+        assert!(
+            ensure_profile_compatibility_target_readiness(&profile, &snapshot, &targets).is_ok()
+        );
+    }
+
+    #[test]
+    fn profile_compatibility_readiness_rejects_missing_target() {
+        let profile = media_profile_with_compatibility_target("hevc-aac");
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+
+        let result = ensure_profile_compatibility_target_readiness(&profile, &snapshot, &[]);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_compatibility_target_not_found".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_rejects_missing_muxer() {
+        let profile = media_profile_with_desired_target("living-room-output", 1);
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+        let target = desired_target_response("mp4", vec![desired_video_stream()]);
+        let policies = vec![policy_profile("safe_dry_run", "general")];
+
+        let result =
+            ensure_profile_desired_target_readiness(&profile, &snapshot, &[target], &policies);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_desired_target_muxer_unsupported".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_rejects_missing_encoder() {
+        let profile = media_profile_with_desired_target("living-room-output", 1);
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("opus", true, true)]);
+        let target = desired_target_response("matroska", vec![desired_audio_stream()]);
+        let policies = vec![policy_profile("safe_dry_run", "general")];
+
+        let result =
+            ensure_profile_desired_target_readiness(&profile, &snapshot, &[target], &policies);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_desired_target_encoder_unsupported".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_accepts_unpinned_profile() {
+        let profile = media_profile_with_compatibility_target("hevc-aac");
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+
+        assert!(ensure_profile_desired_target_readiness(&profile, &snapshot, &[], &[]).is_ok());
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_rejects_incomplete_reference() {
+        let mut profile = media_profile_with_desired_target("living-room-output", 1);
+        profile.desired_target_version = None;
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+        let policies = vec![policy_profile("safe_dry_run", "general")];
+
+        let result = ensure_profile_desired_target_readiness(&profile, &snapshot, &[], &policies);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_desired_target_reference_incomplete".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_rejects_missing_target() {
+        let profile = media_profile_with_desired_target("living-room-output", 1);
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+        let policies = vec![policy_profile("safe_dry_run", "general")];
+
+        let result = ensure_profile_desired_target_readiness(&profile, &snapshot, &[], &policies);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_desired_target_not_found".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_rejects_missing_policy() {
+        let profile = media_profile_with_desired_target("living-room-output", 1);
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+        let target = desired_target_response("matroska", vec![desired_video_stream()]);
+
+        let result = ensure_profile_desired_target_readiness(&profile, &snapshot, &[target], &[]);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_policy_profile_not_found".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_rejects_invalid_policy_intent() {
+        let profile = media_profile_with_desired_target("living-room-output", 1);
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+        let target = desired_target_response("matroska", vec![desired_video_stream()]);
+        let policies = vec![policy_profile("safe_dry_run", "invalid")];
+
+        let result =
+            ensure_profile_desired_target_readiness(&profile, &snapshot, &[target], &policies);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_policy_profile_invalid".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_rejects_unsupported_stream_kind() {
+        let profile = media_profile_with_desired_target("living-room-output", 1);
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+        let mut stream = desired_video_stream();
+        stream.stream_kind = "data".to_string();
+        let target = desired_target_response("matroska", vec![stream]);
+        let policies = vec![policy_profile("safe_dry_run", "general")];
+
+        let result =
+            ensure_profile_desired_target_readiness(&profile, &snapshot, &[target], &policies);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_desired_target_stream_unsupported".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_accepts_supported_contract() {
+        let profile = media_profile_with_desired_target("living-room-output", 1);
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+        let target = desired_target_response("matroska", vec![desired_video_stream()]);
+        let policies = vec![policy_profile("safe_dry_run", "general")];
+
+        assert!(
+            ensure_profile_desired_target_readiness(&profile, &snapshot, &[target], &policies)
+                .is_ok()
+        );
+    }
+
+    fn capability_snapshot_with_codecs(codecs: &[CapabilityCodecRow]) -> CapabilitySnapshotRow {
+        CapabilitySnapshotRow {
+            media_capability_snapshot_id: 1,
+            snapshot_run_public_id: Uuid::new_v4(),
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: codecs.to_vec(),
+            encoders: vec!["libx265".to_string()],
+            features: valid_capability_features(),
+            observed_at: chrono::Utc::now(),
+        }
+    }
+
+    fn capability_codec(
+        codec_name: &str,
+        encode_supported: bool,
+        decode_supported: bool,
+    ) -> CapabilityCodecRow {
+        CapabilityCodecRow {
+            codec_name: codec_name.to_string(),
+            encode_supported,
+            decode_supported,
+        }
+    }
+
+    fn media_profile_with_compatibility_target(target_key: &str) -> MediaProfileRow {
+        MediaProfileRow {
+            media_profile_public_id: Uuid::new_v4(),
+            profile_key: "app-media".to_string(),
+            source_root: "/input/app-media".to_string(),
+            output_root: "/output/app-media".to_string(),
+            dry_run_only: false,
+            retention_days: 30,
+            compatibility_target_key: Some(target_key.to_string()),
+            policy_key: "safe_dry_run".to_string(),
+            watcher_enabled: false,
+            schedule_enabled: false,
+            schedule_interval_minutes: None,
+            desired_target_key: None,
+            desired_target_version: None,
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    fn media_profile_with_desired_target(target_key: &str, version: i32) -> MediaProfileRow {
+        MediaProfileRow {
+            compatibility_target_key: None,
+            desired_target_key: Some(target_key.to_string()),
+            desired_target_version: Some(version),
+            ..media_profile_with_compatibility_target("unused")
+        }
+    }
+
+    fn compatibility_target(
+        compatibility_target_key: &str,
+        version: i32,
+        video_codec: &str,
+        audio_codec: &str,
+    ) -> MediaCompatibilityTargetRow {
+        MediaCompatibilityTargetRow {
+            compatibility_target_key: compatibility_target_key.to_string(),
+            version,
+            display_name: "Compatibility target".to_string(),
+            video_codec: video_codec.to_string(),
+            audio_codec: audio_codec.to_string(),
+            audio_channels: Some(2),
+            audio_channel_layout: Some("stereo".to_string()),
+            subtitle_policy: "selected".to_string(),
+        }
+    }
+
+    fn desired_target_response(
+        container_format: &str,
+        streams: Vec<MediaDesiredTargetStreamParams>,
+    ) -> super::AppMediaDesiredTargetResponse {
+        super::AppMediaDesiredTargetResponse {
+            media_desired_target_profile_public_id: Uuid::new_v4(),
+            target_key: "living-room-output".to_string(),
+            version: 1,
+            display_name: "Living room output".to_string(),
+            container_format: container_format.to_string(),
+            streams,
+        }
+    }
+
+    fn policy_profile(policy_key: &str, video_intent: &str) -> MediaPolicyProfileRow {
+        MediaPolicyProfileRow {
+            output: revaer_data::media::configuration::MediaPolicyOutputRow::default(),
+            policy_key: policy_key.to_string(),
+            version: 1,
+            display_name: "Policy".to_string(),
+            video_intent: video_intent.to_string(),
+            verification_strictness: "balanced".to_string(),
+            verification_duration_tolerance_millis: 250,
+            verification_mux_validation: true.into(),
+            verification_decode_all_streams: true.into(),
+            verification_keyframe_seek: true.into(),
+            verification_playback_probe: true.into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn media_desired_target_create_rejects_empty_stream_contract() -> anyhow::Result<()> {
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
+
+        let result = service
+            .media_desired_target_create(MediaDesiredTargetCreateParams {
+                actor_user_public_id,
+                target_key: "empty-target".to_string(),
+                version: 1,
+                display_name: "Empty target".to_string(),
+                container_format: "matroska".to_string(),
+                streams: Vec::new(),
+            })
+            .await;
+
+        let err = result.expect_err("empty desired target should fail before persistence");
+        assert_eq!(err.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(err.code(), Some("media_desired_target_streams_required"));
+        assert!(
+            service
+                .media_desired_target_list()
+                .await?
+                .iter()
+                .all(|target| target.target_key != "empty-target")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn media_yaml_desired_target_shape_enforces_stream_count_boundaries() {
+        fn target(stream_count: usize) -> MediaYamlDesiredTarget {
+            MediaYamlDesiredTarget {
+                target_key: "bounded-target".to_string(),
+                version: 1,
+                display_name: "Bounded target".to_string(),
+                container_format: "matroska".to_string(),
+                streams: desired_target_streams(stream_count),
+            }
+        }
+
+        assert!(yaml_desired_target_shape_invalid(&target(0)));
+        assert!(!yaml_desired_target_shape_invalid(&target(1)));
+        assert!(!yaml_desired_target_shape_invalid(&target(
+            MAX_DESIRED_TARGET_STREAMS
+        )));
+        assert!(yaml_desired_target_shape_invalid(&target(
+            MAX_DESIRED_TARGET_STREAMS + 1
+        )));
+    }
+
+    #[tokio::test]
+    async fn media_desired_target_create_enforces_stream_count_boundaries() -> anyhow::Result<()> {
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
+
+        for (target_key, stream_count) in [
+            ("one-stream-target", 1),
+            ("maximum-stream-target", MAX_DESIRED_TARGET_STREAMS),
+        ] {
+            let created = service
+                .media_desired_target_create(MediaDesiredTargetCreateParams {
+                    actor_user_public_id,
+                    target_key: target_key.to_string(),
+                    version: 1,
+                    display_name: target_key.to_string(),
+                    container_format: "matroska".to_string(),
+                    streams: desired_target_streams(stream_count),
+                })
+                .await?;
+            assert_eq!(created.streams.len(), stream_count);
+        }
+
+        let maximum_target = service
+            .media_desired_target_list()
+            .await?
+            .into_iter()
+            .find(|target| target.target_key == "maximum-stream-target")
+            .ok_or_else(|| anyhow::anyhow!("maximum desired target missing"))?;
+        let over_limit_sort_order = i32::try_from(MAX_DESIRED_TARGET_STREAMS)?;
+        let database_error = append_media_desired_target_stream_with_executor(
+            service.store.pool(),
+            append_audio_stream_input(
+                maximum_target.media_desired_target_profile_public_id,
+                "over-limit-audio",
+                over_limit_sort_order,
+            ),
+        )
+        .await
+        .expect_err("database must reject the stream after the domain maximum");
+        assert_eq!(
+            database_error.database_detail(),
+            Some("media_desired_target_stream_limit_exceeded")
+        );
+
+        let error = service
+            .media_desired_target_create(MediaDesiredTargetCreateParams {
+                actor_user_public_id,
+                target_key: "over-limit-target".to_string(),
+                version: 1,
+                display_name: "Over limit target".to_string(),
+                container_format: "matroska".to_string(),
+                streams: desired_target_streams(MAX_DESIRED_TARGET_STREAMS + 1),
+            })
+            .await
+            .expect_err("over-limit desired target should fail before persistence");
+        assert_eq!(
+            error.code(),
+            Some("media_desired_target_stream_limit_exceeded")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_discovery_creation_rejects_concurrent_target_append() -> anyhow::Result<()> {
+        let (mut service, actor_user_public_id) = setup_media_service(static_detector()).await?;
+        let target = service
+            .media_desired_target_create(MediaDesiredTargetCreateParams {
+                actor_user_public_id,
+                target_key: "concurrent-snapshot-target".to_string(),
+                version: 1,
+                display_name: "Concurrent snapshot target".to_string(),
+                container_format: "matroska".to_string(),
+                streams: desired_target_streams(1),
+            })
+            .await?;
+        let media_source = create_test_media_source("concurrent.mkv")?;
+        let (_, association_id) = setup_native_app_association(
+            &mut service,
+            actor_user_public_id,
+            &media_source,
+            &target.target_key,
+            target.version,
+            "",
+        )
+        .await?;
+
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let job_barrier = Arc::clone(&barrier);
+        let job_service = service.service.clone();
+        let source_paths = vec!["concurrent.mkv".to_string()];
+        let job_task = tokio::spawn(async move {
+            job_barrier.wait().await;
+            job_service
+                .media_association_run(
+                    actor_user_public_id,
+                    &revaer_api::models::MediaDiscoveryPreviewRequest {
+                        media_discovery_association_public_id: association_id,
+                        source_paths,
+                    },
+                    revaer_api::app::media::MediaAssociationRunTrigger::Manual,
+                )
+                .await
+        });
+
+        let append_barrier = Arc::clone(&barrier);
+        let append_pool = service.store.pool().clone();
+        let target_public_id = target.media_desired_target_profile_public_id;
+        let append_task = tokio::spawn(async move {
+            append_barrier.wait().await;
+            append_media_desired_target_stream_with_executor(
+                &append_pool,
+                append_audio_stream_input(target_public_id, "late-audio", 1),
+            )
+            .await
+        });
+
+        let (_, discovery) = job_task.await??;
+        let media_job_public_id = discovery
+            .queued_jobs
+            .first()
+            .context("concurrent discovery did not queue a job")?
+            .media_job_public_id;
+        let append_error = append_task
+            .await?
+            .expect_err("activated desired target must reject concurrent append");
+        assert_eq!(
+            append_error.database_detail(),
+            Some("media_desired_target_immutable")
+        );
+        let snapshot = service
+            .store
+            .list_job_desired_target_streams(media_job_public_id)
+            .await?;
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].stream_key, "video-0");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_discovery_run_rejects_unsupported_profile_compatibility_target()
+    -> anyhow::Result<()> {
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
+        assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;
+        service
+            .media_compatibility_target_upsert(MediaCompatibilityTargetUpsertParams {
+                actor_user_public_id,
+                compatibility_target_key: "hevc-aac",
+                version: 1,
+                display_name: "HEVC AAC",
+                video_codec: "hevc",
+                audio_codec: "aac",
+                audio_channels: Some(2),
+                audio_channel_layout: Some("stereo"),
+                subtitle_policy: "selected",
+            })
+            .await?;
+        let media_source = create_test_media_source("video.mkv")?;
+        let profile_id = service
+            .media_profile_upsert(MediaProfileUpsertParams {
+                actor_user_public_id,
+                profile_key: "profile-readiness",
+                source_root: &media_source.source_root,
+                output_root: &media_source.output_root,
+                dry_run_only: false,
+                retention_days: 30,
+                compatibility_target_key: Some("hevc-aac"),
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            })
+            .await?;
+        service
+            .media_profile_patch(MediaProfilePatchParams {
+                actor_user_public_id,
+                media_profile_public_id: profile_id,
+                source_root: None,
+                output_root: None,
+                dry_run_only: Some(false),
+                retention_days: None,
+                compatibility_target_key: None,
+                policy_key: None,
+                watcher_enabled: None,
+                schedule_enabled: None,
+                schedule_interval_minutes: None,
+            })
+            .await?;
+
+        let source_paths = vec![media_source.source_path.clone()];
+        let error = service
+            .media_discovery_run(MediaDiscoveryRunParams {
+                actor_user_public_id,
+                media_profile_public_id: profile_id,
+                source_paths: &source_paths,
+            })
+            .await
+            .expect_err("profile compatibility target should fail before queueing");
+
+        assert_eq!(error.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(
+            error.code(),
+            Some("media_profile_compatibility_target_unsupported")
+        );
+        assert!(
+            service
+                .media_job_list(profile_id, Some("queued"))
+                .await?
+                .is_empty()
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_profile_readiness_returns_none_for_missing_profile() -> anyhow::Result<()> {
+        let (service, _actor_user_public_id) = setup_media_service(static_detector()).await?;
+
+        let readiness = service.media_profile_readiness(Uuid::new_v4()).await?;
+
+        assert!(readiness.is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn execution_readiness_reports_missing_capability_snapshot() -> anyhow::Result<()> {
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
+        let profile_id = service
+            .media_profile_upsert(MediaProfileUpsertParams {
+                actor_user_public_id,
+                profile_key: "profile-readiness-missing-snapshot",
+                source_root: "/input/profile-readiness-missing-snapshot",
+                output_root: "/output/profile-readiness-missing-snapshot",
+                dry_run_only: false,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            })
+            .await?;
+
+        let profile = service
+            .store
+            .get_profile(profile_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("missing execution profile"))?;
+        let latest = service.store.latest_capability().await?;
+        let reason = service
+            .profile_execution_readiness_failure_code(&profile, latest.as_ref())
+            .await?;
+        assert_eq!(reason.as_deref(), Some("media_capability_snapshot_missing"));
+        assert!(latest.is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn execution_readiness_reports_unsupported_compatibility_target() -> anyhow::Result<()> {
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
+        assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;
+        service
+            .media_compatibility_target_upsert(MediaCompatibilityTargetUpsertParams {
+                actor_user_public_id,
+                compatibility_target_key: "hevc-aac",
+                version: 1,
+                display_name: "HEVC AAC",
+                video_codec: "hevc",
+                audio_codec: "aac",
+                audio_channels: Some(2),
+                audio_channel_layout: Some("stereo"),
+                subtitle_policy: "selected",
+            })
+            .await?;
+        let profile_id = service
+            .media_profile_upsert(MediaProfileUpsertParams {
+                actor_user_public_id,
+                profile_key: "profile-readiness-api",
+                source_root: "/input/profile-readiness-api",
+                output_root: "/output/profile-readiness-api",
+                dry_run_only: false,
+                retention_days: 30,
+                compatibility_target_key: Some("hevc-aac"),
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            })
+            .await?;
+
+        let profile = service
+            .store
+            .get_profile(profile_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("missing execution profile"))?;
+        let latest = service.store.latest_capability().await?;
+        let reason = service
+            .profile_execution_readiness_failure_code(&profile, latest.as_ref())
+            .await?;
+        assert_eq!(
+            reason.as_deref(),
+            Some("media_profile_compatibility_target_unsupported")
+        );
+        assert!(latest.is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_discovery_preview_marks_profile_paths_and_rejects_outside_sources()
+    -> anyhow::Result<()> {
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
+        let profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
+        let source_paths = vec![
+            "/input/app-media/show/episode.mkv".to_string(),
+            "/input/app-media-other/show/episode.mkv".to_string(),
+            "/input/app-media/../outside/episode.mkv".to_string(),
+        ];
+
+        let previews = service
+            .media_discovery_preview(MediaDiscoveryPreviewParams {
+                media_profile_public_id: profile_id,
+                source_paths: &source_paths,
+            })
+            .await?;
+
+        assert_eq!(previews.len(), 3);
+        assert!(previews[0].accepted);
+        assert!(previews[0].dry_run);
+        assert_eq!(
+            previews[0].output_path.as_deref(),
+            Some("/output/app-media/show/episode.mkv")
+        );
+        assert!(!previews[1].accepted);
+        assert_eq!(
+            previews[1].reason.as_deref(),
+            Some("media_discovery_source_path_outside_profile_root")
+        );
+        assert!(!previews[2].accepted);
+        assert_eq!(
+            previews[2].reason.as_deref(),
+            Some("media_discovery_source_path_outside_profile_root")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_discovery_run_queues_accepted_profile_paths_and_skips_rejected_sources()
+    -> anyhow::Result<()> {
+        let (mut service, actor_user_public_id) = setup_media_service(static_detector()).await?;
+        let media_source = create_test_media_source("show/episode.mkv")?;
+        let target = create_native_app_target(&service, actor_user_public_id).await?;
+        let (profile_id, association_id) = setup_native_app_association(
+            &mut service,
+            actor_user_public_id,
+            &media_source,
+            &target.target_key,
+            target.version,
+            "show",
+        )
+        .await?;
+        let request = revaer_api::models::MediaDiscoveryPreviewRequest {
+            media_discovery_association_public_id: association_id,
+            source_paths: vec![
+                "show/episode.mkv".into(),
+                "show/episode.mkv".into(),
+                "show-other/episode.mkv".into(),
+            ],
+        };
+        let (admitted_profile_id, response) = service
+            .media_association_run(
+                actor_user_public_id,
+                &request,
+                revaer_api::app::media::MediaAssociationRunTrigger::Manual,
+            )
+            .await?;
+        assert_eq!(admitted_profile_id, profile_id);
+
+        assert_eq!(response.queued_jobs.len(), 1);
+        assert_eq!(response.skipped.len(), 2);
+        assert_eq!(response.queued_jobs[0].source_path, "show/episode.mkv");
+        assert_eq!(response.queued_jobs[0].output_path, "show/episode.mkv");
+        assert!(response.queued_jobs[0].dry_run);
+        assert_eq!(
+            response.skipped[0].reason.as_deref(),
+            Some("media_discovery_source_path_duplicate")
+        );
+        assert_eq!(
+            response.skipped[1].reason.as_deref(),
+            Some("media_discovery_source_path_outside_profile_root")
+        );
+        let jobs = service.media_job_list(profile_id, Some("queued")).await?;
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].source_path, "show/episode.mkv");
+        let (_, repeated) = service
+            .media_association_run(
+                actor_user_public_id,
+                &revaer_api::models::MediaDiscoveryPreviewRequest {
+                    media_discovery_association_public_id: association_id,
+                    source_paths: vec!["show/episode.mkv".into()],
+                },
+                revaer_api::app::media::MediaAssociationRunTrigger::Manual,
+            )
+            .await?;
+        assert!(repeated.queued_jobs.is_empty());
+        assert_eq!(repeated.skipped.len(), 1);
+        assert_eq!(
+            repeated.skipped[0].reason.as_deref(),
+            Some("media_discovery_source_unchanged")
+        );
+        let rendered = service.telemetry.render()?;
+        assert!(rendered_has_metric_labels(
+            &rendered,
+            "media_discovery_candidates_total",
+            &[("source", "manual"), ("outcome", "queued")]
+        ));
+        assert!(rendered_has_metric_labels(
+            &rendered,
+            "media_discovery_candidates_total",
+            &[("source", "manual"), ("outcome", "skipped")]
+        ));
+        assert!(rendered_has_metric_labels(
+            &rendered,
+            "media_jobs_queued_total",
+            &[("source", "manual"), ("dry_run", "true")]
+        ));
+        Ok(())
+    }
+
+    fn rendered_has_metric_labels(
+        rendered: &str,
+        metric_name: &str,
+        labels: &[(&str, &str)],
+    ) -> bool {
+        rendered.lines().any(|line| {
+            line.starts_with(metric_name)
+                && labels
+                    .iter()
+                    .all(|(name, value)| line.contains(&format!("{name}=\"{value}\"")))
+        })
+    }
+
+    #[tokio::test]
+    async fn media_discovery_schedule_fails_closed_without_verified_roots() -> anyhow::Result<()> {
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
+        let disabled_profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
+        let source_paths = vec!["/input/app-media/show/episode.mkv".to_string()];
+
+        let disabled_result = service
+            .media_discovery_schedule_run(MediaDiscoveryAutomationRunParams {
+                actor_user_public_id,
+                media_profile_public_id: disabled_profile_id,
+                source_paths: &source_paths,
+            })
+            .await;
+        let Err(disabled_error) = disabled_result else {
+            return Err(anyhow::anyhow!("disabled schedule should reject"));
+        };
+        assert_eq!(disabled_error.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(
+            disabled_error.code(),
+            Some("media_discovery_schedule_disabled")
+        );
+
+        let enabled_result =
+            upsert_app_media_profile_with_discovery(&service, actor_user_public_id, false, true)
+                .await;
+        let Err(enabled_error) = enabled_result else {
+            return Err(anyhow::anyhow!(
+                "legacy profile creation must not enable scheduled discovery"
+            ));
+        };
+        assert_eq!(enabled_error.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(
+            enabled_error.code(),
+            Some("media_profile_filesystem_identity_required")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_discovery_watcher_fails_closed_without_verified_roots() -> anyhow::Result<()> {
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
+        let disabled_profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
+        let source_paths = vec!["/input/app-media/show/episode.mkv".to_string()];
+
+        let disabled_result = service
+            .media_discovery_watcher_run(MediaDiscoveryAutomationRunParams {
+                actor_user_public_id,
+                media_profile_public_id: disabled_profile_id,
+                source_paths: &source_paths,
+            })
+            .await;
+        let Err(disabled_error) = disabled_result else {
+            return Err(anyhow::anyhow!("disabled watcher should reject"));
+        };
+        assert_eq!(disabled_error.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(
+            disabled_error.code(),
+            Some("media_discovery_watcher_disabled")
+        );
+
+        let enabled_result =
+            upsert_app_media_profile_with_discovery(&service, actor_user_public_id, true, false)
+                .await;
+        let Err(enabled_error) = enabled_result else {
+            return Err(anyhow::anyhow!(
+                "legacy profile creation must not enable watcher discovery"
+            ));
+        };
+        assert_eq!(enabled_error.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(
+            enabled_error.code(),
+            Some("media_profile_filesystem_identity_required")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn discovery_mode_guard_accepts_enabled_watcher_only() -> anyhow::Result<()> {
+        ensure_discovery_mode_enabled(DiscoveryRunMode::Watcher, false, true)?;
+        let disabled = ensure_discovery_mode_enabled(DiscoveryRunMode::Watcher, true, false)
+            .expect_err("disabled watcher should reject automation run");
+        assert_eq!(disabled.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(disabled.code(), Some("media_discovery_watcher_disabled"));
+        Ok(())
+    }
+
+    #[test]
+    fn parse_yaml_bundle_rejects_empty_and_invalid_payloads() {
+        let empty = parse_yaml_bundle(" \n\t ");
+        assert_eq!(
+            empty.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_yaml_payload_missing".to_string())
+        );
+
+        let invalid = parse_yaml_bundle("profiles: [");
+        assert_eq!(
+            invalid.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_yaml_invalid".to_string())
+        );
+    }
+
+    #[test]
+    fn yaml_profile_validation_codes_preserve_error_semantics() {
+        use revaer_media_core::compile::ValidationError;
+
+        let cases = [
+            (
+                ValidationError::OverlappingRoots,
+                "media_yaml_profile_roots_overlap",
+            ),
+            (
+                ValidationError::EmptyProfileKey,
+                "media_yaml_profile_key_missing",
+            ),
+            (
+                ValidationError::ProfileKeyTooLong,
+                "media_yaml_profile_key_too_long",
+            ),
+            (
+                ValidationError::EmptySourceRoot,
+                "media_yaml_profile_root_missing",
+            ),
+            (
+                ValidationError::EmptyOutputRoot,
+                "media_yaml_profile_root_missing",
+            ),
+            (
+                ValidationError::ProfileRootTooLong,
+                "media_yaml_profile_root_too_long",
+            ),
+            (
+                ValidationError::InvalidProfileRoot,
+                "media_yaml_profile_root_invalid",
+            ),
+            (
+                ValidationError::DuplicateProfileKey,
+                "media_yaml_profile_key_duplicate",
+            ),
+            (
+                ValidationError::OverlappingProfileRoots,
+                "media_yaml_profile_roots_overlap",
+            ),
+            (
+                ValidationError::YamlPayloadTooLarge,
+                "media_yaml_payload_too_large",
+            ),
+            (ValidationError::InvalidYaml, "media_yaml_invalid"),
+            (
+                ValidationError::TooManyProfiles,
+                "media_yaml_profile_count_exceeded",
+            ),
+        ];
+
+        for (error, expected_code) in cases {
+            assert_eq!(super::yaml_profile_validation_code(&error), expected_code);
+        }
+    }
+
+    #[test]
+    fn validate_yaml_bundle_reports_version_shape_and_profile_errors() {
+        let bundle = parse_yaml_bundle(
+            "format_version: 2\nkind: revaer.media.profile_bundle\nmetadata:\n  name: Invalid\nprofiles:\n  - profile_key: tv\n    source_root: /data\n    output_root: /data\n    dry_run_only: false\n    retention_days: 0\n",
+        )
+        .expect("bundle");
+        let issues = validate_yaml_bundle(&bundle, &[], &[], &[]);
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.code == "media_yaml_version_unsupported")
+        );
+        assert!(
+            issues
+                .iter()
+                .any(|issue| { issue.code == "media_yaml_profile_retention_days_out_of_bounds" })
+        );
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.code == "media_yaml_profile_roots_overlap")
+        );
+    }
+
+    #[test]
+    fn validate_yaml_bundle_rejects_invalid_audio_layout_contracts() {
+        let bundle = parse_yaml_bundle(
+            "format_version: 1\nkind: revaer.media.profile_bundle\nmetadata:\n  name: Invalid audio layouts\ncompatibility_targets:\n  - compatibility_target_key: bad-compat\n    version: 1\n    display_name: Bad compat\n    video_codec: hevc\n    audio_codec: opus\n    audio_channels: 2\n    audio_channel_layout: 5.1(side)\n    subtitle_policy: selected\ntargets:\n  - target_key: bad-target\n    version: 1\n    display_name: Bad target\n    container_format: matroska\n    streams:\n      - stream_key: audio-main\n        stream_kind: audio\n        semantic_role: primary\n        language_code: eng\n        optional: false\n        sort_order: 0\n        codec: opus\n        channel_count: 2\n        channel_layout: ambisonic\n        default_disposition: true\n        forced_disposition: false\n",
+        )
+        .expect("bundle");
+        let issues = validate_yaml_bundle(&bundle, &[], &[], &[]);
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.code == "media_yaml_compatibility_target_invalid")
+        );
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.code == "media_yaml_desired_target_stream_invalid")
+        );
+    }
+
+    #[test]
+    fn profile_create_validation_errors_preserve_bounded_codes() {
+        for code in [
+            "media_desired_target_not_found",
+            "media_policy_profile_not_found",
+            "media_configuration_invalid",
+            "media_configuration_root_unmapped",
+            "media_root_kind_forbidden",
+            "media_root_binding_incomplete",
+        ] {
+            let error = DataError::JobFailed {
+                operation: "profile create",
+                job_key: "profile create",
+                error_code: Some("P0001".to_string()),
+                error_detail: Some(code.to_string()),
+            };
+            let mapped = map_data_error(&error);
+            assert_eq!(mapped.kind(), MediaServiceErrorKind::Invalid);
+            assert_eq!(mapped.code(), Some(code));
+            assert_eq!(mapped.sqlstate(), Some("P0001"));
+        }
+    }
+
+    #[test]
+    fn duplicate_profile_key_is_a_conflict_not_a_storage_failure() {
+        let error = DataError::JobFailed {
+            operation: "profile create",
+            job_key: "profile create",
+            error_code: Some("P0001".to_string()),
+            error_detail: Some("media_profile_key_conflict".to_string()),
+        };
+        let mapped = map_data_error(&error);
+        assert_eq!(mapped.kind(), MediaServiceErrorKind::Conflict);
+        assert_eq!(mapped.code(), Some("media_profile_key_conflict"));
+        assert_eq!(mapped.sqlstate(), Some("P0001"));
+    }
+
+    #[test]
+    fn duplicate_policy_version_is_a_conflict_not_a_storage_failure() {
+        let error = DataError::JobFailed {
+            operation: "policy create",
+            job_key: "policy create",
+            error_code: Some("P0001".to_string()),
+            error_detail: Some("media_policy_version_conflict".to_string()),
+        };
+        let mapped = map_data_error(&error);
+        assert_eq!(mapped.kind(), MediaServiceErrorKind::Conflict);
+        assert_eq!(mapped.code(), Some("media_policy_version_conflict"));
+        assert_eq!(mapped.sqlstate(), Some("P0001"));
+    }
+
+    #[test]
+    fn map_data_error_projects_expected_kind_and_codes() {
+        let not_found = DataError::JobFailed {
+            operation: "job",
+            job_key: "job",
+            error_code: Some("P0001".to_string()),
+            error_detail: Some("media_job_not_found".to_string()),
+        };
+        let mapped = map_data_error(&not_found);
+        assert_eq!(mapped.kind(), MediaServiceErrorKind::NotFound);
+        assert_eq!(mapped.code(), Some("media_job_not_found"));
+        assert_eq!(mapped.sqlstate(), Some("P0001"));
+
+        let conflict = DataError::JobFailed {
+            operation: "job",
+            job_key: "job",
+            error_code: None,
+            error_detail: Some("media_job_retry_invalid_status".to_string()),
+        };
+        assert_eq!(
+            map_data_error(&conflict).kind(),
+            MediaServiceErrorKind::Conflict
+        );
+
+        let invalid = DataError::JobFailed {
+            operation: "job",
+            job_key: "job",
+            error_code: None,
+            error_detail: Some("media_profile_roots_overlap".to_string()),
+        };
+        assert_eq!(
+            map_data_error(&invalid).kind(),
+            MediaServiceErrorKind::Invalid
+        );
+
+        let invalid_cast = DataError::JobFailed {
+            operation: "job",
+            job_key: "job",
+            error_code: Some("22P02".to_string()),
+            error_detail: None,
+        };
+        let mapped_invalid_cast = map_data_error(&invalid_cast);
+        assert_eq!(mapped_invalid_cast.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(mapped_invalid_cast.sqlstate(), Some("22P02"));
+
+        let invalid_cast_overrides_conflict_detail = DataError::JobFailed {
+            operation: "job",
+            job_key: "job",
+            error_code: Some("22P02".to_string()),
+            error_detail: Some("media_job_retry_invalid_status".to_string()),
+        };
+        assert_eq!(
+            map_data_error(&invalid_cast_overrides_conflict_detail).kind(),
+            MediaServiceErrorKind::Invalid
+        );
+    }
+
+    #[test]
+    fn map_detect_error_projects_expected_codes() {
+        assert_eq!(
+            map_detect_error(&CapabilityDetectError::Unavailable).code(),
+            Some("media_capability_refresh_unavailable")
+        );
+        assert_eq!(
+            map_detect_error(&CapabilityDetectError::CommandFailed("x".to_string())).code(),
+            Some("media_capability_refresh_failed")
+        );
+        assert_eq!(
+            map_detect_error(&CapabilityDetectError::OutputMalformed("x".to_string())).code(),
+            Some("media_capability_refresh_failed")
+        );
+    }
+
+    #[tokio::test]
+    async fn media_service_round_trips_profile_job_yaml_and_capability_paths() -> anyhow::Result<()>
+    {
+        let (mut service, actor_user_public_id) = setup_media_service(static_detector()).await?;
+
+        let media_source = create_test_media_source("library/video.mkv")?;
+        let target = create_native_app_target(&service, actor_user_public_id).await?;
+        let (profile_id, association_id) = setup_native_app_association(
+            &mut service,
+            actor_user_public_id,
+            &media_source,
+            &target.target_key,
+            target.version,
+            "library",
+        )
+        .await?;
+        assert_profile_is_listed(&service, profile_id).await?;
+        let job_id = create_app_media_job(
+            &service,
+            actor_user_public_id,
+            association_id,
+            "library/video.mkv",
+        )
+        .await?;
+        let (claim_generation, cancel_generation) =
+            assert_job_records_round_trip(&service, profile_id, job_id).await?;
+        assert_job_cancel_retry(&service, job_id, claim_generation, cancel_generation).await?;
+
+        assert_yaml_round_trip(&service, actor_user_public_id).await?;
+
+        Ok(())
+    }
+
+    async fn assert_yaml_round_trip(service: &MediaService, actor: Uuid) -> anyhow::Result<()> {
+        let yaml = service.media_yaml_export(false).await?;
+        assert!(service.media_yaml_validate(&yaml).await?.valid);
+        let bundle: serde_yaml::Value = serde_yaml::from_str(&yaml)?;
+        let mut invalid = bundle.clone();
+        invalid["profiles"][0]["desired_target_key"] = "missing-target".into();
+        invalid["profiles"][0]["policy_key"] = "missing-policy".into();
+        let invalid_yaml = serde_yaml::to_string(&invalid)?;
+        let validation = service.media_yaml_validate(&invalid_yaml).await?;
+        assert!(!validation.valid);
+        for code in [
+            "media_yaml_desired_target_not_found",
+            "media_yaml_policy_profile_not_found",
+        ] {
+            assert!(validation.issues.iter().any(|issue| issue.code == code));
+        }
+        assert_eq!(
+            service
+                .media_yaml_apply(actor, &invalid_yaml, &[])
+                .await
+                .err()
+                .context("invalid catalog refs")?
+                .code(),
+            Some("media_yaml_validation_failed")
+        );
+        assert_native_yaml_copy(service, actor, bundle).await?;
+        let local = service.media_yaml_export(true).await?;
+        let local_bundle: serde_yaml::Value = serde_yaml::from_str(&local)?;
+        assert_eq!(
+            local_bundle["kind"].as_str(),
+            Some("revaer.media.local_snapshot")
+        );
+        assert_eq!(
+            local_bundle["local_root_paths"].as_sequence().map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(
+            service
+                .media_yaml_validate(&local)
+                .await
+                .err()
+                .context("local snapshot cannot validate for import")?
+                .code(),
+            Some("media_yaml_invalid")
+        );
+        assert_eq!(
+            service
+                .media_yaml_apply(actor, &local, &[])
+                .await
+                .err()
+                .context("local snapshot cannot authorize import")?
+                .code(),
+            Some("media_yaml_invalid")
+        );
+        Ok(())
+    }
+
+    async fn assert_native_yaml_copy(
+        service: &MediaService,
+        actor: Uuid,
+        mut bundle: serde_yaml::Value,
+    ) -> anyhow::Result<()> {
+        bundle["profiles"][0]["profile_key"] = "portable-copy".into();
+        bundle["profiles"][0]["output_root_key"] = "unmapped-output".into();
+        bundle["profiles"][0]["workspace_root_key"] = "unmapped-workspace".into();
+        bundle["discovery_associations"][0]["association_key"] = "portable-copy".into();
+        bundle["discovery_associations"][0]["profile_key"] = "portable-copy".into();
+        bundle["discovery_associations"][0]["root_relative_path"] = "portable-copy".into();
+        let yaml = serde_yaml::to_string(&bundle)?;
+        let fences = native_yaml_preconditions(service, &yaml).await?;
+        let draft = service.media_yaml_apply(actor, &yaml, &fences).await?;
+        assert!(draft.forced_dry_run);
+        assert!(draft.media_profile_public_ids.is_empty());
+        assert_eq!(draft.media_profile_import_draft_public_ids.len(), 1);
+        let id = draft.media_profile_import_draft_public_ids[0];
+        let profile = service
+            .media_profile_version(id)
+            .await?
+            .context("native draft")?;
+        assert!(profile.fields().active_version.is_none());
+        assert!(!profile.fields().profile.fields().enabled);
+        assert!(
+            profile
+                .fields()
+                .root_bindings
+                .iter()
+                .all(|root| !root.binding_ready)
+        );
+        assert!(
+            service
+                .media_yaml_export(false)
+                .await?
+                .contains("profile_key: portable-copy")
+        );
+
+        // Resolve logical selectors against this host's catalog in a new immutable version.
+        bundle["profiles"][0]["version"] = 2.into();
+        bundle["profiles"][0]["output_root_key"] = "worker-source".into();
+        bundle["profiles"][0]["workspace_root_key"] = "worker-workspace".into();
+        bundle["discovery_associations"][0]["profile_version"] = 2.into();
+        let mapped_yaml = serde_yaml::to_string(&bundle)?;
+        let fences = native_yaml_preconditions(service, &mapped_yaml).await?;
+        let mapped = service
+            .media_yaml_apply(actor, &mapped_yaml, &fences)
+            .await?;
+        assert!(mapped.forced_dry_run);
+        assert_eq!(mapped.media_profile_public_ids, vec![id]);
+        assert!(mapped.media_profile_import_draft_public_ids.is_empty());
+        let profile = service
+            .media_profile_version(id)
+            .await?
+            .context("mapped native profile")?;
+        assert_eq!(profile.fields().latest_version, 2);
+        assert_eq!(profile.fields().active_version, Some(2));
+        assert!(profile.fields().profile.fields().dry_run_only);
+        assert!(
+            profile
+                .fields()
+                .root_bindings
+                .iter()
+                .all(|root| root.binding_ready)
+        );
+        let exported = service.media_yaml_export(false).await?;
+        assert!(service.media_yaml_validate(&exported).await?.valid);
+        let (profiles, _) = service
+            .media_profile_version_page(100, None)
+            .await?
+            .into_parts();
+        assert_eq!(profiles.len(), 2);
+        assert!(
+            profiles
+                .iter()
+                .all(|profile| profile.fields().active_version.is_some())
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn portable_yaml_moves_complete_configuration_between_isolated_instances()
+    -> anyhow::Result<()> {
+        let (source, source_actor) = setup_media_service(static_detector()).await?;
+        let portable_yaml = configure_portable_source(&source, source_actor).await?;
+        let (destination, destination_actor) = setup_media_service(static_detector()).await?;
+        assert_portable_import(&destination, destination_actor, &portable_yaml).await
+    }
+
+    async fn configure_portable_source(
+        source: &TestMediaService,
+        source_actor: Uuid,
+    ) -> anyhow::Result<String> {
+        use revaer_api::models::media_root_contract::{
+            DiscoveryAssociationRequest, DiscoveryModes, ProfileVersionRequest,
+            ProfileVersionRequestFields,
+        };
+        source
+            .media_compatibility_target_upsert(MediaCompatibilityTargetUpsertParams {
+                actor_user_public_id: source_actor,
+                compatibility_target_key: "portable-client",
+                version: 3,
+                display_name: "Portable client",
+                video_codec: "hevc",
+                audio_codec: "opus",
+                audio_channels: Some(2),
+                audio_channel_layout: Some("stereo"),
+                subtitle_policy: "all",
+            })
+            .await?;
+        source
+            .media_policy_upsert(MediaPolicyUpsertParams {
+                output: revaer_api::models::MediaPolicyOutput {
+                    quarantine_enabled: false,
+                    ..revaer_api::models::MediaPolicyOutput::default()
+                },
+                actor_user_public_id: source_actor,
+                policy_key: "portable-strict",
+                version: 2,
+                display_name: "Portable strict",
+                video_intent: "archival",
+                verification_strictness: "strict",
+                verification_duration_tolerance_millis: 100,
+                verification_mux_validation: true.into(),
+                verification_decode_all_streams: true.into(),
+                verification_keyframe_seek: true.into(),
+                verification_playback_probe: true.into(),
+            })
+            .await?;
+        source
+            .media_desired_target_create(MediaDesiredTargetCreateParams {
+                actor_user_public_id: source_actor,
+                target_key: "portable-ordered-target".to_string(),
+                version: 4,
+                display_name: "Portable ordered target".to_string(),
+                container_format: "matroska".to_string(),
+                streams: vec![
+                    desired_video_stream(),
+                    desired_audio_stream(),
+                    desired_subtitle_stream(),
+                ],
+            })
+            .await?;
+        let roots = create_test_media_source("portable.mkv")?;
+        initialize_app_native_catalog(source, &roots).await?;
+        let profile = source
+            .media_profile_version_create(
+                source_actor,
+                &ProfileVersionRequest::new(ProfileVersionRequestFields {
+                    profile_key: "portable-library".into(),
+                    display_name: "Portable library".into(),
+                    description: "Complete portable configuration".into(),
+                    enabled: true,
+                    dry_run_only: false,
+                    desired_target_key: "portable-ordered-target".into(),
+                    desired_target_version: 4,
+                    policy_key: "portable-strict".into(),
+                    policy_version: 2,
+                    output_root_key: "worker-source".into(),
+                    workspace_root_key: "worker-workspace".into(),
+                    backup_root_key: None,
+                    quarantine_root_key: None,
+                })?,
+            )
+            .await?;
+        source
+            .media_association_create(
+                source_actor,
+                &DiscoveryAssociationRequest::new(
+                    "portable-discovery",
+                    profile.fields().media_profile_public_id,
+                    1,
+                    "worker-source",
+                    "library",
+                    DiscoveryModes {
+                        manual_enabled: true,
+                        watcher_enabled: false,
+                        schedule_enabled: false,
+                    },
+                )?,
+            )
+            .await?;
+
+        source.media_yaml_export(false).await.map_err(Into::into)
+    }
+
+    async fn assert_portable_import(
+        destination: &MediaService,
+        destination_actor: Uuid,
+        portable_yaml: &str,
+    ) -> anyhow::Result<()> {
+        assert!(
+            !destination
+                .media_compatibility_target_list()
+                .await?
+                .iter()
+                .any(|target| target.compatibility_target_key == "portable-client")
+        );
+        let validation = destination.media_yaml_validate(portable_yaml).await?;
+        assert!(validation.valid);
+        assert_eq!(validation.profile_count, 1);
+        assert!(!portable_yaml.contains("canonical_path"));
+        assert!(!portable_yaml.contains("source_root:"));
+        let source_bundle: serde_yaml::Value = serde_yaml::from_str(portable_yaml)?;
+        assert_eq!(
+            source_bundle["profiles"][0]["enabled"].as_bool(),
+            Some(true)
+        );
+        assert_eq!(
+            source_bundle["discovery_associations"][0]["manual_enabled"].as_bool(),
+            Some(true)
+        );
+        let preconditions = native_yaml_preconditions(destination, portable_yaml).await?;
+        let drafted = destination
+            .media_yaml_apply(destination_actor, portable_yaml, &preconditions)
+            .await?;
+        assert!(drafted.forced_dry_run);
+        assert!(drafted.media_profile_public_ids.is_empty());
+        assert_eq!(drafted.media_profile_import_draft_public_ids.len(), 1);
+        let imported_profile = destination
+            .media_profile_version(drafted.media_profile_import_draft_public_ids[0])
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("imported native profile missing"))?;
+        let fields = imported_profile.fields();
+        let intent = fields.profile.fields();
+        assert_eq!(intent.profile_key, "portable-library");
+        assert_eq!(intent.display_name, "Portable library");
+        assert_eq!(intent.description, "Complete portable configuration");
+        assert!(!intent.enabled);
+        assert!(intent.dry_run_only);
+        assert_eq!(intent.desired_target_key, "portable-ordered-target");
+        assert_eq!(intent.desired_target_version, 4);
+        assert_eq!(intent.policy_key, "portable-strict");
+        assert_eq!(intent.policy_version, 2);
+        assert_eq!(intent.output_root_key, "worker-source");
+        assert_eq!(intent.workspace_root_key, "worker-workspace");
+        assert_eq!(fields.latest_version, 1);
+        assert!(fields.active_version.is_none());
+        assert!(
+            fields
+                .root_bindings
+                .iter()
+                .all(|binding| binding.resolution_state
+                    == revaer_api::models::media_root_contract::ProfileRootResolution::Unmapped)
+        );
+        assert_portable_association(
+            destination,
+            destination_actor,
+            fields.media_profile_public_id,
+        )
+        .await?;
+
+        let target = destination
+            .media_desired_target_list()
+            .await?
+            .into_iter()
+            .find(|target| target.target_key == "portable-ordered-target")
+            .ok_or_else(|| anyhow::anyhow!("imported target missing"))?;
+        assert_eq!(target.version, 4);
+        assert_eq!(
+            target
+                .streams
+                .iter()
+                .map(|stream| stream.stream_key.as_str())
+                .collect::<Vec<_>>(),
+            vec!["video-main", "audio-main", "subtitle-forced"]
+        );
+        let policy = destination
+            .media_policy_list()
+            .await?
+            .into_iter()
+            .find(|policy| policy.policy_key == "portable-strict" && policy.version == 2)
+            .ok_or_else(|| anyhow::anyhow!("imported policy missing"))?;
+        assert_eq!(policy.verification_strictness, "strict");
+        assert_eq!(policy.verification_duration_tolerance_millis, 100);
+        assert!(policy.verification_mux_validation.enabled());
+        assert!(policy.verification_decode_all_streams.enabled());
+        assert!(policy.verification_keyframe_seek.enabled());
+        assert!(policy.verification_playback_probe.enabled());
+        Ok(())
+    }
+
+    async fn assert_portable_association(
+        destination: &MediaService,
+        destination_actor: Uuid,
+        profile_id: Uuid,
+    ) -> anyhow::Result<()> {
+        let associations = destination.media_association_page(100, None).await?;
+        let exported = destination.media_yaml_export(false).await?;
+        let exported_value: serde_yaml::Value = serde_yaml::from_str(&exported)?;
+        assert_eq!(
+            exported_value["discovery_associations"][0]["association_key"].as_str(),
+            Some("portable-discovery")
+        );
+        assert_eq!(
+            exported_value["discovery_associations"][0]["root_relative_path"].as_str(),
+            Some("library")
+        );
+        assert_eq!(
+            exported_value["discovery_associations"][0]["profile_version"].as_i64(),
+            Some(1)
+        );
+        assert_eq!(
+            exported_value["discovery_associations"][0]["manual_enabled"].as_bool(),
+            Some(false)
+        );
+        let (associations, cursor) = associations.into_parts();
+        assert_eq!(associations.len(), 1);
+        assert!(cursor.is_none());
+        let association = associations[0].fields();
+        assert_eq!(association.request.association_key(), "portable-discovery");
+        assert_eq!(association.request.media_profile_public_id(), profile_id);
+        assert_eq!(association.request.source_root_key(), "worker-source");
+        assert_eq!(association.request.profile_version(), 1);
+        assert!(!association.request.modes().manual_enabled);
+        assert!(!association.request.modes().watcher_enabled);
+        assert!(!association.request.modes().schedule_enabled);
+        assert!(association.active_version.is_none());
+        assert!(!association.binding_ready);
+        let error = destination
+            .media_association_run(
+                destination_actor,
+                &revaer_api::models::MediaDiscoveryPreviewRequest {
+                    media_discovery_association_public_id: association
+                        .media_discovery_association_public_id,
+                    source_paths: vec!["library/portable.mkv".into()],
+                },
+                revaer_api::app::media::MediaAssociationRunTrigger::Manual,
+            )
+            .await;
+        assert_eq!(
+            error
+                .err()
+                .context("unmapped import must reject discovery")?
+                .code(),
+            Some("media_discovery_manual_disabled")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn native_association_aggregate_yield_retains_candidate_and_originals()
+    -> anyhow::Result<()> {
+        use super::source::{AdmissionBudget, AdmissionControl};
+        use revaer_api::{
+            app::media::MediaAssociationRunTrigger, models::MediaDiscoveryPreviewRequest,
+        };
+        let (mut service, actor) = setup_media_service(static_detector()).await?;
+        let roots = create_test_media_source("nested/first.mkv")?;
+        let first = Path::new(&roots.source_root).join("nested/first.mkv");
+        let original = fs::read(&first)?;
+        let second = Path::new(&roots.source_root).join("nested/second.mkv");
+        fs::write(&second, &original)?;
+        let target = create_native_app_target(&service, actor).await?;
+        let (profile, association) = setup_native_app_association(
+            &mut service,
+            actor,
+            &roots,
+            &target.target_key,
+            target.version,
+            "nested",
+        )
+        .await?;
+        let size = u64::try_from(original.len())?;
+        let request = MediaDiscoveryPreviewRequest {
+            media_discovery_association_public_id: association,
+            source_paths: vec!["nested/first.mkv".into(), "nested/second.mkv".into()],
+        };
+        let (_, admitted) = super::source::run(
+            &service,
+            actor,
+            &request,
+            MediaAssociationRunTrigger::Manual,
+            AdmissionControl {
+                cancelled: None,
+                budget: Some(AdmissionBudget {
+                    batch_bytes: size,
+                    remaining_run_bytes: size * 2,
+                    batch_metadata: std::time::Duration::from_mins(1),
+                    remaining_run_metadata: std::time::Duration::from_mins(1),
+                }),
+            },
+        )
+        .await?;
+        assert_eq!(admitted.aggregate_bytes, size);
+        assert_eq!(admitted.response.queued_jobs.len(), 1);
+        assert!(admitted.response.skipped.is_empty());
+        assert_eq!(admitted.pending, ["nested/second.mkv"]);
+        assert_eq!(
+            service.media_job_list(profile, Some("queued")).await?.len(),
+            1
+        );
+        let (_, resumed) = super::source::run(
+            &service,
+            actor,
+            &MediaDiscoveryPreviewRequest {
+                source_paths: admitted.pending,
+                ..request
+            },
+            MediaAssociationRunTrigger::Manual,
+            AdmissionControl {
+                cancelled: None,
+                budget: Some(AdmissionBudget {
+                    batch_bytes: size,
+                    remaining_run_bytes: size,
+                    batch_metadata: std::time::Duration::from_mins(1),
+                    remaining_run_metadata: std::time::Duration::from_mins(1),
+                }),
+            },
+        )
+        .await?;
+        assert_eq!(resumed.aggregate_bytes, size);
+        assert!(resumed.pending.is_empty());
+        assert_eq!(resumed.response.queued_jobs.len(), 1);
+        assert_eq!(
+            service.media_job_list(profile, Some("queued")).await?.len(),
+            2
+        );
+        assert_eq!(fs::read(&first)?, original);
+        assert_eq!(fs::read(&second)?, original);
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn native_association_watcher_admits_created_files_and_restart_deduplicates()
+    -> anyhow::Result<()> {
+        let (mut service, actor) = setup_media_service(static_detector()).await?;
+        let roots = create_test_media_source("nested/first.mkv")?;
+        let target = create_native_app_target(&service, actor).await?;
+        let (profile, association) = setup_native_app_association(
+            &mut service,
+            actor,
+            &roots,
+            &target.target_key,
+            target.version,
+            "nested",
+        )
+        .await?;
+        let result =
+            qualify_native_association_watcher(&service, &roots, profile, association).await;
+        service.store.pool().close().await;
+        let cleanup = service.postgres.close();
+        match (result, cleanup) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
+            (Err(error), Err(cleanup)) => Err(anyhow::anyhow!("{error:#}; cleanup: {cleanup:#}")),
+        }
+    }
+
+    // Actual notify/admission/restart with injected catalog proof. This does not
+    // qualify packaged automatic activation or a serving process restart.
+    #[cfg(target_os = "linux")]
+    async fn qualify_native_association_watcher(
+        service: &TestMediaService,
+        roots: &TestMediaSource,
+        profile: Uuid,
+        association: Uuid,
+    ) -> anyhow::Result<()> {
+        use crate::media::native_discovery::NativeDiscovery;
+        use crate::media_discovery_watcher::{
+            MediaWatchEventBuffer, MediaWatcher, NotifyMediaWatcher,
+        };
+        use std::collections::{BTreeMap, BTreeSet};
+        service
+            .postgres
+            .apply_fixture_script(
+                include_str!("../../../scripts/tests/media-native-watcher-mode.sql"),
+                &[("revaer_test.association", &association.to_string())],
+            )
+            .await?;
+        let events = Arc::new(MediaWatchEventBuffer::new(1024));
+        let mut watcher = NotifyMediaWatcher::new(Arc::clone(&events));
+        let mut native = NativeDiscovery::new(Arc::new(service.service.clone()));
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        native
+            .tick(Arc::clone(&cancelled), &events, &mut watcher)
+            .await?;
+        let initial = service.media_job_list(profile, Some("queued")).await?;
+        assert_eq!(initial.len(), 1);
+        fs::write(
+            Path::new(&roots.source_root).join("nested/second.mkv"),
+            b"second stable media",
+        )?;
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(12);
+        loop {
+            native.flush_watch_events(&events, &mut watcher).await?;
+            native
+                .tick(Arc::clone(&cancelled), &events, &mut watcher)
+                .await?;
+            if service.media_job_list(profile, Some("queued")).await?.len() == 2 {
+                break;
+            }
+            anyhow::ensure!(
+                tokio::time::Instant::now() < deadline,
+                "native association watch did not admit created media"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        let jobs = service.media_job_list(profile, Some("queued")).await?;
+        let identities = jobs
+            .iter()
+            .map(|job| job.media_job_public_id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(identities.len(), 2);
+        anyhow::ensure!(
+            watcher.synchronize(&BTreeMap::new()).is_empty(),
+            "watch shutdown failed"
+        );
+        drop(native);
+        drop(watcher);
+        let mut watcher = NotifyMediaWatcher::new(Arc::clone(&events));
+        let mut native = NativeDiscovery::new(Arc::new(service.service.clone()));
+        native.tick(cancelled, &events, &mut watcher).await?;
+        let restarted = service.media_job_list(profile, Some("queued")).await?;
+        assert_eq!(
+            restarted
+                .iter()
+                .map(|job| job.media_job_public_id)
+                .collect::<BTreeSet<_>>(),
+            identities
+        );
+        qualify_native_absence(
+            service,
+            roots,
+            association,
+            &mut native,
+            &mut watcher,
+            &events,
+        )
+        .await?;
+        qualify_native_failed_publication(
+            service,
+            roots,
+            association,
+            &mut native,
+            &mut watcher,
+            &events,
+        )
+        .await?;
+        anyhow::ensure!(
+            watcher.synchronize(&BTreeMap::new()).is_empty(),
+            "restarted watch shutdown failed"
+        );
+        drop(native);
+        drop(watcher);
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn qualify_native_absence(
+        service: &TestMediaService,
+        roots: &TestMediaSource,
+        association: Uuid,
+        native: &mut crate::media::native_discovery::NativeDiscovery,
+        watcher: &mut dyn crate::media_discovery_watcher::MediaWatcher,
+        events: &crate::media_discovery_watcher::MediaWatchEventBuffer,
+    ) -> anyhow::Result<()> {
+        let path = Path::new(&roots.source_root).join("nested/second.mkv");
+        let bytes = fs::read(&path)?;
+        fs::remove_file(&path)?;
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        for absent in [true, false] {
+            if !absent {
+                fs::write(&path, &bytes)?;
+            }
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(12);
+            loop {
+                native.flush_watch_events(events, watcher).await?;
+                native.tick(Arc::clone(&cancelled), events, watcher).await?;
+                let diagnostic = revaer_data::media::rescan::read_source_diagnostics(
+                    service.store.pool(),
+                    association,
+                    "nested/second.mkv",
+                )
+                .await?
+                .context("native source fingerprint disappeared")?;
+                if diagnostic.diagnostic_absent == absent
+                    && (absent || diagnostic.absence_observations == 0)
+                {
+                    break;
+                }
+                anyhow::ensure!(
+                    tokio::time::Instant::now() < deadline,
+                    "native watch did not reconcile absence/reappearance"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }
+        assert_eq!(fs::read(path)?, bytes);
+        assert_eq!(
+            fs::read(Path::new(&roots.source_root).join("nested/first.mkv"))?,
+            b"stable media test bytes"
+        );
+        Ok(())
+    }
+
+    async fn wait_for_native_absence_count(
+        service: &TestMediaService,
+        association: Uuid,
+        native: &mut crate::media::native_discovery::NativeDiscovery,
+        watcher: &mut dyn crate::media_discovery_watcher::MediaWatcher,
+        events: &crate::media_discovery_watcher::MediaWatchEventBuffer,
+        count: i16,
+    ) -> anyhow::Result<()> {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(12);
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        loop {
+            native.tick(Arc::clone(&cancelled), events, watcher).await?;
+            let row = revaer_data::media::rescan::read_source_diagnostics(
+                service.store.pool(),
+                association,
+                "nested/second.mkv",
+            )
+            .await?
+            .context("source diagnostic disappeared")?;
+            if row.absence_observations == count {
+                return Ok(());
+            }
+            anyhow::ensure!(
+                tokio::time::Instant::now() < deadline,
+                "native discovery did not reach expected absence count {count}"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+
+    async fn qualify_native_failed_publication(
+        service: &TestMediaService,
+        roots: &TestMediaSource,
+        association: Uuid,
+        native: &mut crate::media::native_discovery::NativeDiscovery,
+        watcher: &mut dyn crate::media_discovery_watcher::MediaWatcher,
+        events: &crate::media_discovery_watcher::MediaWatchEventBuffer,
+    ) -> anyhow::Result<()> {
+        let path = Path::new(&roots.source_root).join("nested/second.mkv");
+        let bytes = fs::read(&path)?;
+        fs::remove_file(&path)?;
+        wait_for_native_absence_count(service, association, native, watcher, events, 1).await?;
+        service
+            .postgres
+            .apply_fixture_script(
+                include_str!("../../../scripts/tests/media-rescan-inject-failure.sql"),
+                &[],
+            )
+            .await?;
+        let result =
+            reject_native_failed_publication(service, association, native, watcher, events).await;
+        let cleanup = service
+            .postgres
+            .apply_fixture_script(
+                include_str!("../../../scripts/tests/media-rescan-clear-failure.sql"),
+                &[],
+            )
+            .await;
+        let restore = fs::write(&path, &bytes);
+        match (result, cleanup, restore) {
+            (Ok(()), Ok(()), Ok(())) => {}
+            results => {
+                return Err(anyhow::anyhow!(
+                    "watch failure qualification/cleanup: {results:?}"
+                ));
+            }
+        }
+        wait_for_native_absence_count(service, association, native, watcher, events, 0).await?;
+        assert_eq!(fs::read(path)?, bytes);
+        Ok(())
+    }
+
+    async fn reject_native_failed_publication(
+        service: &TestMediaService,
+        association: Uuid,
+        native: &mut crate::media::native_discovery::NativeDiscovery,
+        watcher: &mut dyn crate::media_discovery_watcher::MediaWatcher,
+        events: &crate::media_discovery_watcher::MediaWatchEventBuffer,
+    ) -> anyhow::Result<()> {
+        use crate::media_discovery_watcher::{MediaWatcher, MediaWatcherError};
+        struct FaultWatcher<'a> {
+            delegate: &'a mut dyn MediaWatcher,
+            fail: bool,
+        }
+        impl MediaWatcher for FaultWatcher<'_> {
+            fn synchronize(
+                &mut self,
+                roots: &std::collections::BTreeMap<Uuid, PathBuf>,
+            ) -> Vec<MediaWatcherError> {
+                if std::mem::take(&mut self.fail) {
+                    vec![MediaWatcherError::SourceRootUnavailable(PathBuf::from(
+                        "owned watcher fault",
+                    ))]
+                } else {
+                    self.delegate.synchronize(roots)
+                }
+            }
+        }
+        let mut failed = FaultWatcher {
+            delegate: watcher,
+            fail: true,
+        };
+        assert!(
+            native
+                .flush_watch_events(events, &mut failed)
+                .await
+                .is_err()
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        for _ in 0..3 {
+            assert!(
+                native
+                    .tick(Arc::clone(&cancelled), events, &mut failed)
+                    .await
+                    .is_err()
+            );
+            let row = revaer_data::media::rescan::read_source_diagnostics(
+                service.store.pool(),
+                association,
+                "nested/second.mkv",
+            )
+            .await?
+            .context("source diagnostic disappeared during publication failure")?;
+            assert_eq!(row.absence_observations, 1);
+            assert!(
+                !row.diagnostic_absent,
+                "failed publication must not establish a clean census"
+            );
+        }
+        Ok(())
+    }
+
+    // Scripted notifications exercise common orchestration on every supported
+    // test host. Catalog trust is injected; native notify/serving proof stays Linux-only.
+    #[tokio::test]
+    async fn native_association_scripted_watch_preserves_pending_events_and_absence()
+    -> anyhow::Result<()> {
+        let (mut service, actor) = setup_media_service(static_detector()).await?;
+        let roots = create_test_media_source("nested/first.mkv")?;
+        let target = create_native_app_target(&service, actor).await?;
+        let (profile, association) = setup_native_app_association(
+            &mut service,
+            actor,
+            &roots,
+            &target.target_key,
+            target.version,
+            "nested",
+        )
+        .await?;
+        let result = qualify_scripted_native_watch(&service, &roots, profile, association).await;
+        service.store.pool().close().await;
+        let cleanup = service.postgres.close();
+        match (result, cleanup) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
+            (Err(error), Err(cleanup)) => Err(anyhow::anyhow!("{error:#}; cleanup: {cleanup:#}")),
+        }
+    }
+
+    async fn qualify_scripted_native_watch(
+        service: &TestMediaService,
+        roots: &TestMediaSource,
+        profile: Uuid,
+        association: Uuid,
+    ) -> anyhow::Result<()> {
+        use crate::media::native_discovery::NativeDiscovery;
+        use crate::media_discovery_watcher::{
+            MediaWatchEventBuffer, MediaWatcher, MediaWatcherError,
+        };
+        #[derive(Default)]
+        struct ScriptedWatcher {
+            roots: std::collections::BTreeMap<Uuid, PathBuf>,
+        }
+        impl MediaWatcher for ScriptedWatcher {
+            fn synchronize(
+                &mut self,
+                roots: &std::collections::BTreeMap<Uuid, PathBuf>,
+            ) -> Vec<MediaWatcherError> {
+                self.roots.clone_from(roots);
+                Vec::new()
+            }
+        }
+        service
+            .postgres
+            .apply_fixture_script(
+                include_str!("../../../scripts/tests/media-native-watcher-mode.sql"),
+                &[("revaer_test.association", &association.to_string())],
+            )
+            .await?;
+        let events = MediaWatchEventBuffer::new(1024);
+        let mut watcher = ScriptedWatcher::default();
+        let mut native = NativeDiscovery::new(Arc::new(service.service.clone()));
+        settle_scripted_native_watch(
+            service,
+            profile,
+            association,
+            &mut native,
+            &mut watcher,
+            &events,
+            Some(1),
+        )
+        .await?;
+        assert!(watcher.roots.contains_key(&association));
+        fs::write(
+            Path::new(&roots.source_root).join("nested/second.mkv"),
+            b"second scripted source",
+        )?;
+        send_scripted_watch_event(association, &events);
+        settle_scripted_native_watch(
+            service,
+            profile,
+            association,
+            &mut native,
+            &mut watcher,
+            &events,
+            Some(2),
+        )
+        .await?;
+        let identities = service
+            .media_job_list(profile, Some("queued"))
+            .await?
+            .into_iter()
+            .map(|row| row.media_job_public_id)
+            .collect::<std::collections::BTreeSet<_>>();
+        send_scripted_watch_event(association, &events);
+        qualify_native_failed_publication(
+            service,
+            roots,
+            association,
+            &mut native,
+            &mut watcher,
+            &events,
+        )
+        .await?;
+        settle_scripted_native_watch(
+            service,
+            profile,
+            association,
+            &mut native,
+            &mut watcher,
+            &events,
+            None,
+        )
+        .await?;
+        let retained = service
+            .media_job_list(profile, Some("queued"))
+            .await?
+            .into_iter()
+            .map(|row| row.media_job_public_id)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert!(identities.is_subset(&retained));
+        assert_eq!(
+            fs::read(Path::new(&roots.source_root).join("nested/first.mkv"))?,
+            b"stable media test bytes"
+        );
+        Ok(())
+    }
+
+    fn send_scripted_watch_event(
+        association: Uuid,
+        events: &crate::media_discovery_watcher::MediaWatchEventBuffer,
+    ) {
+        crate::media_discovery_watcher::forward_watch_result(
+            association,
+            events,
+            Ok(
+                notify::Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Any))
+                    .add_path(PathBuf::from("/untrusted-hint/outside-source.mkv")),
+            ),
+        );
+    }
+
+    async fn settle_scripted_native_watch(
+        service: &TestMediaService,
+        profile: Uuid,
+        association: Uuid,
+        native: &mut crate::media::native_discovery::NativeDiscovery,
+        watcher: &mut dyn crate::media_discovery_watcher::MediaWatcher,
+        events: &crate::media_discovery_watcher::MediaWatchEventBuffer,
+        jobs: Option<usize>,
+    ) -> anyhow::Result<()> {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(12);
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        loop {
+            native.tick(Arc::clone(&cancelled), events, watcher).await?;
+            let requests =
+                revaer_data::media::rescan::read_rescan_state(service.store.pool(), association)
+                    .await?;
+            let pending = requests
+                .iter()
+                .any(|row| row.requested_sequence > row.satisfied_sequence);
+            let count = service.media_job_list(profile, Some("queued")).await?.len();
+            if !requests.is_empty() && !pending && jobs.is_none_or(|expected| count == expected) {
+                return Ok(());
+            }
+            anyhow::ensure!(
+                tokio::time::Instant::now() < deadline,
+                "scripted native watch did not settle"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+
+    struct ScanFailureSource {
+        delegate: Arc<dyn super::source::AssociationSource>,
+        fail: Arc<std::sync::atomic::AtomicBool>,
+        scan_delay: std::time::Duration,
+    }
+
+    impl super::source::AssociationSource for ScanFailureSource {
+        fn generation(&self) -> super::source::SourceGeneration {
+            self.delegate.generation()
+        }
+
+        fn watch_directory(
+            &self,
+            key: &str,
+            prefix: &Path,
+        ) -> Result<std::os::fd::OwnedFd, crate::media_discovery_fingerprint::FingerprintError>
+        {
+            self.delegate.watch_directory(key, prefix)
+        }
+
+        fn fingerprint(
+            &self,
+            key: &str,
+            path: &Path,
+            cancelled: &dyn Fn() -> bool,
+            hash_elapsed: &mut std::time::Duration,
+        ) -> Result<
+            Option<crate::media_discovery_fingerprint::MediaAggregateFingerprint>,
+            crate::media_discovery_fingerprint::FingerprintError,
+        > {
+            self.delegate
+                .fingerprint(key, path, cancelled, hash_elapsed)
+        }
+
+        fn scan(
+            &self,
+            key: &str,
+            prefix: &Path,
+            budget: &crate::media_discovery_scan::ScanBudget,
+            cursor: Option<crate::media_discovery_scan::ScanCursor>,
+            cancelled: &dyn Fn() -> bool,
+        ) -> Result<crate::media_discovery_scan::ScanBatch, crate::media_discovery_scan::ScanError>
+        {
+            if self.fail.swap(false, std::sync::atomic::Ordering::Relaxed) {
+                return Err(
+                    crate::media_discovery_fingerprint::FingerprintError::DirectoryChanged.into(),
+                );
+            }
+            std::thread::sleep(self.scan_delay);
+            self.delegate.scan(key, prefix, budget, cursor, cancelled)
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn native_association_metadata_yield_retains_eof_until_admission() -> anyhow::Result<()> {
+        use super::native_discovery::NativeDiscovery;
+        use crate::media_discovery_watcher::{MediaWatchEventBuffer, NotifyMediaWatcher};
+        let (mut service, actor) = setup_media_service(static_detector()).await?;
+        let roots = create_test_media_source("nested/first.mkv")?;
+        let path = Path::new(&roots.source_root).join("nested/first.mkv");
+        let original = fs::read(&path)?;
+        let target = create_native_app_target(&service, actor).await?;
+        let (profile, association) = setup_native_app_association(
+            &mut service,
+            actor,
+            &roots,
+            &target.target_key,
+            target.version,
+            "nested",
+        )
+        .await?;
+        service
+            .postgres
+            .apply_fixture_script(
+                include_str!("../../../scripts/tests/media-native-watcher-mode.sql"),
+                &[("revaer_test.association", &association.to_string())],
+            )
+            .await?;
+        let mut configured = service.service.clone();
+        let delegate = configured
+            .source
+            .take()
+            .context("association source missing")?;
+        configured.source = Some(Arc::new(ScanFailureSource {
+            delegate,
+            fail: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            scan_delay: std::time::Duration::from_millis(2100),
+        }));
+        let mut native = NativeDiscovery::new(Arc::new(configured));
+        let events = Arc::new(MediaWatchEventBuffer::new(1024));
+        let mut watcher = NotifyMediaWatcher::new(Arc::clone(&events));
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        native
+            .tick(Arc::clone(&cancelled), &events, &mut watcher)
+            .await?;
+        assert!(
+            service
+                .media_job_list(profile, Some("queued"))
+                .await?
+                .is_empty()
+        );
+        let pending =
+            revaer_data::media::rescan::read_rescan_state(service.store.pool(), association)
+                .await?;
+        assert!(
+            pending
+                .iter()
+                .any(|row| row.requested_sequence > row.satisfied_sequence)
+        );
+        let captured = pending
+            .iter()
+            .map(|row| row.requested_sequence)
+            .max()
+            .context("captured rescan request missing")?;
+        native.tick(cancelled, &events, &mut watcher).await?;
+        assert_eq!(
+            service.media_job_list(profile, Some("queued")).await?.len(),
+            1
+        );
+        let finished =
+            revaer_data::media::rescan::read_rescan_state(service.store.pool(), association)
+                .await?;
+        assert!(
+            finished
+                .iter()
+                .all(|row| row.satisfied_sequence == captured),
+            "rescan requests: {:?}",
+            finished
+                .iter()
+                .map(|row| (
+                    row.requested_sequence,
+                    row.satisfied_sequence,
+                    row.reason_code.as_str()
+                ))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(fs::read(&path)?, original);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn native_association_scan_error_retries_failed_uncertainty_reset() -> anyhow::Result<()>
+    {
+        let (mut service, actor) = setup_media_service(static_detector()).await?;
+        let roots = create_test_media_source("nested/first.mkv")?;
+        let target = create_native_app_target(&service, actor).await?;
+        let (_, association) = setup_native_app_association(
+            &mut service,
+            actor,
+            &roots,
+            &target.target_key,
+            target.version,
+            "nested",
+        )
+        .await?;
+        let result = qualify_native_scan_reset_retry(&service, &roots, actor, association).await;
+        service.store.pool().close().await;
+        let cleanup = service.postgres.close();
+        match (result, cleanup) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
+            (Err(error), Err(cleanup)) => Err(anyhow::anyhow!("{error:#}; cleanup: {cleanup:#}")),
+        }
+    }
+
+    async fn qualify_native_scan_reset_retry(
+        service: &TestMediaService,
+        roots: &TestMediaSource,
+        actor: Uuid,
+        association: Uuid,
+    ) -> anyhow::Result<()> {
+        use crate::media::native_discovery::NativeDiscovery;
+        use crate::media_discovery_watcher::{MediaWatchEventBuffer, NotifyMediaWatcher};
+        use revaer_data::media::{
+            rescan::{RescanFence, request_rescan},
+            schedules::create_schedule_configuration,
+        };
+        service
+            .postgres
+            .apply_fixture_script(
+                include_str!("../../../scripts/tests/media-native-schedule-mode.sql"),
+                &[("revaer_test.association", &association.to_string())],
+            )
+            .await?;
+        create_schedule_configuration(service.store.pool(), actor, association, 1, 1, "minutes")
+            .await?;
+        let path = Path::new(&roots.source_root).join("nested/second.mkv");
+        let bytes = b"second schedule source";
+        fs::write(&path, bytes)?;
+        let fail = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut configured = service.service.clone();
+        let delegate = configured
+            .source
+            .take()
+            .context("association source missing")?;
+        let generation = delegate.generation();
+        configured.source = Some(Arc::new(ScanFailureSource {
+            delegate,
+            fail: Arc::clone(&fail),
+            scan_delay: std::time::Duration::ZERO,
+        }));
+        let mut native = NativeDiscovery::new(Arc::new(configured));
+        let events = Arc::new(MediaWatchEventBuffer::new(1024));
+        let mut watcher = NotifyMediaWatcher::new(Arc::clone(&events));
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        native
+            .tick(Arc::clone(&cancelled), &events, &mut watcher)
+            .await?;
+        fs::remove_file(&path)?;
+        request_rescan(
+            service.store.pool(),
+            &RescanFence {
+                association,
+                version: 1,
+                generation: generation.number,
+                generation_sha256: generation.sha256,
+                trigger: "schedule",
+            },
+            "directory_changed",
+        )
+        .await?;
+        wait_for_native_absence_count(service, association, &mut native, &mut watcher, &events, 1)
+            .await?;
+        service
+            .postgres
+            .apply_fixture_script(
+                include_str!("../../../scripts/tests/media-rescan-inject-failure.sql"),
+                &[],
+            )
+            .await?;
+        fail.store(true, std::sync::atomic::Ordering::Relaxed);
+        let result = reject_native_scan_reset_failure(
+            service,
+            association,
+            &mut native,
+            &mut watcher,
+            &events,
+        )
+        .await;
+        let cleanup = service
+            .postgres
+            .apply_fixture_script(
+                include_str!("../../../scripts/tests/media-rescan-clear-failure.sql"),
+                &[],
+            )
+            .await;
+        let restore = fs::write(&path, bytes);
+        match (result, cleanup, restore) {
+            (Ok(()), Ok(()), Ok(())) => {}
+            results => {
+                return Err(anyhow::anyhow!(
+                    "scan reset qualification/cleanup: {results:?}"
+                ));
+            }
+        }
+        wait_for_native_absence_count(service, association, &mut native, &mut watcher, &events, 0)
+            .await?;
+        assert_eq!(fs::read(path)?, bytes);
+        Ok(())
+    }
+
+    async fn reject_native_scan_reset_failure(
+        service: &TestMediaService,
+        association: Uuid,
+        native: &mut crate::media::native_discovery::NativeDiscovery,
+        watcher: &mut dyn crate::media_discovery_watcher::MediaWatcher,
+        events: &crate::media_discovery_watcher::MediaWatchEventBuffer,
+    ) -> anyhow::Result<()> {
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut observed = false;
+        for _ in 0..4 {
+            if native
+                .tick(Arc::clone(&cancelled), events, watcher)
+                .await
+                .is_err()
+            {
+                observed = true;
+                break;
+            }
+        }
+        assert!(observed, "injected scan/reset failure was not exercised");
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+        for _ in 0..3 {
+            assert!(
+                native
+                    .tick(Arc::clone(&cancelled), events, watcher)
+                    .await
+                    .is_err(),
+                "failed uncertainty reset must be retried before another scan"
+            );
+            let row = revaer_data::media::rescan::read_source_diagnostics(
+                service.store.pool(),
+                association,
+                "nested/second.mkv",
+            )
+            .await?
+            .context("source diagnostic disappeared during reset failure")?;
+            assert_eq!(row.absence_observations, 1);
+            assert!(!row.diagnostic_absent);
+        }
+        Ok(())
+    }
+
+    struct AppAssociationSource {
+        root: PathBuf,
+        generation: super::source::SourceGeneration,
+    }
+
+    impl super::source::AssociationSource for AppAssociationSource {
+        fn watch_directory(
+            &self,
+            key: &str,
+            prefix: &Path,
+        ) -> Result<std::os::fd::OwnedFd, crate::media_discovery_fingerprint::FingerprintError>
+        {
+            use crate::media_discovery_fingerprint::FingerprintError;
+            if key != "worker-source" {
+                return Err(FingerprintError::InvalidPath(prefix.into()));
+            }
+            rustix::fs::open(
+                self.root.join(prefix),
+                rustix::fs::OFlags::RDONLY
+                    | rustix::fs::OFlags::DIRECTORY
+                    | rustix::fs::OFlags::NOFOLLOW,
+                rustix::fs::Mode::empty(),
+            )
+            .map_err(|source| FingerprintError::Io {
+                path: prefix.to_path_buf(),
+                source: std::io::Error::from(source),
+            })
+        }
+
+        fn generation(&self) -> super::source::SourceGeneration {
+            self.generation
+        }
+
+        fn scan(
+            &self,
+            key: &str,
+            prefix: &Path,
+            budget: &crate::media_discovery_scan::ScanBudget,
+            cursor: Option<crate::media_discovery_scan::ScanCursor>,
+            cancelled: &dyn Fn() -> bool,
+        ) -> Result<crate::media_discovery_scan::ScanBatch, crate::media_discovery_scan::ScanError>
+        {
+            use crate::media_discovery_fingerprint::{FingerprintError, read_media_directory_at};
+            if key != "worker-source" {
+                return Err(FingerprintError::InvalidPath(prefix.into()).into());
+            }
+            crate::media_discovery_scan::scan_retained_media_source_paths(
+                prefix,
+                budget,
+                cursor,
+                cancelled,
+                |path, entry_limit| {
+                    let directory = rustix::fs::open(
+                        self.root.join(path),
+                        rustix::fs::OFlags::RDONLY
+                            | rustix::fs::OFlags::DIRECTORY
+                            | rustix::fs::OFlags::NOFOLLOW,
+                        rustix::fs::Mode::empty(),
+                    )
+                    .map_err(|source| FingerprintError::Io {
+                        path: path.to_path_buf(),
+                        source: std::io::Error::from(source),
+                    })?;
+                    read_media_directory_at(&directory, entry_limit)
+                },
+            )
+        }
+
+        fn fingerprint(
+            &self,
+            key: &str,
+            relative_path: &Path,
+            cancelled: &dyn Fn() -> bool,
+            hash_elapsed: &mut std::time::Duration,
+        ) -> Result<
+            Option<crate::media_discovery_fingerprint::MediaAggregateFingerprint>,
+            crate::media_discovery_fingerprint::FingerprintError,
+        > {
+            if key != "worker-source" {
+                return Err(
+                    crate::media_discovery_fingerprint::FingerprintError::InvalidPath(
+                        relative_path.into(),
+                    ),
+                );
+            }
+            crate::media_discovery_fingerprint::fingerprint_media_aggregate_measured(
+                &self.root.join(relative_path),
+                &self.root,
+                cancelled,
+                hash_elapsed,
+            )
+        }
+    }
+
+    async fn create_native_app_target(
+        service: &MediaService,
+        actor: Uuid,
+    ) -> anyhow::Result<revaer_api::app::media::MediaDesiredTargetResponse> {
+        Ok(service
+            .media_desired_target_create(MediaDesiredTargetCreateParams {
+                actor_user_public_id: actor,
+                target_key: "app-native-target".into(),
+                version: 1,
+                display_name: "Native application fixture".into(),
+                container_format: "matroska".into(),
+                streams: desired_target_streams(1),
+            })
+            .await?)
+    }
+
+    // Catalog proof is injected; file fingerprints use the real aggregate reader.
+    async fn setup_native_app_association(
+        service: &mut TestMediaService,
+        actor: Uuid,
+        roots: &TestMediaSource,
+        target_key: &str,
+        target_version: i32,
+        prefix: &str,
+    ) -> anyhow::Result<(Uuid, Uuid)> {
+        use revaer_api::models::media_root_contract::{
+            DiscoveryAssociationRequest, DiscoveryModes, ProfileVersionRequest,
+            ProfileVersionRequestFields,
+        };
+        initialize_app_native_catalog(service, roots).await?;
+        service
+            .media_policy_upsert(MediaPolicyUpsertParams {
+                output: revaer_api::models::MediaPolicyOutput {
+                    quarantine_enabled: false,
+                    ..revaer_api::models::MediaPolicyOutput::default()
+                },
+                actor_user_public_id: actor,
+                policy_key: "app-native-policy",
+                version: 1,
+                display_name: "Native fixture",
+                video_intent: "general",
+                verification_strictness: "strict",
+                verification_duration_tolerance_millis: 100,
+                verification_mux_validation: true.into(),
+                verification_decode_all_streams: true.into(),
+                verification_keyframe_seek: true.into(),
+                verification_playback_probe: true.into(),
+            })
+            .await?;
+        let profile = service
+            .media_profile_version_create(
+                actor,
+                &ProfileVersionRequest::new(ProfileVersionRequestFields {
+                    profile_key: "app-native-profile".into(),
+                    display_name: "Native fixture".into(),
+                    description: "Injected service workflow".into(),
+                    enabled: true,
+                    dry_run_only: true,
+                    desired_target_key: target_key.into(),
+                    desired_target_version: target_version,
+                    policy_key: "app-native-policy".into(),
+                    policy_version: 1,
+                    output_root_key: "worker-source".into(),
+                    workspace_root_key: "worker-workspace".into(),
+                    backup_root_key: None,
+                    quarantine_root_key: None,
+                })?,
+            )
+            .await?;
+        let profile_id = profile.fields().media_profile_public_id;
+        let association = service
+            .media_association_create(
+                actor,
+                &DiscoveryAssociationRequest::new(
+                    "app-native-discovery",
+                    profile_id,
+                    1,
+                    "worker-source",
+                    prefix,
+                    DiscoveryModes {
+                        manual_enabled: true,
+                        watcher_enabled: false,
+                        schedule_enabled: false,
+                    },
+                )?,
+            )
+            .await?;
+        let readiness =
+            revaer_data::media::root_catalog::read_root_catalog_readiness(service.store.pool())
+                .await?;
+        let generation = readiness
+            .first()
+            .and_then(|row| row.attestation_generation)
+            .context("fixture generation")?;
+        assert_capability_refresh_uses_detected_support(service, actor).await?;
+        service.service.source = Some(Arc::new(AppAssociationSource {
+            root: fs::canonicalize(&roots.source_root)?,
+            generation: super::source::SourceGeneration {
+                number: generation,
+                sha256: [0x33; 32],
+            },
+        }));
+        Ok((
+            profile_id,
+            association.fields().media_discovery_association_public_id,
+        ))
+    }
+
+    // Synthetic catalog proof for service fixtures; not Linux root qualification.
+    async fn initialize_app_native_catalog(
+        service: &TestMediaService,
+        roots: &TestMediaSource,
+    ) -> anyhow::Result<()> {
+        use std::os::unix::fs::MetadataExt;
+        let source_path = fs::canonicalize(&roots.source_root)?;
+        let workspace_path = fs::canonicalize(&roots.output_root)?;
+        let source = fs::metadata(&source_path)?;
+        let workspace = fs::metadata(&workspace_path)?;
+        service
+            .postgres
+            .apply_fixture_script(
+                include_str!("../../../scripts/tests/media-native-worker-catalog.sql"),
+                &[
+                    (
+                        "revaer_test.source_path",
+                        source_path.to_str().context("source path")?,
+                    ),
+                    (
+                        "revaer_test.source_device",
+                        &format!("{:016x}", source.dev()),
+                    ),
+                    (
+                        "revaer_test.source_inode",
+                        &format!("{:016x}", source.ino()),
+                    ),
+                    (
+                        "revaer_test.workspace_path",
+                        workspace_path.to_str().context("workspace path")?,
+                    ),
+                    (
+                        "revaer_test.workspace_device",
+                        &format!("{:016x}", workspace.dev()),
+                    ),
+                    (
+                        "revaer_test.workspace_inode",
+                        &format!("{:016x}", workspace.ino()),
+                    ),
+                ],
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn native_yaml_preconditions(
+        service: &MediaService,
+        yaml: &str,
+    ) -> anyhow::Result<Vec<revaer_api::models::MediaYamlResourcePrecondition>> {
+        use revaer_api::models::{MediaYamlResourceKind, MediaYamlResourcePrecondition};
+        let current: serde_yaml::Value =
+            serde_yaml::from_str(&service.media_yaml_export(false).await?)?;
+        let incoming: serde_yaml::Value = serde_yaml::from_str(yaml)?;
+        let (associations, cursor) = service
+            .media_association_page(200, None)
+            .await?
+            .into_parts();
+        anyhow::ensure!(
+            cursor.is_none(),
+            "fixture association heads exceed page bound"
+        );
+        let mut fences = Vec::new();
+        for (collection, key_field, kind) in [
+            (
+                "compatibility_targets",
+                "compatibility_target_key",
+                MediaYamlResourceKind::CompatibilityTargets,
+            ),
+            ("targets", "target_key", MediaYamlResourceKind::Targets),
+            ("policies", "policy_key", MediaYamlResourceKind::Policies),
+            ("profiles", "profile_key", MediaYamlResourceKind::Profiles),
+            (
+                "discovery_associations",
+                "association_key",
+                MediaYamlResourceKind::DiscoveryAssociations,
+            ),
+        ] {
+            for row in incoming[collection]
+                .as_sequence()
+                .context("resource collection")?
+            {
+                let key = row[key_field].as_str().context("resource key")?;
+                let existing = if kind == MediaYamlResourceKind::DiscoveryAssociations {
+                    associations
+                        .iter()
+                        .find(|row| row.fields().request.association_key() == key)
+                        .map(|row| i64::from(row.fields().latest_version))
+                } else {
+                    current[collection]
+                        .as_sequence()
+                        .context("current collection")?
+                        .iter()
+                        .filter(|row| row[key_field].as_str() == Some(key))
+                        .filter_map(|row| row["version"].as_i64())
+                        .max()
+                };
+                fences.push(match existing {
+                    Some(version) => MediaYamlResourcePrecondition::Match {
+                        kind,
+                        key: key.into(),
+                        expected_version: i32::try_from(version)?,
+                    },
+                    None => MediaYamlResourcePrecondition::Create {
+                        kind,
+                        key: key.into(),
+                    },
+                });
+            }
+        }
+        Ok(fences)
+    }
+
+    async fn assert_desired_target_round_trip(
+        service: &MediaService,
+        actor_user_public_id: Uuid,
+    ) -> anyhow::Result<()> {
+        let desired = service
+            .media_desired_target_create(MediaDesiredTargetCreateParams {
+                actor_user_public_id,
+                target_key: "living-room-output".to_string(),
+                version: 1,
+                display_name: "Living room output".to_string(),
+                container_format: "matroska".to_string(),
+                streams: vec![desired_video_stream(), desired_audio_stream()],
+            })
+            .await?;
+        assert_eq!(desired.target_key, "living-room-output");
+        assert_eq!(desired.streams.len(), 2);
+        let listed = service.media_desired_target_list().await?;
+        assert!(listed.iter().any(|target| {
+            target.media_desired_target_profile_public_id
+                == desired.media_desired_target_profile_public_id
+                && target.streams[1].channel_count == Some(2)
+        }));
+        let profile_id = upsert_app_media_profile(service, actor_user_public_id).await?;
+        service
+            .media_profile_desired_target_set(MediaProfileDesiredTargetParams {
+                actor_user_public_id,
+                media_profile_public_id: profile_id,
+                target_key: Some("living-room-output".to_string()),
+                version: Some(1),
+            })
+            .await?;
+        let profile = service
+            .media_profile_list()
+            .await?
+            .into_iter()
+            .find(|profile| profile.media_profile_public_id == profile_id)
+            .ok_or_else(|| anyhow::anyhow!("pinned media profile missing"))?;
+        assert_eq!(
+            profile.desired_target_key.as_deref(),
+            Some("living-room-output")
+        );
+        assert_eq!(profile.desired_target_version, Some(1));
+        Ok(())
+    }
+
+    fn desired_target_streams(count: usize) -> Vec<MediaDesiredTargetStreamParams> {
+        (0_i32..)
+            .zip(0..count)
+            .map(|(sort_order, index)| {
+                let mut stream = desired_video_stream();
+                stream.stream_key = format!("video-{index}");
+                stream.sort_order = sort_order;
+                stream
+            })
+            .collect()
+    }
+
+    fn append_audio_stream_input(
+        target_public_id: Uuid,
+        stream_key: &str,
+        sort_order: i32,
+    ) -> AppendMediaDesiredTargetStreamInput<'_> {
+        AppendMediaDesiredTargetStreamInput {
+            media_desired_target_profile_public_id: target_public_id,
+            stream_key,
+            stream_kind: "audio",
+            semantic_role: None,
+            language_code: None,
+            optional: true,
+            sort_order,
+            codec: "aac",
+            channel_count: Some(2),
+            channel_layout: Some("stereo"),
+            audio_bitrate_bps: None,
+            audio_sample_rate_hz: None,
+            audio_loudness_profile: None,
+            audio_dynamic_range: None,
+            video_profile: None,
+            video_level: None,
+            video_bitrate_bps: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: None,
+            title: None,
+            default_disposition: false,
+            forced_disposition: false,
+            subtitle_placement: None,
+            image_subtitle_action: None,
+        }
+    }
+
+    fn desired_video_stream() -> MediaDesiredTargetStreamParams {
+        MediaDesiredTargetStreamParams {
+            stream_key: "video-main".to_string(),
+            stream_kind: "video".to_string(),
+            semantic_role: None,
+            language_code: None,
+            optional: false,
+            sort_order: 0,
+            codec: "hevc".to_string(),
+            channel_count: None,
+            channel_layout: None,
+            audio_bitrate_bps: None,
+            audio_sample_rate_hz: None,
+            audio_loudness_profile: None,
+            audio_dynamic_range: None,
+            video_profile: Some("main10".to_string()),
+            video_level: Some("5.1".to_string()),
+            video_bitrate_bps: Some(8_000_000),
+            color_primaries: Some("bt2020".to_string()),
+            color_transfer: Some("smpte2084".to_string()),
+            color_space: Some("bt2020nc".to_string()),
+            hdr_format: Some("hdr10".to_string()),
+            title: None,
+            default_disposition: true,
+            forced_disposition: false,
+            subtitle_placement: None,
+            image_subtitle_action: None,
+        }
+    }
+
+    fn desired_audio_stream() -> MediaDesiredTargetStreamParams {
+        MediaDesiredTargetStreamParams {
+            stream_key: "audio-main".to_string(),
+            stream_kind: "audio".to_string(),
+            semantic_role: Some("primary".to_string()),
+            language_code: Some("eng".to_string()),
+            optional: false,
+            sort_order: 1,
+            codec: "opus".to_string(),
+            channel_count: Some(2),
+            channel_layout: Some("stereo".to_string()),
+            audio_bitrate_bps: Some(160_000),
+            audio_sample_rate_hz: Some(48_000),
+            audio_loudness_profile: Some("dialog-normalized".to_string()),
+            audio_dynamic_range: Some("speech".to_string()),
+            video_profile: None,
+            video_level: None,
+            video_bitrate_bps: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: None,
+            title: Some("English".to_string()),
+            default_disposition: true,
+            forced_disposition: false,
+            subtitle_placement: None,
+            image_subtitle_action: None,
+        }
+    }
+
+    fn desired_subtitle_stream() -> MediaDesiredTargetStreamParams {
+        MediaDesiredTargetStreamParams {
+            stream_key: "subtitle-forced".to_string(),
+            stream_kind: "subtitle".to_string(),
+            semantic_role: Some("forced".to_string()),
+            language_code: Some("eng".to_string()),
+            optional: true,
+            sort_order: 2,
+            codec: "webvtt".to_string(),
+            channel_count: None,
+            channel_layout: None,
+            audio_bitrate_bps: None,
+            audio_sample_rate_hz: None,
+            audio_loudness_profile: None,
+            audio_dynamic_range: None,
+            video_profile: None,
+            video_level: None,
+            video_bitrate_bps: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: None,
+            title: Some("English forced".to_string()),
+            default_disposition: false,
+            forced_disposition: true,
+            subtitle_placement: Some("embedded".to_string()),
+            image_subtitle_action: Some("fail".to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn media_service_round_trips_configuration_catalogs_and_retention() -> anyhow::Result<()>
+    {
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
+
+        let target = service
+            .media_compatibility_target_upsert(MediaCompatibilityTargetUpsertParams {
+                actor_user_public_id,
+                compatibility_target_key: "plex-living-room",
+                version: 2,
+                display_name: "Plex living room",
+                video_codec: "hevc",
+                audio_codec: "aac",
+                audio_channels: Some(2),
+                audio_channel_layout: Some("stereo"),
+                subtitle_policy: "selected",
+            })
+            .await?;
+        assert_eq!(target.compatibility_target_key, "plex-living-room");
+        assert_eq!(target.version, 2);
+        assert_eq!(target.audio_channels, Some(2));
+        assert_eq!(target.audio_channel_layout.as_deref(), Some("stereo"));
+        assert_eq!(target.subtitle_policy, "selected");
+        assert!(
+            service
+                .media_compatibility_target_list()
+                .await?
+                .iter()
+                .any(
+                    |target| target.compatibility_target_key == "plex-living-room"
+                        && target.version == 2
+                )
+        );
+        assert_desired_target_round_trip(&service, actor_user_public_id).await?;
+
+        let policy = service
+            .media_policy_upsert(MediaPolicyUpsertParams {
+                output: revaer_api::models::MediaPolicyOutput::default(),
+                actor_user_public_id,
+                policy_key: "living-room",
+                version: 3,
+                display_name: "Living room",
+                video_intent: "general",
+                verification_strictness: "strict",
+                verification_duration_tolerance_millis: 100,
+                verification_mux_validation: true.into(),
+                verification_decode_all_streams: true.into(),
+                verification_keyframe_seek: true.into(),
+                verification_playback_probe: true.into(),
+            })
+            .await?;
+        assert_eq!(policy.policy_key, "living-room");
+        assert_eq!(policy.version, 3);
+        assert_eq!(policy.video_intent, "general");
+        assert_eq!(policy.verification_strictness, "strict");
+        assert!(policy.verification_playback_probe.enabled());
+        assert!(
+            service
+                .media_policy_list()
+                .await?
+                .iter()
+                .any(|policy| policy.policy_key == "living-room" && policy.version == 3)
+        );
+
+        let retention = service
+            .media_job_retention_update(MediaJobRetentionUpdateParams {
+                actor_user_public_id,
+                completed_enabled: true,
+                completed_mode: "count",
+                completed_limit: 45,
+                failed_diagnostic_enabled: true,
+                failed_diagnostic_mode: "age",
+                failed_diagnostic_limit: 90,
+            })
+            .await?;
+        assert!(retention.completed_enabled);
+        assert_eq!(retention.completed_mode, "count");
+        assert_eq!(retention.completed_limit, 45);
+        assert_eq!(retention.failed_diagnostic_limit, 90);
+        let refreshed_retention = service.media_job_retention().await?;
+        assert!(refreshed_retention.completed_enabled);
+        assert_eq!(refreshed_retention.completed_mode, "count");
+        assert_eq!(refreshed_retention.completed_limit, 45);
+        assert_eq!(refreshed_retention.failed_diagnostic_limit, 90);
+        Ok(())
+    }
+
+    async fn create_app_media_job(
+        service: &MediaService,
+        actor: Uuid,
+        association_id: Uuid,
+        relative_path: &str,
+    ) -> anyhow::Result<Uuid> {
+        let (_, response) = service
+            .media_association_run(
+                actor,
+                &revaer_api::models::MediaDiscoveryPreviewRequest {
+                    media_discovery_association_public_id: association_id,
+                    source_paths: vec![relative_path.into()],
+                },
+                revaer_api::app::media::MediaAssociationRunTrigger::Manual,
+            )
+            .await?;
+        Ok(response
+            .queued_jobs
+            .first()
+            .context("manual native discovery did not queue a job")?
+            .media_job_public_id)
+    }
+
+    async fn assert_job_records_round_trip(
+        service: &MediaService,
+        profile_id: Uuid,
+        job_id: Uuid,
+    ) -> anyhow::Result<(i64, i64)> {
+        let claimed = service
+            .store
+            .claim_next_job()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("expected queued app media job"))?;
+        anyhow::ensure!(
+            claimed.media_job_public_id == job_id,
+            "claimed an unexpected app media job"
+        );
+        let claim_generation = claimed.claim_generation;
+        let cancel_generation = claimed.cancel_generation;
+        append_plan_phase_and_operation(service, job_id, claim_generation).await?;
+        append_job_violation(service, job_id, claim_generation).await?;
+        assert!(service.media_job_get(job_id).await?.is_some());
+        assert!(
+            !service
+                .media_job_list(profile_id, Some("running"))
+                .await?
+                .is_empty()
+        );
+        let phases = service.media_job_phase_list(job_id).await?;
+        assert_eq!(phases.len(), 1);
+        assert_eq!(phases[0].phase_index, 0);
+        assert_eq!(phases[0].phase_name, "plan");
+        assert_eq!(phases[0].phase_status, "running");
+        assert_eq!(phases[0].details_text.as_deref(), Some("ok"));
+        assert_eq!(service.media_job_operation_list(job_id).await?.len(), 1);
+        let violations = service.media_job_violation_list(job_id).await?;
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].violation_kind, "video_codec_mismatch");
+        append_job_planning_records(service, job_id, claim_generation).await?;
+        append_job_artifact_and_audit(service, job_id, claim_generation).await?;
+        Ok((claim_generation, cancel_generation))
+    }
+
+    async fn append_job_planning_records(
+        service: &MediaService,
+        job_id: Uuid,
+        claim_generation: i64,
+    ) -> anyhow::Result<()> {
+        service
+            .store
+            .append_job_plan_reason(
+                claim_generation,
+                &AppendMediaJobPlanReasonInput {
+                    media_job_public_id: job_id,
+                    reason_index: 0,
+                    candidate_index: Some(0),
+                    selected: true,
+                    reason_code: "least_cost_selected",
+                    reason_text: "Selected the least-cost compliant candidate.",
+                },
+            )
+            .await?;
+        let plan_reasons = service.media_job_plan_reason_list(job_id).await?;
+        assert_eq!(plan_reasons.len(), 1);
+        assert_eq!(plan_reasons[0].reason_code, "least_cost_selected");
+        service
+            .store
+            .append_job_verification_check(
+                claim_generation,
+                &AppendMediaJobVerificationCheckInput {
+                    media_job_public_id: job_id,
+                    check_index: 0,
+                    check_kind: "duration",
+                    check_status: "passed",
+                    expected_value: Some("3600.0"),
+                    actual_value: Some("3599.9"),
+                    details_text: Some("within tolerance"),
+                },
+            )
+            .await?;
+        let verification_checks = service.media_job_verification_check_list(job_id).await?;
+        assert_eq!(verification_checks.len(), 1);
+        assert_eq!(verification_checks[0].check_kind, "duration");
+        assert_eq!(verification_checks[0].check_status, "passed");
+        Ok(())
+    }
+
+    async fn append_job_artifact_and_audit(
+        service: &MediaService,
+        job_id: Uuid,
+        claim_generation: i64,
+    ) -> anyhow::Result<()> {
+        service
+            .store
+            .append_job_artifact(
+                claim_generation,
+                &AppendMediaJobArtifactInput {
+                    media_job_public_id: job_id,
+                    artifact_index: 0,
+                    artifact_kind: "ffprobe_json",
+                    artifact_path: "jobs/abc/ffprobe.json",
+                    size_bytes: Some(2048),
+                    content_type: Some("application/json"),
+                },
+            )
+            .await?;
+        let artifacts = service.media_job_artifact_list(job_id).await?;
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0].artifact_kind, "ffprobe_json");
+        assert_eq!(artifacts[0].artifact_path, "jobs/abc/ffprobe.json");
+        service
+            .store
+            .append_job_compact_audit(
+                claim_generation,
+                &AppendMediaJobCompactAuditInput {
+                    media_job_public_id: job_id,
+                    audit_index: 0,
+                    fact_kind: "replacement",
+                    fact_text: "source preserved before replace",
+                },
+            )
+            .await?;
+        let audits = service.media_job_compact_audit_list(job_id).await?;
+        assert_eq!(audits.len(), 1);
+        assert_eq!(audits[0].fact_kind, "replacement");
+        assert_eq!(audits[0].fact_text, "source preserved before replace");
+        Ok(())
+    }
+
+    async fn upsert_app_media_profile(
+        service: &MediaService,
+        actor_user_public_id: Uuid,
+    ) -> Result<Uuid, MediaServiceError> {
+        upsert_app_media_profile_with_discovery(service, actor_user_public_id, false, false).await
+    }
+
+    async fn upsert_app_media_profile_with_discovery(
+        service: &MediaService,
+        actor_user_public_id: Uuid,
+        watcher_enabled: bool,
+        schedule_enabled: bool,
+    ) -> Result<Uuid, MediaServiceError> {
+        service
+            .media_profile_upsert(MediaProfileUpsertParams {
+                actor_user_public_id,
+                profile_key: "app-media",
+                source_root: "/input/app-media",
+                output_root: "/output/app-media",
+                dry_run_only: true,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled,
+                schedule_enabled,
+                schedule_interval_minutes: schedule_enabled.then_some(60),
+            })
+            .await
+    }
+
+    fn create_test_media_source(relative_path: &str) -> anyhow::Result<TestMediaSource> {
+        let temp_dir = tempfile::tempdir()?;
+        let source_root_path = temp_dir.path().join("source");
+        let output_root_path = temp_dir.path().join("output");
+        let source_path = source_root_path.join(relative_path);
+        if let Some(parent) = source_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::create_dir_all(&output_root_path)?;
+        fs::write(&source_path, b"stable media test bytes")?;
+        Ok(TestMediaSource {
+            _temp_dir: temp_dir,
+            source_root: source_root_path.to_string_lossy().into_owned(),
+            output_root: output_root_path.to_string_lossy().into_owned(),
+            source_path: source_path.to_string_lossy().into_owned(),
+        })
+    }
+
+    async fn assert_profile_is_listed(
+        service: &MediaService,
+        profile_id: Uuid,
+    ) -> anyhow::Result<()> {
+        let (profiles, cursor) = service
+            .media_profile_version_page(100, None)
+            .await?
+            .into_parts();
+        assert!(cursor.is_none());
+        assert!(
+            profiles
+                .iter()
+                .any(|profile| profile.fields().media_profile_public_id == profile_id)
+        );
+        Ok(())
+    }
+
+    async fn append_plan_phase_and_operation(
+        service: &MediaService,
+        job_id: Uuid,
+        claim_generation: i64,
+    ) -> anyhow::Result<()> {
+        service
+            .store
+            .append_job_phase(job_id, claim_generation, 0, "plan", "running", Some("ok"))
+            .await?;
+        service
+            .store
+            .append_job_operation(
+                claim_generation,
+                &AppendMediaJobOperationInput {
+                    media_job_public_id: job_id,
+                    operation_index: 0,
+                    operation_kind: "remux",
+                    stream_id: None,
+                    command_bin: "ffmpeg",
+                    args: [Some("-i"), Some("in.mkv"), Some("-c"), Some("copy"), None],
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn append_job_violation(
+        service: &MediaService,
+        job_id: Uuid,
+        claim_generation: i64,
+    ) -> anyhow::Result<()> {
+        service
+            .store
+            .append_job_violation(
+                job_id,
+                claim_generation,
+                0,
+                "video_codec_mismatch",
+                "high",
+                Some(0),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn assert_job_cancel_retry(
+        service: &MediaService,
+        job_id: Uuid,
+        claim_generation: i64,
+        cancel_generation: i64,
+    ) -> anyhow::Result<()> {
+        service.media_job_cancel(job_id).await?;
+        let control = service
+            .store
+            .poll_job_control(job_id, claim_generation, cancel_generation)
+            .await?;
+        assert!(control.cancel_requested);
+        service
+            .store
+            .acknowledge_job_cancel(job_id, claim_generation, cancel_generation)
+            .await?;
+        let cancelled_job = service
+            .media_job_get(job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("cancelled media job missing"))?;
+        assert_eq!(cancelled_job.status, "cancelled");
+        service.media_job_retry(job_id).await?;
+        let retried_job = service
+            .media_job_get(job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("retried media job missing"))?;
+        assert_eq!(retried_job.status, "queued");
+        Ok(())
+    }
+
+    async fn assert_capability_refresh_uses_detected_support(
+        service: &MediaService,
+        actor_user_public_id: Uuid,
+    ) -> anyhow::Result<()> {
+        let cap_id = service
+            .media_capability_refresh(MediaCapabilityRefreshParams {
+                actor_user_public_id,
+            })
+            .await?;
+        assert!(cap_id > 0);
+        let latest = service.media_capability_latest().await?;
+        assert!(latest.is_some());
+        let Some(latest) = latest else {
+            return Ok(());
+        };
+        assert_eq!(latest.codecs.len(), 2);
+        assert!(latest.codecs.iter().any(|codec| codec.codec_name == "h264"
+            && !codec.encode_supported
+            && codec.decode_supported));
+        assert!(latest.codecs.iter().any(|codec| codec.codec_name == "hevc"
+            && codec.encode_supported
+            && codec.decode_supported));
+        assert_eq!(latest.encoders, vec!["libx265".to_string()]);
+        assert!(service.media_capability_readiness().await?.ready);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_capability_refresh_reports_join_failure_when_detector_panics()
+    -> anyhow::Result<()> {
+        let (service, actor_user_public_id) = setup_media_service(Arc::new(PanicDetector)).await?;
+
+        let result = service
+            .media_capability_refresh(MediaCapabilityRefreshParams {
+                actor_user_public_id,
+            })
+            .await;
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_capability_refresh_join_failed".to_string())
+        );
+
+        Ok(())
+    }
 }

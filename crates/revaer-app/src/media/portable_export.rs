@@ -484,6 +484,9 @@ fn invalid_snapshot() -> MediaServiceError {
         .with_code("media_yaml_export_snapshot_invalid")
 }
 
+#[cfg(test)]
+mod tests;
+
 mod validation;
 
 pub(super) use validation::{validate, validate_preconditions};
