@@ -39024,3 +39024,9991 @@ CREATE TABLE public.torznab_category (
 );
 
 
+--
+-- Name: torznab_category_torznab_category_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.torznab_category ALTER COLUMN torznab_category_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.torznab_category_torznab_category_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: torznab_instance; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.torznab_instance (
+    torznab_instance_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    torznab_instance_public_id uuid NOT NULL,
+    display_name character varying(256) NOT NULL,
+    api_key_hash text NOT NULL,
+    is_enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone
+);
+
+
+--
+-- Name: torznab_instance_torznab_instance_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.torznab_instance ALTER COLUMN torznab_instance_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.torznab_instance_torznab_instance_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: tracker_category_mapping; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tracker_category_mapping (
+    tracker_category_mapping_id bigint NOT NULL,
+    indexer_definition_id bigint,
+    tracker_category integer NOT NULL,
+    tracker_subcategory integer DEFAULT 0 NOT NULL,
+    torznab_category_id bigint NOT NULL,
+    media_domain_id bigint,
+    confidence numeric(4,3) DEFAULT 1.0 NOT NULL,
+    indexer_instance_id bigint,
+    torznab_instance_id bigint,
+    CONSTRAINT tracker_category_mapping_tracker_category_check CHECK ((tracker_category >= 0)),
+    CONSTRAINT tracker_category_mapping_tracker_subcategory_check CHECK ((tracker_subcategory >= 0))
+);
+
+
+--
+-- Name: tracker_category_mapping_tracker_category_mapping_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tracker_category_mapping ALTER COLUMN tracker_category_mapping_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.tracker_category_mapping_tracker_category_mapping_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: trust_tier; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trust_tier (
+    trust_tier_id bigint NOT NULL,
+    trust_tier_key public.trust_tier_key NOT NULL,
+    display_name character varying(256) NOT NULL,
+    default_weight numeric(12,4) NOT NULL,
+    rank smallint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT trust_tier_default_weight_check CHECK (((default_weight >= ('-50'::integer)::numeric) AND (default_weight <= (50)::numeric)))
+);
+
+
+--
+-- Name: trust_tier_trust_tier_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.trust_tier ALTER COLUMN trust_tier_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.trust_tier_trust_tier_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: user_result_action; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_result_action (
+    user_result_action_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    action public.user_action NOT NULL,
+    reason_code public.user_reason_code NOT NULL,
+    reason_text character varying(512),
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: user_result_action_kv; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_result_action_kv (
+    user_result_action_kv_id bigint NOT NULL,
+    user_result_action_id bigint NOT NULL,
+    key public.user_action_kv_key NOT NULL,
+    value character varying(512) NOT NULL
+);
+
+
+--
+-- Name: user_result_action_kv_user_result_action_kv_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.user_result_action_kv ALTER COLUMN user_result_action_kv_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.user_result_action_kv_user_result_action_kv_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: user_result_action_user_result_action_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.user_result_action ALTER COLUMN user_result_action_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.user_result_action_user_result_action_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: fs_jobs; Type: TABLE; Schema: revaer_runtime; Owner: -
+--
+
+CREATE TABLE revaer_runtime.fs_jobs (
+    id bigint NOT NULL,
+    torrent_id uuid NOT NULL,
+    src_path text NOT NULL,
+    dst_path text,
+    transfer_mode text,
+    status revaer_runtime.fs_status DEFAULT 'pending'::revaer_runtime.fs_status NOT NULL,
+    attempt smallint DEFAULT 0 NOT NULL,
+    last_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: fs_jobs_id_seq; Type: SEQUENCE; Schema: revaer_runtime; Owner: -
+--
+
+CREATE SEQUENCE revaer_runtime.fs_jobs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: fs_jobs_id_seq; Type: SEQUENCE OWNED BY; Schema: revaer_runtime; Owner: -
+--
+
+ALTER SEQUENCE revaer_runtime.fs_jobs_id_seq OWNED BY revaer_runtime.fs_jobs.id;
+
+
+--
+-- Name: torrent_files; Type: TABLE; Schema: revaer_runtime; Owner: -
+--
+
+CREATE TABLE revaer_runtime.torrent_files (
+    torrent_id uuid NOT NULL,
+    file_index integer NOT NULL,
+    path text NOT NULL,
+    size_bytes bigint NOT NULL,
+    bytes_completed bigint NOT NULL,
+    priority text NOT NULL,
+    selected boolean NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: torrents; Type: TABLE; Schema: revaer_runtime; Owner: -
+--
+
+CREATE TABLE revaer_runtime.torrents (
+    torrent_id uuid NOT NULL,
+    name text,
+    state revaer_runtime.torrent_state NOT NULL,
+    state_message text,
+    progress_bytes_downloaded bigint DEFAULT 0 NOT NULL,
+    progress_bytes_total bigint DEFAULT 0 NOT NULL,
+    progress_eta_seconds bigint,
+    download_bps bigint DEFAULT 0 NOT NULL,
+    upload_bps bigint DEFAULT 0 NOT NULL,
+    ratio double precision DEFAULT 0 NOT NULL,
+    sequential boolean DEFAULT false NOT NULL,
+    library_path text,
+    download_dir text,
+    comment text,
+    source text,
+    private boolean,
+    added_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: engine_tracker_endpoints id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_tracker_endpoints ALTER COLUMN id SET DEFAULT nextval('public.engine_tracker_endpoints_id_seq'::regclass);
+
+
+--
+-- Name: fs_jobs id; Type: DEFAULT; Schema: revaer_runtime; Owner: -
+--
+
+ALTER TABLE ONLY revaer_runtime.fs_jobs ALTER COLUMN id SET DEFAULT nextval('revaer_runtime.fs_jobs_id_seq'::regclass);
+
+
+--
+-- Name: acquisition_attempt acquisition_attempt_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_pkey PRIMARY KEY (acquisition_attempt_id);
+
+
+--
+-- Name: app_label_policies app_label_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_label_policies
+    ADD CONSTRAINT app_label_policies_pkey PRIMARY KEY (profile_id, kind, name);
+
+
+--
+-- Name: app_profile_immutable_keys app_profile_immutable_keys_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_profile_immutable_keys
+    ADD CONSTRAINT app_profile_immutable_keys_pkey PRIMARY KEY (profile_id, key);
+
+
+--
+-- Name: app_profile_local_networks app_profile_local_networks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_profile_local_networks
+    ADD CONSTRAINT app_profile_local_networks_pkey PRIMARY KEY (profile_id, cidr);
+
+
+--
+-- Name: app_profile app_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_profile
+    ADD CONSTRAINT app_profile_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: app_user app_user_email_normalized_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_user
+    ADD CONSTRAINT app_user_email_normalized_uq UNIQUE (email_normalized);
+
+
+--
+-- Name: app_user app_user_email_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_user
+    ADD CONSTRAINT app_user_email_uq UNIQUE (email);
+
+
+--
+-- Name: app_user app_user_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_user
+    ADD CONSTRAINT app_user_pkey PRIMARY KEY (user_id);
+
+
+--
+-- Name: app_user app_user_user_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_user
+    ADD CONSTRAINT app_user_user_public_id_uq UNIQUE (user_public_id);
+
+
+--
+-- Name: auth_api_keys auth_api_keys_key_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.auth_api_keys
+    ADD CONSTRAINT auth_api_keys_key_id_key UNIQUE (key_id);
+
+
+--
+-- Name: auth_api_keys auth_api_keys_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.auth_api_keys
+    ADD CONSTRAINT auth_api_keys_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: canonical_disambiguation_rule canonical_disambiguation_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_disambiguation_rule
+    ADD CONSTRAINT canonical_disambiguation_rule_pkey PRIMARY KEY (canonical_disambiguation_rule_id);
+
+
+--
+-- Name: canonical_disambiguation_rule canonical_disambiguation_rule_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_disambiguation_rule
+    ADD CONSTRAINT canonical_disambiguation_rule_uq UNIQUE (identity_left_type, identity_left_value_text, identity_left_value_uuid, identity_right_type, identity_right_value_text, identity_right_value_uuid);
+
+
+--
+-- Name: canonical_external_id canonical_external_id_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_external_id
+    ADD CONSTRAINT canonical_external_id_pkey PRIMARY KEY (canonical_external_id_id);
+
+
+--
+-- Name: canonical_size_rollup canonical_size_rollup_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_size_rollup
+    ADD CONSTRAINT canonical_size_rollup_pkey PRIMARY KEY (canonical_size_rollup_id);
+
+
+--
+-- Name: canonical_size_rollup canonical_size_rollup_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_size_rollup
+    ADD CONSTRAINT canonical_size_rollup_uq UNIQUE (canonical_torrent_id);
+
+
+--
+-- Name: canonical_size_sample canonical_size_sample_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_size_sample
+    ADD CONSTRAINT canonical_size_sample_pkey PRIMARY KEY (canonical_size_sample_id);
+
+
+--
+-- Name: canonical_size_sample canonical_size_sample_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_size_sample
+    ADD CONSTRAINT canonical_size_sample_uq UNIQUE (canonical_torrent_id, observed_at, size_bytes);
+
+
+--
+-- Name: canonical_torrent_best_source_context canonical_torrent_best_source_context_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_context
+    ADD CONSTRAINT canonical_torrent_best_source_context_pkey PRIMARY KEY (canonical_torrent_best_source_context_id);
+
+
+--
+-- Name: canonical_torrent_best_source_context canonical_torrent_best_source_context_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_context
+    ADD CONSTRAINT canonical_torrent_best_source_context_uq UNIQUE (context_key_type, context_key_id, canonical_torrent_id);
+
+
+--
+-- Name: canonical_torrent_best_source_global canonical_torrent_best_source_global_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_global
+    ADD CONSTRAINT canonical_torrent_best_source_global_pkey PRIMARY KEY (canonical_torrent_best_source_global_id);
+
+
+--
+-- Name: canonical_torrent_best_source_global canonical_torrent_best_source_global_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_global
+    ADD CONSTRAINT canonical_torrent_best_source_global_uq UNIQUE (canonical_torrent_id);
+
+
+--
+-- Name: canonical_torrent canonical_torrent_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent
+    ADD CONSTRAINT canonical_torrent_pkey PRIMARY KEY (canonical_torrent_id);
+
+
+--
+-- Name: canonical_torrent canonical_torrent_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent
+    ADD CONSTRAINT canonical_torrent_public_id_uq UNIQUE (canonical_torrent_public_id);
+
+
+--
+-- Name: canonical_torrent_signal canonical_torrent_signal_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_signal
+    ADD CONSTRAINT canonical_torrent_signal_pkey PRIMARY KEY (canonical_torrent_signal_id);
+
+
+--
+-- Name: canonical_torrent_signal canonical_torrent_signal_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_signal
+    ADD CONSTRAINT canonical_torrent_signal_uq UNIQUE (canonical_torrent_id, signal_key, value_text, value_int);
+
+
+--
+-- Name: canonical_torrent_source_attr canonical_torrent_source_attr_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_attr
+    ADD CONSTRAINT canonical_torrent_source_attr_pkey PRIMARY KEY (canonical_torrent_source_attr_id);
+
+
+--
+-- Name: canonical_torrent_source_attr canonical_torrent_source_attr_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_attr
+    ADD CONSTRAINT canonical_torrent_source_attr_uq UNIQUE (canonical_torrent_source_id, attr_key);
+
+
+--
+-- Name: canonical_torrent_source_base_score canonical_torrent_source_base_score_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_base_score
+    ADD CONSTRAINT canonical_torrent_source_base_score_pkey PRIMARY KEY (canonical_torrent_source_base_score_id);
+
+
+--
+-- Name: canonical_torrent_source_base_score canonical_torrent_source_base_score_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_base_score
+    ADD CONSTRAINT canonical_torrent_source_base_score_uq UNIQUE (canonical_torrent_id, canonical_torrent_source_id);
+
+
+--
+-- Name: canonical_torrent_source_context_score canonical_torrent_source_context_score_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_context_score
+    ADD CONSTRAINT canonical_torrent_source_context_score_pkey PRIMARY KEY (canonical_torrent_source_context_score_id);
+
+
+--
+-- Name: canonical_torrent_source_context_score canonical_torrent_source_context_score_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_context_score
+    ADD CONSTRAINT canonical_torrent_source_context_score_uq UNIQUE (context_key_type, context_key_id, canonical_torrent_id, canonical_torrent_source_id);
+
+
+--
+-- Name: canonical_torrent_source canonical_torrent_source_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source
+    ADD CONSTRAINT canonical_torrent_source_pkey PRIMARY KEY (canonical_torrent_source_id);
+
+
+--
+-- Name: canonical_torrent_source canonical_torrent_source_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source
+    ADD CONSTRAINT canonical_torrent_source_public_id_uq UNIQUE (canonical_torrent_source_public_id);
+
+
+--
+-- Name: config_audit_log config_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.config_audit_log
+    ADD CONSTRAINT config_audit_log_pkey PRIMARY KEY (audit_log_id);
+
+
+--
+-- Name: deployment_config deployment_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deployment_config
+    ADD CONSTRAINT deployment_config_pkey PRIMARY KEY (deployment_config_id);
+
+
+--
+-- Name: deployment_maintenance_state deployment_maintenance_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deployment_maintenance_state
+    ADD CONSTRAINT deployment_maintenance_state_pkey PRIMARY KEY (deployment_maintenance_state_id);
+
+
+--
+-- Name: engine_alt_speed_days engine_alt_speed_days_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_alt_speed_days
+    ADD CONSTRAINT engine_alt_speed_days_pkey PRIMARY KEY (profile_id, ord);
+
+
+--
+-- Name: engine_alt_speed engine_alt_speed_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_alt_speed
+    ADD CONSTRAINT engine_alt_speed_pkey PRIMARY KEY (profile_id);
+
+
+--
+-- Name: engine_ip_filter_entries engine_ip_filter_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_ip_filter_entries
+    ADD CONSTRAINT engine_ip_filter_entries_pkey PRIMARY KEY (profile_id, ord);
+
+
+--
+-- Name: engine_ip_filter engine_ip_filter_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_ip_filter
+    ADD CONSTRAINT engine_ip_filter_pkey PRIMARY KEY (profile_id);
+
+
+--
+-- Name: engine_peer_class_defaults engine_peer_class_defaults_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_peer_class_defaults
+    ADD CONSTRAINT engine_peer_class_defaults_pkey PRIMARY KEY (profile_id, class_id);
+
+
+--
+-- Name: engine_peer_classes engine_peer_classes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_peer_classes
+    ADD CONSTRAINT engine_peer_classes_pkey PRIMARY KEY (profile_id, class_id);
+
+
+--
+-- Name: engine_profile_list_values engine_profile_list_values_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_profile_list_values
+    ADD CONSTRAINT engine_profile_list_values_pkey PRIMARY KEY (profile_id, kind, ord);
+
+
+--
+-- Name: engine_profile engine_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_profile
+    ADD CONSTRAINT engine_profile_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: engine_tracker_config engine_tracker_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_tracker_config
+    ADD CONSTRAINT engine_tracker_config_pkey PRIMARY KEY (profile_id);
+
+
+--
+-- Name: engine_tracker_endpoints engine_tracker_endpoints_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_tracker_endpoints
+    ADD CONSTRAINT engine_tracker_endpoints_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fs_policy_list_values fs_policy_list_values_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fs_policy_list_values
+    ADD CONSTRAINT fs_policy_list_values_pkey PRIMARY KEY (policy_id, kind, ord);
+
+
+--
+-- Name: fs_policy fs_policy_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fs_policy
+    ADD CONSTRAINT fs_policy_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: import_indexer_result_media_domain import_indexer_result_media_domain_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_media_domain
+    ADD CONSTRAINT import_indexer_result_media_domain_pkey PRIMARY KEY (import_indexer_result_media_domain_id);
+
+
+--
+-- Name: import_indexer_result_media_domain import_indexer_result_media_domain_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_media_domain
+    ADD CONSTRAINT import_indexer_result_media_domain_uq UNIQUE (import_indexer_result_id, media_domain_id);
+
+
+--
+-- Name: import_indexer_result import_indexer_result_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result
+    ADD CONSTRAINT import_indexer_result_pkey PRIMARY KEY (import_indexer_result_id);
+
+
+--
+-- Name: import_indexer_result_tag import_indexer_result_tag_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_tag
+    ADD CONSTRAINT import_indexer_result_tag_pkey PRIMARY KEY (import_indexer_result_tag_id);
+
+
+--
+-- Name: import_indexer_result_tag import_indexer_result_tag_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_tag
+    ADD CONSTRAINT import_indexer_result_tag_uq UNIQUE (import_indexer_result_id, tag_id);
+
+
+--
+-- Name: import_indexer_result import_indexer_result_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result
+    ADD CONSTRAINT import_indexer_result_uq UNIQUE (import_job_id, prowlarr_identifier);
+
+
+--
+-- Name: import_job import_job_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_job
+    ADD CONSTRAINT import_job_pkey PRIMARY KEY (import_job_id);
+
+
+--
+-- Name: import_job import_job_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_job
+    ADD CONSTRAINT import_job_public_id_uq UNIQUE (import_job_public_id);
+
+
+--
+-- Name: indexer_cf_state indexer_cf_state_instance_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_cf_state
+    ADD CONSTRAINT indexer_cf_state_instance_uq UNIQUE (indexer_instance_id);
+
+
+--
+-- Name: indexer_cf_state indexer_cf_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_cf_state
+    ADD CONSTRAINT indexer_cf_state_pkey PRIMARY KEY (indexer_cf_state_id);
+
+
+--
+-- Name: indexer_connectivity_profile indexer_connectivity_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_connectivity_profile
+    ADD CONSTRAINT indexer_connectivity_profile_pkey PRIMARY KEY (indexer_instance_id);
+
+
+--
+-- Name: indexer_definition_field indexer_definition_field_name_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field
+    ADD CONSTRAINT indexer_definition_field_name_uq UNIQUE (indexer_definition_id, name);
+
+
+--
+-- Name: indexer_definition_field_option indexer_definition_field_option_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_option
+    ADD CONSTRAINT indexer_definition_field_option_pkey PRIMARY KEY (indexer_definition_field_option_id);
+
+
+--
+-- Name: indexer_definition_field_option indexer_definition_field_option_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_option
+    ADD CONSTRAINT indexer_definition_field_option_uq UNIQUE (indexer_definition_field_id, option_value);
+
+
+--
+-- Name: indexer_definition_field indexer_definition_field_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field
+    ADD CONSTRAINT indexer_definition_field_pkey PRIMARY KEY (indexer_definition_field_id);
+
+
+--
+-- Name: indexer_definition_field_validation indexer_definition_field_validation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_validation
+    ADD CONSTRAINT indexer_definition_field_validation_pkey PRIMARY KEY (indexer_definition_field_validation_id);
+
+
+--
+-- Name: indexer_definition_field_value_set_item indexer_definition_field_value_set_item_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_value_set_item
+    ADD CONSTRAINT indexer_definition_field_value_set_item_pkey PRIMARY KEY (value_set_item_id);
+
+
+--
+-- Name: indexer_definition_field_value_set indexer_definition_field_value_set_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_value_set
+    ADD CONSTRAINT indexer_definition_field_value_set_pkey PRIMARY KEY (value_set_id);
+
+
+--
+-- Name: indexer_definition_field_value_set indexer_definition_field_value_set_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_value_set
+    ADD CONSTRAINT indexer_definition_field_value_set_uq UNIQUE (indexer_definition_field_validation_id);
+
+
+--
+-- Name: indexer_definition indexer_definition_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition
+    ADD CONSTRAINT indexer_definition_pkey PRIMARY KEY (indexer_definition_id);
+
+
+--
+-- Name: indexer_definition indexer_definition_upstream_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition
+    ADD CONSTRAINT indexer_definition_upstream_uq UNIQUE (upstream_source, upstream_slug);
+
+
+--
+-- Name: indexer_health_event indexer_health_event_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_health_event
+    ADD CONSTRAINT indexer_health_event_pkey PRIMARY KEY (indexer_health_event_id);
+
+
+--
+-- Name: indexer_health_notification_hook indexer_health_notification_hook_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_health_notification_hook
+    ADD CONSTRAINT indexer_health_notification_hook_pkey PRIMARY KEY (indexer_health_notification_hook_id);
+
+
+--
+-- Name: indexer_health_notification_hook indexer_health_notification_hook_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_health_notification_hook
+    ADD CONSTRAINT indexer_health_notification_hook_public_id_uq UNIQUE (indexer_health_notification_hook_public_id);
+
+
+--
+-- Name: indexer_instance indexer_instance_display_name_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_display_name_uq UNIQUE (display_name);
+
+
+--
+-- Name: indexer_instance_field_value indexer_instance_field_value_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_field_value
+    ADD CONSTRAINT indexer_instance_field_value_pkey PRIMARY KEY (indexer_instance_field_value_id);
+
+
+--
+-- Name: indexer_instance_field_value indexer_instance_field_value_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_field_value
+    ADD CONSTRAINT indexer_instance_field_value_uq UNIQUE (indexer_instance_id, field_name);
+
+
+--
+-- Name: indexer_instance_import_blob indexer_instance_import_blob_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_import_blob
+    ADD CONSTRAINT indexer_instance_import_blob_pkey PRIMARY KEY (indexer_instance_import_blob_id);
+
+
+--
+-- Name: indexer_instance_import_blob indexer_instance_import_blob_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_import_blob
+    ADD CONSTRAINT indexer_instance_import_blob_uq UNIQUE (indexer_instance_id, source_system);
+
+
+--
+-- Name: indexer_instance_media_domain indexer_instance_media_domain_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_media_domain
+    ADD CONSTRAINT indexer_instance_media_domain_pkey PRIMARY KEY (indexer_instance_media_domain_id);
+
+
+--
+-- Name: indexer_instance_media_domain indexer_instance_media_domain_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_media_domain
+    ADD CONSTRAINT indexer_instance_media_domain_uq UNIQUE (indexer_instance_id, media_domain_id);
+
+
+--
+-- Name: indexer_instance indexer_instance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_pkey PRIMARY KEY (indexer_instance_id);
+
+
+--
+-- Name: indexer_instance indexer_instance_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_public_id_uq UNIQUE (indexer_instance_public_id);
+
+
+--
+-- Name: indexer_instance_rate_limit indexer_instance_rate_limit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_rate_limit
+    ADD CONSTRAINT indexer_instance_rate_limit_pkey PRIMARY KEY (indexer_instance_rate_limit_id);
+
+
+--
+-- Name: indexer_instance_rate_limit indexer_instance_rate_limit_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_rate_limit
+    ADD CONSTRAINT indexer_instance_rate_limit_uq UNIQUE (indexer_instance_id);
+
+
+--
+-- Name: indexer_instance_tag indexer_instance_tag_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_tag
+    ADD CONSTRAINT indexer_instance_tag_pkey PRIMARY KEY (indexer_instance_tag_id);
+
+
+--
+-- Name: indexer_instance_tag indexer_instance_tag_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_tag
+    ADD CONSTRAINT indexer_instance_tag_uq UNIQUE (indexer_instance_id, tag_id);
+
+
+--
+-- Name: indexer_rss_item_seen indexer_rss_item_seen_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_rss_item_seen
+    ADD CONSTRAINT indexer_rss_item_seen_pkey PRIMARY KEY (rss_item_seen_id);
+
+
+--
+-- Name: indexer_rss_subscription indexer_rss_subscription_instance_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_rss_subscription
+    ADD CONSTRAINT indexer_rss_subscription_instance_uq UNIQUE (indexer_instance_id);
+
+
+--
+-- Name: indexer_rss_subscription indexer_rss_subscription_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_rss_subscription
+    ADD CONSTRAINT indexer_rss_subscription_pkey PRIMARY KEY (indexer_rss_subscription_id);
+
+
+--
+-- Name: indexer_run_cursor indexer_run_cursor_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_run_cursor
+    ADD CONSTRAINT indexer_run_cursor_pkey PRIMARY KEY (indexer_run_cursor_id);
+
+
+--
+-- Name: indexer_run_cursor indexer_run_cursor_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_run_cursor
+    ADD CONSTRAINT indexer_run_cursor_uq UNIQUE (search_request_indexer_run_id);
+
+
+--
+-- Name: job_schedule job_schedule_job_key_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.job_schedule
+    ADD CONSTRAINT job_schedule_job_key_uq UNIQUE (job_key);
+
+
+--
+-- Name: job_schedule job_schedule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.job_schedule
+    ADD CONSTRAINT job_schedule_pkey PRIMARY KEY (job_schedule_id);
+
+
+--
+-- Name: media_capability_snapshot_encoder media_capability_snapshot_encoder_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot_encoder
+    ADD CONSTRAINT media_capability_snapshot_encoder_pkey PRIMARY KEY (media_capability_snapshot_encoder_id);
+
+
+--
+-- Name: media_capability_snapshot_feature media_capability_snapshot_feature_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot_feature
+    ADD CONSTRAINT media_capability_snapshot_feature_pkey PRIMARY KEY (media_capability_snapshot_feature_id);
+
+
+--
+-- Name: media_capability_snapshot media_capability_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot
+    ADD CONSTRAINT media_capability_snapshot_pkey PRIMARY KEY (media_capability_snapshot_id);
+
+
+--
+-- Name: media_capability_snapshot_run media_capability_snapshot_run_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot_run
+    ADD CONSTRAINT media_capability_snapshot_run_pkey PRIMARY KEY (snapshot_run_public_id);
+
+
+--
+-- Name: media_compatibility_target media_compatibility_target_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_compatibility_target
+    ADD CONSTRAINT media_compatibility_target_pkey PRIMARY KEY (media_compatibility_target_id);
+
+
+--
+-- Name: media_desired_target_audio_stream media_desired_target_audio_stream_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_audio_stream
+    ADD CONSTRAINT media_desired_target_audio_stream_pkey PRIMARY KEY (media_desired_target_stream_id);
+
+
+--
+-- Name: media_desired_target_container media_desired_target_container_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_container
+    ADD CONSTRAINT media_desired_target_container_pkey PRIMARY KEY (media_desired_target_profile_id);
+
+
+--
+-- Name: media_desired_target_profile media_desired_target_profile_media_desired_target_profile_p_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_profile
+    ADD CONSTRAINT media_desired_target_profile_media_desired_target_profile_p_key UNIQUE (media_desired_target_profile_public_id);
+
+
+--
+-- Name: media_desired_target_profile media_desired_target_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_profile
+    ADD CONSTRAINT media_desired_target_profile_pkey PRIMARY KEY (media_desired_target_profile_id);
+
+
+--
+-- Name: media_desired_target_stream media_desired_target_stream_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_stream
+    ADD CONSTRAINT media_desired_target_stream_pkey PRIMARY KEY (media_desired_target_stream_id);
+
+
+--
+-- Name: media_discovery_schedule media_discovery_schedule_media_discovery_schedule_public_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_media_discovery_schedule_public_id_key UNIQUE (media_discovery_schedule_public_id);
+
+
+--
+-- Name: media_discovery_schedule media_discovery_schedule_media_profile_id_sort_order_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_media_profile_id_sort_order_key UNIQUE (media_profile_id, sort_order);
+
+
+--
+-- Name: media_discovery_schedule media_discovery_schedule_media_profile_root_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_media_profile_root_id_key UNIQUE (media_profile_root_id);
+
+
+--
+-- Name: media_discovery_schedule media_discovery_schedule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_pkey PRIMARY KEY (media_discovery_schedule_id);
+
+
+--
+-- Name: media_discovery_source_fingerprint media_discovery_source_fingerprint_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_source_fingerprint
+    ADD CONSTRAINT media_discovery_source_fingerprint_pkey PRIMARY KEY (media_discovery_source_fingerprint_id);
+
+
+--
+-- Name: media_discovery_watcher media_discovery_watcher_media_discovery_watcher_public_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_media_discovery_watcher_public_id_key UNIQUE (media_discovery_watcher_public_id);
+
+
+--
+-- Name: media_discovery_watcher media_discovery_watcher_media_profile_id_sort_order_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_media_profile_id_sort_order_key UNIQUE (media_profile_id, sort_order);
+
+
+--
+-- Name: media_discovery_watcher media_discovery_watcher_media_profile_root_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_media_profile_root_id_key UNIQUE (media_profile_root_id);
+
+
+--
+-- Name: media_discovery_watcher media_discovery_watcher_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_pkey PRIMARY KEY (media_discovery_watcher_id);
+
+
+--
+-- Name: media_domain media_domain_key_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_domain
+    ADD CONSTRAINT media_domain_key_uq UNIQUE (media_domain_key);
+
+
+--
+-- Name: media_domain media_domain_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_domain
+    ADD CONSTRAINT media_domain_pkey PRIMARY KEY (media_domain_id);
+
+
+--
+-- Name: media_domain_to_torznab_category media_domain_to_torznab_category_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_domain_to_torznab_category
+    ADD CONSTRAINT media_domain_to_torznab_category_pkey PRIMARY KEY (media_domain_to_torznab_category_id);
+
+
+--
+-- Name: media_domain_to_torznab_category media_domain_to_torznab_category_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_domain_to_torznab_category
+    ADD CONSTRAINT media_domain_to_torznab_category_uq UNIQUE (media_domain_id, torznab_category_id);
+
+
+--
+-- Name: media_job_artifact media_job_artifact_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_artifact
+    ADD CONSTRAINT media_job_artifact_pkey PRIMARY KEY (media_job_artifact_id);
+
+
+--
+-- Name: media_job_attempt media_job_attempt_claim_generation_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_attempt
+    ADD CONSTRAINT media_job_attempt_claim_generation_key UNIQUE (claim_generation);
+
+
+--
+-- Name: media_job_attempt media_job_attempt_media_job_id_attempt_number_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_attempt
+    ADD CONSTRAINT media_job_attempt_media_job_id_attempt_number_key UNIQUE (media_job_id, attempt_number);
+
+
+--
+-- Name: media_job_attempt media_job_attempt_media_job_id_media_job_attempt_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_attempt
+    ADD CONSTRAINT media_job_attempt_media_job_id_media_job_attempt_id_key UNIQUE (media_job_id, media_job_attempt_id);
+
+
+--
+-- Name: media_job_attempt media_job_attempt_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_attempt
+    ADD CONSTRAINT media_job_attempt_pkey PRIMARY KEY (media_job_attempt_id);
+
+
+--
+-- Name: media_job_compact_audit_archive media_job_compact_audit_archive_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_compact_audit_archive
+    ADD CONSTRAINT media_job_compact_audit_archive_pkey PRIMARY KEY (media_job_public_id, attempt_number, audit_index);
+
+
+--
+-- Name: media_job_compact_audit media_job_compact_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_compact_audit
+    ADD CONSTRAINT media_job_compact_audit_pkey PRIMARY KEY (media_job_compact_audit_id);
+
+
+--
+-- Name: media_job_configuration_snapshot media_job_configuration_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_configuration_snapshot
+    ADD CONSTRAINT media_job_configuration_snapshot_pkey PRIMARY KEY (media_job_id);
+
+
+--
+-- Name: media_job_desired_target_stream media_job_desired_target_stream_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_desired_target_stream
+    ADD CONSTRAINT media_job_desired_target_stream_pkey PRIMARY KEY (media_job_desired_target_stream_id);
+
+
+--
+-- Name: media_job_file_rule_snapshot media_job_file_rule_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_file_rule_snapshot
+    ADD CONSTRAINT media_job_file_rule_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+--
+-- Name: media_job_filter_snapshot media_job_filter_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_filter_snapshot
+    ADD CONSTRAINT media_job_filter_snapshot_pkey PRIMARY KEY (media_job_id);
+
+
+--
+-- Name: media_job media_job_media_job_public_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_media_job_public_id_key UNIQUE (media_job_public_id);
+
+
+--
+-- Name: media_job_operation media_job_operation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_operation
+    ADD CONSTRAINT media_job_operation_pkey PRIMARY KEY (media_job_operation_id);
+
+
+--
+-- Name: media_job_phase media_job_phase_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_phase
+    ADD CONSTRAINT media_job_phase_pkey PRIMARY KEY (media_job_phase_id);
+
+
+--
+-- Name: media_job media_job_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_pkey PRIMARY KEY (media_job_id);
+
+
+--
+-- Name: media_job_plan_reason media_job_plan_reason_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_plan_reason
+    ADD CONSTRAINT media_job_plan_reason_pkey PRIMARY KEY (media_job_plan_reason_id);
+
+
+--
+-- Name: media_job_policy_behavior_snapshot media_job_policy_behavior_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_behavior_snapshot
+    ADD CONSTRAINT media_job_policy_behavior_snapshot_pkey PRIMARY KEY (media_job_id);
+
+
+--
+-- Name: media_job_policy_compatibility_target_snapshot media_job_policy_compatibility_target_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_compatibility_target_snapshot
+    ADD CONSTRAINT media_job_policy_compatibility_target_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+--
+-- Name: media_job_policy_maintenance_window_snapshot media_job_policy_maintenance_window_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_maintenance_window_snapshot
+    ADD CONSTRAINT media_job_policy_maintenance_window_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+--
+-- Name: media_job_policy_operation_cost_snapshot media_job_policy_operation_cost_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_operation_cost_snapshot
+    ADD CONSTRAINT media_job_policy_operation_cost_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+--
+-- Name: media_job_policy_retention_rule_snapshot media_job_policy_retention_rule_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_retention_rule_snapshot
+    ADD CONSTRAINT media_job_policy_retention_rule_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+--
+-- Name: media_job_retention_policy media_job_retention_policy_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_retention_policy
+    ADD CONSTRAINT media_job_retention_policy_pkey PRIMARY KEY (media_job_retention_policy_id);
+
+
+--
+-- Name: media_job_root_snapshot media_job_root_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_root_snapshot
+    ADD CONSTRAINT media_job_root_snapshot_pkey PRIMARY KEY (media_job_id, media_root_kind_id);
+
+
+--
+-- Name: media_job_stream_classification_rule_snapshot media_job_stream_classification_rule_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_stream_classification_rule_snapshot
+    ADD CONSTRAINT media_job_stream_classification_rule_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+--
+-- Name: media_job_subtitle_discovery_rule_snapshot media_job_subtitle_discovery_rule_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_subtitle_discovery_rule_snapshot
+    ADD CONSTRAINT media_job_subtitle_discovery_rule_snapshot_pkey PRIMARY KEY (media_job_id, precedence);
+
+
+--
+-- Name: media_job_terminal_outbox media_job_terminal_outbox_job_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_terminal_outbox
+    ADD CONSTRAINT media_job_terminal_outbox_job_unique UNIQUE (media_job_id);
+
+
+--
+-- Name: media_job_terminal_outbox media_job_terminal_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_terminal_outbox
+    ADD CONSTRAINT media_job_terminal_outbox_pkey PRIMARY KEY (media_job_terminal_outbox_id);
+
+
+--
+-- Name: media_job_verification_check media_job_verification_check_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_verification_check
+    ADD CONSTRAINT media_job_verification_check_pkey PRIMARY KEY (media_job_verification_check_id);
+
+
+--
+-- Name: media_job_violation media_job_violation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_violation
+    ADD CONSTRAINT media_job_violation_pkey PRIMARY KEY (media_job_violation_id);
+
+
+--
+-- Name: media_policy_backup media_policy_backup_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_backup
+    ADD CONSTRAINT media_policy_backup_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_policy_compatibility_rule media_policy_compatibility_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_compatibility_rule
+    ADD CONSTRAINT media_policy_compatibility_rule_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_policy_compatibility_target media_policy_compatibility_ta_media_policy_profile_id_sort__key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_compatibility_target
+    ADD CONSTRAINT media_policy_compatibility_ta_media_policy_profile_id_sort__key UNIQUE (media_policy_profile_id, sort_order);
+
+
+--
+-- Name: media_policy_compatibility_target media_policy_compatibility_target_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_compatibility_target
+    ADD CONSTRAINT media_policy_compatibility_target_pkey PRIMARY KEY (media_policy_profile_id, media_compatibility_target_id);
+
+
+--
+-- Name: media_policy_maintenance_window media_policy_maintenance_wind_media_policy_profile_id_sort__key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_maintenance_window
+    ADD CONSTRAINT media_policy_maintenance_wind_media_policy_profile_id_sort__key UNIQUE (media_policy_profile_id, sort_order);
+
+
+--
+-- Name: media_policy_maintenance_window media_policy_maintenance_window_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_maintenance_window
+    ADD CONSTRAINT media_policy_maintenance_window_pkey PRIMARY KEY (media_policy_profile_id, day_of_week, start_time);
+
+
+--
+-- Name: media_policy_operation_cost media_policy_operation_cost_media_policy_profile_id_sort_or_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_operation_cost
+    ADD CONSTRAINT media_policy_operation_cost_media_policy_profile_id_sort_or_key UNIQUE (media_policy_profile_id, sort_order);
+
+
+--
+-- Name: media_policy_operation_cost media_policy_operation_cost_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_operation_cost
+    ADD CONSTRAINT media_policy_operation_cost_pkey PRIMARY KEY (media_policy_profile_id, operation_kind);
+
+
+--
+-- Name: media_policy_output media_policy_output_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_output
+    ADD CONSTRAINT media_policy_output_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_policy_profile media_policy_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_profile
+    ADD CONSTRAINT media_policy_profile_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_policy_retention_rule media_policy_retention_rule_media_policy_profile_id_sort_or_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_retention_rule
+    ADD CONSTRAINT media_policy_retention_rule_media_policy_profile_id_sort_or_key UNIQUE (media_policy_profile_id, sort_order);
+
+
+--
+-- Name: media_policy_retention_rule media_policy_retention_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_retention_rule
+    ADD CONSTRAINT media_policy_retention_rule_pkey PRIMARY KEY (media_policy_retention_rule_id);
+
+
+--
+-- Name: media_policy_runtime_limit media_policy_runtime_limit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_runtime_limit
+    ADD CONSTRAINT media_policy_runtime_limit_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_policy_unmatched_stream_behavior media_policy_unmatched_stream_behavior_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_unmatched_stream_behavior
+    ADD CONSTRAINT media_policy_unmatched_stream_behavior_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_policy_verification media_policy_verification_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_verification
+    ADD CONSTRAINT media_policy_verification_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_policy_workspace media_policy_workspace_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_workspace
+    ADD CONSTRAINT media_policy_workspace_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_profile_file_rule media_profile_file_rule_media_profile_id_sort_order_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_file_rule
+    ADD CONSTRAINT media_profile_file_rule_media_profile_id_sort_order_key UNIQUE (media_profile_id, sort_order);
+
+
+--
+-- Name: media_profile_file_rule media_profile_file_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_file_rule
+    ADD CONSTRAINT media_profile_file_rule_pkey PRIMARY KEY (media_profile_file_rule_id);
+
+
+--
+-- Name: media_profile_filter media_profile_filter_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_filter
+    ADD CONSTRAINT media_profile_filter_pkey PRIMARY KEY (media_profile_id);
+
+
+--
+-- Name: media_profile_import_draft media_profile_import_draft_media_profile_import_draft_publi_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_import_draft
+    ADD CONSTRAINT media_profile_import_draft_media_profile_import_draft_publi_key UNIQUE (media_profile_import_draft_public_id);
+
+
+--
+-- Name: media_profile_import_draft media_profile_import_draft_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_import_draft
+    ADD CONSTRAINT media_profile_import_draft_pkey PRIMARY KEY (media_profile_import_draft_id);
+
+
+--
+-- Name: media_profile media_profile_media_profile_public_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile
+    ADD CONSTRAINT media_profile_media_profile_public_id_key UNIQUE (media_profile_public_id);
+
+
+--
+-- Name: media_profile media_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile
+    ADD CONSTRAINT media_profile_pkey PRIMARY KEY (media_profile_id);
+
+
+--
+-- Name: media_profile_root media_profile_root_media_profile_root_public_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_root
+    ADD CONSTRAINT media_profile_root_media_profile_root_public_id_key UNIQUE (media_profile_root_public_id);
+
+
+--
+-- Name: media_profile_root media_profile_root_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_root
+    ADD CONSTRAINT media_profile_root_pkey PRIMARY KEY (media_profile_root_id);
+
+
+--
+-- Name: media_stream_classification_rule media_stream_classification_r_media_policy_profile_id_sort__key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_stream_classification_rule
+    ADD CONSTRAINT media_stream_classification_r_media_policy_profile_id_sort__key UNIQUE (media_policy_profile_id, sort_order);
+
+
+--
+-- Name: media_stream_classification_rule media_stream_classification_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_stream_classification_rule
+    ADD CONSTRAINT media_stream_classification_rule_pkey PRIMARY KEY (media_stream_classification_rule_id);
+
+
+--
+-- Name: media_subtitle_discovery_rule media_subtitle_discovery_rule_media_profile_id_precedence_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_subtitle_discovery_rule
+    ADD CONSTRAINT media_subtitle_discovery_rule_media_profile_id_precedence_key UNIQUE (media_profile_id, precedence);
+
+
+--
+-- Name: media_subtitle_discovery_rule media_subtitle_discovery_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_subtitle_discovery_rule
+    ADD CONSTRAINT media_subtitle_discovery_rule_pkey PRIMARY KEY (media_subtitle_discovery_rule_id);
+
+
+--
+-- Name: media_target media_target_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_target
+    ADD CONSTRAINT media_target_pkey PRIMARY KEY (media_target_id);
+
+
+--
+-- Name: outbound_request_log outbound_request_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_request_log
+    ADD CONSTRAINT outbound_request_log_pkey PRIMARY KEY (outbound_request_log_id);
+
+
+--
+-- Name: policy_rule policy_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_pkey PRIMARY KEY (policy_rule_id);
+
+
+--
+-- Name: policy_rule policy_rule_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_public_id_uq UNIQUE (policy_rule_public_id);
+
+
+--
+-- Name: policy_rule_value_set_item policy_rule_value_set_item_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule_value_set_item
+    ADD CONSTRAINT policy_rule_value_set_item_pkey PRIMARY KEY (value_set_item_id);
+
+
+--
+-- Name: policy_rule_value_set policy_rule_value_set_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule_value_set
+    ADD CONSTRAINT policy_rule_value_set_pkey PRIMARY KEY (value_set_id);
+
+
+--
+-- Name: policy_rule_value_set policy_rule_value_set_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule_value_set
+    ADD CONSTRAINT policy_rule_value_set_uq UNIQUE (policy_rule_id);
+
+
+--
+-- Name: policy_set policy_set_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_pkey PRIMARY KEY (policy_set_id);
+
+
+--
+-- Name: policy_set policy_set_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_public_id_uq UNIQUE (policy_set_public_id);
+
+
+--
+-- Name: policy_snapshot policy_snapshot_hash_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_snapshot
+    ADD CONSTRAINT policy_snapshot_hash_uq UNIQUE (snapshot_hash);
+
+
+--
+-- Name: policy_snapshot policy_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_snapshot
+    ADD CONSTRAINT policy_snapshot_pkey PRIMARY KEY (policy_snapshot_id);
+
+
+--
+-- Name: policy_snapshot_rule policy_snapshot_rule_order_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_snapshot_rule
+    ADD CONSTRAINT policy_snapshot_rule_order_uq UNIQUE (policy_snapshot_id, rule_order);
+
+
+--
+-- Name: policy_snapshot_rule policy_snapshot_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_snapshot_rule
+    ADD CONSTRAINT policy_snapshot_rule_pkey PRIMARY KEY (policy_snapshot_rule_id);
+
+
+--
+-- Name: policy_snapshot_rule policy_snapshot_rule_public_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_snapshot_rule
+    ADD CONSTRAINT policy_snapshot_rule_public_uq UNIQUE (policy_snapshot_id, policy_rule_public_id);
+
+
+--
+-- Name: query_presets query_presets_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.query_presets
+    ADD CONSTRAINT query_presets_name_key UNIQUE (name);
+
+
+--
+-- Name: query_presets query_presets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.query_presets
+    ADD CONSTRAINT query_presets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rate_limit_policy rate_limit_policy_display_name_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rate_limit_policy
+    ADD CONSTRAINT rate_limit_policy_display_name_uq UNIQUE (display_name);
+
+
+--
+-- Name: rate_limit_policy rate_limit_policy_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rate_limit_policy
+    ADD CONSTRAINT rate_limit_policy_pkey PRIMARY KEY (rate_limit_policy_id);
+
+
+--
+-- Name: rate_limit_policy rate_limit_policy_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rate_limit_policy
+    ADD CONSTRAINT rate_limit_policy_public_id_uq UNIQUE (rate_limit_policy_public_id);
+
+
+--
+-- Name: rate_limit_state rate_limit_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rate_limit_state
+    ADD CONSTRAINT rate_limit_state_pkey PRIMARY KEY (rate_limit_state_id);
+
+
+--
+-- Name: rate_limit_state rate_limit_state_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rate_limit_state
+    ADD CONSTRAINT rate_limit_state_uq UNIQUE (scope_type, scope_id, window_start);
+
+
+--
+-- Name: routing_policy routing_policy_display_name_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy
+    ADD CONSTRAINT routing_policy_display_name_uq UNIQUE (display_name);
+
+
+--
+-- Name: routing_policy_parameter routing_policy_parameter_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy_parameter
+    ADD CONSTRAINT routing_policy_parameter_pkey PRIMARY KEY (routing_policy_parameter_id);
+
+
+--
+-- Name: routing_policy_parameter routing_policy_parameter_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy_parameter
+    ADD CONSTRAINT routing_policy_parameter_uq UNIQUE (routing_policy_id, param_key);
+
+
+--
+-- Name: routing_policy routing_policy_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy
+    ADD CONSTRAINT routing_policy_pkey PRIMARY KEY (routing_policy_id);
+
+
+--
+-- Name: routing_policy routing_policy_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy
+    ADD CONSTRAINT routing_policy_public_id_uq UNIQUE (routing_policy_public_id);
+
+
+--
+-- Name: routing_policy_rate_limit routing_policy_rate_limit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy_rate_limit
+    ADD CONSTRAINT routing_policy_rate_limit_pkey PRIMARY KEY (routing_policy_rate_limit_id);
+
+
+--
+-- Name: routing_policy_rate_limit routing_policy_rate_limit_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy_rate_limit
+    ADD CONSTRAINT routing_policy_rate_limit_uq UNIQUE (routing_policy_id);
+
+
+--
+-- Name: search_filter_decision search_filter_decision_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_pkey PRIMARY KEY (search_filter_decision_id);
+
+
+--
+-- Name: search_page_item search_page_item_canonical_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page_item
+    ADD CONSTRAINT search_page_item_canonical_uq UNIQUE (search_request_canonical_id);
+
+
+--
+-- Name: search_page_item search_page_item_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page_item
+    ADD CONSTRAINT search_page_item_pkey PRIMARY KEY (search_page_item_id);
+
+
+--
+-- Name: search_page_item search_page_item_position_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page_item
+    ADD CONSTRAINT search_page_item_position_uq UNIQUE (search_page_id, "position");
+
+
+--
+-- Name: search_page search_page_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page
+    ADD CONSTRAINT search_page_pkey PRIMARY KEY (search_page_id);
+
+
+--
+-- Name: search_page search_page_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page
+    ADD CONSTRAINT search_page_uq UNIQUE (search_request_id, page_number);
+
+
+--
+-- Name: search_profile_indexer_allow search_profile_indexer_allow_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_allow
+    ADD CONSTRAINT search_profile_indexer_allow_pkey PRIMARY KEY (search_profile_indexer_allow_id);
+
+
+--
+-- Name: search_profile_indexer_allow search_profile_indexer_allow_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_allow
+    ADD CONSTRAINT search_profile_indexer_allow_uq UNIQUE (search_profile_id, indexer_instance_id);
+
+
+--
+-- Name: search_profile_indexer_block search_profile_indexer_block_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_block
+    ADD CONSTRAINT search_profile_indexer_block_pkey PRIMARY KEY (search_profile_indexer_block_id);
+
+
+--
+-- Name: search_profile_indexer_block search_profile_indexer_block_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_block
+    ADD CONSTRAINT search_profile_indexer_block_uq UNIQUE (search_profile_id, indexer_instance_id);
+
+
+--
+-- Name: search_profile_media_domain search_profile_media_domain_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_media_domain
+    ADD CONSTRAINT search_profile_media_domain_pkey PRIMARY KEY (search_profile_media_domain_id);
+
+
+--
+-- Name: search_profile_media_domain search_profile_media_domain_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_media_domain
+    ADD CONSTRAINT search_profile_media_domain_uq UNIQUE (search_profile_id, media_domain_id);
+
+
+--
+-- Name: search_profile search_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_pkey PRIMARY KEY (search_profile_id);
+
+
+--
+-- Name: search_profile_policy_set search_profile_policy_set_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_policy_set
+    ADD CONSTRAINT search_profile_policy_set_pkey PRIMARY KEY (search_profile_policy_set_id);
+
+
+--
+-- Name: search_profile_policy_set search_profile_policy_set_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_policy_set
+    ADD CONSTRAINT search_profile_policy_set_uq UNIQUE (search_profile_id, policy_set_id);
+
+
+--
+-- Name: search_profile search_profile_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_public_id_uq UNIQUE (search_profile_public_id);
+
+
+--
+-- Name: search_profile_tag_allow search_profile_tag_allow_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_allow
+    ADD CONSTRAINT search_profile_tag_allow_pkey PRIMARY KEY (search_profile_tag_allow_id);
+
+
+--
+-- Name: search_profile_tag_allow search_profile_tag_allow_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_allow
+    ADD CONSTRAINT search_profile_tag_allow_uq UNIQUE (search_profile_id, tag_id);
+
+
+--
+-- Name: search_profile_tag_block search_profile_tag_block_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_block
+    ADD CONSTRAINT search_profile_tag_block_pkey PRIMARY KEY (search_profile_tag_block_id);
+
+
+--
+-- Name: search_profile_tag_block search_profile_tag_block_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_block
+    ADD CONSTRAINT search_profile_tag_block_uq UNIQUE (search_profile_id, tag_id);
+
+
+--
+-- Name: search_profile_tag_prefer search_profile_tag_prefer_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_prefer
+    ADD CONSTRAINT search_profile_tag_prefer_pkey PRIMARY KEY (search_profile_tag_prefer_id);
+
+
+--
+-- Name: search_profile_tag_prefer search_profile_tag_prefer_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_prefer
+    ADD CONSTRAINT search_profile_tag_prefer_uq UNIQUE (search_profile_id, tag_id);
+
+
+--
+-- Name: search_profile_trust_tier search_profile_trust_tier_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_trust_tier
+    ADD CONSTRAINT search_profile_trust_tier_pkey PRIMARY KEY (search_profile_trust_tier_id);
+
+
+--
+-- Name: search_profile_trust_tier search_profile_trust_tier_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_trust_tier
+    ADD CONSTRAINT search_profile_trust_tier_uq UNIQUE (search_profile_id, trust_tier_id);
+
+
+--
+-- Name: search_request_canonical search_request_canonical_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_canonical
+    ADD CONSTRAINT search_request_canonical_pkey PRIMARY KEY (search_request_canonical_id);
+
+
+--
+-- Name: search_request_canonical search_request_canonical_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_canonical
+    ADD CONSTRAINT search_request_canonical_uq UNIQUE (search_request_id, canonical_torrent_id);
+
+
+--
+-- Name: search_request_identifier search_request_identifier_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_identifier
+    ADD CONSTRAINT search_request_identifier_pkey PRIMARY KEY (search_request_identifier_id);
+
+
+--
+-- Name: search_request_identifier search_request_identifier_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_identifier
+    ADD CONSTRAINT search_request_identifier_uq UNIQUE (search_request_id, id_type);
+
+
+--
+-- Name: search_request_indexer_run_correlation search_request_indexer_run_correlation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_indexer_run_correlation
+    ADD CONSTRAINT search_request_indexer_run_correlation_pkey PRIMARY KEY (search_request_indexer_run_correlation_id);
+
+
+--
+-- Name: search_request_indexer_run_correlation search_request_indexer_run_correlation_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_indexer_run_correlation
+    ADD CONSTRAINT search_request_indexer_run_correlation_uq UNIQUE (search_request_indexer_run_id, correlation_id);
+
+
+--
+-- Name: search_request_indexer_run search_request_indexer_run_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_indexer_run
+    ADD CONSTRAINT search_request_indexer_run_pkey PRIMARY KEY (search_request_indexer_run_id);
+
+
+--
+-- Name: search_request_indexer_run search_request_indexer_run_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_indexer_run
+    ADD CONSTRAINT search_request_indexer_run_uq UNIQUE (search_request_id, indexer_instance_id);
+
+
+--
+-- Name: search_request search_request_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_pkey PRIMARY KEY (search_request_id);
+
+
+--
+-- Name: search_request search_request_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_public_id_uq UNIQUE (search_request_public_id);
+
+
+--
+-- Name: search_request_source_observation_attr search_request_source_observation_attr_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation_attr
+    ADD CONSTRAINT search_request_source_observation_attr_pkey PRIMARY KEY (observation_attr_id);
+
+
+--
+-- Name: search_request_source_observation_attr search_request_source_observation_attr_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation_attr
+    ADD CONSTRAINT search_request_source_observation_attr_uq UNIQUE (observation_id, attr_key);
+
+
+--
+-- Name: search_request_source_observation search_request_source_observation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation
+    ADD CONSTRAINT search_request_source_observation_pkey PRIMARY KEY (observation_id);
+
+
+--
+-- Name: search_request_torznab_category_effective search_request_torznab_category_effective_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_effective
+    ADD CONSTRAINT search_request_torznab_category_effective_pkey PRIMARY KEY (search_request_torznab_category_effective_id);
+
+
+--
+-- Name: search_request_torznab_category_effective search_request_torznab_category_effective_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_effective
+    ADD CONSTRAINT search_request_torznab_category_effective_uq UNIQUE (search_request_id, torznab_category_id);
+
+
+--
+-- Name: search_request_torznab_category_requested search_request_torznab_category_requested_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_requested
+    ADD CONSTRAINT search_request_torznab_category_requested_pkey PRIMARY KEY (search_request_torznab_category_requested_id);
+
+
+--
+-- Name: search_request_torznab_category_requested search_request_torznab_category_requested_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_requested
+    ADD CONSTRAINT search_request_torznab_category_requested_uq UNIQUE (search_request_id, torznab_category_id);
+
+
+--
+-- Name: secret_audit_log secret_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret_audit_log
+    ADD CONSTRAINT secret_audit_log_pkey PRIMARY KEY (secret_audit_log_id);
+
+
+--
+-- Name: secret_binding secret_binding_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret_binding
+    ADD CONSTRAINT secret_binding_pkey PRIMARY KEY (secret_binding_id);
+
+
+--
+-- Name: secret_binding secret_binding_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret_binding
+    ADD CONSTRAINT secret_binding_uq UNIQUE (bound_table, bound_id, binding_name);
+
+
+--
+-- Name: secret secret_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret
+    ADD CONSTRAINT secret_pkey PRIMARY KEY (secret_id);
+
+
+--
+-- Name: secret secret_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret
+    ADD CONSTRAINT secret_public_id_uq UNIQUE (secret_public_id);
+
+
+--
+-- Name: settings_revision settings_revision_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.settings_revision
+    ADD CONSTRAINT settings_revision_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: settings_secret settings_secret_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.settings_secret
+    ADD CONSTRAINT settings_secret_name_key UNIQUE (name);
+
+
+--
+-- Name: settings_secret settings_secret_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.settings_secret
+    ADD CONSTRAINT settings_secret_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: setup_tokens setup_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.setup_tokens
+    ADD CONSTRAINT setup_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: source_metadata_conflict_audit_log source_metadata_conflict_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_metadata_conflict_audit_log
+    ADD CONSTRAINT source_metadata_conflict_audit_log_pkey PRIMARY KEY (source_metadata_conflict_audit_log_id);
+
+
+--
+-- Name: source_metadata_conflict source_metadata_conflict_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_metadata_conflict
+    ADD CONSTRAINT source_metadata_conflict_pkey PRIMARY KEY (source_metadata_conflict_id);
+
+
+--
+-- Name: source_reputation source_reputation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_reputation
+    ADD CONSTRAINT source_reputation_pkey PRIMARY KEY (source_reputation_id);
+
+
+--
+-- Name: source_reputation source_reputation_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_reputation
+    ADD CONSTRAINT source_reputation_uq UNIQUE (indexer_instance_id, window_key, window_start);
+
+
+--
+-- Name: tag tag_key_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tag
+    ADD CONSTRAINT tag_key_uq UNIQUE (tag_key);
+
+
+--
+-- Name: tag tag_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tag
+    ADD CONSTRAINT tag_pkey PRIMARY KEY (tag_id);
+
+
+--
+-- Name: tag tag_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tag
+    ADD CONSTRAINT tag_public_id_uq UNIQUE (tag_public_id);
+
+
+--
+-- Name: torznab_category torznab_category_cat_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.torznab_category
+    ADD CONSTRAINT torznab_category_cat_id_uq UNIQUE (torznab_cat_id);
+
+
+--
+-- Name: torznab_category torznab_category_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.torznab_category
+    ADD CONSTRAINT torznab_category_pkey PRIMARY KEY (torznab_category_id);
+
+
+--
+-- Name: torznab_instance torznab_instance_display_name_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.torznab_instance
+    ADD CONSTRAINT torznab_instance_display_name_uq UNIQUE (display_name);
+
+
+--
+-- Name: torznab_instance torznab_instance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.torznab_instance
+    ADD CONSTRAINT torznab_instance_pkey PRIMARY KEY (torznab_instance_id);
+
+
+--
+-- Name: torznab_instance torznab_instance_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.torznab_instance
+    ADD CONSTRAINT torznab_instance_public_id_uq UNIQUE (torznab_instance_public_id);
+
+
+--
+-- Name: tracker_category_mapping tracker_category_mapping_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_pkey PRIMARY KEY (tracker_category_mapping_id);
+
+
+--
+-- Name: trust_tier trust_tier_key_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_tier
+    ADD CONSTRAINT trust_tier_key_uq UNIQUE (trust_tier_key);
+
+
+--
+-- Name: trust_tier trust_tier_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_tier
+    ADD CONSTRAINT trust_tier_pkey PRIMARY KEY (trust_tier_id);
+
+
+--
+-- Name: user_result_action_kv user_result_action_kv_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_result_action_kv
+    ADD CONSTRAINT user_result_action_kv_pkey PRIMARY KEY (user_result_action_kv_id);
+
+
+--
+-- Name: user_result_action_kv user_result_action_kv_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_result_action_kv
+    ADD CONSTRAINT user_result_action_kv_uq UNIQUE (user_result_action_id, key);
+
+
+--
+-- Name: user_result_action user_result_action_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_result_action
+    ADD CONSTRAINT user_result_action_pkey PRIMARY KEY (user_result_action_id);
+
+
+--
+-- Name: fs_jobs fs_jobs_pkey; Type: CONSTRAINT; Schema: revaer_runtime; Owner: -
+--
+
+ALTER TABLE ONLY revaer_runtime.fs_jobs
+    ADD CONSTRAINT fs_jobs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: torrent_files torrent_files_pkey; Type: CONSTRAINT; Schema: revaer_runtime; Owner: -
+--
+
+ALTER TABLE ONLY revaer_runtime.torrent_files
+    ADD CONSTRAINT torrent_files_pkey PRIMARY KEY (torrent_id, file_index);
+
+
+--
+-- Name: torrents torrents_pkey; Type: CONSTRAINT; Schema: revaer_runtime; Owner: -
+--
+
+ALTER TABLE ONLY revaer_runtime.torrents
+    ADD CONSTRAINT torrents_pkey PRIMARY KEY (torrent_id);
+
+
+--
+-- Name: acquisition_attempt_client_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX acquisition_attempt_client_uq ON public.acquisition_attempt USING btree (torrent_client_name, torrent_client_id) WHERE ((torrent_client_id IS NOT NULL) AND (torrent_client_name <> 'unknown'::public.torrent_client_name));
+
+
+--
+-- Name: app_profile_immutable_keys_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX app_profile_immutable_keys_order ON public.app_profile_immutable_keys USING btree (profile_id, ord);
+
+
+--
+-- Name: app_profile_local_networks_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX app_profile_local_networks_order ON public.app_profile_local_networks USING btree (profile_id, ord);
+
+
+--
+-- Name: auth_api_keys_enabled_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX auth_api_keys_enabled_idx ON public.auth_api_keys USING btree (enabled) WHERE (enabled = true);
+
+
+--
+-- Name: canonical_external_id_int_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX canonical_external_id_int_uq ON public.canonical_external_id USING btree (canonical_torrent_id, id_type, id_value_int) WHERE (id_value_int IS NOT NULL);
+
+
+--
+-- Name: canonical_external_id_text_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX canonical_external_id_text_uq ON public.canonical_external_id USING btree (canonical_torrent_id, id_type, id_value_text) WHERE (id_value_text IS NOT NULL);
+
+
+--
+-- Name: canonical_torrent_infohash_v1_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX canonical_torrent_infohash_v1_uq ON public.canonical_torrent USING btree (infohash_v1) WHERE (infohash_v1 IS NOT NULL);
+
+
+--
+-- Name: canonical_torrent_infohash_v2_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX canonical_torrent_infohash_v2_uq ON public.canonical_torrent USING btree (infohash_v2) WHERE (infohash_v2 IS NOT NULL);
+
+
+--
+-- Name: canonical_torrent_magnet_hash_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX canonical_torrent_magnet_hash_uq ON public.canonical_torrent USING btree (magnet_hash) WHERE (magnet_hash IS NOT NULL);
+
+
+--
+-- Name: canonical_torrent_source_guid_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX canonical_torrent_source_guid_uq ON public.canonical_torrent_source USING btree (indexer_instance_id, source_guid) WHERE (source_guid IS NOT NULL);
+
+
+--
+-- Name: canonical_torrent_title_size_hash_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX canonical_torrent_title_size_hash_uq ON public.canonical_torrent USING btree (title_size_hash) WHERE (title_size_hash IS NOT NULL);
+
+
+--
+-- Name: engine_alt_speed_days_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX engine_alt_speed_days_dedup ON public.engine_alt_speed_days USING btree (profile_id, day);
+
+
+--
+-- Name: engine_ip_filter_entries_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX engine_ip_filter_entries_dedup ON public.engine_ip_filter_entries USING btree (profile_id, cidr);
+
+
+--
+-- Name: engine_profile_list_values_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX engine_profile_list_values_dedup ON public.engine_profile_list_values USING btree (profile_id, kind, value);
+
+
+--
+-- Name: engine_tracker_endpoints_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX engine_tracker_endpoints_dedup ON public.engine_tracker_endpoints USING btree (profile_id, kind, url);
+
+
+--
+-- Name: engine_tracker_endpoints_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX engine_tracker_endpoints_order ON public.engine_tracker_endpoints USING btree (profile_id, kind, ord);
+
+
+--
+-- Name: fs_policy_list_values_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX fs_policy_list_values_dedup ON public.fs_policy_list_values USING btree (policy_id, kind, value);
+
+
+--
+-- Name: idx_acquisition_infohash_v1_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_acquisition_infohash_v1_started ON public.acquisition_attempt USING btree (infohash_v1, started_at DESC) WHERE (infohash_v1 IS NOT NULL);
+
+
+--
+-- Name: idx_acquisition_infohash_v2_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_acquisition_infohash_v2_started ON public.acquisition_attempt USING btree (infohash_v2, started_at DESC) WHERE (infohash_v2 IS NOT NULL);
+
+
+--
+-- Name: idx_acquisition_magnet_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_acquisition_magnet_started ON public.acquisition_attempt USING btree (magnet_hash, started_at DESC) WHERE (magnet_hash IS NOT NULL);
+
+
+--
+-- Name: idx_canon_source_base_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canon_source_base_score ON public.canonical_torrent_source_base_score USING btree (canonical_torrent_id, score_total_base DESC);
+
+
+--
+-- Name: idx_canon_source_context_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canon_source_context_score ON public.canonical_torrent_source_context_score USING btree (context_key_type, context_key_id, canonical_torrent_id, score_total_context DESC);
+
+
+--
+-- Name: idx_canon_source_idx_magnet; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canon_source_idx_magnet ON public.canonical_torrent_source USING btree (indexer_instance_id, magnet_hash) WHERE ((magnet_hash IS NOT NULL) AND (source_guid IS NULL));
+
+
+--
+-- Name: idx_canon_source_idx_title_size; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canon_source_idx_title_size ON public.canonical_torrent_source USING btree (indexer_instance_id, title_normalized, size_bytes) WHERE ((size_bytes IS NOT NULL) AND (source_guid IS NULL) AND (infohash_v2 IS NULL) AND (infohash_v1 IS NULL) AND (magnet_hash IS NULL));
+
+
+--
+-- Name: idx_canon_source_idx_v1; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canon_source_idx_v1 ON public.canonical_torrent_source USING btree (indexer_instance_id, infohash_v1) WHERE ((infohash_v1 IS NOT NULL) AND (source_guid IS NULL));
+
+
+--
+-- Name: idx_canon_source_idx_v2; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canon_source_idx_v2 ON public.canonical_torrent_source USING btree (indexer_instance_id, infohash_v2) WHERE ((infohash_v2 IS NOT NULL) AND (source_guid IS NULL));
+
+
+--
+-- Name: idx_canon_source_last_seen; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canon_source_last_seen ON public.canonical_torrent_source USING btree (last_seen_at DESC);
+
+
+--
+-- Name: idx_canonical_torrent_title_norm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canonical_torrent_title_norm ON public.canonical_torrent USING btree (title_normalized);
+
+
+--
+-- Name: idx_canonical_torrent_title_size; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canonical_torrent_title_size ON public.canonical_torrent USING btree (title_normalized, size_bytes) WHERE (size_bytes IS NOT NULL);
+
+
+--
+-- Name: idx_canonical_torrent_updated_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canonical_torrent_updated_at ON public.canonical_torrent USING btree (updated_at DESC);
+
+
+--
+-- Name: idx_cf_state_status_changed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cf_state_status_changed ON public.indexer_cf_state USING btree (state, last_changed_at DESC);
+
+
+--
+-- Name: idx_connectivity_profile_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_connectivity_profile_status ON public.indexer_connectivity_profile USING btree (status);
+
+
+--
+-- Name: idx_disambig_left_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_disambig_left_identity ON public.canonical_disambiguation_rule USING btree (identity_left_type, identity_left_value_text, identity_left_value_uuid);
+
+
+--
+-- Name: idx_disambig_pair_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_disambig_pair_identity ON public.canonical_disambiguation_rule USING btree (identity_left_type, identity_left_value_text, identity_left_value_uuid, identity_right_type, identity_right_value_text, identity_right_value_uuid);
+
+
+--
+-- Name: idx_disambig_right_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_disambig_right_identity ON public.canonical_disambiguation_rule USING btree (identity_right_type, identity_right_value_text, identity_right_value_uuid);
+
+
+--
+-- Name: idx_health_event_instance_error_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_health_event_instance_error_time ON public.indexer_health_event USING btree (indexer_instance_id, error_class, occurred_at DESC) WHERE (error_class IS NOT NULL);
+
+
+--
+-- Name: idx_health_event_instance_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_health_event_instance_time ON public.indexer_health_event USING btree (indexer_instance_id, occurred_at DESC);
+
+
+--
+-- Name: idx_health_event_instance_type_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_health_event_instance_type_time ON public.indexer_health_event USING btree (indexer_instance_id, event_type, occurred_at DESC);
+
+
+--
+-- Name: idx_health_event_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_health_event_time ON public.indexer_health_event USING btree (occurred_at DESC);
+
+
+--
+-- Name: idx_instance_rate_limit_policy; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_instance_rate_limit_policy ON public.indexer_instance_rate_limit USING btree (rate_limit_policy_id);
+
+
+--
+-- Name: idx_job_schedule_enabled_next; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_job_schedule_enabled_next ON public.job_schedule USING btree (enabled, next_run_at) WHERE (enabled = true);
+
+
+--
+-- Name: idx_outbound_log_correlation_retry; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_outbound_log_correlation_retry ON public.outbound_request_log USING btree (correlation_id, retry_seq);
+
+
+--
+-- Name: idx_outbound_log_instance_error_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_outbound_log_instance_error_started ON public.outbound_request_log USING btree (indexer_instance_id, error_class, started_at DESC) WHERE (error_class IS NOT NULL);
+
+
+--
+-- Name: idx_outbound_log_instance_outcome_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_outbound_log_instance_outcome_started ON public.outbound_request_log USING btree (indexer_instance_id, outcome, started_at DESC);
+
+
+--
+-- Name: idx_outbound_log_instance_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_outbound_log_instance_started ON public.outbound_request_log USING btree (indexer_instance_id, started_at DESC);
+
+
+--
+-- Name: idx_outbound_log_instance_type_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_outbound_log_instance_type_started ON public.outbound_request_log USING btree (indexer_instance_id, request_type, started_at DESC);
+
+
+--
+-- Name: idx_outbound_log_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_outbound_log_started ON public.outbound_request_log USING btree (started_at DESC);
+
+
+--
+-- Name: idx_policy_rule_set_sort_pub; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_policy_rule_set_sort_pub ON public.policy_rule USING btree (policy_set_id, sort_order, policy_rule_public_id);
+
+
+--
+-- Name: idx_policy_rule_set_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_policy_rule_set_type ON public.policy_rule USING btree (policy_set_id, rule_type);
+
+
+--
+-- Name: idx_policy_snapshot_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_policy_snapshot_created_at ON public.policy_snapshot USING btree (created_at DESC);
+
+
+--
+-- Name: idx_policy_snapshot_rule_public; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_policy_snapshot_rule_public ON public.policy_snapshot_rule USING btree (policy_rule_public_id);
+
+
+--
+-- Name: idx_routing_rate_limit_policy; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_routing_rate_limit_policy ON public.routing_policy_rate_limit USING btree (rate_limit_policy_id);
+
+
+--
+-- Name: idx_rss_subscription_enabled_next; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rss_subscription_enabled_next ON public.indexer_rss_subscription USING btree (is_enabled, next_poll_at) WHERE (is_enabled = true);
+
+
+--
+-- Name: idx_run_correlation_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_run_correlation_id ON public.search_request_indexer_run_correlation USING btree (correlation_id);
+
+
+--
+-- Name: idx_run_correlation_run_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_run_correlation_run_created ON public.search_request_indexer_run_correlation USING btree (search_request_indexer_run_id, created_at DESC);
+
+
+--
+-- Name: idx_search_filter_decision_canon_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_filter_decision_canon_time ON public.search_filter_decision USING btree (canonical_torrent_id, decided_at DESC) WHERE (canonical_torrent_id IS NOT NULL);
+
+
+--
+-- Name: idx_search_filter_decision_observation_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_filter_decision_observation_time ON public.search_filter_decision USING btree (observation_id, decided_at DESC);
+
+
+--
+-- Name: idx_search_filter_decision_request_source_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_filter_decision_request_source_time ON public.search_filter_decision USING btree (search_request_id, canonical_torrent_source_id, decided_at DESC) WHERE (canonical_torrent_source_id IS NOT NULL);
+
+
+--
+-- Name: idx_search_filter_decision_request_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_filter_decision_request_time ON public.search_filter_decision USING btree (search_request_id, decided_at DESC);
+
+
+--
+-- Name: idx_search_filter_decision_snapshot_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_filter_decision_snapshot_time ON public.search_filter_decision USING btree (policy_snapshot_id, decided_at DESC);
+
+
+--
+-- Name: idx_search_filter_decision_source_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_filter_decision_source_time ON public.search_filter_decision USING btree (canonical_torrent_source_id, decided_at DESC) WHERE (canonical_torrent_source_id IS NOT NULL);
+
+
+--
+-- Name: idx_search_page_request_sealed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_page_request_sealed ON public.search_page USING btree (search_request_id, sealed_at);
+
+
+--
+-- Name: idx_search_profile_policy_set_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_profile_policy_set_profile ON public.search_profile_policy_set USING btree (search_profile_id);
+
+
+--
+-- Name: idx_search_request_domain_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_request_domain_created_at ON public.search_request USING btree (effective_media_domain_id, created_at DESC);
+
+
+--
+-- Name: idx_search_request_status_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_request_status_created_at ON public.search_request USING btree (status, created_at DESC);
+
+
+--
+-- Name: idx_search_request_user_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_request_user_created_at ON public.search_request USING btree (user_id, created_at DESC);
+
+
+--
+-- Name: idx_source_metadata_conflict_source_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_source_metadata_conflict_source_time ON public.source_metadata_conflict USING btree (canonical_torrent_source_id, observed_at DESC);
+
+
+--
+-- Name: idx_source_reputation_window_start; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_source_reputation_window_start ON public.source_reputation USING btree (window_key, window_start DESC);
+
+
+--
+-- Name: idx_srch_obs_attr_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_srch_obs_attr_key ON public.search_request_source_observation_attr USING btree (attr_key);
+
+
+--
+-- Name: idx_srch_obs_attr_observation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_srch_obs_attr_observation ON public.search_request_source_observation_attr USING btree (observation_id);
+
+
+--
+-- Name: idx_srch_obs_req_canon_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_srch_obs_req_canon_time ON public.search_request_source_observation USING btree (search_request_id, canonical_torrent_id, observed_at DESC);
+
+
+--
+-- Name: idx_srch_obs_req_indexer_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_srch_obs_req_indexer_time ON public.search_request_source_observation USING btree (search_request_id, indexer_instance_id, observed_at DESC);
+
+
+--
+-- Name: idx_srch_obs_req_source_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_srch_obs_req_source_time ON public.search_request_source_observation USING btree (search_request_id, canonical_torrent_source_id, observed_at DESC);
+
+
+--
+-- Name: idx_srch_req_cat_effective; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_srch_req_cat_effective ON public.search_request_torznab_category_effective USING btree (search_request_id);
+
+
+--
+-- Name: idx_srch_req_cat_requested; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_srch_req_cat_requested ON public.search_request_torznab_category_requested USING btree (search_request_id);
+
+
+--
+-- Name: idx_torznab_instance_enabled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_torznab_instance_enabled ON public.torznab_instance USING btree (is_enabled);
+
+
+--
+-- Name: idx_torznab_instance_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_torznab_instance_profile ON public.torznab_instance USING btree (search_profile_id);
+
+
+--
+-- Name: idx_tracker_map_def_cat_sub; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tracker_map_def_cat_sub ON public.tracker_category_mapping USING btree (indexer_definition_id, tracker_category, tracker_subcategory);
+
+
+--
+-- Name: idx_tracker_map_global_cat_sub; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tracker_map_global_cat_sub ON public.tracker_category_mapping USING btree (tracker_category, tracker_subcategory) WHERE (indexer_definition_id IS NULL);
+
+
+--
+-- Name: idx_tracker_map_instance_cat_sub; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tracker_map_instance_cat_sub ON public.tracker_category_mapping USING btree (indexer_instance_id, tracker_category, tracker_subcategory) WHERE (indexer_instance_id IS NOT NULL);
+
+
+--
+-- Name: idx_tracker_map_torznab_instance_cat_sub; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tracker_map_torznab_instance_cat_sub ON public.tracker_category_mapping USING btree (torznab_instance_id, tracker_category, tracker_subcategory) WHERE (torznab_instance_id IS NOT NULL);
+
+
+--
+-- Name: indexer_definition_field_validation_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX indexer_definition_field_validation_uq ON public.indexer_definition_field_validation USING btree (indexer_definition_field_id, validation_type, COALESCE(depends_on_field_name, ''::character varying), COALESCE(depends_on_operator, 'eq'::public.depends_on_operator), ((depends_on_operator IS NULL)), COALESCE(text_value_norm, ''::character varying), COALESCE(int_value, '-1'::integer), COALESCE(numeric_value, ('-1'::integer)::numeric), COALESCE(value_set_id, (0)::bigint), COALESCE(depends_on_value_set_id, (0)::bigint), COALESCE(depends_on_value_plain_norm, ''::character varying), COALESCE(depends_on_value_int, '-1'::integer), COALESCE(depends_on_value_bool, false));
+
+
+--
+-- Name: indexer_health_notification_hook_enabled_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX indexer_health_notification_hook_enabled_idx ON public.indexer_health_notification_hook USING btree (is_enabled, status_threshold, channel);
+
+
+--
+-- Name: indexer_rss_item_seen_guid_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX indexer_rss_item_seen_guid_uq ON public.indexer_rss_item_seen USING btree (indexer_instance_id, item_guid) WHERE (item_guid IS NOT NULL);
+
+
+--
+-- Name: indexer_rss_item_seen_infohash_v1_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX indexer_rss_item_seen_infohash_v1_uq ON public.indexer_rss_item_seen USING btree (indexer_instance_id, infohash_v1) WHERE (infohash_v1 IS NOT NULL);
+
+
+--
+-- Name: indexer_rss_item_seen_infohash_v2_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX indexer_rss_item_seen_infohash_v2_uq ON public.indexer_rss_item_seen USING btree (indexer_instance_id, infohash_v2) WHERE (infohash_v2 IS NOT NULL);
+
+
+--
+-- Name: indexer_rss_item_seen_magnet_hash_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX indexer_rss_item_seen_magnet_hash_uq ON public.indexer_rss_item_seen USING btree (indexer_instance_id, magnet_hash) WHERE (magnet_hash IS NOT NULL);
+
+
+--
+-- Name: ix_media_capability_snapshot_encoder_run_observed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_capability_snapshot_encoder_run_observed ON public.media_capability_snapshot_encoder USING btree (snapshot_run_public_id, observed_at DESC, media_capability_snapshot_encoder_id DESC);
+
+
+--
+-- Name: ix_media_capability_snapshot_feature_run_observed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_capability_snapshot_feature_run_observed ON public.media_capability_snapshot_feature USING btree (snapshot_run_public_id, observed_at DESC, media_capability_snapshot_feature_id DESC);
+
+
+--
+-- Name: ix_media_capability_snapshot_observed_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_capability_snapshot_observed_at ON public.media_capability_snapshot USING btree (observed_at DESC);
+
+
+--
+-- Name: ix_media_capability_snapshot_run_observed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_capability_snapshot_run_observed ON public.media_capability_snapshot USING btree (snapshot_run_public_id, observed_at DESC, media_capability_snapshot_id DESC);
+
+
+--
+-- Name: ix_media_job_active_heartbeat; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_active_heartbeat ON public.media_job USING btree (status, heartbeat_at, started_at, media_job_id) WHERE (status = ANY (ARRAY[public.media_job_status_running_v1(), public.media_job_status_verifying_v1()]));
+
+
+--
+-- Name: ix_media_job_attempt_current; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_attempt_current ON public.media_job_attempt USING btree (media_job_id, attempt_number DESC, media_job_attempt_id DESC);
+
+
+--
+-- Name: ix_media_job_diagnostic_prune; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_diagnostic_prune ON public.media_job USING btree (completed_at, media_job_id) WHERE ((diagnostics_pruned_at IS NULL) AND (status = ANY (ARRAY['failed'::public.media_job_status, 'cancelled'::public.media_job_status])));
+
+
+--
+-- Name: ix_media_job_history_all; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_history_all ON public.media_job USING btree (queued_at DESC, media_job_id DESC);
+
+
+--
+-- Name: ix_media_job_history_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_history_profile ON public.media_job USING btree (media_profile_id, queued_at DESC, media_job_id DESC);
+
+
+--
+-- Name: ix_media_job_history_profile_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_history_profile_status ON public.media_job USING btree (media_profile_id, status, queued_at DESC, media_job_id DESC);
+
+
+--
+-- Name: ix_media_job_history_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_history_status ON public.media_job USING btree (status, queued_at DESC, media_job_id DESC);
+
+
+--
+-- Name: ix_media_job_profile_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_profile_status ON public.media_job USING btree (media_profile_id, status, queued_at DESC);
+
+
+--
+-- Name: ix_media_job_terminal_outbox_unpublished; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_terminal_outbox_unpublished ON public.media_job_terminal_outbox USING btree (created_at, media_job_terminal_outbox_id) WHERE (published_at IS NULL);
+
+
+--
+-- Name: ix_media_job_worker_queue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_worker_queue ON public.media_job USING btree (status, queued_at, media_job_id) WHERE (status = public.media_job_status_queued_v1());
+
+
+--
+-- Name: ix_media_profile_root_canonical_enabled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_profile_root_canonical_enabled ON public.media_profile_root USING btree (canonical_path, media_profile_root_id) WHERE enabled;
+
+
+--
+-- Name: media_domain_primary_torznab_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX media_domain_primary_torznab_uq ON public.media_domain_to_torznab_category USING btree (media_domain_id) WHERE (is_primary = true);
+
+
+--
+-- Name: policy_rule_value_set_item_bigint_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX policy_rule_value_set_item_bigint_uq ON public.policy_rule_value_set_item USING btree (value_set_id, value_bigint) WHERE (value_bigint IS NOT NULL);
+
+
+--
+-- Name: policy_rule_value_set_item_int_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX policy_rule_value_set_item_int_uq ON public.policy_rule_value_set_item USING btree (value_set_id, value_int) WHERE (value_int IS NOT NULL);
+
+
+--
+-- Name: policy_rule_value_set_item_text_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX policy_rule_value_set_item_text_uq ON public.policy_rule_value_set_item USING btree (value_set_id, value_text) WHERE (value_text IS NOT NULL);
+
+
+--
+-- Name: policy_rule_value_set_item_uuid_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX policy_rule_value_set_item_uuid_uq ON public.policy_rule_value_set_item USING btree (value_set_id, value_uuid) WHERE (value_uuid IS NOT NULL);
+
+
+--
+-- Name: search_request_source_observation_guid_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX search_request_source_observation_guid_uq ON public.search_request_source_observation USING btree (search_request_id, indexer_instance_id, source_guid) WHERE (source_guid IS NOT NULL);
+
+
+--
+-- Name: search_request_source_observation_source_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX search_request_source_observation_source_uq ON public.search_request_source_observation USING btree (search_request_id, indexer_instance_id, canonical_torrent_source_id) WHERE (source_guid IS NULL);
+
+
+--
+-- Name: setup_tokens_active_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX setup_tokens_active_unique ON public.setup_tokens USING btree ((true)) WHERE (consumed_at IS NULL);
+
+
+--
+-- Name: tracker_category_mapping_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX tracker_category_mapping_uq ON public.tracker_category_mapping USING btree (COALESCE(torznab_instance_id, (0)::bigint), COALESCE(indexer_instance_id, (0)::bigint), COALESCE(indexer_definition_id, (0)::bigint), tracker_category, tracker_subcategory);
+
+
+--
+-- Name: uq_media_capability_snapshot_encoder_run_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_capability_snapshot_encoder_run_name ON public.media_capability_snapshot_encoder USING btree (snapshot_run_public_id, lower(encoder_name));
+
+
+--
+-- Name: uq_media_capability_snapshot_feature_run_family_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_capability_snapshot_feature_run_family_name ON public.media_capability_snapshot_feature USING btree (snapshot_run_public_id, lower(feature_family), lower(feature_name));
+
+
+--
+-- Name: uq_media_compatibility_target_key_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_compatibility_target_key_version ON public.media_compatibility_target USING btree (lower(compatibility_target_key), version);
+
+
+--
+-- Name: uq_media_desired_target_profile_key_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_desired_target_profile_key_version ON public.media_desired_target_profile USING btree (lower(target_key), version);
+
+
+--
+-- Name: uq_media_desired_target_stream_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_desired_target_stream_key ON public.media_desired_target_stream USING btree (media_desired_target_profile_id, lower(stream_key));
+
+
+--
+-- Name: uq_media_desired_target_stream_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_desired_target_stream_order ON public.media_desired_target_stream USING btree (media_desired_target_profile_id, sort_order);
+
+
+--
+-- Name: uq_media_discovery_source_fingerprint_association_path; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_discovery_source_fingerprint_association_path ON public.media_discovery_source_fingerprint USING btree (media_discovery_association_version_id, source_path);
+
+
+--
+-- Name: uq_media_job_artifact_attempt_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_artifact_attempt_index ON public.media_job_artifact USING btree (media_job_attempt_id, artifact_index);
+
+
+--
+-- Name: uq_media_job_compact_audit_attempt_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_compact_audit_attempt_index ON public.media_job_compact_audit USING btree (media_job_attempt_id, audit_index);
+
+
+--
+-- Name: uq_media_job_desired_target_stream_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_desired_target_stream_key ON public.media_job_desired_target_stream USING btree (media_job_id, lower(stream_key));
+
+
+--
+-- Name: uq_media_job_desired_target_stream_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_desired_target_stream_order ON public.media_job_desired_target_stream USING btree (media_job_id, sort_order);
+
+
+--
+-- Name: uq_media_job_operation_attempt_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_operation_attempt_index ON public.media_job_operation USING btree (media_job_attempt_id, operation_index);
+
+
+--
+-- Name: uq_media_job_phase_attempt_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_phase_attempt_index ON public.media_job_phase USING btree (media_job_attempt_id, phase_index);
+
+
+--
+-- Name: uq_media_job_plan_reason_attempt_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_plan_reason_attempt_index ON public.media_job_plan_reason USING btree (media_job_attempt_id, reason_index);
+
+
+--
+-- Name: uq_media_job_retention_policy_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_retention_policy_key ON public.media_job_retention_policy USING btree (lower(policy_key));
+
+
+--
+-- Name: uq_media_job_verification_check_attempt_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_verification_check_attempt_index ON public.media_job_verification_check USING btree (media_job_attempt_id, check_index);
+
+
+--
+-- Name: uq_media_job_violation_attempt_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_violation_attempt_index ON public.media_job_violation USING btree (media_job_attempt_id, violation_index);
+
+
+--
+-- Name: uq_media_policy_profile_key_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_policy_profile_key_version ON public.media_policy_profile USING btree (lower(policy_key), version);
+
+
+--
+-- Name: uq_media_profile_import_draft_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_profile_import_draft_key ON public.media_profile_import_draft USING btree (lower(profile_key));
+
+
+--
+-- Name: uq_media_profile_profile_key_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_profile_profile_key_active ON public.media_profile USING btree (lower(profile_key)) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: uq_media_profile_root_identity_enabled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_profile_root_identity_enabled ON public.media_profile_root USING btree (filesystem_device, filesystem_inode) WHERE enabled;
+
+
+--
+-- Name: uq_media_profile_root_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_profile_root_order ON public.media_profile_root USING btree (media_profile_id, root_kind, sort_order);
+
+
+--
+-- Name: uq_media_target_profile_target_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_target_profile_target_key ON public.media_target USING btree (media_profile_id, lower(target_key));
+
+
+--
+-- Name: revaer_runtime_fs_jobs_torrent_idx; Type: INDEX; Schema: revaer_runtime; Owner: -
+--
+
+CREATE UNIQUE INDEX revaer_runtime_fs_jobs_torrent_idx ON revaer_runtime.fs_jobs USING btree (torrent_id);
+
+
+--
+-- Name: app_label_policies app_label_policies_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER app_label_policies_touch_updated_at BEFORE UPDATE ON public.app_label_policies FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: app_profile app_profile_bump_revision; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER app_profile_bump_revision AFTER INSERT OR UPDATE ON public.app_profile FOR EACH ROW EXECUTE FUNCTION public.revaer_bump_revision();
+
+
+--
+-- Name: app_profile_immutable_keys app_profile_immutable_keys_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER app_profile_immutable_keys_touch_updated_at BEFORE UPDATE ON public.app_profile_immutable_keys FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: app_profile_local_networks app_profile_local_networks_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER app_profile_local_networks_touch_updated_at BEFORE UPDATE ON public.app_profile_local_networks FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: app_profile app_profile_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER app_profile_touch_updated_at BEFORE UPDATE ON public.app_profile FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: auth_api_keys auth_api_keys_bump_revision; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER auth_api_keys_bump_revision AFTER INSERT OR DELETE OR UPDATE ON public.auth_api_keys FOR EACH ROW EXECUTE FUNCTION public.revaer_bump_revision();
+
+
+--
+-- Name: auth_api_keys auth_api_keys_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER auth_api_keys_touch_updated_at BEFORE UPDATE ON public.auth_api_keys FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_alt_speed_days engine_alt_speed_days_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_alt_speed_days_touch_updated_at BEFORE UPDATE ON public.engine_alt_speed_days FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_alt_speed engine_alt_speed_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_alt_speed_touch_updated_at BEFORE UPDATE ON public.engine_alt_speed FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_ip_filter_entries engine_ip_filter_entries_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_ip_filter_entries_touch_updated_at BEFORE UPDATE ON public.engine_ip_filter_entries FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_ip_filter engine_ip_filter_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_ip_filter_touch_updated_at BEFORE UPDATE ON public.engine_ip_filter FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_profile engine_profile_bump_revision; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_profile_bump_revision AFTER INSERT OR UPDATE ON public.engine_profile FOR EACH ROW EXECUTE FUNCTION public.revaer_bump_revision();
+
+
+--
+-- Name: engine_profile_list_values engine_profile_list_values_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_profile_list_values_touch_updated_at BEFORE UPDATE ON public.engine_profile_list_values FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_profile engine_profile_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_profile_touch_updated_at BEFORE UPDATE ON public.engine_profile FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_tracker_config engine_tracker_config_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_tracker_config_touch_updated_at BEFORE UPDATE ON public.engine_tracker_config FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_tracker_endpoints engine_tracker_endpoints_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_tracker_endpoints_touch_updated_at BEFORE UPDATE ON public.engine_tracker_endpoints FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: fs_policy fs_policy_bump_revision; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER fs_policy_bump_revision AFTER INSERT OR UPDATE ON public.fs_policy FOR EACH ROW EXECUTE FUNCTION public.revaer_bump_revision();
+
+
+--
+-- Name: fs_policy_list_values fs_policy_list_values_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER fs_policy_list_values_touch_updated_at BEFORE UPDATE ON public.fs_policy_list_values FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: fs_policy fs_policy_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER fs_policy_touch_updated_at BEFORE UPDATE ON public.fs_policy FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: media_desired_target_stream media_desired_target_stream_insert_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_desired_target_stream_insert_guard BEFORE INSERT ON public.media_desired_target_stream FOR EACH ROW EXECUTE FUNCTION public.media_desired_target_stream_insert_guard_v1();
+
+
+--
+-- Name: media_job_attempt media_job_attempt_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_attempt_guard_trigger BEFORE UPDATE ON public.media_job_attempt FOR EACH ROW EXECUTE FUNCTION public.media_job_attempt_guard_v1();
+
+
+--
+-- Name: media_job media_job_capture_configuration_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_capture_configuration_trigger AFTER INSERT ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_capture_configuration_v1();
+
+
+--
+-- Name: media_job media_job_configuration_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_configuration_immutable_trigger BEFORE UPDATE ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_configuration_immutable_v1();
+
+
+--
+-- Name: media_job_configuration_snapshot media_job_configuration_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_configuration_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_configuration_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job media_job_current_attempt_required_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER media_job_current_attempt_required_trigger AFTER INSERT OR UPDATE OF current_attempt_id ON public.media_job DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.media_job_current_attempt_required_v1();
+
+
+--
+-- Name: media_job media_job_desired_target_snapshot_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_desired_target_snapshot_guard BEFORE INSERT ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_desired_target_snapshot_guard_v1();
+
+
+--
+-- Name: media_job_file_rule_snapshot media_job_file_rule_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_file_rule_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_file_rule_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job_filter_snapshot media_job_filter_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_filter_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_filter_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job media_job_initial_attempt_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_initial_attempt_trigger AFTER INSERT ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_initial_attempt_v1();
+
+
+--
+-- Name: media_job_policy_behavior_snapshot media_job_policy_behavior_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_policy_behavior_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_policy_behavior_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job_policy_compatibility_target_snapshot media_job_policy_compatibility_target_snapshot_immutable_trigge; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_policy_compatibility_target_snapshot_immutable_trigge BEFORE DELETE OR UPDATE ON public.media_job_policy_compatibility_target_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job_policy_maintenance_window_snapshot media_job_policy_maintenance_window_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_policy_maintenance_window_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_policy_maintenance_window_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job_policy_operation_cost_snapshot media_job_policy_operation_cost_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_policy_operation_cost_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_policy_operation_cost_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job_policy_retention_rule_snapshot media_job_policy_retention_rule_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_policy_retention_rule_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_policy_retention_rule_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job_root_snapshot media_job_root_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_root_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_root_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job media_job_snapshot_source_fingerprint_before_insert; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_snapshot_source_fingerprint_before_insert BEFORE INSERT ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_source_fingerprint_v1();
+
+
+--
+-- Name: media_job_stream_classification_rule_snapshot media_job_stream_classification_rule_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_stream_classification_rule_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_stream_classification_rule_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job_subtitle_discovery_rule_snapshot media_job_subtitle_discovery_rule_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_subtitle_discovery_rule_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_subtitle_discovery_rule_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_policy_backup media_policy_backup_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_backup_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_backup FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_compatibility_rule media_policy_compatibility_rule_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_compatibility_rule_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_compatibility_rule FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_compatibility_target media_policy_compatibility_target_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_compatibility_target_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_compatibility_target FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_maintenance_window media_policy_maintenance_window_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_maintenance_window_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_maintenance_window FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_operation_cost media_policy_operation_cost_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_operation_cost_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_operation_cost FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_output media_policy_output_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_output_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_output FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_profile media_policy_profile_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_profile_immutable_trigger BEFORE UPDATE ON public.media_policy_profile FOR EACH ROW EXECUTE FUNCTION public.media_policy_profile_immutable_v1();
+
+
+--
+-- Name: media_policy_retention_rule media_policy_retention_rule_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_retention_rule_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_retention_rule FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_runtime_limit media_policy_runtime_limit_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_runtime_limit_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_runtime_limit FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_profile media_policy_seed_bounded_defaults_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_seed_bounded_defaults_trigger AFTER INSERT ON public.media_policy_profile FOR EACH ROW EXECUTE FUNCTION public.media_policy_seed_bounded_defaults_trigger_v1();
+
+
+--
+-- Name: media_policy_unmatched_stream_behavior media_policy_unmatched_stream_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_unmatched_stream_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_unmatched_stream_behavior FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_verification media_policy_verification_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_verification_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_verification FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_workspace media_policy_workspace_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_workspace_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_workspace FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_profile media_profile_all_root_overlap_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_profile_all_root_overlap_trigger BEFORE INSERT OR UPDATE OF source_root, output_root, deleted_at ON public.media_profile FOR EACH ROW EXECUTE FUNCTION public.media_profile_validate_all_root_overlap_trigger_v1();
+
+
+--
+-- Name: media_profile media_profile_desired_target_activation_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_profile_desired_target_activation_guard BEFORE UPDATE OF desired_target_profile_id ON public.media_profile FOR EACH ROW EXECUTE FUNCTION public.media_profile_desired_target_activation_guard_v1();
+
+
+--
+-- Name: media_stream_classification_rule media_stream_classification_rule_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_stream_classification_rule_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_stream_classification_rule FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: query_presets query_presets_bump_revision; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER query_presets_bump_revision AFTER INSERT OR DELETE OR UPDATE ON public.query_presets FOR EACH ROW EXECUTE FUNCTION public.revaer_bump_revision();
+
+
+--
+-- Name: query_presets query_presets_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER query_presets_touch_updated_at BEFORE UPDATE ON public.query_presets FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: search_request_indexer_run search_request_finalize_on_runs_terminal_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER search_request_finalize_on_runs_terminal_trigger AFTER INSERT OR UPDATE OF status ON public.search_request_indexer_run FOR EACH ROW EXECUTE FUNCTION public.search_request_finalize_on_runs_terminal_v1();
+
+
+--
+-- Name: media_job_desired_target_stream trg_media_job_desired_target_audio_constraints_snapshot; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_media_job_desired_target_audio_constraints_snapshot BEFORE INSERT ON public.media_job_desired_target_stream FOR EACH ROW EXECUTE FUNCTION public.media_job_desired_target_audio_constraints_snapshot_v1();
+
+
+--
+-- Name: fs_jobs revaer_runtime_fs_jobs_touch_updated_at; Type: TRIGGER; Schema: revaer_runtime; Owner: -
+--
+
+CREATE TRIGGER revaer_runtime_fs_jobs_touch_updated_at BEFORE UPDATE ON revaer_runtime.fs_jobs FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: torrents revaer_runtime_torrents_touch_updated_at; Type: TRIGGER; Schema: revaer_runtime; Owner: -
+--
+
+CREATE TRIGGER revaer_runtime_torrents_touch_updated_at BEFORE UPDATE ON revaer_runtime.torrents FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: torrent_files torrent_files_touch_updated_at; Type: TRIGGER; Schema: revaer_runtime; Owner: -
+--
+
+CREATE TRIGGER torrent_files_touch_updated_at BEFORE UPDATE ON revaer_runtime.torrent_files FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: acquisition_attempt acquisition_attempt_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id);
+
+
+--
+-- Name: acquisition_attempt acquisition_attempt_canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id);
+
+
+--
+-- Name: acquisition_attempt acquisition_attempt_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id);
+
+
+--
+-- Name: acquisition_attempt acquisition_attempt_torznab_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_torznab_instance_id_fkey FOREIGN KEY (torznab_instance_id) REFERENCES public.torznab_instance(torznab_instance_id);
+
+
+--
+-- Name: acquisition_attempt acquisition_attempt_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: app_label_policies app_label_policies_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_label_policies
+    ADD CONSTRAINT app_label_policies_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.app_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_profile_immutable_keys app_profile_immutable_keys_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_profile_immutable_keys
+    ADD CONSTRAINT app_profile_immutable_keys_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.app_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_profile_local_networks app_profile_local_networks_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_profile_local_networks
+    ADD CONSTRAINT app_profile_local_networks_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.app_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_disambiguation_rule canonical_disambiguation_rule_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_disambiguation_rule
+    ADD CONSTRAINT canonical_disambiguation_rule_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: canonical_external_id canonical_external_id_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_external_id
+    ADD CONSTRAINT canonical_external_id_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_external_id canonical_external_id_source_canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_external_id
+    ADD CONSTRAINT canonical_external_id_source_canonical_torrent_source_id_fkey FOREIGN KEY (source_canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id);
+
+
+--
+-- Name: canonical_size_rollup canonical_size_rollup_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_size_rollup
+    ADD CONSTRAINT canonical_size_rollup_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_size_sample canonical_size_sample_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_size_sample
+    ADD CONSTRAINT canonical_size_sample_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_best_source_global canonical_torrent_best_source__canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_global
+    ADD CONSTRAINT canonical_torrent_best_source__canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_best_source_context canonical_torrent_best_source_canonical_torrent_source_id_fkey1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_context
+    ADD CONSTRAINT canonical_torrent_best_source_canonical_torrent_source_id_fkey1 FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_best_source_context canonical_torrent_best_source_context_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_context
+    ADD CONSTRAINT canonical_torrent_best_source_context_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_best_source_global canonical_torrent_best_source_global_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_global
+    ADD CONSTRAINT canonical_torrent_best_source_global_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_signal canonical_torrent_signal_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_signal
+    ADD CONSTRAINT canonical_torrent_signal_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_source_attr canonical_torrent_source_attr_canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_attr
+    ADD CONSTRAINT canonical_torrent_source_attr_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_source_base_score canonical_torrent_source_base__canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_base_score
+    ADD CONSTRAINT canonical_torrent_source_base__canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_source_base_score canonical_torrent_source_base_score_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_base_score
+    ADD CONSTRAINT canonical_torrent_source_base_score_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_source_context_score canonical_torrent_source_conte_canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_context_score
+    ADD CONSTRAINT canonical_torrent_source_conte_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_source_context_score canonical_torrent_source_context_scor_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_context_score
+    ADD CONSTRAINT canonical_torrent_source_context_scor_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_source canonical_torrent_source_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source
+    ADD CONSTRAINT canonical_torrent_source_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+--
+-- Name: config_audit_log config_audit_log_changed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.config_audit_log
+    ADD CONSTRAINT config_audit_log_changed_by_user_id_fkey FOREIGN KEY (changed_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: engine_alt_speed_days engine_alt_speed_days_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_alt_speed_days
+    ADD CONSTRAINT engine_alt_speed_days_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_alt_speed engine_alt_speed_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_alt_speed
+    ADD CONSTRAINT engine_alt_speed_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_ip_filter_entries engine_ip_filter_entries_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_ip_filter_entries
+    ADD CONSTRAINT engine_ip_filter_entries_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_ip_filter engine_ip_filter_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_ip_filter
+    ADD CONSTRAINT engine_ip_filter_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_peer_class_defaults engine_peer_class_defaults_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_peer_class_defaults
+    ADD CONSTRAINT engine_peer_class_defaults_fk FOREIGN KEY (profile_id, class_id) REFERENCES public.engine_peer_classes(profile_id, class_id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_peer_class_defaults engine_peer_class_defaults_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_peer_class_defaults
+    ADD CONSTRAINT engine_peer_class_defaults_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_peer_classes engine_peer_classes_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_peer_classes
+    ADD CONSTRAINT engine_peer_classes_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_profile_list_values engine_profile_list_values_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_profile_list_values
+    ADD CONSTRAINT engine_profile_list_values_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_tracker_config engine_tracker_config_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_tracker_config
+    ADD CONSTRAINT engine_tracker_config_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_tracker_endpoints engine_tracker_endpoints_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_tracker_endpoints
+    ADD CONSTRAINT engine_tracker_endpoints_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fs_policy_list_values fs_policy_list_values_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fs_policy_list_values
+    ADD CONSTRAINT fs_policy_list_values_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.fs_policy(id) ON DELETE CASCADE;
+
+
+--
+-- Name: import_indexer_result import_indexer_result_import_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result
+    ADD CONSTRAINT import_indexer_result_import_job_id_fkey FOREIGN KEY (import_job_id) REFERENCES public.import_job(import_job_id);
+
+
+--
+-- Name: import_indexer_result_media_domain import_indexer_result_media_domai_import_indexer_result_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_media_domain
+    ADD CONSTRAINT import_indexer_result_media_domai_import_indexer_result_id_fkey FOREIGN KEY (import_indexer_result_id) REFERENCES public.import_indexer_result(import_indexer_result_id) ON DELETE CASCADE;
+
+
+--
+-- Name: import_indexer_result_media_domain import_indexer_result_media_domain_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_media_domain
+    ADD CONSTRAINT import_indexer_result_media_domain_media_domain_id_fkey FOREIGN KEY (media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: import_indexer_result_tag import_indexer_result_tag_import_indexer_result_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_tag
+    ADD CONSTRAINT import_indexer_result_tag_import_indexer_result_id_fkey FOREIGN KEY (import_indexer_result_id) REFERENCES public.import_indexer_result(import_indexer_result_id) ON DELETE CASCADE;
+
+
+--
+-- Name: import_indexer_result_tag import_indexer_result_tag_tag_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_tag
+    ADD CONSTRAINT import_indexer_result_tag_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tag(tag_id);
+
+
+--
+-- Name: import_job import_job_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_job
+    ADD CONSTRAINT import_job_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: import_job import_job_target_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_job
+    ADD CONSTRAINT import_job_target_search_profile_id_fkey FOREIGN KEY (target_search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: import_job import_job_target_torznab_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_job
+    ADD CONSTRAINT import_job_target_torznab_instance_id_fkey FOREIGN KEY (target_torznab_instance_id) REFERENCES public.torznab_instance(torznab_instance_id);
+
+
+--
+-- Name: indexer_cf_state indexer_cf_state_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_cf_state
+    ADD CONSTRAINT indexer_cf_state_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_connectivity_profile indexer_connectivity_profile_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_connectivity_profile
+    ADD CONSTRAINT indexer_connectivity_profile_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_definition_field indexer_definition_field_indexer_definition_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field
+    ADD CONSTRAINT indexer_definition_field_indexer_definition_id_fkey FOREIGN KEY (indexer_definition_id) REFERENCES public.indexer_definition(indexer_definition_id);
+
+
+--
+-- Name: indexer_definition_field_option indexer_definition_field_optio_indexer_definition_field_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_option
+    ADD CONSTRAINT indexer_definition_field_optio_indexer_definition_field_id_fkey FOREIGN KEY (indexer_definition_field_id) REFERENCES public.indexer_definition_field(indexer_definition_field_id);
+
+
+--
+-- Name: indexer_definition_field_validation indexer_definition_field_valid_indexer_definition_field_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_validation
+    ADD CONSTRAINT indexer_definition_field_valid_indexer_definition_field_id_fkey FOREIGN KEY (indexer_definition_field_id) REFERENCES public.indexer_definition_field(indexer_definition_field_id);
+
+
+--
+-- Name: indexer_definition_field_validation indexer_definition_field_validation_depends_value_set_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_validation
+    ADD CONSTRAINT indexer_definition_field_validation_depends_value_set_fk FOREIGN KEY (depends_on_value_set_id) REFERENCES public.indexer_definition_field_value_set(value_set_id);
+
+
+--
+-- Name: indexer_definition_field_validation indexer_definition_field_validation_value_set_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_validation
+    ADD CONSTRAINT indexer_definition_field_validation_value_set_fk FOREIGN KEY (value_set_id) REFERENCES public.indexer_definition_field_value_set(value_set_id);
+
+
+--
+-- Name: indexer_definition_field_value_set indexer_definition_field_valu_indexer_definition_field_val_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_value_set
+    ADD CONSTRAINT indexer_definition_field_valu_indexer_definition_field_val_fkey FOREIGN KEY (indexer_definition_field_validation_id) REFERENCES public.indexer_definition_field_validation(indexer_definition_field_validation_id);
+
+
+--
+-- Name: indexer_definition_field_value_set_item indexer_definition_field_value_set_item_value_set_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_value_set_item
+    ADD CONSTRAINT indexer_definition_field_value_set_item_value_set_id_fkey FOREIGN KEY (value_set_id) REFERENCES public.indexer_definition_field_value_set(value_set_id);
+
+
+--
+-- Name: indexer_health_event indexer_health_event_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_health_event
+    ADD CONSTRAINT indexer_health_event_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_health_notification_hook indexer_health_notification_hook_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_health_notification_hook
+    ADD CONSTRAINT indexer_health_notification_hook_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: indexer_health_notification_hook indexer_health_notification_hook_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_health_notification_hook
+    ADD CONSTRAINT indexer_health_notification_hook_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: indexer_instance indexer_instance_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: indexer_instance_field_value indexer_instance_field_value_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_field_value
+    ADD CONSTRAINT indexer_instance_field_value_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_instance_field_value indexer_instance_field_value_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_field_value
+    ADD CONSTRAINT indexer_instance_field_value_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: indexer_instance_import_blob indexer_instance_import_blob_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_import_blob
+    ADD CONSTRAINT indexer_instance_import_blob_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_instance indexer_instance_indexer_definition_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_indexer_definition_id_fkey FOREIGN KEY (indexer_definition_id) REFERENCES public.indexer_definition(indexer_definition_id);
+
+
+--
+-- Name: indexer_instance_media_domain indexer_instance_media_domain_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_media_domain
+    ADD CONSTRAINT indexer_instance_media_domain_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_instance_media_domain indexer_instance_media_domain_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_media_domain
+    ADD CONSTRAINT indexer_instance_media_domain_media_domain_id_fkey FOREIGN KEY (media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: indexer_instance_rate_limit indexer_instance_rate_limit_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_rate_limit
+    ADD CONSTRAINT indexer_instance_rate_limit_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_instance_rate_limit indexer_instance_rate_limit_rate_limit_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_rate_limit
+    ADD CONSTRAINT indexer_instance_rate_limit_rate_limit_policy_id_fkey FOREIGN KEY (rate_limit_policy_id) REFERENCES public.rate_limit_policy(rate_limit_policy_id);
+
+
+--
+-- Name: indexer_instance indexer_instance_routing_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_routing_policy_id_fkey FOREIGN KEY (routing_policy_id) REFERENCES public.routing_policy(routing_policy_id);
+
+
+--
+-- Name: indexer_instance_tag indexer_instance_tag_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_tag
+    ADD CONSTRAINT indexer_instance_tag_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_instance_tag indexer_instance_tag_tag_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_tag
+    ADD CONSTRAINT indexer_instance_tag_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tag(tag_id);
+
+
+--
+-- Name: indexer_instance indexer_instance_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: indexer_rss_item_seen indexer_rss_item_seen_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_rss_item_seen
+    ADD CONSTRAINT indexer_rss_item_seen_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_rss_subscription indexer_rss_subscription_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_rss_subscription
+    ADD CONSTRAINT indexer_rss_subscription_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_run_cursor indexer_run_cursor_search_request_indexer_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_run_cursor
+    ADD CONSTRAINT indexer_run_cursor_search_request_indexer_run_id_fkey FOREIGN KEY (search_request_indexer_run_id) REFERENCES public.search_request_indexer_run(search_request_indexer_run_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_capability_snapshot_encoder media_capability_snapshot_encoder_observed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot_encoder
+    ADD CONSTRAINT media_capability_snapshot_encoder_observed_by_user_id_fkey FOREIGN KEY (observed_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_capability_snapshot_feature media_capability_snapshot_feature_observed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot_feature
+    ADD CONSTRAINT media_capability_snapshot_feature_observed_by_user_id_fkey FOREIGN KEY (observed_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_capability_snapshot media_capability_snapshot_observed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot
+    ADD CONSTRAINT media_capability_snapshot_observed_by_user_id_fkey FOREIGN KEY (observed_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_capability_snapshot_run media_capability_snapshot_run_observed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot_run
+    ADD CONSTRAINT media_capability_snapshot_run_observed_by_user_id_fkey FOREIGN KEY (observed_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_desired_target_audio_stream media_desired_target_audio_st_media_desired_target_stream__fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_audio_stream
+    ADD CONSTRAINT media_desired_target_audio_st_media_desired_target_stream__fkey FOREIGN KEY (media_desired_target_stream_id) REFERENCES public.media_desired_target_stream(media_desired_target_stream_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_desired_target_container media_desired_target_containe_media_desired_target_profile_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_container
+    ADD CONSTRAINT media_desired_target_containe_media_desired_target_profile_fkey FOREIGN KEY (media_desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_desired_target_profile media_desired_target_profile_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_profile
+    ADD CONSTRAINT media_desired_target_profile_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_desired_target_stream media_desired_target_stream_media_desired_target_profile_i_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_stream
+    ADD CONSTRAINT media_desired_target_stream_media_desired_target_profile_i_fkey FOREIGN KEY (media_desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_discovery_schedule media_discovery_schedule_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_discovery_schedule media_discovery_schedule_media_profile_root_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_media_profile_root_id_fkey FOREIGN KEY (media_profile_root_id) REFERENCES public.media_profile_root(media_profile_root_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_discovery_watcher media_discovery_watcher_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_discovery_watcher media_discovery_watcher_media_profile_root_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_media_profile_root_id_fkey FOREIGN KEY (media_profile_root_id) REFERENCES public.media_profile_root(media_profile_root_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_domain_to_torznab_category media_domain_to_torznab_category_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_domain_to_torznab_category
+    ADD CONSTRAINT media_domain_to_torznab_category_media_domain_id_fkey FOREIGN KEY (media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: media_domain_to_torznab_category media_domain_to_torznab_category_torznab_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_domain_to_torznab_category
+    ADD CONSTRAINT media_domain_to_torznab_category_torznab_category_id_fkey FOREIGN KEY (torznab_category_id) REFERENCES public.torznab_category(torznab_category_id);
+
+
+--
+-- Name: media_job_artifact media_job_artifact_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_artifact
+    ADD CONSTRAINT media_job_artifact_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_artifact media_job_artifact_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_artifact
+    ADD CONSTRAINT media_job_artifact_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_attempt media_job_attempt_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_attempt
+    ADD CONSTRAINT media_job_attempt_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_compact_audit media_job_compact_audit_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_compact_audit
+    ADD CONSTRAINT media_job_compact_audit_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_compact_audit media_job_compact_audit_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_compact_audit
+    ADD CONSTRAINT media_job_compact_audit_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE SET NULL;
+
+
+--
+-- Name: media_job_configuration_snapshot media_job_configuration_snaps_media_desired_target_profile_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_configuration_snapshot
+    ADD CONSTRAINT media_job_configuration_snaps_media_desired_target_profile_fkey FOREIGN KEY (media_desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id);
+
+
+--
+-- Name: media_job_configuration_snapshot media_job_configuration_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_configuration_snapshot
+    ADD CONSTRAINT media_job_configuration_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_configuration_snapshot media_job_configuration_snapshot_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_configuration_snapshot
+    ADD CONSTRAINT media_job_configuration_snapshot_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id);
+
+
+--
+-- Name: media_job media_job_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_job media_job_current_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_current_attempt_fk FOREIGN KEY (media_job_id, current_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id);
+
+
+--
+-- Name: media_job_desired_target_stream media_job_desired_target_stream_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_desired_target_stream
+    ADD CONSTRAINT media_job_desired_target_stream_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_file_rule_snapshot media_job_file_rule_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_file_rule_snapshot
+    ADD CONSTRAINT media_job_file_rule_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_filter_snapshot media_job_filter_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_filter_snapshot
+    ADD CONSTRAINT media_job_filter_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job media_job_intent_compatibility_target_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_intent_compatibility_target_id_fkey FOREIGN KEY (intent_compatibility_target_id) REFERENCES public.media_compatibility_target(media_compatibility_target_id);
+
+
+--
+-- Name: media_job media_job_intent_desired_target_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_intent_desired_target_profile_id_fkey FOREIGN KEY (intent_desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id);
+
+
+--
+-- Name: media_job media_job_intent_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_intent_policy_profile_id_fkey FOREIGN KEY (intent_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id);
+
+
+--
+-- Name: media_job media_job_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id);
+
+
+--
+-- Name: media_job_operation media_job_operation_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_operation
+    ADD CONSTRAINT media_job_operation_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_operation media_job_operation_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_operation
+    ADD CONSTRAINT media_job_operation_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_phase media_job_phase_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_phase
+    ADD CONSTRAINT media_job_phase_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_phase media_job_phase_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_phase
+    ADD CONSTRAINT media_job_phase_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_plan_reason media_job_plan_reason_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_plan_reason
+    ADD CONSTRAINT media_job_plan_reason_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_plan_reason media_job_plan_reason_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_plan_reason
+    ADD CONSTRAINT media_job_plan_reason_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_policy_behavior_snapshot media_job_policy_behavior_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_behavior_snapshot
+    ADD CONSTRAINT media_job_policy_behavior_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_policy_compatibility_target_snapshot media_job_policy_compatibility_target_snapsho_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_compatibility_target_snapshot
+    ADD CONSTRAINT media_job_policy_compatibility_target_snapsho_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_policy_maintenance_window_snapshot media_job_policy_maintenance_window_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_maintenance_window_snapshot
+    ADD CONSTRAINT media_job_policy_maintenance_window_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_policy_operation_cost_snapshot media_job_policy_operation_cost_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_operation_cost_snapshot
+    ADD CONSTRAINT media_job_policy_operation_cost_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_policy_retention_rule_snapshot media_job_policy_retention_rule_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_retention_rule_snapshot
+    ADD CONSTRAINT media_job_policy_retention_rule_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_root_snapshot media_job_root_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_root_snapshot
+    ADD CONSTRAINT media_job_root_snapshot_job_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_stream_classification_rule_snapshot media_job_stream_classification_rule_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_stream_classification_rule_snapshot
+    ADD CONSTRAINT media_job_stream_classification_rule_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_subtitle_discovery_rule_snapshot media_job_subtitle_discovery_rule_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_subtitle_discovery_rule_snapshot
+    ADD CONSTRAINT media_job_subtitle_discovery_rule_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_terminal_outbox media_job_terminal_outbox_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_terminal_outbox
+    ADD CONSTRAINT media_job_terminal_outbox_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_terminal_outbox media_job_terminal_outbox_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_terminal_outbox
+    ADD CONSTRAINT media_job_terminal_outbox_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_verification_check media_job_verification_check_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_verification_check
+    ADD CONSTRAINT media_job_verification_check_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_verification_check media_job_verification_check_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_verification_check
+    ADD CONSTRAINT media_job_verification_check_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_violation media_job_violation_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_violation
+    ADD CONSTRAINT media_job_violation_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_violation media_job_violation_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_violation
+    ADD CONSTRAINT media_job_violation_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_backup media_policy_backup_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_backup
+    ADD CONSTRAINT media_policy_backup_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_compatibility_rule media_policy_compatibility_rule_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_compatibility_rule
+    ADD CONSTRAINT media_policy_compatibility_rule_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_compatibility_target media_policy_compatibility_ta_media_compatibility_target_i_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_compatibility_target
+    ADD CONSTRAINT media_policy_compatibility_ta_media_compatibility_target_i_fkey FOREIGN KEY (media_compatibility_target_id) REFERENCES public.media_compatibility_target(media_compatibility_target_id);
+
+
+--
+-- Name: media_policy_compatibility_target media_policy_compatibility_target_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_compatibility_target
+    ADD CONSTRAINT media_policy_compatibility_target_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_maintenance_window media_policy_maintenance_window_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_maintenance_window
+    ADD CONSTRAINT media_policy_maintenance_window_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_operation_cost media_policy_operation_cost_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_operation_cost
+    ADD CONSTRAINT media_policy_operation_cost_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_output media_policy_output_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_output
+    ADD CONSTRAINT media_policy_output_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_retention_rule media_policy_retention_rule_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_retention_rule
+    ADD CONSTRAINT media_policy_retention_rule_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_runtime_limit media_policy_runtime_limit_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_runtime_limit
+    ADD CONSTRAINT media_policy_runtime_limit_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_unmatched_stream_behavior media_policy_unmatched_stream_beha_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_unmatched_stream_behavior
+    ADD CONSTRAINT media_policy_unmatched_stream_beha_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_verification media_policy_verification_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_verification
+    ADD CONSTRAINT media_policy_verification_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_workspace media_policy_workspace_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_workspace
+    ADD CONSTRAINT media_policy_workspace_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_profile media_profile_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile
+    ADD CONSTRAINT media_profile_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_profile media_profile_desired_target_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile
+    ADD CONSTRAINT media_profile_desired_target_profile_id_fkey FOREIGN KEY (desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id);
+
+
+--
+-- Name: media_profile_file_rule media_profile_file_rule_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_file_rule
+    ADD CONSTRAINT media_profile_file_rule_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_profile_filter media_profile_filter_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_filter
+    ADD CONSTRAINT media_profile_filter_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_profile_import_draft media_profile_import_draft_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_import_draft
+    ADD CONSTRAINT media_profile_import_draft_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_profile_root media_profile_root_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_root
+    ADD CONSTRAINT media_profile_root_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_stream_classification_rule media_stream_classification_rule_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_stream_classification_rule
+    ADD CONSTRAINT media_stream_classification_rule_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_subtitle_discovery_rule media_subtitle_discovery_rule_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_subtitle_discovery_rule
+    ADD CONSTRAINT media_subtitle_discovery_rule_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_target media_target_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_target
+    ADD CONSTRAINT media_target_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: outbound_request_log outbound_request_log_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_request_log
+    ADD CONSTRAINT outbound_request_log_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+--
+-- Name: outbound_request_log outbound_request_log_routing_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_request_log
+    ADD CONSTRAINT outbound_request_log_routing_policy_id_fkey FOREIGN KEY (routing_policy_id) REFERENCES public.routing_policy(routing_policy_id);
+
+
+--
+-- Name: outbound_request_log outbound_request_log_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_request_log
+    ADD CONSTRAINT outbound_request_log_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id);
+
+
+--
+-- Name: policy_rule policy_rule_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: policy_rule policy_rule_policy_set_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_policy_set_id_fkey FOREIGN KEY (policy_set_id) REFERENCES public.policy_set(policy_set_id) ON DELETE CASCADE;
+
+
+--
+-- Name: policy_rule policy_rule_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: policy_rule policy_rule_value_set_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_value_set_fk FOREIGN KEY (value_set_id) REFERENCES public.policy_rule_value_set(value_set_id);
+
+
+--
+-- Name: policy_rule_value_set_item policy_rule_value_set_item_value_set_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule_value_set_item
+    ADD CONSTRAINT policy_rule_value_set_item_value_set_id_fkey FOREIGN KEY (value_set_id) REFERENCES public.policy_rule_value_set(value_set_id);
+
+
+--
+-- Name: policy_rule_value_set policy_rule_value_set_policy_rule_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule_value_set
+    ADD CONSTRAINT policy_rule_value_set_policy_rule_id_fkey FOREIGN KEY (policy_rule_id) REFERENCES public.policy_rule(policy_rule_id);
+
+
+--
+-- Name: policy_set policy_set_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: policy_set policy_set_created_for_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_created_for_search_request_id_fkey FOREIGN KEY (created_for_search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: policy_set policy_set_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: policy_set policy_set_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: policy_snapshot_rule policy_snapshot_rule_policy_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_snapshot_rule
+    ADD CONSTRAINT policy_snapshot_rule_policy_snapshot_id_fkey FOREIGN KEY (policy_snapshot_id) REFERENCES public.policy_snapshot(policy_snapshot_id) ON DELETE CASCADE;
+
+
+--
+-- Name: routing_policy routing_policy_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy
+    ADD CONSTRAINT routing_policy_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: routing_policy_parameter routing_policy_parameter_routing_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy_parameter
+    ADD CONSTRAINT routing_policy_parameter_routing_policy_id_fkey FOREIGN KEY (routing_policy_id) REFERENCES public.routing_policy(routing_policy_id);
+
+
+--
+-- Name: routing_policy_rate_limit routing_policy_rate_limit_rate_limit_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy_rate_limit
+    ADD CONSTRAINT routing_policy_rate_limit_rate_limit_policy_id_fkey FOREIGN KEY (rate_limit_policy_id) REFERENCES public.rate_limit_policy(rate_limit_policy_id);
+
+
+--
+-- Name: routing_policy_rate_limit routing_policy_rate_limit_routing_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy_rate_limit
+    ADD CONSTRAINT routing_policy_rate_limit_routing_policy_id_fkey FOREIGN KEY (routing_policy_id) REFERENCES public.routing_policy(routing_policy_id) ON DELETE CASCADE;
+
+
+--
+-- Name: routing_policy routing_policy_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy
+    ADD CONSTRAINT routing_policy_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: search_filter_decision search_filter_decision_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id);
+
+
+--
+-- Name: search_filter_decision search_filter_decision_canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id);
+
+
+--
+-- Name: search_filter_decision search_filter_decision_observation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_observation_id_fkey FOREIGN KEY (observation_id) REFERENCES public.search_request_source_observation(observation_id);
+
+
+--
+-- Name: search_filter_decision search_filter_decision_policy_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_policy_snapshot_id_fkey FOREIGN KEY (policy_snapshot_id) REFERENCES public.policy_snapshot(policy_snapshot_id);
+
+
+--
+-- Name: search_filter_decision search_filter_decision_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_page_item search_page_item_search_page_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page_item
+    ADD CONSTRAINT search_page_item_search_page_id_fkey FOREIGN KEY (search_page_id) REFERENCES public.search_page(search_page_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_page_item search_page_item_search_request_canonical_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page_item
+    ADD CONSTRAINT search_page_item_search_request_canonical_id_fkey FOREIGN KEY (search_request_canonical_id) REFERENCES public.search_request_canonical(search_request_canonical_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_page search_page_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page
+    ADD CONSTRAINT search_page_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_profile search_profile_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: search_profile search_profile_default_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_default_media_domain_id_fkey FOREIGN KEY (default_media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: search_profile_indexer_allow search_profile_indexer_allow_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_allow
+    ADD CONSTRAINT search_profile_indexer_allow_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+--
+-- Name: search_profile_indexer_allow search_profile_indexer_allow_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_allow
+    ADD CONSTRAINT search_profile_indexer_allow_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_indexer_block search_profile_indexer_block_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_block
+    ADD CONSTRAINT search_profile_indexer_block_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+--
+-- Name: search_profile_indexer_block search_profile_indexer_block_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_block
+    ADD CONSTRAINT search_profile_indexer_block_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_media_domain search_profile_media_domain_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_media_domain
+    ADD CONSTRAINT search_profile_media_domain_media_domain_id_fkey FOREIGN KEY (media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: search_profile_media_domain search_profile_media_domain_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_media_domain
+    ADD CONSTRAINT search_profile_media_domain_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_policy_set search_profile_policy_set_policy_set_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_policy_set
+    ADD CONSTRAINT search_profile_policy_set_policy_set_id_fkey FOREIGN KEY (policy_set_id) REFERENCES public.policy_set(policy_set_id);
+
+
+--
+-- Name: search_profile_policy_set search_profile_policy_set_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_policy_set
+    ADD CONSTRAINT search_profile_policy_set_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_tag_allow search_profile_tag_allow_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_allow
+    ADD CONSTRAINT search_profile_tag_allow_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_tag_allow search_profile_tag_allow_tag_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_allow
+    ADD CONSTRAINT search_profile_tag_allow_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tag(tag_id);
+
+
+--
+-- Name: search_profile_tag_block search_profile_tag_block_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_block
+    ADD CONSTRAINT search_profile_tag_block_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_tag_block search_profile_tag_block_tag_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_block
+    ADD CONSTRAINT search_profile_tag_block_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tag(tag_id);
+
+
+--
+-- Name: search_profile_tag_prefer search_profile_tag_prefer_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_prefer
+    ADD CONSTRAINT search_profile_tag_prefer_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_tag_prefer search_profile_tag_prefer_tag_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_prefer
+    ADD CONSTRAINT search_profile_tag_prefer_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tag(tag_id);
+
+
+--
+-- Name: search_profile_trust_tier search_profile_trust_tier_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_trust_tier
+    ADD CONSTRAINT search_profile_trust_tier_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_trust_tier search_profile_trust_tier_trust_tier_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_trust_tier
+    ADD CONSTRAINT search_profile_trust_tier_trust_tier_id_fkey FOREIGN KEY (trust_tier_id) REFERENCES public.trust_tier(trust_tier_id);
+
+
+--
+-- Name: search_profile search_profile_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: search_profile search_profile_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: search_request_canonical search_request_canonical_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_canonical
+    ADD CONSTRAINT search_request_canonical_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id);
+
+
+--
+-- Name: search_request_canonical search_request_canonical_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_canonical
+    ADD CONSTRAINT search_request_canonical_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request search_request_effective_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_effective_media_domain_id_fkey FOREIGN KEY (effective_media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: search_request_identifier search_request_identifier_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_identifier
+    ADD CONSTRAINT search_request_identifier_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request_indexer_run_correlation search_request_indexer_run_co_search_request_indexer_run_i_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_indexer_run_correlation
+    ADD CONSTRAINT search_request_indexer_run_co_search_request_indexer_run_i_fkey FOREIGN KEY (search_request_indexer_run_id) REFERENCES public.search_request_indexer_run(search_request_indexer_run_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request_indexer_run search_request_indexer_run_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_indexer_run
+    ADD CONSTRAINT search_request_indexer_run_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+--
+-- Name: search_request_indexer_run search_request_indexer_run_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_indexer_run
+    ADD CONSTRAINT search_request_indexer_run_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request search_request_policy_set_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_policy_set_id_fkey FOREIGN KEY (policy_set_id) REFERENCES public.policy_set(policy_set_id);
+
+
+--
+-- Name: search_request search_request_policy_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_policy_snapshot_id_fkey FOREIGN KEY (policy_snapshot_id) REFERENCES public.policy_snapshot(policy_snapshot_id);
+
+
+--
+-- Name: search_request search_request_requested_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_requested_media_domain_id_fkey FOREIGN KEY (requested_media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: search_request search_request_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_request_source_observation search_request_source_observat_canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation
+    ADD CONSTRAINT search_request_source_observat_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id);
+
+
+--
+-- Name: search_request_source_observation_attr search_request_source_observation_attr_observation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation_attr
+    ADD CONSTRAINT search_request_source_observation_attr_observation_id_fkey FOREIGN KEY (observation_id) REFERENCES public.search_request_source_observation(observation_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request_source_observation search_request_source_observation_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation
+    ADD CONSTRAINT search_request_source_observation_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id);
+
+
+--
+-- Name: search_request_source_observation search_request_source_observation_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation
+    ADD CONSTRAINT search_request_source_observation_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+--
+-- Name: search_request_source_observation search_request_source_observation_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation
+    ADD CONSTRAINT search_request_source_observation_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request_torznab_category_effective search_request_torznab_category_effect_torznab_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_effective
+    ADD CONSTRAINT search_request_torznab_category_effect_torznab_category_id_fkey FOREIGN KEY (torznab_category_id) REFERENCES public.torznab_category(torznab_category_id);
+
+
+--
+-- Name: search_request_torznab_category_effective search_request_torznab_category_effectiv_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_effective
+    ADD CONSTRAINT search_request_torznab_category_effectiv_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request_torznab_category_requested search_request_torznab_category_reques_torznab_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_requested
+    ADD CONSTRAINT search_request_torznab_category_reques_torznab_category_id_fkey FOREIGN KEY (torznab_category_id) REFERENCES public.torznab_category(torznab_category_id);
+
+
+--
+-- Name: search_request_torznab_category_requested search_request_torznab_category_requeste_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_requested
+    ADD CONSTRAINT search_request_torznab_category_requeste_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request search_request_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: secret_audit_log secret_audit_log_actor_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret_audit_log
+    ADD CONSTRAINT secret_audit_log_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: secret_audit_log secret_audit_log_secret_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret_audit_log
+    ADD CONSTRAINT secret_audit_log_secret_id_fkey FOREIGN KEY (secret_id) REFERENCES public.secret(secret_id) ON DELETE RESTRICT;
+
+
+--
+-- Name: secret_binding secret_binding_secret_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret_binding
+    ADD CONSTRAINT secret_binding_secret_id_fkey FOREIGN KEY (secret_id) REFERENCES public.secret(secret_id) ON DELETE RESTRICT;
+
+
+--
+-- Name: source_metadata_conflict_audit_log source_metadata_conflict_audit_log_actor_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_metadata_conflict_audit_log
+    ADD CONSTRAINT source_metadata_conflict_audit_log_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: source_metadata_conflict_audit_log source_metadata_conflict_audit_log_conflict_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_metadata_conflict_audit_log
+    ADD CONSTRAINT source_metadata_conflict_audit_log_conflict_id_fkey FOREIGN KEY (conflict_id) REFERENCES public.source_metadata_conflict(source_metadata_conflict_id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_metadata_conflict source_metadata_conflict_canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_metadata_conflict
+    ADD CONSTRAINT source_metadata_conflict_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_metadata_conflict source_metadata_conflict_resolved_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_metadata_conflict
+    ADD CONSTRAINT source_metadata_conflict_resolved_by_user_id_fkey FOREIGN KEY (resolved_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: source_reputation source_reputation_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_reputation
+    ADD CONSTRAINT source_reputation_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: tag tag_created_by_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tag
+    ADD CONSTRAINT tag_created_by_fk FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: tag tag_updated_by_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tag
+    ADD CONSTRAINT tag_updated_by_fk FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: torznab_instance torznab_instance_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.torznab_instance
+    ADD CONSTRAINT torznab_instance_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: tracker_category_mapping tracker_category_mapping_indexer_definition_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_indexer_definition_id_fkey FOREIGN KEY (indexer_definition_id) REFERENCES public.indexer_definition(indexer_definition_id);
+
+
+--
+-- Name: tracker_category_mapping tracker_category_mapping_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: tracker_category_mapping tracker_category_mapping_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_media_domain_id_fkey FOREIGN KEY (media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: tracker_category_mapping tracker_category_mapping_torznab_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_torznab_category_id_fkey FOREIGN KEY (torznab_category_id) REFERENCES public.torznab_category(torznab_category_id);
+
+
+--
+-- Name: tracker_category_mapping tracker_category_mapping_torznab_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_torznab_instance_id_fkey FOREIGN KEY (torznab_instance_id) REFERENCES public.torznab_instance(torznab_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_result_action user_result_action_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_result_action
+    ADD CONSTRAINT user_result_action_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id);
+
+
+--
+-- Name: user_result_action_kv user_result_action_kv_user_result_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_result_action_kv
+    ADD CONSTRAINT user_result_action_kv_user_result_action_id_fkey FOREIGN KEY (user_result_action_id) REFERENCES public.user_result_action(user_result_action_id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_result_action user_result_action_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_result_action
+    ADD CONSTRAINT user_result_action_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id);
+
+
+--
+-- Name: user_result_action user_result_action_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_result_action
+    ADD CONSTRAINT user_result_action_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: fs_jobs fs_jobs_torrent_id_fkey; Type: FK CONSTRAINT; Schema: revaer_runtime; Owner: -
+--
+
+ALTER TABLE ONLY revaer_runtime.fs_jobs
+    ADD CONSTRAINT fs_jobs_torrent_id_fkey FOREIGN KEY (torrent_id) REFERENCES revaer_runtime.torrents(torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: torrent_files torrent_files_torrent_id_fkey; Type: FK CONSTRAINT; Schema: revaer_runtime; Owner: -
+--
+
+ALTER TABLE ONLY revaer_runtime.torrent_files
+    ADD CONSTRAINT torrent_files_torrent_id_fkey FOREIGN KEY (torrent_id) REFERENCES revaer_runtime.torrents(torrent_id) ON DELETE CASCADE;
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+-- ADR 557 root catalog: immutable evidence, with a fail-closed current pointer.
+CREATE FUNCTION public.media_root_logical_key_valid_v1(value_input text)
+RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE
+SET search_path TO pg_catalog
+AS $$
+    SELECT value_input IS NOT NULL
+        AND octet_length(convert_to(value_input, 'UTF8')) BETWEEN 1 AND 64
+        AND value_input COLLATE "C" ~ '^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$';
+$$;
+
+CREATE TABLE public.media_root_kind (
+    media_root_kind_id smallint NOT NULL,
+    root_kind text NOT NULL,
+    CONSTRAINT media_root_kind_pkey PRIMARY KEY (media_root_kind_id),
+    CONSTRAINT media_root_kind_root_kind_key UNIQUE (root_kind),
+    CONSTRAINT media_root_kind_closed_v1 CHECK (
+        (media_root_kind_id, root_kind) IN (
+            (1, 'source'), (2, 'output'), (3, 'workspace'), (4, 'backup'), (5, 'quarantine')
+        )
+    )
+);
+CREATE FUNCTION public.media_root_kind_immutable_v1()
+RETURNS trigger LANGUAGE plpgsql
+SET search_path TO pg_catalog
+AS $$
+BEGIN
+    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'media_root_kind_immutable';
+END;
+$$;
+CREATE TRIGGER media_root_kind_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_root_kind
+FOR EACH ROW EXECUTE FUNCTION public.media_root_kind_immutable_v1();
+
+CREATE TABLE public.media_root_catalog_generation (
+    media_root_catalog_generation_id bigint GENERATED ALWAYS AS IDENTITY,
+    media_root_catalog_generation_public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+    contract_version smallint NOT NULL,
+    source_format_version smallint NOT NULL,
+    source_sha256 bytea NOT NULL,
+    attestation_sha256 bytea NOT NULL,
+    generation_sha256 bytea NOT NULL,
+    slot_count smallint NOT NULL,
+    activated_at timestamptz NOT NULL,
+    CONSTRAINT media_root_catalog_generation_pkey PRIMARY KEY (media_root_catalog_generation_id),
+    CONSTRAINT media_root_catalog_generation_public_id_key UNIQUE (media_root_catalog_generation_public_id),
+    CONSTRAINT media_root_catalog_generation_contract_v1 CHECK (contract_version = 1),
+    CONSTRAINT media_root_catalog_generation_source_format_v1 CHECK (source_format_version = 1),
+    CONSTRAINT media_root_catalog_generation_source_sha256_length CHECK (octet_length(source_sha256) = 32),
+    CONSTRAINT media_root_catalog_generation_attestation_sha256_length CHECK (octet_length(attestation_sha256) = 32),
+    CONSTRAINT media_root_catalog_generation_generation_sha256_length CHECK (octet_length(generation_sha256) = 32),
+    CONSTRAINT media_root_catalog_generation_slot_count_bounds CHECK (slot_count BETWEEN 0 AND 256)
+);
+CREATE INDEX ix_media_root_catalog_generation_generation_sha256
+ON public.media_root_catalog_generation (generation_sha256, media_root_catalog_generation_id DESC);
+
+CREATE TABLE public.media_root_catalog_slot (
+    media_root_catalog_slot_id bigint GENERATED ALWAYS AS IDENTITY,
+    media_root_catalog_slot_public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+    logical_key text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    CONSTRAINT media_root_catalog_slot_pkey PRIMARY KEY (media_root_catalog_slot_id),
+    CONSTRAINT media_root_catalog_slot_public_id_key UNIQUE (media_root_catalog_slot_public_id),
+    CONSTRAINT media_root_catalog_slot_logical_key_key UNIQUE (logical_key),
+    CONSTRAINT media_root_catalog_slot_logical_key_contract CHECK (public.media_root_logical_key_valid_v1(logical_key))
+);
+
+CREATE TABLE public.media_root_catalog_slot_attestation (
+    media_root_catalog_slot_attestation_id bigint GENERATED ALWAYS AS IDENTITY,
+    media_root_catalog_generation_id bigint NOT NULL,
+    media_root_catalog_slot_id bigint NOT NULL,
+    requested_path text NOT NULL,
+    canonical_path text NOT NULL,
+    filesystem_device bytea NOT NULL,
+    filesystem_inode bytea NOT NULL,
+    mount_id bigint NOT NULL,
+    filesystem_type text NOT NULL,
+    read_capable boolean NOT NULL,
+    write_capable boolean NOT NULL,
+    create_new_capable boolean NOT NULL,
+    fsync_capable boolean NOT NULL,
+    rename_capable boolean NOT NULL,
+    delete_capable boolean NOT NULL,
+    capacity_probe_capable boolean NOT NULL,
+    durability_class text NOT NULL,
+    durability_evidence text NOT NULL,
+    sole_writer_class text NOT NULL,
+    sole_writer_evidence text NOT NULL,
+    owner_uid bigint NOT NULL,
+    owner_gid bigint NOT NULL,
+    mode_bits integer NOT NULL,
+    validated_at timestamptz NOT NULL,
+    root_identity_sha256 bytea NOT NULL,
+    CONSTRAINT media_root_catalog_slot_attestation_pkey PRIMARY KEY (media_root_catalog_slot_attestation_id),
+    CONSTRAINT media_root_catalog_slot_attestation_generation_fkey FOREIGN KEY (media_root_catalog_generation_id)
+        REFERENCES public.media_root_catalog_generation ON UPDATE RESTRICT ON DELETE RESTRICT,
+    CONSTRAINT media_root_catalog_slot_attestation_slot_fkey FOREIGN KEY (media_root_catalog_slot_id)
+        REFERENCES public.media_root_catalog_slot ON UPDATE RESTRICT ON DELETE RESTRICT,
+    CONSTRAINT media_root_catalog_slot_attestation_generation_slot_key
+        UNIQUE (media_root_catalog_generation_id, media_root_catalog_slot_id),
+    CONSTRAINT media_root_catalog_slot_attestation_generation_path_key
+        UNIQUE (media_root_catalog_generation_id, canonical_path),
+    CONSTRAINT media_root_catalog_slot_attestation_generation_identity_key
+        UNIQUE (media_root_catalog_generation_id, filesystem_device, filesystem_inode),
+    CONSTRAINT media_root_catalog_slot_attestation_generation_digest_key
+        UNIQUE (media_root_catalog_generation_id, root_identity_sha256),
+    -- PostgreSQL text rejects NUL before these path checks run.
+    CONSTRAINT media_root_catalog_slot_attestation_paths CHECK (
+        octet_length(convert_to(requested_path, 'UTF8')) BETWEEN 1 AND 4096
+        AND left(requested_path, 1) = '/' AND requested_path <> '/'
+        AND octet_length(convert_to(canonical_path, 'UTF8')) BETWEEN 1 AND 4096
+        AND left(canonical_path, 1) = '/' AND canonical_path <> '/'
+    ),
+    CONSTRAINT media_root_catalog_slot_attestation_filesystem_identity CHECK (
+        octet_length(filesystem_device) = 8 AND octet_length(filesystem_inode) = 8
+        AND mount_id >= 0 AND octet_length(convert_to(filesystem_type, 'UTF8')) BETWEEN 1 AND 64
+    ),
+    CONSTRAINT media_root_catalog_slot_attestation_owner_mode_bounds CHECK (
+        owner_uid BETWEEN 0 AND 4294967295 AND owner_gid BETWEEN 0 AND 4294967295
+        AND mode_bits BETWEEN 0 AND 4095
+    ),
+    CONSTRAINT media_root_catalog_slot_attestation_durability_pair CHECK (
+        (durability_class, durability_evidence) IN (
+            ('disposable', 'none'), ('restart_persistent', 'linux_dedicated_mount'),
+            ('restart_persistent', 'kubernetes_persistent_volume_claim')
+        )
+    ),
+    CONSTRAINT media_root_catalog_slot_attestation_writer_pair CHECK (
+        (sole_writer_class, sole_writer_evidence) IN (
+            ('uncontrolled', 'none'), ('revaer_exclusive', 'linux_dedicated_service'),
+            ('revaer_exclusive', 'kubernetes_read_write_once_pod')
+        )
+    ),
+    CONSTRAINT media_root_catalog_slot_attestation_digest_length CHECK (octet_length(root_identity_sha256) = 32)
+);
+CREATE INDEX ix_media_root_catalog_slot_attestation_slot_generation
+ON public.media_root_catalog_slot_attestation (media_root_catalog_slot_id, media_root_catalog_generation_id DESC);
+CREATE INDEX ix_media_root_catalog_slot_attestation_generation_path
+ON public.media_root_catalog_slot_attestation
+    (media_root_catalog_generation_id, canonical_path, media_root_catalog_slot_attestation_id);
+
+CREATE TABLE public.media_root_catalog_slot_kind (
+    media_root_catalog_slot_attestation_id bigint NOT NULL,
+    media_root_kind_id smallint NOT NULL,
+    CONSTRAINT media_root_catalog_slot_kind_pkey PRIMARY KEY (media_root_catalog_slot_attestation_id, media_root_kind_id),
+    CONSTRAINT media_root_catalog_slot_kind_attestation_fkey FOREIGN KEY (media_root_catalog_slot_attestation_id)
+        REFERENCES public.media_root_catalog_slot_attestation ON UPDATE RESTRICT ON DELETE RESTRICT,
+    CONSTRAINT media_root_catalog_slot_kind_kind_fkey FOREIGN KEY (media_root_kind_id)
+        REFERENCES public.media_root_kind ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+CREATE INDEX ix_media_root_catalog_slot_kind_kind
+ON public.media_root_catalog_slot_kind (media_root_kind_id, media_root_catalog_slot_attestation_id);
+
+CREATE TABLE public.media_root_catalog_state (
+    media_root_catalog_state_id smallint NOT NULL,
+    active_media_root_catalog_generation_id bigint,
+    source_state text NOT NULL,
+    source_reason_code text,
+    attestation_state text NOT NULL,
+    attestation_reason_code text,
+    reconciled_at timestamptz NOT NULL,
+    CONSTRAINT media_root_catalog_state_pkey PRIMARY KEY (media_root_catalog_state_id),
+    CONSTRAINT media_root_catalog_state_active_generation_fkey FOREIGN KEY (active_media_root_catalog_generation_id)
+        REFERENCES public.media_root_catalog_generation ON UPDATE RESTRICT ON DELETE RESTRICT,
+    CONSTRAINT media_root_catalog_state_singleton CHECK (media_root_catalog_state_id = 1),
+    CONSTRAINT media_root_catalog_state_source_known CHECK (
+        source_state IN ('ready', 'missing', 'untrusted', 'invalid', 'bound_exceeded', 'unsupported')
+    ),
+    CONSTRAINT media_root_catalog_state_attestation_known CHECK (attestation_state IN ('ready', 'not_evaluated', 'invalid')),
+    CONSTRAINT media_root_catalog_state_coherent CHECK ((
+        (source_state <> 'ready' AND active_media_root_catalog_generation_id IS NULL
+            AND attestation_state = 'not_evaluated' AND attestation_reason_code IS NULL
+            AND source_reason_code = CASE source_state
+                WHEN 'missing' THEN 'media_root_catalog_source_missing'
+                WHEN 'untrusted' THEN 'media_root_catalog_source_untrusted'
+                WHEN 'invalid' THEN 'media_root_catalog_format_invalid'
+                WHEN 'bound_exceeded' THEN 'media_root_catalog_bound_exceeded'
+                WHEN 'unsupported' THEN 'media_root_platform_unsupported'
+            END)
+        OR (source_state = 'ready' AND source_reason_code IS NULL AND (
+            (attestation_state = 'ready' AND active_media_root_catalog_generation_id IS NOT NULL
+                AND attestation_reason_code IS NULL)
+            OR (attestation_state = 'invalid' AND active_media_root_catalog_generation_id IS NULL
+                AND attestation_reason_code IN (
+                    'media_root_attestation_invalid', 'media_root_overlap', 'media_root_unsafe_ancestry',
+                    'media_root_durability_unproven', 'media_root_writer_control_unproven',
+                    'media_root_identity_mismatch'
+                ))
+        ))
+    ) IS TRUE)
+);
+CREATE FUNCTION public.media_root_catalog_immutable_v1()
+RETURNS trigger LANGUAGE plpgsql
+SET search_path TO pg_catalog
+AS $$
+BEGIN
+    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'media_root_catalog_immutable';
+END;
+$$;
+CREATE TRIGGER media_root_catalog_generation_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_root_catalog_generation
+FOR EACH ROW EXECUTE FUNCTION public.media_root_catalog_immutable_v1();
+CREATE TRIGGER media_root_catalog_slot_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_root_catalog_slot
+FOR EACH ROW EXECUTE FUNCTION public.media_root_catalog_immutable_v1();
+CREATE TRIGGER media_root_catalog_slot_attestation_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_root_catalog_slot_attestation
+FOR EACH ROW EXECUTE FUNCTION public.media_root_catalog_immutable_v1();
+CREATE TRIGGER media_root_catalog_slot_kind_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_root_catalog_slot_kind
+FOR EACH ROW EXECUTE FUNCTION public.media_root_catalog_immutable_v1();
+
+CREATE FUNCTION public.media_root_catalog_slot_identity_v1(attestation_id_input bigint)
+RETURNS bytea LANGUAGE plpgsql STABLE
+SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    a public.media_root_catalog_slot_attestation%ROWTYPE;
+    key_value text;
+    kind_mask integer;
+    capability_mask integer;
+    frame bytea;
+BEGIN
+    SELECT s.* INTO STRICT a FROM public.media_root_catalog_slot_attestation AS s
+    WHERE s.media_root_catalog_slot_attestation_id = attestation_id_input;
+    SELECT s.logical_key INTO STRICT key_value FROM public.media_root_catalog_slot AS s
+    WHERE s.media_root_catalog_slot_id = a.media_root_catalog_slot_id;
+    SELECT bit_or(1 << (k.media_root_kind_id - 1)) INTO kind_mask
+    FROM public.media_root_catalog_slot_kind AS k
+    WHERE k.media_root_catalog_slot_attestation_id = attestation_id_input;
+    IF kind_mask IS NULL OR kind_mask NOT BETWEEN 1 AND 31 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid',
+            DETAIL = 'media_root_attestation_invalid';
+    END IF;
+    capability_mask := a.read_capable::integer + 2 * a.write_capable::integer
+        + 4 * a.create_new_capable::integer + 8 * a.fsync_capable::integer
+        + 16 * a.rename_capable::integer + 32 * a.delete_capable::integer
+        + 64 * a.capacity_probe_capable::integer;
+    frame := convert_to('revaer-media-root-slot-attestation', 'UTF8') || decode('00', 'hex') || int4send(1)
+        || int4send(octet_length(convert_to(key_value, 'UTF8'))) || convert_to(key_value, 'UTF8')
+        || int4send(octet_length(convert_to(a.requested_path, 'UTF8'))) || convert_to(a.requested_path, 'UTF8')
+        || int4send(octet_length(convert_to(a.canonical_path, 'UTF8'))) || convert_to(a.canonical_path, 'UTF8')
+        || set_byte(decode('00', 'hex'), 0, kind_mask)
+        || a.filesystem_device || a.filesystem_inode || int8send(a.mount_id)
+        || int4send(octet_length(convert_to(a.filesystem_type, 'UTF8'))) || convert_to(a.filesystem_type, 'UTF8')
+        || set_byte(decode('00', 'hex'), 0, capability_mask)
+        || set_byte(decode('00', 'hex'), 0, CASE a.durability_class WHEN 'disposable' THEN 0 ELSE 1 END)
+        || set_byte(decode('00', 'hex'), 0, CASE a.durability_evidence WHEN 'none' THEN 0 WHEN 'linux_dedicated_mount' THEN 1 ELSE 2 END)
+        || set_byte(decode('00', 'hex'), 0, CASE a.sole_writer_class WHEN 'uncontrolled' THEN 0 ELSE 1 END)
+        || set_byte(decode('00', 'hex'), 0, CASE a.sole_writer_evidence WHEN 'none' THEN 0 WHEN 'linux_dedicated_service' THEN 1 ELSE 2 END)
+        || substring(int8send(a.owner_uid) FROM 5 FOR 4)
+        || substring(int8send(a.owner_gid) FROM 5 FOR 4) || int4send(a.mode_bits);
+    RETURN sha256(frame);
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_digests_v1(generation_id_input bigint)
+RETURNS TABLE (source_sha256 bytea, attestation_sha256 bytea, generation_sha256 bytea)
+LANGUAGE plpgsql STABLE
+SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    generation_row public.media_root_catalog_generation%ROWTYPE;
+    slot_row record;
+    source_frame bytea;
+    attestation_frame bytea;
+    slot_digest bytea;
+    actual_count integer;
+    source_digest bytea;
+    attestation_digest bytea;
+BEGIN
+    SELECT g.* INTO STRICT generation_row FROM public.media_root_catalog_generation AS g
+    WHERE g.media_root_catalog_generation_id = generation_id_input;
+    SELECT count(*) INTO actual_count FROM public.media_root_catalog_slot_attestation AS a
+    WHERE a.media_root_catalog_generation_id = generation_id_input;
+    IF actual_count <> generation_row.slot_count THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid',
+            DETAIL = 'media_root_attestation_invalid';
+    END IF;
+    source_frame := convert_to('revaer-media-root-catalog', 'UTF8') || decode('00', 'hex')
+        || int4send(1) || int4send(actual_count);
+    FOR slot_row IN
+        SELECT a.*, s.logical_key,
+            (SELECT bit_or(1 << (k.media_root_kind_id - 1)) FROM public.media_root_catalog_slot_kind AS k
+             WHERE k.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id) AS kind_mask
+        FROM public.media_root_catalog_slot_attestation AS a
+        JOIN public.media_root_catalog_slot AS s USING (media_root_catalog_slot_id)
+        WHERE a.media_root_catalog_generation_id = generation_id_input
+        ORDER BY s.logical_key COLLATE "C"
+    LOOP
+        IF slot_row.kind_mask IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid',
+                DETAIL = 'media_root_attestation_invalid';
+        END IF;
+        source_frame := source_frame
+            || int4send(octet_length(convert_to(slot_row.logical_key, 'UTF8'))) || convert_to(slot_row.logical_key, 'UTF8')
+            || int4send(octet_length(convert_to(slot_row.requested_path, 'UTF8'))) || convert_to(slot_row.requested_path, 'UTF8')
+            || set_byte(decode('00', 'hex'), 0, slot_row.kind_mask)
+            || set_byte(decode('00', 'hex'), 0, CASE slot_row.durability_class WHEN 'disposable' THEN 0 ELSE 1 END)
+            || set_byte(decode('00', 'hex'), 0, CASE slot_row.durability_evidence WHEN 'none' THEN 0 WHEN 'linux_dedicated_mount' THEN 1 ELSE 2 END)
+            || set_byte(decode('00', 'hex'), 0, CASE slot_row.sole_writer_class WHEN 'uncontrolled' THEN 0 ELSE 1 END)
+            || set_byte(decode('00', 'hex'), 0, CASE slot_row.sole_writer_evidence WHEN 'none' THEN 0 WHEN 'linux_dedicated_service' THEN 1 ELSE 2 END);
+    END LOOP;
+    source_digest := sha256(source_frame);
+    attestation_frame := convert_to('revaer-media-root-attestation', 'UTF8') || decode('00', 'hex')
+        || int4send(1) || source_digest || int4send(actual_count);
+    FOR slot_row IN
+        SELECT a.media_root_catalog_slot_attestation_id, a.root_identity_sha256, s.logical_key
+        FROM public.media_root_catalog_slot_attestation AS a
+        JOIN public.media_root_catalog_slot AS s USING (media_root_catalog_slot_id)
+        WHERE a.media_root_catalog_generation_id = generation_id_input
+        ORDER BY s.logical_key COLLATE "C"
+    LOOP
+        slot_digest := public.media_root_catalog_slot_identity_v1(slot_row.media_root_catalog_slot_attestation_id);
+        IF slot_digest <> slot_row.root_identity_sha256 THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid',
+                DETAIL = 'media_root_attestation_invalid';
+        END IF;
+        attestation_frame := attestation_frame
+            || int4send(octet_length(convert_to(slot_row.logical_key, 'UTF8'))) || convert_to(slot_row.logical_key, 'UTF8')
+            || slot_digest;
+    END LOOP;
+    attestation_digest := sha256(attestation_frame);
+    RETURN QUERY SELECT source_digest, attestation_digest,
+        sha256(convert_to('revaer-media-root-generation', 'UTF8') || decode('00', 'hex')
+            || int4send(1) || source_digest || attestation_digest);
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_reconcile_begin_v1(
+    source_format_version_input smallint, source_sha256_input bytea,
+    attestation_sha256_input bytea, generation_sha256_input bytea, slot_count_input smallint
+)
+RETURNS TABLE (media_root_catalog_generation_public_id uuid, attestation_generation bigint, already_current boolean)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    current_id bigint;
+    generation_row public.media_root_catalog_generation%ROWTYPE;
+BEGIN
+    IF (source_format_version_input = 1 AND octet_length(source_sha256_input) = 32
+        AND octet_length(attestation_sha256_input) = 32 AND slot_count_input BETWEEN 0 AND 256
+        AND generation_sha256_input = sha256(convert_to('revaer-media-root-generation', 'UTF8')
+            || decode('00', 'hex') || int4send(1) || source_sha256_input || attestation_sha256_input)) IS NOT TRUE
+        OR current_setting('transaction_isolation') <> 'serializable' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_root_catalog_reconcile_v1', 0));
+    -- Mark this transaction on the singleton tuple without refreshing proof time.
+    UPDATE public.media_root_catalog_state AS s SET reconciled_at = s.reconciled_at
+    WHERE s.media_root_catalog_state_id = 1;
+    SELECT s.active_media_root_catalog_generation_id INTO STRICT current_id
+    FROM public.media_root_catalog_state AS s WHERE s.media_root_catalog_state_id = 1 FOR UPDATE;
+    SELECT g.* INTO generation_row FROM public.media_root_catalog_generation AS g
+    WHERE g.media_root_catalog_generation_id = current_id
+        AND g.source_format_version = source_format_version_input
+        AND g.source_sha256 = source_sha256_input AND g.attestation_sha256 = attestation_sha256_input
+        AND g.generation_sha256 = generation_sha256_input AND g.slot_count = slot_count_input;
+    IF FOUND THEN
+        RETURN QUERY SELECT generation_row.media_root_catalog_generation_public_id,
+            generation_row.media_root_catalog_generation_id, true;
+        RETURN;
+    END IF;
+    INSERT INTO public.media_root_catalog_generation
+        (contract_version, source_format_version, source_sha256, attestation_sha256,
+         generation_sha256, slot_count, activated_at)
+    VALUES (1, source_format_version_input, source_sha256_input, attestation_sha256_input,
+        generation_sha256_input, slot_count_input, transaction_timestamp())
+    RETURNING * INTO generation_row;
+    RETURN QUERY SELECT generation_row.media_root_catalog_generation_public_id,
+        generation_row.media_root_catalog_generation_id, false;
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_pending_generation_v1(generation_public_id_input uuid)
+RETURNS bigint LANGUAGE plpgsql VOLATILE SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    generation_id bigint;
+    current_id bigint;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_root_catalog_reconcile_v1', 0));
+    SELECT s.active_media_root_catalog_generation_id INTO current_id
+    FROM public.media_root_catalog_state AS s WHERE s.media_root_catalog_state_id = 1
+        AND s.xmin::text::bigint = mod(pg_current_xact_id()::text::numeric, 4294967296)::bigint FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    SELECT g.media_root_catalog_generation_id INTO generation_id
+    FROM public.media_root_catalog_generation AS g
+    WHERE g.media_root_catalog_generation_public_id = generation_public_id_input
+        AND g.media_root_catalog_generation_id IS DISTINCT FROM current_id
+        AND g.xmin::text::bigint = mod(pg_current_xact_id()::text::numeric, 4294967296)::bigint;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    RETURN generation_id;
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_reconcile_slot_v1(
+    media_root_catalog_generation_public_id_input uuid, logical_key_input text,
+    requested_path_input text, canonical_path_input text, filesystem_device_input bytea,
+    filesystem_inode_input bytea, mount_id_input bigint, filesystem_type_input text,
+    read_capable_input boolean, write_capable_input boolean, create_new_capable_input boolean,
+    fsync_capable_input boolean, rename_capable_input boolean, delete_capable_input boolean,
+    capacity_probe_capable_input boolean, durability_class_input text, durability_evidence_input text,
+    sole_writer_class_input text, sole_writer_evidence_input text, owner_uid_input bigint,
+    owner_gid_input bigint, mode_bits_input integer, root_identity_sha256_input bytea
+)
+RETURNS uuid LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    generation_id bigint;
+    slot_row public.media_root_catalog_slot%ROWTYPE;
+    expected_count smallint;
+    actual_count integer;
+    last_key text;
+BEGIN
+    generation_id := public.media_root_catalog_pending_generation_v1(media_root_catalog_generation_public_id_input);
+    SELECT g.slot_count INTO STRICT expected_count FROM public.media_root_catalog_generation AS g
+    WHERE g.media_root_catalog_generation_id = generation_id;
+    SELECT count(*), max(s.logical_key COLLATE "C") INTO actual_count, last_key
+    FROM public.media_root_catalog_slot_attestation AS a
+    JOIN public.media_root_catalog_slot AS s USING (media_root_catalog_slot_id)
+    WHERE a.media_root_catalog_generation_id = generation_id;
+    IF actual_count >= expected_count OR public.media_root_logical_key_valid_v1(logical_key_input) IS NOT TRUE
+        OR (last_key IS NOT NULL AND logical_key_input COLLATE "C" <= last_key COLLATE "C") THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    INSERT INTO public.media_root_catalog_slot (logical_key) VALUES (logical_key_input)
+    ON CONFLICT ON CONSTRAINT media_root_catalog_slot_logical_key_key DO NOTHING;
+    SELECT s.* INTO STRICT slot_row FROM public.media_root_catalog_slot AS s WHERE s.logical_key = logical_key_input;
+    INSERT INTO public.media_root_catalog_slot_attestation
+        (media_root_catalog_generation_id, media_root_catalog_slot_id,
+         requested_path, canonical_path, filesystem_device, filesystem_inode, mount_id, filesystem_type,
+         read_capable, write_capable, create_new_capable, fsync_capable, rename_capable, delete_capable,
+         capacity_probe_capable, durability_class, durability_evidence, sole_writer_class, sole_writer_evidence,
+         owner_uid, owner_gid, mode_bits, validated_at, root_identity_sha256)
+    VALUES (generation_id, slot_row.media_root_catalog_slot_id,
+        requested_path_input, canonical_path_input, filesystem_device_input, filesystem_inode_input,
+        mount_id_input, filesystem_type_input, read_capable_input, write_capable_input, create_new_capable_input,
+        fsync_capable_input, rename_capable_input, delete_capable_input, capacity_probe_capable_input,
+        durability_class_input, durability_evidence_input, sole_writer_class_input, sole_writer_evidence_input,
+        owner_uid_input, owner_gid_input, mode_bits_input, transaction_timestamp(), root_identity_sha256_input);
+    RETURN slot_row.media_root_catalog_slot_public_id;
+EXCEPTION WHEN check_violation OR not_null_violation OR unique_violation OR foreign_key_violation THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_reconcile_slot_kind_v1(
+    media_root_catalog_generation_public_id_input uuid,
+    media_root_catalog_slot_public_id_input uuid, root_kind_input text
+)
+RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    generation_id bigint;
+    attestation_id bigint;
+    kind_id smallint;
+    previous_kind smallint;
+BEGIN
+    generation_id := public.media_root_catalog_pending_generation_v1(media_root_catalog_generation_public_id_input);
+    SELECT a.media_root_catalog_slot_attestation_id INTO attestation_id
+    FROM public.media_root_catalog_slot_attestation AS a
+    JOIN public.media_root_catalog_slot AS s USING (media_root_catalog_slot_id)
+    WHERE a.media_root_catalog_generation_id = generation_id
+        AND s.media_root_catalog_slot_public_id = media_root_catalog_slot_public_id_input;
+    SELECT k.media_root_kind_id INTO kind_id FROM public.media_root_kind AS k WHERE k.root_kind = root_kind_input;
+    SELECT max(k.media_root_kind_id) INTO previous_kind FROM public.media_root_catalog_slot_kind AS k
+    WHERE k.media_root_catalog_slot_attestation_id = attestation_id;
+    IF attestation_id IS NULL OR kind_id IS NULL OR kind_id <= previous_kind THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    INSERT INTO public.media_root_catalog_slot_kind (media_root_catalog_slot_attestation_id, media_root_kind_id)
+    VALUES (attestation_id, kind_id);
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_reconcile_activate_v1(media_root_catalog_generation_public_id_input uuid)
+RETURNS TABLE (media_root_catalog_generation_public_id uuid, attestation_generation bigint,
+    source_sha256 bytea, generation_sha256 bytea, slot_count smallint, activated_at timestamptz)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    current_id bigint;
+    generation_row public.media_root_catalog_generation%ROWTYPE;
+    digests record;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_root_catalog_reconcile_v1', 0));
+    SELECT s.active_media_root_catalog_generation_id INTO current_id
+    FROM public.media_root_catalog_state AS s WHERE s.media_root_catalog_state_id = 1
+        AND s.xmin::text::bigint = mod(pg_current_xact_id()::text::numeric, 4294967296)::bigint FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    SELECT g.* INTO STRICT generation_row FROM public.media_root_catalog_generation AS g
+    WHERE g.media_root_catalog_generation_public_id = media_root_catalog_generation_public_id_input;
+    IF generation_row.media_root_catalog_generation_id IS DISTINCT FROM current_id THEN
+        PERFORM public.media_root_catalog_pending_generation_v1(media_root_catalog_generation_public_id_input);
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM public.media_root_catalog_slot_attestation AS a
+        WHERE a.media_root_catalog_generation_id = generation_row.media_root_catalog_generation_id
+          AND (a.canonical_path ~ '(^|/)(\.|\.\.)($|/)' OR a.canonical_path LIKE '%//%'
+            OR right(a.canonical_path, 1) = '/' OR a.requested_path ~ '(^|/)(\.|\.\.)($|/)'
+            OR a.requested_path LIKE '%//%' OR right(a.requested_path, 1) = '/')
+    ) OR EXISTS (
+        SELECT 1 FROM public.media_root_catalog_slot_attestation AS a
+        JOIN public.media_root_catalog_slot_attestation AS b
+            ON a.media_root_catalog_generation_id = b.media_root_catalog_generation_id
+            AND a.media_root_catalog_slot_attestation_id < b.media_root_catalog_slot_attestation_id
+        WHERE a.media_root_catalog_generation_id = generation_row.media_root_catalog_generation_id
+            AND (starts_with(a.canonical_path, b.canonical_path || '/')
+                OR starts_with(b.canonical_path, a.canonical_path || '/'))
+    ) OR EXISTS (
+        SELECT 1 FROM public.media_root_catalog_slot_attestation AS a
+        JOIN public.media_root_catalog_slot_kind AS k USING (media_root_catalog_slot_attestation_id)
+        WHERE a.media_root_catalog_generation_id = generation_row.media_root_catalog_generation_id
+          AND ((k.media_root_kind_id = 1 AND NOT a.read_capable)
+            OR (k.media_root_kind_id <> 1 AND NOT (a.write_capable AND a.create_new_capable
+                AND a.fsync_capable AND a.rename_capable AND a.delete_capable
+                AND a.capacity_probe_capable AND a.sole_writer_class = 'revaer_exclusive')))
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM public.media_root_catalog_slot_attestation AS a
+        JOIN public.media_root_catalog_slot_kind AS k USING (media_root_catalog_slot_attestation_id)
+        WHERE a.media_root_catalog_generation_id = generation_row.media_root_catalog_generation_id
+        GROUP BY a.media_root_catalog_slot_attestation_id
+        HAVING count(*) > 1 AND bit_or(1 << (k.media_root_kind_id - 1)) <> 3
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    SELECT * INTO STRICT digests FROM public.media_root_catalog_digests_v1(generation_row.media_root_catalog_generation_id);
+    IF digests.source_sha256 <> generation_row.source_sha256
+        OR digests.attestation_sha256 <> generation_row.attestation_sha256
+        OR digests.generation_sha256 <> generation_row.generation_sha256 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid';
+    END IF;
+    UPDATE public.media_root_catalog_state SET
+        active_media_root_catalog_generation_id = generation_row.media_root_catalog_generation_id,
+        source_state = 'ready', source_reason_code = NULL,
+        attestation_state = 'ready', attestation_reason_code = NULL,
+        reconciled_at = transaction_timestamp()
+    WHERE media_root_catalog_state_id = 1;
+    RETURN QUERY SELECT generation_row.media_root_catalog_generation_public_id,
+        generation_row.media_root_catalog_generation_id, generation_row.source_sha256,
+        generation_row.generation_sha256, generation_row.slot_count, generation_row.activated_at;
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_generation_commit_guard_v1()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM public.media_root_catalog_state AS s
+        WHERE s.media_root_catalog_state_id = 1
+            AND s.active_media_root_catalog_generation_id = NEW.media_root_catalog_generation_id) THEN
+        RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'media_root_catalog_generation_not_activated';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+CREATE CONSTRAINT TRIGGER media_root_catalog_generation_commit_guard
+AFTER INSERT ON public.media_root_catalog_generation
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+EXECUTE FUNCTION public.media_root_catalog_generation_commit_guard_v1();
+
+CREATE FUNCTION public.media_root_catalog_mark_unavailable_v1(
+    source_state_input text, source_reason_code_input text
+)
+RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+SET search_path TO pg_catalog, public
+AS $$
+BEGIN
+    IF (source_reason_code_input = CASE source_state_input
+        WHEN 'missing' THEN 'media_root_catalog_source_missing'
+        WHEN 'untrusted' THEN 'media_root_catalog_source_untrusted'
+        WHEN 'invalid' THEN 'media_root_catalog_format_invalid'
+        WHEN 'bound_exceeded' THEN 'media_root_catalog_bound_exceeded'
+        WHEN 'unsupported' THEN 'media_root_platform_unsupported'
+    END) IS NOT TRUE THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_root_catalog_reconcile_v1', 0));
+    UPDATE public.media_root_catalog_state SET
+        active_media_root_catalog_generation_id = NULL,
+        source_state = source_state_input, source_reason_code = source_reason_code_input,
+        attestation_state = 'not_evaluated', attestation_reason_code = NULL,
+        reconciled_at = transaction_timestamp()
+    WHERE media_root_catalog_state_id = 1;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid',
+            DETAIL = 'media_root_attestation_invalid';
+    END IF;
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_mark_attestation_invalid_v1(
+    attestation_reason_code_input text
+)
+RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+SET search_path TO pg_catalog, public
+AS $$
+BEGIN
+    IF (attestation_reason_code_input IN (
+        'media_root_attestation_invalid', 'media_root_overlap', 'media_root_unsafe_ancestry',
+        'media_root_durability_unproven', 'media_root_writer_control_unproven',
+        'media_root_identity_mismatch'
+    )) IS NOT TRUE THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_root_catalog_reconcile_v1', 0));
+    UPDATE public.media_root_catalog_state SET
+        active_media_root_catalog_generation_id = NULL,
+        source_state = 'ready', source_reason_code = NULL,
+        attestation_state = 'invalid', attestation_reason_code = attestation_reason_code_input,
+        reconciled_at = transaction_timestamp()
+    WHERE media_root_catalog_state_id = 1;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid',
+            DETAIL = 'media_root_attestation_invalid';
+    END IF;
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_state_get_v1()
+RETURNS TABLE (
+    source_state text, source_reason_code text, attestation_state text, attestation_reason_code text,
+    media_root_catalog_generation_public_id uuid, attestation_generation bigint,
+    source_format_version smallint, source_sha256 bytea, generation_sha256 bytea,
+    slot_count smallint, activated_at timestamptz, reconciled_at timestamptz
+)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path TO pg_catalog, public
+AS $$
+    SELECT s.source_state, s.source_reason_code, s.attestation_state, s.attestation_reason_code,
+        g.media_root_catalog_generation_public_id, g.media_root_catalog_generation_id,
+        g.source_format_version, g.source_sha256, g.generation_sha256, g.slot_count,
+        g.activated_at, s.reconciled_at
+    FROM public.media_root_catalog_state AS s
+    LEFT JOIN public.media_root_catalog_generation AS g
+        ON g.media_root_catalog_generation_id = s.active_media_root_catalog_generation_id
+    WHERE s.media_root_catalog_state_id = 1;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_slot_page_v1(
+    limit_input smallint, cursor_logical_key_input text, cursor_slot_public_id_input uuid
+)
+RETURNS TABLE (
+    media_root_catalog_slot_public_id uuid, logical_key text, allowed_root_kind text,
+    requested_path text, canonical_path text, filesystem_device bytea, filesystem_inode bytea,
+    mount_id bigint, filesystem_type text, capability_mask smallint,
+    durability_class text, durability_evidence text, sole_writer_class text, sole_writer_evidence text,
+    owner_uid bigint, owner_gid bigint, mode_bits integer, validated_at timestamptz,
+    root_identity_sha256 bytea, binding_ready boolean, binding_reason_code text,
+    destructive_ready boolean, destructive_reason_code text, page_has_more boolean
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    generation_id bigint;
+BEGIN
+    IF limit_input IS NULL OR limit_input NOT BETWEEN 1 AND 200
+       OR (cursor_logical_key_input IS NULL) <> (cursor_slot_public_id_input IS NULL) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    SELECT s.active_media_root_catalog_generation_id INTO generation_id
+    FROM public.media_root_catalog_state AS s WHERE s.media_root_catalog_state_id = 1;
+    IF cursor_logical_key_input IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM public.media_root_catalog_slot AS s
+        JOIN public.media_root_catalog_slot_attestation AS a USING (media_root_catalog_slot_id)
+        WHERE a.media_root_catalog_generation_id = generation_id
+            AND s.logical_key = cursor_logical_key_input
+            AND s.media_root_catalog_slot_public_id = cursor_slot_public_id_input
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    RETURN QUERY
+    WITH candidates AS MATERIALIZED (
+        SELECT s.media_root_catalog_slot_public_id, s.logical_key, a.*
+        FROM public.media_root_catalog_slot AS s
+        JOIN public.media_root_catalog_slot_attestation AS a USING (media_root_catalog_slot_id)
+        WHERE a.media_root_catalog_generation_id = generation_id
+            AND (cursor_logical_key_input IS NULL OR
+                (s.logical_key COLLATE "C", s.media_root_catalog_slot_public_id) >
+                (cursor_logical_key_input COLLATE "C", cursor_slot_public_id_input))
+        ORDER BY s.logical_key COLLATE "C", s.media_root_catalog_slot_public_id
+        LIMIT limit_input + 1
+    ), page AS (
+        SELECT c.* FROM candidates AS c
+        ORDER BY c.logical_key COLLATE "C", c.media_root_catalog_slot_public_id LIMIT limit_input
+    ), evidence AS (
+        SELECT p.*, k.root_kind, k.media_root_kind_id,
+            p.write_capable AND p.create_new_capable AND p.fsync_capable
+                AND p.rename_capable AND p.delete_capable AND p.capacity_probe_capable AS write_probes,
+            EXISTS (SELECT 1 FROM public.media_root_catalog_slot_kind AS o
+                WHERE o.media_root_catalog_slot_attestation_id = p.media_root_catalog_slot_attestation_id
+                    AND o.media_root_kind_id = 2) AS has_output
+        FROM page AS p JOIN public.media_root_catalog_slot_kind AS sk
+            USING (media_root_catalog_slot_attestation_id)
+        JOIN public.media_root_kind AS k USING (media_root_kind_id)
+    ), reasons AS (
+        SELECT e.*,
+            CASE WHEN e.media_root_kind_id = 1 THEN
+                CASE WHEN NOT e.read_capable THEN 'media_root_binding_incomplete' END
+            WHEN NOT e.write_probes THEN 'media_root_binding_incomplete'
+            WHEN e.sole_writer_class <> 'revaer_exclusive' THEN 'media_root_writer_control_unproven'
+            END AS binding_reason,
+            CASE WHEN e.media_root_kind_id = 1 AND (NOT e.has_output OR NOT e.write_probes)
+                THEN 'media_root_binding_incomplete'
+            WHEN e.sole_writer_class <> 'revaer_exclusive' THEN 'media_root_writer_control_unproven'
+            WHEN e.durability_class <> 'restart_persistent' THEN 'media_root_durability_unproven'
+            END AS destructive_reason
+        FROM evidence AS e
+    )
+    SELECT r.media_root_catalog_slot_public_id, r.logical_key, r.root_kind,
+        r.requested_path, r.canonical_path, r.filesystem_device, r.filesystem_inode,
+        r.mount_id, r.filesystem_type,
+        (r.read_capable::integer + 2 * r.write_capable::integer + 4 * r.create_new_capable::integer
+            + 8 * r.fsync_capable::integer + 16 * r.rename_capable::integer
+            + 32 * r.delete_capable::integer + 64 * r.capacity_probe_capable::integer)::smallint,
+        r.durability_class, r.durability_evidence, r.sole_writer_class, r.sole_writer_evidence,
+        r.owner_uid, r.owner_gid, r.mode_bits, r.validated_at, r.root_identity_sha256,
+        r.binding_reason IS NULL, r.binding_reason,
+        r.binding_reason IS NULL AND r.destructive_reason IS NULL,
+        COALESCE(r.binding_reason, r.destructive_reason),
+        (SELECT count(*) > limit_input FROM candidates)
+    FROM reasons AS r
+    ORDER BY r.logical_key COLLATE "C", r.media_root_catalog_slot_public_id, r.media_root_kind_id;
+END;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_readiness_get_v1()
+RETURNS TABLE (
+    source_state text, source_reason_code text, attestation_state text, attestation_reason_code text,
+    attestation_generation bigint, root_kind text, attested_slot_count integer,
+    binding_ready_slot_count integer, destructive_ready_slot_count integer
+)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path TO pg_catalog, public
+AS $$
+    WITH current_state AS (
+        SELECT s.* FROM public.media_root_catalog_state_get_v1() AS s
+    ), capabilities AS (
+        SELECT a.*, a.write_capable AND a.create_new_capable AND a.fsync_capable
+            AND a.rename_capable AND a.delete_capable AND a.capacity_probe_capable
+            AND a.sole_writer_class = 'revaer_exclusive' AS writing_ready,
+            EXISTS (
+                SELECT 1 FROM public.media_root_catalog_slot_kind AS output_kind
+                WHERE output_kind.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id
+                    AND output_kind.media_root_kind_id = 2
+            ) AS has_output
+        FROM public.media_root_catalog_slot_attestation AS a
+        JOIN current_state AS s ON s.attestation_generation = a.media_root_catalog_generation_id
+    ), kind_readiness AS (
+        SELECT sk.media_root_kind_id,
+            CASE WHEN sk.media_root_kind_id = 1 THEN a.read_capable ELSE a.writing_ready END AS binding_ready,
+            a.durability_class = 'restart_persistent' AND a.writing_ready
+                AND (sk.media_root_kind_id <> 1 OR (a.read_capable AND a.has_output)) AS destructive_ready
+        FROM capabilities AS a
+        JOIN public.media_root_catalog_slot_kind AS sk
+            ON sk.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id
+    )
+    SELECT s.source_state, s.source_reason_code, s.attestation_state, s.attestation_reason_code,
+        s.attestation_generation, k.root_kind,
+        count(r.media_root_kind_id)::integer,
+        count(*) FILTER (WHERE r.binding_ready)::integer,
+        count(*) FILTER (WHERE r.destructive_ready)::integer
+    FROM current_state AS s CROSS JOIN public.media_root_kind AS k
+    LEFT JOIN kind_readiness AS r ON r.media_root_kind_id = k.media_root_kind_id
+    GROUP BY s.source_state, s.source_reason_code, s.attestation_state, s.attestation_reason_code,
+        s.attestation_generation, k.media_root_kind_id, k.root_kind
+    ORDER BY k.media_root_kind_id;
+$$;
+
+REVOKE ALL ON FUNCTION public.media_root_logical_key_valid_v1(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_kind_immutable_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_immutable_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_slot_identity_v1(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_digests_v1(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_reconcile_begin_v1(smallint, bytea, bytea, bytea, smallint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_pending_generation_v1(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_reconcile_slot_v1(uuid, text, text, text, bytea, bytea, bigint, text, boolean, boolean, boolean, boolean, boolean, boolean, boolean, text, text, text, text, bigint, bigint, integer, bytea) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_reconcile_slot_kind_v1(uuid, uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_reconcile_activate_v1(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_generation_commit_guard_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_mark_unavailable_v1(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_mark_attestation_invalid_v1(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_state_get_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_slot_page_v1(smallint, text, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_readiness_get_v1() FROM PUBLIC;
+
+-- ADRs 521/557/590: immutable profile versions and logical root bindings.
+CREATE TABLE public.media_profile_version (
+    media_profile_version_id bigint GENERATED ALWAYS AS IDENTITY,
+    media_profile_id bigint NOT NULL,
+    version integer NOT NULL,
+    lifecycle_state text NOT NULL,
+    display_name text NOT NULL,
+    description text NOT NULL,
+    enabled boolean NOT NULL,
+    dry_run_only boolean NOT NULL,
+    media_desired_target_profile_id bigint NOT NULL,
+    media_policy_profile_id bigint NOT NULL,
+    created_by_user_id bigint NOT NULL REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    CONSTRAINT media_profile_version_pkey PRIMARY KEY (media_profile_version_id),
+    CONSTRAINT media_profile_version_media_profile_fkey FOREIGN KEY (media_profile_id)
+        REFERENCES public.media_profile ON DELETE RESTRICT,
+    CONSTRAINT media_profile_version_profile_version_key UNIQUE (media_profile_id, version),
+    CONSTRAINT media_profile_version_profile_id_version_id_key UNIQUE (media_profile_id, media_profile_version_id),
+    CONSTRAINT media_profile_version_lifecycle_known CHECK (lifecycle_state IN ('draft', 'active', 'archived')),
+    CONSTRAINT media_profile_version_version_positive CHECK (version > 0),
+    CONSTRAINT media_profile_version_display_contract CHECK (octet_length(display_name) BETWEEN 1 AND 128),
+    CONSTRAINT media_profile_version_description_bounds CHECK (octet_length(description) <= 1024),
+    CONSTRAINT media_profile_version_target_fkey FOREIGN KEY (media_desired_target_profile_id)
+        REFERENCES public.media_desired_target_profile ON DELETE RESTRICT,
+    CONSTRAINT media_profile_version_policy_fkey FOREIGN KEY (media_policy_profile_id)
+        REFERENCES public.media_policy_profile ON DELETE RESTRICT
+);
+ALTER TABLE public.media_profile
+    ADD COLUMN latest_media_profile_version_id bigint,
+    ADD COLUMN active_media_profile_version_id bigint,
+    ADD CONSTRAINT media_profile_latest_version_fkey FOREIGN KEY (media_profile_id, latest_media_profile_version_id)
+        REFERENCES public.media_profile_version(media_profile_id, media_profile_version_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT media_profile_active_version_fkey FOREIGN KEY (media_profile_id, active_media_profile_version_id)
+        REFERENCES public.media_profile_version(media_profile_id, media_profile_version_id) ON DELETE RESTRICT;
+
+CREATE TABLE public.media_profile_version_root_binding (
+    media_profile_version_id bigint NOT NULL,
+    media_root_kind_id smallint NOT NULL,
+    logical_key text NOT NULL,
+    media_root_catalog_slot_attestation_id bigint,
+    resolution_state text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    CONSTRAINT media_profile_version_root_binding_pkey PRIMARY KEY (media_profile_version_id, media_root_kind_id),
+    CONSTRAINT media_profile_version_root_binding_profile_version_fkey FOREIGN KEY (media_profile_version_id)
+        REFERENCES public.media_profile_version ON DELETE RESTRICT,
+    CONSTRAINT media_profile_version_root_binding_kind_fkey FOREIGN KEY (media_root_kind_id)
+        REFERENCES public.media_root_kind ON DELETE RESTRICT,
+    CONSTRAINT media_profile_version_root_binding_attestation_fkey FOREIGN KEY (media_root_catalog_slot_attestation_id)
+        REFERENCES public.media_root_catalog_slot_attestation ON DELETE RESTRICT,
+    CONSTRAINT media_profile_version_root_binding_kind CHECK (media_root_kind_id BETWEEN 2 AND 5),
+    CONSTRAINT media_profile_version_root_binding_key_contract CHECK (public.media_root_logical_key_valid_v1(logical_key)),
+    CONSTRAINT media_profile_version_root_binding_resolution_known CHECK (resolution_state IN ('resolved', 'unmapped', 'kind_forbidden')),
+    CONSTRAINT media_profile_version_root_binding_resolution_coherent CHECK (
+        (resolution_state = 'resolved') = (media_root_catalog_slot_attestation_id IS NOT NULL)
+    )
+);
+CREATE INDEX ix_media_profile_version_root_binding_attestation
+    ON public.media_profile_version_root_binding(media_root_catalog_slot_attestation_id, media_profile_version_id);
+CREATE FUNCTION public.media_profile_version_immutable_v1()
+RETURNS trigger LANGUAGE plpgsql SET search_path TO pg_catalog AS $$
+BEGIN
+    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'media_profile_version_immutable';
+END;
+$$;
+CREATE TRIGGER media_profile_version_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_profile_version
+FOR EACH ROW EXECUTE FUNCTION public.media_profile_version_immutable_v1();
+CREATE TRIGGER media_profile_version_root_binding_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_profile_version_root_binding
+FOR EACH ROW EXECUTE FUNCTION public.media_profile_version_immutable_v1();
+REVOKE ALL ON FUNCTION public.media_profile_version_immutable_v1() FROM PUBLIC;
+
+ALTER TABLE public.media_profile
+    ALTER COLUMN source_root DROP NOT NULL,
+    ALTER COLUMN output_root DROP NOT NULL,
+    ADD CONSTRAINT media_profile_path_pair CHECK ((source_root IS NULL) = (output_root IS NULL));
+
+CREATE FUNCTION public.media_profile_version_write_v1(
+    actor_public_id_input uuid, profile_key_input text, display_name_input text,
+    description_input text, enabled_input boolean, dry_run_only_input boolean,
+    desired_target_key_input text, desired_target_version_input integer,
+    policy_key_input text, policy_version_input integer,
+    output_root_key_input text, workspace_root_key_input text,
+    backup_root_key_input text, quarantine_root_key_input text,
+    existing_public_id_input uuid, expected_version_input integer
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+DECLARE
+    actor_id bigint;
+    target_id bigint;
+    policy_id bigint;
+    parent_id bigint;
+    version_id bigint;
+    public_id uuid;
+    generation_id bigint;
+    backup_required boolean;
+    quarantine_required boolean;
+    binding record;
+    attestation record;
+    next_version integer := 1;
+    current_key text;
+    current_version integer;
+    source_attestation_id bigint;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    actor_id := public.media_actor_id_for_public_id_v1(actor_public_id_input);
+    IF NOT public.media_root_logical_key_valid_v1(profile_key_input)
+       OR NOT public.media_root_logical_key_valid_v1(desired_target_key_input)
+       OR NOT public.media_root_logical_key_valid_v1(policy_key_input)
+       OR display_name_input IS NULL OR octet_length(display_name_input) NOT BETWEEN 1 AND 128
+       OR description_input IS NULL OR octet_length(description_input) > 1024
+       OR enabled_input IS NULL OR dry_run_only_input IS NULL
+       OR desired_target_version_input IS NULL OR desired_target_version_input <= 0
+       OR policy_version_input IS NULL OR policy_version_input <= 0 THEN
+       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    SELECT s.active_media_root_catalog_generation_id INTO generation_id
+    FROM public.media_root_catalog_state s
+    WHERE s.media_root_catalog_state_id = 1 AND s.source_state = 'ready'
+        AND s.attestation_state = 'ready' FOR SHARE;
+    IF generation_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete',
+            DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    SELECT a.media_root_catalog_slot_attestation_id INTO source_attestation_id
+    FROM public.media_root_catalog_slot s
+    JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_id)
+    WHERE s.logical_key = output_root_key_input
+        AND a.media_root_catalog_generation_id = generation_id
+        AND EXISTS (SELECT 1 FROM public.media_root_catalog_slot_kind k
+            WHERE k.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id
+                AND k.media_root_kind_id = 1);
+    IF source_attestation_id IS NOT NULL THEN
+        PERFORM pg_advisory_xact_lock(hashtextextended(
+            'media_discovery_association_overlap_v1', source_attestation_id));
+    END IF;
+    SELECT t.media_desired_target_profile_id INTO target_id
+    FROM public.media_desired_target_profile t
+    WHERE t.target_key = desired_target_key_input AND t.version = desired_target_version_input
+        AND t.enabled FOR UPDATE;
+    IF target_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_desired_target_not_found',
+            DETAIL = 'media_desired_target_not_found';
+    END IF;
+    SELECT p.media_policy_profile_id INTO policy_id FROM public.media_policy_profile p
+    WHERE p.policy_key = policy_key_input AND p.version = policy_version_input AND p.enabled FOR SHARE;
+    IF policy_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_policy_profile_not_found',
+            DETAIL = 'media_policy_profile_not_found';
+    END IF;
+    SELECT b.enabled, o.quarantine_enabled INTO backup_required, quarantine_required
+    FROM public.media_policy_backup b JOIN public.media_policy_output o USING (media_policy_profile_id)
+    WHERE b.media_policy_profile_id = policy_id;
+    IF backup_required IS NULL OR quarantine_required IS NULL
+       OR backup_required <> (backup_root_key_input IS NOT NULL)
+       OR quarantine_required <> (quarantine_root_key_input IS NOT NULL) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete',
+            DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    IF existing_public_id_input IS NULL THEN
+        BEGIN
+            INSERT INTO public.media_profile (profile_key, dry_run_only, created_by_user_id, policy_key)
+            VALUES (profile_key_input, dry_run_only_input, actor_id, policy_key_input)
+            RETURNING media_profile_id, media_profile_public_id INTO parent_id, public_id;
+        EXCEPTION WHEN unique_violation THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_profile_key_conflict',
+                DETAIL = 'media_profile_key_conflict';
+        END;
+    ELSE
+        SELECT p.media_profile_id, p.media_profile_public_id, p.profile_key, v.version
+        INTO parent_id, public_id, current_key, current_version
+        FROM public.media_profile p JOIN public.media_profile_version v
+            ON v.media_profile_version_id = p.latest_media_profile_version_id
+        WHERE p.media_profile_public_id = existing_public_id_input AND p.deleted_at IS NULL
+        FOR UPDATE OF p;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_profile_not_found',
+                DETAIL = 'media_profile_not_found';
+        END IF;
+        IF current_version IS DISTINCT FROM expected_version_input THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_version_conflict',
+                DETAIL = 'media_configuration_version_conflict';
+        END IF;
+        IF current_key IS DISTINCT FROM profile_key_input OR current_version = 2147483647 THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+                DETAIL = 'media_configuration_invalid';
+        END IF;
+        next_version := current_version + 1;
+    END IF;
+    INSERT INTO public.media_profile_version (
+        media_profile_id, version, lifecycle_state, display_name, description, enabled,
+        dry_run_only, media_desired_target_profile_id, media_policy_profile_id, created_by_user_id
+    ) VALUES (parent_id, next_version, 'active', display_name_input, description_input, enabled_input,
+        dry_run_only_input, target_id, policy_id, actor_id)
+    RETURNING media_profile_version_id INTO version_id;
+    FOR binding IN SELECT * FROM (VALUES
+        (2::smallint, output_root_key_input), (3::smallint, workspace_root_key_input),
+        (4::smallint, backup_root_key_input), (5::smallint, quarantine_root_key_input)
+    ) AS required(kind_id, logical_key) WHERE kind_id IN (2, 3) OR logical_key IS NOT NULL LOOP
+        IF NOT public.media_root_logical_key_valid_v1(binding.logical_key) THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+                DETAIL = 'media_configuration_invalid';
+        END IF;
+        SELECT a.*, EXISTS (SELECT 1 FROM public.media_root_catalog_slot_kind k
+            WHERE k.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id
+                AND k.media_root_kind_id = binding.kind_id) AS kind_allowed
+        INTO attestation FROM public.media_root_catalog_slot s
+        JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_id)
+        WHERE s.logical_key = binding.logical_key AND a.media_root_catalog_generation_id = generation_id;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_root_unmapped',
+                DETAIL = 'media_configuration_root_unmapped';
+        END IF;
+        IF NOT attestation.kind_allowed THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_kind_forbidden',
+                DETAIL = 'media_root_kind_forbidden';
+        END IF;
+        IF NOT (attestation.write_capable AND attestation.create_new_capable AND attestation.fsync_capable
+            AND attestation.rename_capable AND attestation.delete_capable AND attestation.capacity_probe_capable)
+            OR attestation.sole_writer_class <> 'revaer_exclusive' THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete',
+                DETAIL = 'media_root_binding_incomplete';
+        END IF;
+        INSERT INTO public.media_profile_version_root_binding (
+            media_profile_version_id, media_root_kind_id, logical_key,
+            media_root_catalog_slot_attestation_id, resolution_state
+        ) VALUES (version_id, binding.kind_id, binding.logical_key,
+            attestation.media_root_catalog_slot_attestation_id, 'resolved');
+    END LOOP;
+    PERFORM public.media_desired_target_validate_and_activate_v1(target_id);
+    UPDATE public.media_profile SET latest_media_profile_version_id = version_id,
+        active_media_profile_version_id = version_id, updated_at = transaction_timestamp()
+    WHERE media_profile_id = parent_id;
+    RETURN public_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_profile_version_write_v1(uuid, text, text, text, boolean, boolean, text, integer, text, integer, text, text, text, text, uuid, integer) FROM PUBLIC;
+
+CREATE FUNCTION public.media_profile_version_create_v1(
+    actor_public_id_input uuid, profile_key_input text, display_name_input text,
+    description_input text, enabled_input boolean, dry_run_only_input boolean,
+    desired_target_key_input text, desired_target_version_input integer,
+    policy_key_input text, policy_version_input integer,
+    output_root_key_input text, workspace_root_key_input text,
+    backup_root_key_input text, quarantine_root_key_input text
+)
+RETURNS uuid LANGUAGE sql SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+    SELECT public.media_profile_version_write_v1($1, $2, $3, $4, $5, $6, $7, $8,
+        $9, $10, $11, $12, $13, $14, NULL, NULL);
+$$;
+REVOKE ALL ON FUNCTION public.media_profile_version_create_v1(uuid, text, text, text, boolean, boolean, text, integer, text, integer, text, text, text, text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_profile_version_replace_v1(
+    actor_public_id_input uuid, profile_key_input text, display_name_input text,
+    description_input text, enabled_input boolean, dry_run_only_input boolean,
+    desired_target_key_input text, desired_target_version_input integer,
+    policy_key_input text, policy_version_input integer,
+    output_root_key_input text, workspace_root_key_input text,
+    backup_root_key_input text, quarantine_root_key_input text,
+    media_profile_public_id_input uuid, expected_version_input integer
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+BEGIN
+    IF media_profile_public_id_input IS NULL OR expected_version_input IS NULL
+        OR expected_version_input <= 0 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    RETURN public.media_profile_version_write_v1($1, $2, $3, $4, $5, $6, $7, $8,
+        $9, $10, $11, $12, $13, $14, $15, $16);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_profile_version_replace_v1(uuid, text, text, text, boolean, boolean, text, integer, text, integer, text, text, text, text, uuid, integer) FROM PUBLIC;
+
+-- Read an already-persisted version without changing heads, bindings or policy.
+CREATE FUNCTION public.media_profile_version_get_v1(media_profile_public_id_input uuid, active_input boolean DEFAULT false)
+RETURNS TABLE (
+    media_profile_public_id uuid, profile_key text, display_name text, description text,
+    enabled boolean, dry_run_only boolean, desired_target_key text, desired_target_version integer,
+    policy_key text, policy_version integer, latest_version integer, active_version integer,
+    lifecycle_state text, created_at timestamptz, updated_at timestamptz,
+    root_kind text, logical_key text, resolution_state text,
+    binding_ready boolean, binding_reason text, destructive_ready boolean, destructive_reason text
+)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+    WITH bindings AS (
+        SELECT p.media_profile_public_id, p.profile_key, v.display_name, v.description,
+            v.enabled, v.dry_run_only, t.target_key, t.version AS target_version,
+            policy.policy_key, policy.version AS policy_version, v.version AS latest_version,
+            active.version AS active_version, v.lifecycle_state, p.created_at, p.updated_at,
+            k.root_kind, k.media_root_kind_id, b.logical_key, b.resolution_state,
+            a.durability_class,
+            CASE WHEN b.resolution_state <> 'resolved'
+                    OR state.active_media_root_catalog_generation_id IS DISTINCT FROM a.media_root_catalog_generation_id
+                    OR state.source_state <> 'ready' OR state.attestation_state <> 'ready'
+                    OR NOT (a.write_capable AND a.create_new_capable AND a.fsync_capable
+                        AND a.rename_capable AND a.delete_capable AND a.capacity_probe_capable)
+                THEN 'media_root_binding_incomplete'
+                WHEN a.sole_writer_class <> 'revaer_exclusive' THEN 'media_root_writer_control_unproven'
+            END AS binding_reason
+        FROM public.media_profile p
+        JOIN public.media_profile_version v ON v.media_profile_version_id = CASE
+            WHEN active_input THEN p.active_media_profile_version_id ELSE p.latest_media_profile_version_id END
+        LEFT JOIN public.media_profile_version active ON active.media_profile_version_id = p.active_media_profile_version_id
+        JOIN public.media_desired_target_profile t ON t.media_desired_target_profile_id = v.media_desired_target_profile_id
+        JOIN public.media_policy_profile policy ON policy.media_policy_profile_id = v.media_policy_profile_id
+        JOIN public.media_profile_version_root_binding b ON b.media_profile_version_id = v.media_profile_version_id
+        JOIN public.media_root_kind k ON k.media_root_kind_id = b.media_root_kind_id
+        LEFT JOIN public.media_root_catalog_slot_attestation a ON a.media_root_catalog_slot_attestation_id = b.media_root_catalog_slot_attestation_id
+        CROSS JOIN public.media_root_catalog_state state
+        WHERE p.media_profile_public_id = media_profile_public_id_input AND p.deleted_at IS NULL
+            AND state.media_root_catalog_state_id = 1
+    ), readiness AS (
+        SELECT b.*, COALESCE(b.binding_reason,
+            CASE WHEN b.durability_class <> 'restart_persistent' THEN 'media_root_durability_unproven' END
+        ) AS destructive_reason FROM bindings b
+    )
+    SELECT r.media_profile_public_id, r.profile_key, r.display_name, r.description,
+        r.enabled, r.dry_run_only, r.target_key, r.target_version, r.policy_key, r.policy_version,
+        r.latest_version, r.active_version, r.lifecycle_state, r.created_at, r.updated_at,
+        r.root_kind, r.logical_key, r.resolution_state, r.binding_reason IS NULL, r.binding_reason,
+        r.destructive_reason IS NULL, r.destructive_reason
+    FROM readiness r ORDER BY r.media_root_kind_id;
+$$;
+REVOKE ALL ON FUNCTION public.media_profile_version_get_v1(uuid, boolean) FROM PUBLIC;
+
+-- Bound parents first so each complete representation shares one read snapshot.
+CREATE FUNCTION public.media_profile_version_page_v1(
+    limit_input integer, cursor_key_input text, cursor_id_input uuid
+)
+RETURNS TABLE (
+    media_profile_public_id uuid, profile_key text, display_name text, description text,
+    enabled boolean, dry_run_only boolean, desired_target_key text, desired_target_version integer,
+    policy_key text, policy_version integer, latest_version integer, active_version integer,
+    lifecycle_state text, created_at timestamptz, updated_at timestamptz,
+    root_kind text, logical_key text, resolution_state text,
+    binding_ready boolean, binding_reason text, destructive_ready boolean, destructive_reason text
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+BEGIN
+    IF limit_input IS NULL OR limit_input < 1 OR limit_input > 200
+        OR (cursor_key_input IS NULL) <> (cursor_id_input IS NULL) THEN
+        RAISE EXCEPTION 'invalid profile page' USING ERRCODE = 'P0001', DETAIL = 'media_configuration_invalid';
+    END IF;
+    IF cursor_key_input IS NOT NULL AND (
+        NOT public.media_root_logical_key_valid_v1(cursor_key_input)
+        OR NOT EXISTS (
+            SELECT 1 FROM public.media_profile p
+            WHERE p.profile_key = cursor_key_input AND p.media_profile_public_id = cursor_id_input
+                AND p.deleted_at IS NULL AND p.latest_media_profile_version_id IS NOT NULL
+        )
+    ) THEN
+        RAISE EXCEPTION 'invalid profile continuation' USING ERRCODE = 'P0001', DETAIL = 'media_configuration_invalid';
+    END IF;
+    RETURN QUERY
+    WITH page AS (
+        SELECT p.media_profile_public_id, p.profile_key
+        FROM public.media_profile p
+        WHERE p.deleted_at IS NULL AND p.latest_media_profile_version_id IS NOT NULL
+            AND (cursor_key_input IS NULL OR
+                (p.profile_key COLLATE "C", p.media_profile_public_id) > (cursor_key_input COLLATE "C", cursor_id_input))
+        ORDER BY p.profile_key COLLATE "C", p.media_profile_public_id
+        LIMIT limit_input + 1
+    )
+    SELECT version.* FROM page p
+    CROSS JOIN LATERAL public.media_profile_version_get_v1(p.media_profile_public_id) version
+    ORDER BY p.profile_key COLLATE "C", p.media_profile_public_id,
+        CASE version.root_kind WHEN 'output' THEN 2 WHEN 'workspace' THEN 3 WHEN 'backup' THEN 4 WHEN 'quarantine' THEN 5 END;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_profile_version_page_v1(integer, text, uuid) FROM PUBLIC;
+
+-- ADR 557: immutable discovery associations own source-relative scope.
+CREATE FUNCTION public.media_root_relative_prefix_valid_v1(value_input text)
+RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path TO pg_catalog AS $$
+    SELECT value_input IS NOT NULL AND (value_input = '' OR (
+        octet_length(value_input) BETWEEN 1 AND 4096 AND NOT EXISTS (
+            SELECT 1 FROM unnest(string_to_array(value_input, '/')) component
+            WHERE component IN ('', '.', '..') OR strpos(component, chr(92)) > 0
+        )
+    ));
+$$;
+
+CREATE TABLE public.media_discovery_association (
+    media_discovery_association_id bigint GENERATED ALWAYS AS IDENTITY,
+    media_discovery_association_public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+    association_key text NOT NULL,
+    latest_media_discovery_association_version_id bigint,
+    active_media_discovery_association_version_id bigint,
+    created_by_user_id bigint NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    CONSTRAINT media_discovery_association_pkey PRIMARY KEY (media_discovery_association_id),
+    CONSTRAINT media_discovery_association_public_id_key UNIQUE (media_discovery_association_public_id),
+    CONSTRAINT media_discovery_association_association_key_key UNIQUE (association_key),
+    CONSTRAINT media_discovery_association_key_contract CHECK (public.media_root_logical_key_valid_v1(association_key)),
+    CONSTRAINT media_discovery_association_created_by_user_id_fkey FOREIGN KEY (created_by_user_id)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT
+);
+CREATE TABLE public.media_discovery_association_version (
+    media_discovery_association_version_id bigint GENERATED ALWAYS AS IDENTITY,
+    media_discovery_association_id bigint NOT NULL,
+    version integer NOT NULL,
+    lifecycle_state text NOT NULL,
+    media_profile_version_id bigint NOT NULL,
+    source_logical_key text NOT NULL,
+    media_root_catalog_slot_attestation_id bigint,
+    resolution_state text NOT NULL,
+    root_relative_path text NOT NULL,
+    manual_enabled boolean NOT NULL,
+    watcher_enabled boolean NOT NULL,
+    schedule_enabled boolean NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    CONSTRAINT media_discovery_association_version_pkey PRIMARY KEY (media_discovery_association_version_id),
+    CONSTRAINT media_discovery_association_version_association_version_key UNIQUE (media_discovery_association_id, version),
+    CONSTRAINT media_discovery_association_version_parent_id_key UNIQUE (media_discovery_association_id, media_discovery_association_version_id),
+    CONSTRAINT media_discovery_association_version_association_fkey FOREIGN KEY (media_discovery_association_id)
+        REFERENCES public.media_discovery_association ON DELETE RESTRICT,
+    CONSTRAINT media_discovery_association_version_profile_version_fkey FOREIGN KEY (media_profile_version_id)
+        REFERENCES public.media_profile_version ON DELETE RESTRICT,
+    CONSTRAINT media_discovery_association_version_source_attestation_fkey FOREIGN KEY (media_root_catalog_slot_attestation_id)
+        REFERENCES public.media_root_catalog_slot_attestation ON DELETE RESTRICT,
+    CONSTRAINT media_discovery_association_version_created_by_user_id_fkey FOREIGN KEY (created_by_user_id)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    CONSTRAINT media_discovery_association_version_source_key_contract CHECK (public.media_root_logical_key_valid_v1(source_logical_key)),
+    CONSTRAINT media_discovery_association_version_positive CHECK (version > 0),
+    CONSTRAINT media_discovery_association_version_lifecycle_known CHECK (lifecycle_state IN ('draft', 'active', 'archived')),
+    CONSTRAINT media_discovery_association_version_resolution_known CHECK (resolution_state IN ('resolved', 'unmapped', 'kind_forbidden')),
+    CONSTRAINT media_discovery_association_version_resolution_coherent CHECK (
+        (resolution_state = 'resolved') = (media_root_catalog_slot_attestation_id IS NOT NULL)),
+    CONSTRAINT media_discovery_association_version_relative_path_contract CHECK (public.media_root_relative_prefix_valid_v1(root_relative_path)),
+    CONSTRAINT media_discovery_association_version_activation_coherent CHECK (
+        (lifecycle_state = 'active' AND resolution_state = 'resolved') OR
+        (lifecycle_state IN ('draft', 'archived') AND NOT manual_enabled AND NOT watcher_enabled AND NOT schedule_enabled))
+);
+ALTER TABLE public.media_discovery_association
+    ADD CONSTRAINT media_discovery_association_latest_version_fkey FOREIGN KEY
+        (media_discovery_association_id, latest_media_discovery_association_version_id)
+        REFERENCES public.media_discovery_association_version(media_discovery_association_id, media_discovery_association_version_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT media_discovery_association_active_version_fkey FOREIGN KEY
+        (media_discovery_association_id, active_media_discovery_association_version_id)
+        REFERENCES public.media_discovery_association_version(media_discovery_association_id, media_discovery_association_version_id) ON DELETE RESTRICT;
+CREATE INDEX ix_media_discovery_association_version_profile
+    ON public.media_discovery_association_version(media_profile_version_id, media_discovery_association_version_id);
+CREATE INDEX ix_media_discovery_association_version_source_prefix
+    ON public.media_discovery_association_version(media_root_catalog_slot_attestation_id, root_relative_path, media_discovery_association_version_id);
+CREATE TRIGGER media_discovery_association_version_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_discovery_association_version
+FOR EACH ROW EXECUTE FUNCTION public.media_profile_version_immutable_v1();
+
+-- Portable configuration reads retain heads and every latest association's pin.
+CREATE FUNCTION public.media_portable_profile_versions_v1()
+RETURNS TABLE (
+    profile_key text, version integer, display_name text, description text,
+    enabled boolean, dry_run_only boolean, desired_target_key text,
+    desired_target_version integer, policy_key text, policy_version integer,
+    output_root_key text, workspace_root_key text, backup_root_key text,
+    quarantine_root_key text
+)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    WITH selected AS (
+        SELECT p.latest_media_profile_version_id AS version_id FROM public.media_profile p
+        WHERE p.deleted_at IS NULL
+        UNION
+        SELECT p.active_media_profile_version_id FROM public.media_profile p
+        WHERE p.deleted_at IS NULL
+        UNION
+        SELECT v.media_profile_version_id
+        FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v
+            ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+    ), versions AS (
+        SELECT p.profile_key, v.* FROM selected s
+        JOIN public.media_profile_version v ON v.media_profile_version_id = s.version_id
+        JOIN public.media_profile p ON p.media_profile_id = v.media_profile_id
+        ORDER BY p.profile_key COLLATE "C", v.version LIMIT 129
+    )
+    SELECT v.profile_key, v.version, v.display_name, v.description, v.enabled, v.dry_run_only,
+        t.target_key, t.version, policy.policy_key, policy.version,
+        max(b.logical_key) FILTER (WHERE b.media_root_kind_id = 2),
+        max(b.logical_key) FILTER (WHERE b.media_root_kind_id = 3),
+        max(b.logical_key) FILTER (WHERE b.media_root_kind_id = 4),
+        max(b.logical_key) FILTER (WHERE b.media_root_kind_id = 5)
+    FROM versions v
+    JOIN public.media_desired_target_profile t USING (media_desired_target_profile_id)
+    JOIN public.media_policy_profile policy USING (media_policy_profile_id)
+    JOIN public.media_profile_version_root_binding b USING (media_profile_version_id)
+    GROUP BY v.profile_key, v.version, v.display_name, v.description, v.enabled, v.dry_run_only,
+        t.target_key, t.version, policy.policy_key, policy.version
+    ORDER BY v.profile_key COLLATE "C", v.version;
+$$;
+REVOKE ALL ON FUNCTION public.media_portable_profile_versions_v1() FROM PUBLIC;
+
+CREATE FUNCTION public.media_portable_associations_v1()
+RETURNS TABLE (
+    association_key text, profile_key text, profile_version integer,
+    source_root_key text, root_relative_path text, manual_enabled boolean,
+    watcher_enabled boolean, schedule_enabled boolean
+)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT a.association_key, p.profile_key, profile.version, v.source_logical_key,
+        v.root_relative_path, v.manual_enabled, v.watcher_enabled, v.schedule_enabled
+    FROM public.media_discovery_association a
+    JOIN public.media_discovery_association_version v
+        ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+    JOIN public.media_profile_version profile USING (media_profile_version_id)
+    JOIN public.media_profile p ON p.media_profile_id = profile.media_profile_id
+    ORDER BY a.association_key COLLATE "C" LIMIT 129;
+$$;
+REVOKE ALL ON FUNCTION public.media_portable_associations_v1() FROM PUBLIC;
+
+CREATE FUNCTION public.media_local_root_paths_v1()
+RETURNS TABLE(logical_key text, canonical_path text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT paths.logical_key, paths.canonical_path FROM (
+        SELECT b.logical_key, a.canonical_path
+        FROM public.media_portable_profile_versions_v1() exported
+        JOIN public.media_profile p ON p.profile_key = exported.profile_key
+        JOIN public.media_profile_version v ON v.media_profile_id = p.media_profile_id AND v.version = exported.version
+        JOIN public.media_profile_version_root_binding b USING (media_profile_version_id)
+        LEFT JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_attestation_id)
+        UNION
+        SELECT v.source_logical_key, attestation.canonical_path
+        FROM public.media_discovery_association parent
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = parent.latest_media_discovery_association_version_id
+        LEFT JOIN public.media_root_catalog_slot_attestation attestation USING (media_root_catalog_slot_attestation_id)
+    ) paths ORDER BY paths.logical_key COLLATE "C", paths.canonical_path COLLATE "C" NULLS FIRST LIMIT 4097;
+$$;
+REVOKE ALL ON FUNCTION public.media_local_root_paths_v1() FROM PUBLIC;
+
+CREATE FUNCTION public.media_configuration_import_prepare_v1(
+    actor_public_id_input uuid, kinds_input text[], keys_input text[],
+    create_intents_input boolean[], expected_versions_input integer[],
+    source_keys_input text[]
+)
+RETURNS bigint LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    generation_id bigint;
+    source_id bigint;
+    resource record;
+    head_value integer;
+    resource_exists boolean;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable'
+        OR kinds_input IS NULL OR keys_input IS NULL OR create_intents_input IS NULL
+        OR expected_versions_input IS NULL OR source_keys_input IS NULL
+        OR cardinality(kinds_input) > 128 OR cardinality(source_keys_input) > 128
+        OR cardinality(keys_input) <> cardinality(kinds_input)
+        OR cardinality(create_intents_input) <> cardinality(kinds_input)
+        OR cardinality(expected_versions_input) <> cardinality(kinds_input)
+        OR EXISTS (SELECT 1 FROM unnest(source_keys_input) k
+            WHERE NOT public.media_root_logical_key_valid_v1(k))
+        OR EXISTS (SELECT 1 FROM unnest(kinds_input, keys_input, create_intents_input, expected_versions_input)
+            r(kind, key, create_intent, expected_version)
+            WHERE kind IS NULL OR kind NOT IN ('compatibility_targets', 'targets', 'policies', 'profiles', 'discovery_associations')
+                OR (CASE WHEN kind IN ('profiles', 'discovery_associations')
+                    THEN public.media_root_logical_key_valid_v1(key)
+                    ELSE public.media_key_valid_v1(key) END) IS NOT TRUE OR create_intent IS NULL
+                OR (create_intent AND expected_version IS NOT NULL)
+                OR (NOT create_intent AND (expected_version IS NULL OR expected_version <= 0)))
+        OR EXISTS (SELECT 1 FROM unnest(kinds_input, keys_input) r(kind, key)
+            GROUP BY kind, key HAVING count(*) > 1) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid',
+            DETAIL = 'media_configuration_invalid';
+    END IF;
+    PERFORM public.media_actor_id_for_public_id_v1(actor_public_id_input);
+    SELECT CASE WHEN s.source_state = 'ready' AND s.attestation_state = 'ready'
+        THEN s.active_media_root_catalog_generation_id END INTO generation_id
+    FROM public.media_root_catalog_state s WHERE s.media_root_catalog_state_id = 1 FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete',
+            DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    FOR source_id IN
+        SELECT DISTINCT a.media_root_catalog_slot_attestation_id
+        FROM public.media_root_catalog_slot_attestation a
+        JOIN public.media_root_catalog_slot s USING (media_root_catalog_slot_id)
+        JOIN public.media_root_catalog_slot_kind k USING (media_root_catalog_slot_attestation_id)
+        WHERE a.media_root_catalog_generation_id = generation_id
+            AND s.logical_key = ANY(source_keys_input) AND k.media_root_kind_id = 1
+        ORDER BY a.media_root_catalog_slot_attestation_id
+    LOOP
+        PERFORM pg_advisory_xact_lock(hashtextextended('media_discovery_association_overlap_v1', source_id));
+    END LOOP;
+    FOR resource IN
+        SELECT * FROM unnest(kinds_input, keys_input, create_intents_input, expected_versions_input)
+            r(kind, key, create_intent, expected_version)
+        ORDER BY CASE kind WHEN 'compatibility_targets' THEN 1 WHEN 'targets' THEN 2
+            WHEN 'policies' THEN 3 WHEN 'profiles' THEN 4 ELSE 5 END, key COLLATE "C"
+    LOOP
+        head_value := NULL;
+        CASE resource.kind
+        WHEN 'compatibility_targets' THEN
+            PERFORM 1 FROM public.media_compatibility_target t
+            WHERE t.compatibility_target_key = resource.key ORDER BY t.version FOR UPDATE;
+            resource_exists := FOUND;
+            SELECT max(t.version) INTO head_value FROM public.media_compatibility_target t
+            WHERE t.compatibility_target_key = resource.key;
+        WHEN 'targets' THEN
+            PERFORM 1 FROM public.media_desired_target_profile t
+            WHERE t.target_key = resource.key ORDER BY t.version FOR UPDATE;
+            resource_exists := FOUND;
+            SELECT max(t.version) INTO head_value FROM public.media_desired_target_profile t
+            WHERE t.target_key = resource.key;
+        WHEN 'policies' THEN
+            PERFORM 1 FROM public.media_policy_profile p
+            WHERE p.policy_key = resource.key ORDER BY p.version FOR UPDATE;
+            resource_exists := FOUND;
+            SELECT max(p.version) INTO head_value FROM public.media_policy_profile p
+            WHERE p.policy_key = resource.key;
+        WHEN 'profiles' THEN
+            SELECT v.version INTO head_value FROM public.media_profile p
+            LEFT JOIN public.media_profile_version v ON v.media_profile_version_id = p.latest_media_profile_version_id
+            WHERE p.profile_key = resource.key FOR UPDATE OF p;
+            resource_exists := FOUND;
+        WHEN 'discovery_associations' THEN
+            SELECT v.version INTO head_value FROM public.media_discovery_association a
+            LEFT JOIN public.media_discovery_association_version v
+                ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+            WHERE a.association_key = resource.key FOR UPDATE OF a;
+            resource_exists := FOUND;
+        END CASE;
+        IF resource.create_intent AND resource_exists THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_create_conflict',
+                DETAIL = 'media_configuration_create_conflict';
+        END IF;
+        IF NOT resource.create_intent AND (NOT resource_exists OR head_value IS DISTINCT FROM resource.expected_version) THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_version_conflict',
+                DETAIL = 'media_configuration_version_conflict';
+        END IF;
+    END LOOP;
+    RETURN generation_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_configuration_import_prepare_v1(uuid,text[],text[],boolean[],integer[],text[]) FROM PUBLIC;
+
+CREATE FUNCTION public.media_profile_version_import_v1(
+    actor_input uuid, key_input text, version_input integer, expected_head_input integer,
+    name_input text, description_input text, enabled_input boolean,
+    target_key_input text, target_version_input integer, policy_key_input text,
+    policy_version_input integer, output_key_input text, workspace_key_input text,
+    backup_key_input text, quarantine_key_input text
+)
+RETURNS TABLE (profile_public_id uuid, latest_version integer, draft boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    actor_id bigint;
+    generation_id bigint;
+    target_id bigint;
+    policy_id bigint;
+    parent_id bigint;
+    parent_public_id uuid;
+    current_head integer;
+    body_id bigint;
+    unresolved boolean := false;
+    backup_required boolean;
+    quarantine_required boolean;
+    binding record;
+    attestation record;
+    kinds smallint[] := ARRAY[]::smallint[];
+    keys text[] := ARRAY[]::text[];
+    attestations bigint[] := ARRAY[]::bigint[];
+    states text[] := ARRAY[]::text[];
+    source_id bigint;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable'
+        OR NOT public.media_root_logical_key_valid_v1(key_input)
+        OR NOT public.media_root_logical_key_valid_v1(target_key_input)
+        OR NOT public.media_root_logical_key_valid_v1(policy_key_input)
+        OR version_input IS NULL OR version_input <= 0
+        OR (expected_head_input IS NOT NULL AND expected_head_input <= 0)
+        OR target_version_input IS NULL OR target_version_input <= 0
+        OR policy_version_input IS NULL OR policy_version_input <= 0
+        OR name_input IS NULL OR octet_length(name_input) NOT BETWEEN 1 AND 128
+        OR description_input IS NULL OR octet_length(description_input) > 1024
+        OR enabled_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    actor_id := public.media_actor_id_for_public_id_v1(actor_input);
+    SELECT CASE WHEN s.source_state = 'ready' AND s.attestation_state = 'ready'
+        THEN s.active_media_root_catalog_generation_id END INTO generation_id
+    FROM public.media_root_catalog_state s WHERE s.media_root_catalog_state_id = 1 FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    SELECT a.media_root_catalog_slot_attestation_id INTO source_id
+    FROM public.media_root_catalog_slot s JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_id)
+    JOIN public.media_root_catalog_slot_kind k USING (media_root_catalog_slot_attestation_id)
+    WHERE s.logical_key = output_key_input AND a.media_root_catalog_generation_id = generation_id AND k.media_root_kind_id = 1;
+    IF source_id IS NOT NULL THEN
+        PERFORM pg_advisory_xact_lock(hashtextextended('media_discovery_association_overlap_v1', source_id));
+    END IF;
+    SELECT t.media_desired_target_profile_id INTO target_id FROM public.media_desired_target_profile t
+    WHERE t.target_key = target_key_input AND t.version = target_version_input FOR UPDATE;
+    SELECT p.media_policy_profile_id INTO policy_id FROM public.media_policy_profile p
+    WHERE p.policy_key = policy_key_input AND p.version = policy_version_input AND p.enabled FOR SHARE;
+    IF target_id IS NULL OR policy_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_reference_missing', DETAIL = 'media_configuration_reference_missing';
+    END IF;
+    SELECT b.enabled, o.quarantine_enabled INTO backup_required, quarantine_required
+    FROM public.media_policy_backup b JOIN public.media_policy_output o USING (media_policy_profile_id)
+    WHERE b.media_policy_profile_id = policy_id;
+    IF backup_required IS NULL OR quarantine_required IS NULL
+        OR backup_required <> (backup_key_input IS NOT NULL)
+        OR quarantine_required <> (quarantine_key_input IS NOT NULL) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    FOR binding IN SELECT * FROM (VALUES
+        (2::smallint, output_key_input), (3::smallint, workspace_key_input),
+        (4::smallint, backup_key_input), (5::smallint, quarantine_key_input)
+    ) r(kind, key) WHERE kind IN (2,3) OR key IS NOT NULL ORDER BY kind LOOP
+        IF NOT public.media_root_logical_key_valid_v1(binding.key) THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+        END IF;
+        kinds := array_append(kinds, binding.kind);
+        keys := array_append(keys, binding.key);
+        SELECT a.*, EXISTS (SELECT 1 FROM public.media_root_catalog_slot_kind k
+            WHERE k.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id
+                AND k.media_root_kind_id = binding.kind) AS kind_allowed
+        INTO attestation FROM public.media_root_catalog_slot s
+        JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_id)
+        WHERE s.logical_key = binding.key AND a.media_root_catalog_generation_id = generation_id;
+        IF NOT FOUND THEN
+            attestations := array_append(attestations, NULL::bigint);
+            states := array_append(states, 'unmapped');
+            unresolved := true;
+        ELSIF NOT attestation.kind_allowed THEN
+            attestations := array_append(attestations, NULL::bigint);
+            states := array_append(states, 'kind_forbidden');
+            unresolved := true;
+        ELSE
+            IF NOT (attestation.write_capable AND attestation.create_new_capable AND attestation.fsync_capable
+                AND attestation.rename_capable AND attestation.delete_capable AND attestation.capacity_probe_capable)
+                OR attestation.sole_writer_class <> 'revaer_exclusive' THEN
+                RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+            END IF;
+            attestations := array_append(attestations, attestation.media_root_catalog_slot_attestation_id);
+            states := array_append(states, 'resolved');
+        END IF;
+    END LOOP;
+    SELECT p.media_profile_id, p.media_profile_public_id, v.version
+    INTO parent_id, parent_public_id, current_head FROM public.media_profile p
+    LEFT JOIN public.media_profile_version v ON v.media_profile_version_id = p.latest_media_profile_version_id
+    WHERE p.profile_key = key_input AND p.deleted_at IS NULL FOR UPDATE OF p;
+    IF expected_head_input IS NULL THEN
+        IF FOUND THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_create_conflict', DETAIL = 'media_configuration_create_conflict';
+        END IF;
+        INSERT INTO public.media_profile(profile_key, dry_run_only, created_by_user_id, policy_key)
+        VALUES (key_input, true, actor_id, policy_key_input)
+        RETURNING media_profile_id, media_profile_public_id INTO parent_id, parent_public_id;
+    ELSIF NOT FOUND OR current_head IS DISTINCT FROM expected_head_input THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_version_conflict', DETAIL = 'media_configuration_version_conflict';
+    END IF;
+    SELECT v.media_profile_version_id INTO body_id FROM public.media_profile_version v
+    WHERE v.media_profile_id = parent_id AND v.version = version_input;
+    IF FOUND THEN
+        IF NOT EXISTS (SELECT 1 FROM public.media_profile_version v WHERE v.media_profile_version_id = body_id
+            AND v.display_name = name_input AND v.description = description_input
+            AND v.enabled = (enabled_input AND NOT unresolved) AND v.dry_run_only
+            AND v.media_desired_target_profile_id = target_id AND v.media_policy_profile_id = policy_id)
+            OR EXISTS ((SELECT k.kind, k.key FROM unnest(kinds, keys) k(kind,key))
+                EXCEPT (SELECT b.media_root_kind_id, b.logical_key FROM public.media_profile_version_root_binding b WHERE b.media_profile_version_id = body_id))
+            OR EXISTS ((SELECT b.media_root_kind_id, b.logical_key FROM public.media_profile_version_root_binding b WHERE b.media_profile_version_id = body_id)
+                EXCEPT (SELECT k.kind, k.key FROM unnest(kinds, keys) k(kind,key))) THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_version_conflict', DETAIL = 'media_configuration_version_conflict';
+        END IF;
+        RETURN QUERY SELECT parent_public_id, current_head, v.lifecycle_state = 'draft'
+            FROM public.media_profile p JOIN public.media_profile_version v
+                ON v.media_profile_version_id = p.latest_media_profile_version_id WHERE p.media_profile_id = parent_id;
+        RETURN;
+    END IF;
+    INSERT INTO public.media_profile_version(media_profile_id, version, lifecycle_state, display_name,
+        description, enabled, dry_run_only, media_desired_target_profile_id, media_policy_profile_id, created_by_user_id)
+    VALUES (parent_id, version_input, CASE WHEN unresolved THEN 'draft' ELSE 'active' END,
+        name_input, description_input, enabled_input AND NOT unresolved, true, target_id, policy_id, actor_id)
+    RETURNING media_profile_version_id INTO body_id;
+    INSERT INTO public.media_profile_version_root_binding(media_profile_version_id, media_root_kind_id,
+        logical_key, media_root_catalog_slot_attestation_id, resolution_state)
+    SELECT body_id, r.kind, r.key, r.attestation, r.state FROM unnest(kinds, keys, attestations, states) r(kind,key,attestation,state);
+    PERFORM public.media_desired_target_validate_and_activate_v1(target_id);
+    IF current_head IS NULL OR version_input > current_head THEN
+        UPDATE public.media_profile SET latest_media_profile_version_id = body_id,
+            active_media_profile_version_id = CASE WHEN unresolved THEN active_media_profile_version_id ELSE body_id END,
+            updated_at = transaction_timestamp() WHERE media_profile_id = parent_id;
+        current_head := version_input;
+    END IF;
+    RETURN QUERY SELECT parent_public_id, current_head, v.lifecycle_state = 'draft'
+        FROM public.media_profile p JOIN public.media_profile_version v
+            ON v.media_profile_version_id = p.latest_media_profile_version_id WHERE p.media_profile_id = parent_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_profile_version_import_v1(uuid,text,integer,integer,text,text,boolean,text,integer,text,integer,text,text,text,text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_association_import_v1(
+    actor_input uuid, key_input text, expected_head_input integer, profile_key_input text,
+    profile_version_input integer, source_key_input text, prefix_input text,
+    manual_input boolean, watcher_input boolean, schedule_input boolean
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    actor_id bigint;
+    generation_id bigint;
+    source_id bigint;
+    profile_row record;
+    parent_id bigint;
+    public_id uuid;
+    head record;
+    next_version integer := 1;
+    body_id bigint;
+    resolution text := 'unmapped';
+    active boolean := false;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable'
+        OR NOT public.media_root_logical_key_valid_v1(key_input)
+        OR NOT public.media_root_logical_key_valid_v1(profile_key_input)
+        OR NOT public.media_root_logical_key_valid_v1(source_key_input)
+        OR NOT public.media_root_relative_prefix_valid_v1(prefix_input)
+        OR profile_version_input IS NULL OR profile_version_input <= 0
+        OR (expected_head_input IS NOT NULL AND expected_head_input <= 0)
+        OR manual_input IS NULL OR watcher_input IS NULL OR schedule_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    actor_id := public.media_actor_id_for_public_id_v1(actor_input);
+    SELECT CASE WHEN s.source_state = 'ready' AND s.attestation_state = 'ready'
+        THEN s.active_media_root_catalog_generation_id END INTO generation_id
+    FROM public.media_root_catalog_state s WHERE s.media_root_catalog_state_id = 1 FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    SELECT a.media_root_catalog_slot_attestation_id,
+        CASE WHEN EXISTS (SELECT 1 FROM public.media_root_catalog_slot_kind k
+            WHERE k.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id AND k.media_root_kind_id = 1)
+            THEN 'resolved' ELSE 'kind_forbidden' END
+    INTO source_id, resolution FROM public.media_root_catalog_slot s
+    JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_id)
+    WHERE s.logical_key = source_key_input AND a.media_root_catalog_generation_id = generation_id;
+    IF NOT FOUND THEN resolution := 'unmapped'; END IF;
+    IF resolution = 'resolved' THEN
+        PERFORM pg_advisory_xact_lock(hashtextextended('media_discovery_association_overlap_v1', source_id));
+    ELSE source_id := NULL;
+    END IF;
+    SELECT v.*, p.active_media_profile_version_id INTO profile_row FROM public.media_profile p
+    JOIN public.media_profile_version v USING (media_profile_id)
+    WHERE p.profile_key = profile_key_input AND p.deleted_at IS NULL AND v.version = profile_version_input FOR UPDATE OF p;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_reference_missing', DETAIL = 'media_configuration_reference_missing';
+    END IF;
+    active := resolution = 'resolved' AND profile_row.lifecycle_state = 'active'
+        AND profile_row.media_profile_version_id = profile_row.active_media_profile_version_id AND profile_row.enabled;
+    IF active AND (NOT EXISTS (SELECT 1 FROM public.media_profile_version_root_binding b
+        WHERE b.media_profile_version_id = profile_row.media_profile_version_id AND b.media_root_kind_id = 2
+            AND b.media_root_catalog_slot_attestation_id = source_id AND b.resolution_state = 'resolved')
+        OR EXISTS (SELECT 1 FROM public.media_profile_version_root_binding b
+            LEFT JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_attestation_id)
+            WHERE b.media_profile_version_id = profile_row.media_profile_version_id
+                AND (b.resolution_state <> 'resolved' OR a.media_root_catalog_generation_id IS DISTINCT FROM generation_id))
+        OR NOT EXISTS (SELECT 1 FROM public.media_root_catalog_slot_attestation a
+            WHERE a.media_root_catalog_slot_attestation_id = source_id AND a.read_capable)) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    SELECT a.media_discovery_association_id, a.media_discovery_association_public_id
+    INTO parent_id, public_id FROM public.media_discovery_association a WHERE a.association_key = key_input FOR UPDATE;
+    IF expected_head_input IS NULL THEN
+        IF FOUND THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_create_conflict', DETAIL = 'media_configuration_create_conflict';
+        END IF;
+        INSERT INTO public.media_discovery_association(association_key, created_by_user_id)
+        VALUES (key_input, actor_id) RETURNING media_discovery_association_id, media_discovery_association_public_id INTO parent_id, public_id;
+    ELSE
+        IF NOT FOUND THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_version_conflict', DETAIL = 'media_configuration_version_conflict';
+        END IF;
+        SELECT v.* INTO head FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+        WHERE a.media_discovery_association_id = parent_id;
+        IF NOT FOUND OR head.version IS DISTINCT FROM expected_head_input OR head.version = 2147483647 THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_version_conflict', DETAIL = 'media_configuration_version_conflict';
+        END IF;
+        IF head.media_profile_version_id = profile_row.media_profile_version_id
+            AND head.source_logical_key = source_key_input AND head.root_relative_path = prefix_input
+            AND head.manual_enabled = (CASE WHEN head.lifecycle_state = 'draft' THEN manual_input AND active ELSE manual_input END)
+            AND NOT head.watcher_enabled AND NOT head.schedule_enabled THEN
+            RETURN public_id;
+        END IF;
+        next_version := head.version + 1;
+    END IF;
+    IF active AND (SELECT count(*) FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+        WHERE a.media_discovery_association_id <> parent_id AND v.media_profile_version_id = profile_row.media_profile_version_id) >= 128 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_bound_exceeded', DETAIL = 'media_configuration_bound_exceeded';
+    END IF;
+    IF active AND EXISTS (SELECT 1 FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+        WHERE a.media_discovery_association_id <> parent_id AND v.media_root_catalog_slot_attestation_id = source_id
+            AND (v.root_relative_path = '' OR prefix_input = '' OR v.root_relative_path = prefix_input
+                OR starts_with(v.root_relative_path, prefix_input || '/') OR starts_with(prefix_input, v.root_relative_path || '/'))) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_overlap', DETAIL = 'media_configuration_overlap';
+    END IF;
+    INSERT INTO public.media_discovery_association_version(media_discovery_association_id, version, lifecycle_state,
+        media_profile_version_id, source_logical_key, media_root_catalog_slot_attestation_id, resolution_state,
+        root_relative_path, manual_enabled, watcher_enabled, schedule_enabled, created_by_user_id)
+    VALUES (parent_id, next_version, CASE WHEN active THEN 'active' ELSE 'draft' END,
+        profile_row.media_profile_version_id, source_key_input, source_id, resolution, prefix_input,
+        manual_input AND active, watcher_input AND active, schedule_input AND active, actor_id) RETURNING media_discovery_association_version_id INTO body_id;
+    UPDATE public.media_discovery_association SET latest_media_discovery_association_version_id = body_id,
+        active_media_discovery_association_version_id = CASE WHEN active THEN body_id ELSE active_media_discovery_association_version_id END
+    WHERE media_discovery_association_id = parent_id;
+    IF active THEN
+        PERFORM public.media_discovery_rescan_publish_v1(body_id, 'configuration_activated');
+    END IF;
+    RETURN public_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_association_import_v1(uuid,text,integer,text,integer,text,text,boolean,boolean,boolean) FROM PUBLIC;
+
+CREATE TABLE public.media_configuration_import_audit (
+    media_configuration_import_audit_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    actor_user_id bigint NOT NULL REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    payload_sha256 bytea NOT NULL CHECK (octet_length(payload_sha256) = 32),
+    resource_count integer NOT NULL CHECK (resource_count BETWEEN 0 AND 128),
+    created_at timestamptz NOT NULL DEFAULT transaction_timestamp()
+);
+CREATE FUNCTION public.media_configuration_import_audit_v1(actor_input uuid, digest_input bytea, count_input integer)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable' OR digest_input IS NULL
+        OR octet_length(digest_input) <> 32 OR count_input IS NULL OR count_input NOT BETWEEN 0 AND 128 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    INSERT INTO public.media_configuration_import_audit(actor_user_id, payload_sha256, resource_count)
+    VALUES (public.media_actor_id_for_public_id_v1(actor_input), digest_input, count_input);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_configuration_import_audit_v1(uuid,bytea,integer) FROM PUBLIC;
+
+CREATE FUNCTION public.media_profile_active_association_count_v1(media_profile_public_id_input uuid)
+RETURNS bigint LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+    SELECT count(*) FROM public.media_discovery_association a
+    JOIN public.media_discovery_association_version v
+        ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+    JOIN public.media_profile_version profile ON profile.media_profile_version_id = v.media_profile_version_id
+    JOIN public.media_profile p ON p.media_profile_id = profile.media_profile_id
+    WHERE p.media_profile_public_id = media_profile_public_id_input AND p.deleted_at IS NULL
+        AND v.media_profile_version_id = p.active_media_profile_version_id
+        AND v.lifecycle_state = 'active';
+$$;
+REVOKE ALL ON FUNCTION public.media_profile_active_association_count_v1(uuid) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_association_create_v1(
+    actor_public_id_input uuid, association_key_input text, media_profile_public_id_input uuid,
+    profile_version_input integer, source_root_key_input text, root_relative_path_input text,
+    manual_enabled_input boolean, watcher_enabled_input boolean, schedule_enabled_input boolean
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    actor_id bigint;
+    generation_id bigint;
+    source_id bigint;
+    profile_row record;
+    parent_id bigint;
+    version_id bigint;
+    public_id uuid;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable'
+       OR NOT public.media_root_logical_key_valid_v1(association_key_input)
+       OR NOT public.media_root_logical_key_valid_v1(source_root_key_input)
+       OR NOT public.media_root_relative_prefix_valid_v1(root_relative_path_input)
+       OR profile_version_input IS NULL OR profile_version_input <= 0
+       OR manual_enabled_input IS NULL OR watcher_enabled_input IS NULL OR schedule_enabled_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    actor_id := public.media_actor_id_for_public_id_v1(actor_public_id_input);
+    SELECT s.active_media_root_catalog_generation_id INTO generation_id
+    FROM public.media_root_catalog_state s WHERE s.media_root_catalog_state_id = 1
+        AND s.source_state = 'ready' AND s.attestation_state = 'ready' FOR SHARE;
+    IF generation_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    SELECT a.media_root_catalog_slot_attestation_id INTO source_id
+    FROM public.media_root_catalog_slot_attestation a JOIN public.media_root_catalog_slot s USING (media_root_catalog_slot_id)
+    WHERE a.media_root_catalog_generation_id = generation_id AND s.logical_key = source_root_key_input;
+    IF source_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_root_unmapped', DETAIL = 'media_configuration_root_unmapped';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.media_root_catalog_slot_kind k
+        WHERE k.media_root_catalog_slot_attestation_id = source_id AND k.media_root_kind_id = 1) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_kind_forbidden', DETAIL = 'media_root_kind_forbidden';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_discovery_association_overlap_v1', source_id));
+    SELECT p.media_profile_id, v.media_profile_version_id, v.version, v.enabled INTO profile_row
+    FROM public.media_profile p JOIN public.media_profile_version v ON v.media_profile_version_id = p.active_media_profile_version_id
+    WHERE p.media_profile_public_id = media_profile_public_id_input FOR UPDATE OF p;
+    IF NOT FOUND OR profile_row.version <> profile_version_input OR NOT profile_row.enabled THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_reference_missing', DETAIL = 'media_configuration_reference_missing';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.media_profile_version_root_binding b
+        WHERE b.media_profile_version_id = profile_row.media_profile_version_id AND b.media_root_kind_id = 2
+            AND b.media_root_catalog_slot_attestation_id = source_id AND b.resolution_state = 'resolved') THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM public.media_profile_version_root_binding b
+        LEFT JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_attestation_id)
+        WHERE b.media_profile_version_id = profile_row.media_profile_version_id AND (
+            b.resolution_state <> 'resolved' OR a.media_root_catalog_generation_id IS DISTINCT FROM generation_id
+            OR NOT (a.write_capable AND a.create_new_capable AND a.fsync_capable AND a.rename_capable
+                AND a.delete_capable AND a.capacity_probe_capable AND a.sole_writer_class = 'revaer_exclusive')
+        )
+    ) OR NOT EXISTS (SELECT 1 FROM public.media_root_catalog_slot_attestation a
+        WHERE a.media_root_catalog_slot_attestation_id = source_id AND a.read_capable) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_stale', DETAIL = 'media_root_attestation_stale';
+    END IF;
+    PERFORM a.media_discovery_association_id FROM public.media_discovery_association a
+    JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+    WHERE v.media_root_catalog_slot_attestation_id = source_id
+    ORDER BY v.media_root_catalog_slot_attestation_id, v.root_relative_path COLLATE "C", a.media_discovery_association_id
+    FOR UPDATE OF a;
+    IF (SELECT count(*) FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+        WHERE v.media_profile_version_id = profile_row.media_profile_version_id) >= 128 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_bound_exceeded', DETAIL = 'media_configuration_bound_exceeded';
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+        WHERE v.media_root_catalog_slot_attestation_id = source_id AND (
+            v.root_relative_path = '' OR root_relative_path_input = '' OR v.root_relative_path = root_relative_path_input
+            OR starts_with(v.root_relative_path, root_relative_path_input || '/')
+            OR starts_with(root_relative_path_input, v.root_relative_path || '/'))) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_overlap', DETAIL = 'media_configuration_overlap';
+    END IF;
+    BEGIN
+        INSERT INTO public.media_discovery_association(association_key, created_by_user_id)
+        VALUES (association_key_input, actor_id)
+        RETURNING media_discovery_association_id, media_discovery_association_public_id INTO parent_id, public_id;
+    EXCEPTION WHEN unique_violation THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_association_key_conflict', DETAIL = 'media_association_key_conflict';
+    END;
+    INSERT INTO public.media_discovery_association_version(
+        media_discovery_association_id, version, lifecycle_state, media_profile_version_id,
+        source_logical_key, media_root_catalog_slot_attestation_id, resolution_state,
+        root_relative_path, manual_enabled, watcher_enabled, schedule_enabled, created_by_user_id
+    ) VALUES (parent_id, 1, 'active', profile_row.media_profile_version_id,
+        source_root_key_input, source_id, 'resolved', root_relative_path_input,
+        manual_enabled_input, watcher_enabled_input, schedule_enabled_input, actor_id)
+    RETURNING media_discovery_association_version_id INTO version_id;
+    UPDATE public.media_discovery_association SET latest_media_discovery_association_version_id = version_id,
+        active_media_discovery_association_version_id = version_id WHERE media_discovery_association_id = parent_id;
+    PERFORM public.media_discovery_rescan_publish_v1(version_id, 'configuration_activated');
+    RETURN public_id;
+END;
+$$;
+CREATE FUNCTION public.media_discovery_association_get_v1(public_id_input uuid)
+RETURNS TABLE (
+    media_discovery_association_public_id uuid, association_key text, latest_version integer, active_version integer,
+    media_profile_public_id uuid, profile_version integer, source_root_key text, root_relative_path text,
+    manual_enabled boolean, watcher_enabled boolean, schedule_enabled boolean, lifecycle_state text,
+    resolution_state text, binding_ready boolean, binding_reason text,
+    destructive_ready boolean, destructive_reason text, created_at timestamptz, effective_dry_run boolean
+)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    WITH association AS (
+        SELECT a.media_discovery_association_public_id, a.association_key, a.active_media_discovery_association_version_id,
+            a.created_at AS parent_created_at, v.*, p.media_profile_public_id, p.active_media_profile_version_id,
+            pv.version AS profile_version, pv.enabled AS profile_enabled,
+            pv.dry_run_only OR COALESCE(o.dry_run, TRUE) AS effective_dry_run,
+            a2.version AS active_version
+        FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+        LEFT JOIN public.media_discovery_association_version a2 ON a2.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+        JOIN public.media_profile_version pv ON pv.media_profile_version_id = v.media_profile_version_id
+        LEFT JOIN public.media_policy_output o ON o.media_policy_profile_id = pv.media_policy_profile_id
+        JOIN public.media_profile p ON p.media_profile_id = pv.media_profile_id
+        WHERE a.media_discovery_association_public_id = public_id_input
+    ), ready AS (
+        SELECT v.*, s.active_media_root_catalog_generation_id, a.durability_class,
+            v.media_discovery_association_version_id = v.active_media_discovery_association_version_id
+            AND v.media_profile_version_id = v.active_media_profile_version_id AND v.profile_enabled
+            AND v.resolution_state = 'resolved' AND s.source_state = 'ready' AND s.attestation_state = 'ready'
+            AND a.media_root_catalog_generation_id = s.active_media_root_catalog_generation_id
+            AND a.read_capable AND NOT EXISTS (
+                SELECT 1 FROM public.media_profile_version_root_binding b
+                LEFT JOIN public.media_root_catalog_slot_attestation ba USING (media_root_catalog_slot_attestation_id)
+                WHERE b.media_profile_version_id = v.media_profile_version_id AND (
+                    b.resolution_state <> 'resolved' OR ba.media_root_catalog_generation_id IS DISTINCT FROM s.active_media_root_catalog_generation_id
+                    OR NOT (ba.write_capable AND ba.create_new_capable AND ba.fsync_capable AND ba.rename_capable
+                        AND ba.delete_capable AND ba.capacity_probe_capable AND ba.sole_writer_class = 'revaer_exclusive'))
+            ) AS ready,
+            NOT EXISTS (SELECT 1 FROM public.media_profile_version_root_binding b
+                JOIN public.media_root_catalog_slot_attestation ba USING (media_root_catalog_slot_attestation_id)
+                WHERE b.media_profile_version_id = v.media_profile_version_id AND ba.durability_class <> 'restart_persistent') AS persistent
+        FROM association v CROSS JOIN public.media_root_catalog_state s
+        LEFT JOIN public.media_root_catalog_slot_attestation a USING (media_root_catalog_slot_attestation_id)
+        WHERE s.media_root_catalog_state_id = 1
+    )
+    SELECT r.media_discovery_association_public_id, r.association_key, r.version, r.active_version,
+        r.media_profile_public_id, r.profile_version, r.source_logical_key, r.root_relative_path,
+        r.manual_enabled, r.watcher_enabled, r.schedule_enabled, r.lifecycle_state,
+        r.resolution_state, COALESCE(r.ready, FALSE), CASE WHEN COALESCE(r.ready, FALSE) THEN NULL ELSE 'media_root_binding_incomplete' END,
+        COALESCE(r.ready AND r.persistent AND r.durability_class = 'restart_persistent', FALSE),
+        CASE WHEN NOT COALESCE(r.ready, FALSE) THEN 'media_root_binding_incomplete'
+            WHEN NOT r.persistent OR r.durability_class <> 'restart_persistent' THEN 'media_root_durability_unproven' ELSE NULL END,
+        r.parent_created_at, r.effective_dry_run FROM ready r;
+$$;
+REVOKE ALL ON FUNCTION public.media_root_relative_prefix_valid_v1(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_discovery_association_create_v1(uuid,text,uuid,integer,text,text,boolean,boolean,boolean) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_discovery_association_get_v1(uuid) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_association_page_v1(limit_input integer, cursor_key_input text, cursor_id_input uuid)
+RETURNS TABLE (
+    media_discovery_association_public_id uuid, association_key text, latest_version integer, active_version integer,
+    media_profile_public_id uuid, profile_version integer, source_root_key text, root_relative_path text,
+    manual_enabled boolean, watcher_enabled boolean, schedule_enabled boolean, lifecycle_state text,
+    resolution_state text, binding_ready boolean, binding_reason text,
+    destructive_ready boolean, destructive_reason text, created_at timestamptz, effective_dry_run boolean
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+BEGIN
+    IF limit_input IS NULL OR limit_input < 1 OR limit_input > 200
+        OR (cursor_key_input IS NULL) <> (cursor_id_input IS NULL) THEN
+        RAISE EXCEPTION 'invalid association page' USING ERRCODE = 'P0001', DETAIL = 'media_configuration_invalid';
+    END IF;
+    IF cursor_key_input IS NOT NULL AND (
+        NOT public.media_root_logical_key_valid_v1(cursor_key_input)
+        OR NOT EXISTS (SELECT 1 FROM public.media_discovery_association a
+            WHERE a.association_key = cursor_key_input AND a.media_discovery_association_public_id = cursor_id_input
+                AND a.latest_media_discovery_association_version_id IS NOT NULL)
+    ) THEN
+        RAISE EXCEPTION 'invalid association continuation' USING ERRCODE = 'P0001', DETAIL = 'media_configuration_invalid';
+    END IF;
+    RETURN QUERY WITH page AS (
+        SELECT a.media_discovery_association_public_id, a.association_key
+        FROM public.media_discovery_association a WHERE a.latest_media_discovery_association_version_id IS NOT NULL
+            AND (cursor_key_input IS NULL OR
+                (a.association_key COLLATE "C", a.media_discovery_association_public_id) > (cursor_key_input COLLATE "C", cursor_id_input))
+        ORDER BY a.association_key COLLATE "C", a.media_discovery_association_public_id LIMIT limit_input + 1
+    ) SELECT representation.* FROM page p
+    CROSS JOIN LATERAL public.media_discovery_association_get_v1(p.media_discovery_association_public_id) representation
+    ORDER BY p.association_key COLLATE "C", p.media_discovery_association_public_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_association_page_v1(integer,text,uuid) FROM PUBLIC;
+
+-- Immutable admission identities and the exact ADR 557 five-root contract.
+ALTER TABLE public.media_discovery_association_version
+    ADD CONSTRAINT media_discovery_association_version_profile_pair_key
+        UNIQUE (media_discovery_association_version_id, media_profile_version_id);
+ALTER TABLE public.media_discovery_source_fingerprint
+    ADD CONSTRAINT media_discovery_source_fingerprint_association_version_fkey
+        FOREIGN KEY (media_discovery_association_version_id)
+        REFERENCES public.media_discovery_association_version(media_discovery_association_version_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT media_discovery_source_fingerprint_relative_path CHECK (
+        public.media_root_relative_prefix_valid_v1(source_path) AND source_path <> ''
+    );
+ALTER TABLE public.media_discovery_source_fingerprint
+    ADD COLUMN last_observed_sequence bigint NOT NULL DEFAULT 0 CHECK (last_observed_sequence >= 0),
+    ADD COLUMN absence_observations smallint NOT NULL DEFAULT 0 CHECK (absence_observations BETWEEN 0 AND 2),
+    ADD COLUMN absence_observed_at timestamptz,
+    ADD COLUMN absence_generation bigint REFERENCES public.media_root_catalog_generation(media_root_catalog_generation_id),
+    ADD CONSTRAINT media_discovery_absence_evidence CHECK (
+        (absence_observations = 0 AND absence_observed_at IS NULL AND absence_generation IS NULL)
+        OR (absence_observations > 0 AND absence_observed_at IS NOT NULL AND absence_generation IS NOT NULL));
+
+ALTER TABLE public.media_job
+    ADD COLUMN media_profile_version_id bigint NOT NULL,
+    ADD COLUMN media_discovery_association_version_id bigint NOT NULL,
+    ADD CONSTRAINT media_job_profile_version_fkey FOREIGN KEY (media_profile_id, media_profile_version_id)
+        REFERENCES public.media_profile_version(media_profile_id, media_profile_version_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT media_job_association_version_fkey FOREIGN KEY (media_discovery_association_version_id, media_profile_version_id)
+        REFERENCES public.media_discovery_association_version(media_discovery_association_version_id, media_profile_version_id) ON DELETE RESTRICT;
+ALTER TABLE public.media_job_root_snapshot
+    ADD CONSTRAINT media_job_root_snapshot_kind_fkey FOREIGN KEY (media_root_kind_id)
+        REFERENCES public.media_root_kind(media_root_kind_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT media_job_root_snapshot_generation_fkey FOREIGN KEY (attestation_generation)
+        REFERENCES public.media_root_catalog_generation(media_root_catalog_generation_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT media_job_root_snapshot_logical_key_contract CHECK (logical_key IS NULL OR public.media_root_logical_key_valid_v1(logical_key)),
+    ADD CONSTRAINT media_job_root_snapshot_relative_prefix CHECK (
+        (binding_state = 'bound' AND media_root_kind_id IN (1, 2)
+            AND root_relative_prefix IS NOT NULL AND public.media_root_relative_prefix_valid_v1(root_relative_prefix))
+        OR (media_root_kind_id NOT IN (1, 2) AND root_relative_prefix IS NULL)
+    );
+CREATE INDEX ix_media_job_root_snapshot_generation
+    ON public.media_job_root_snapshot(attestation_generation, media_job_id);
+ALTER TABLE public.media_job_configuration_snapshot
+    ADD COLUMN root_snapshot_contract_version smallint NOT NULL,
+    ADD COLUMN root_snapshot_row_count smallint NOT NULL,
+    ADD COLUMN root_snapshot_byte_count bigint NOT NULL,
+    ADD COLUMN root_snapshot_sha256 bytea NOT NULL,
+    ADD CONSTRAINT media_job_configuration_snapshot_root_contract_v1 CHECK (root_snapshot_contract_version = 1),
+    ADD CONSTRAINT media_job_configuration_snapshot_root_row_count CHECK (root_snapshot_row_count = 5),
+    ADD CONSTRAINT media_job_configuration_snapshot_root_byte_count_positive CHECK (root_snapshot_byte_count > 0),
+    ADD CONSTRAINT media_job_configuration_snapshot_root_sha256_length CHECK (octet_length(root_snapshot_sha256) = 32);
+
+CREATE FUNCTION public.media_job_root_snapshot_text_v1(value_input text) RETURNS bytea
+LANGUAGE sql IMMUTABLE STRICT SET search_path TO pg_catalog, public AS $$
+    SELECT int4send(octet_length(convert_to(value_input, 'UTF8'))) || convert_to(value_input, 'UTF8');
+$$;
+
+CREATE FUNCTION public.media_job_root_snapshot_frame_v1(job_id_input bigint) RETURNS bytea
+LANGUAGE plpgsql STABLE SET search_path TO pg_catalog, public AS $$
+DECLARE
+    r public.media_job_root_snapshot%ROWTYPE;
+    frame bytea := convert_to('revaer-media-job-root-snapshot', 'UTF8') || decode('00', 'hex') || int4send(1);
+BEGIN
+    FOR r IN SELECT s.* FROM public.media_job_root_snapshot s
+        WHERE s.media_job_id = job_id_input ORDER BY s.media_root_kind_id LOOP
+        frame := frame || int2send(r.media_root_kind_id)
+            || public.media_job_root_snapshot_text_v1(r.binding_state);
+        IF r.binding_state = 'bound' THEN
+            frame := frame || uuid_send(r.media_root_catalog_generation_public_id)
+                || int8send(r.attestation_generation) || r.source_sha256 || r.generation_sha256
+                || uuid_send(r.media_root_catalog_slot_public_id)
+                || public.media_job_root_snapshot_text_v1(r.logical_key)
+                || public.media_job_root_snapshot_text_v1(r.canonical_path)
+                || r.filesystem_device || r.filesystem_inode || int8send(r.mount_id)
+                || public.media_job_root_snapshot_text_v1(r.filesystem_type) || int2send(r.capability_mask)
+                || public.media_job_root_snapshot_text_v1(r.durability_class)
+                || public.media_job_root_snapshot_text_v1(r.durability_evidence)
+                || public.media_job_root_snapshot_text_v1(r.sole_writer_class)
+                || public.media_job_root_snapshot_text_v1(r.sole_writer_evidence)
+                || CASE WHEN r.root_relative_prefix IS NULL THEN decode('00', 'hex')
+                    ELSE decode('01', 'hex') || public.media_job_root_snapshot_text_v1(r.root_relative_prefix) END
+                || r.root_identity_sha256;
+        END IF;
+    END LOOP;
+    RETURN frame;
+END;
+$$;
+
+CREATE FUNCTION public.media_job_root_snapshot_complete_v1(media_job_id_input bigint) RETURNS void
+LANGUAGE plpgsql STABLE SET search_path TO pg_catalog, public AS $$
+DECLARE
+    policy_row public.media_job_policy_behavior_snapshot%ROWTYPE;
+BEGIN
+    SELECT p.* INTO policy_row FROM public.media_job_policy_behavior_snapshot p WHERE p.media_job_id = media_job_id_input;
+    IF NOT FOUND OR policy_row.backup_enabled IS NULL OR policy_row.quarantine_enabled IS NULL
+       OR (SELECT count(*) FROM public.media_job_root_snapshot r WHERE r.media_job_id = media_job_id_input) <> 5
+       OR EXISTS (SELECT 1 FROM public.media_root_kind k WHERE NOT EXISTS (
+            SELECT 1 FROM public.media_job_root_snapshot r
+            WHERE r.media_job_id = media_job_id_input AND r.media_root_kind_id = k.media_root_kind_id))
+       OR EXISTS (SELECT 1 FROM public.media_job_root_snapshot r WHERE r.media_job_id = media_job_id_input AND (
+            (r.media_root_kind_id = 4 AND (r.binding_state = 'bound') <> policy_row.backup_enabled)
+            OR (r.media_root_kind_id = 5 AND (r.binding_state = 'bound') <> policy_row.quarantine_enabled)))
+       OR (SELECT count(DISTINCT (r.attestation_generation, r.source_sha256, r.generation_sha256))
+            FROM public.media_job_root_snapshot r WHERE r.media_job_id = media_job_id_input AND r.binding_state = 'bound') <> 1
+       OR NOT EXISTS (SELECT 1 FROM public.media_job_root_snapshot s JOIN public.media_job_root_snapshot o USING (media_job_id)
+            WHERE s.media_job_id = media_job_id_input AND s.media_root_kind_id = 1 AND o.media_root_kind_id = 2
+                AND s.attestation_generation = o.attestation_generation
+                AND s.media_root_catalog_slot_public_id = o.media_root_catalog_slot_public_id
+                AND s.root_relative_prefix = o.root_relative_prefix) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_root_snapshot_invalid', DETAIL = 'media_job_root_snapshot_invalid';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM public.media_job_root_snapshot r
+        JOIN public.media_job j ON j.media_job_id = r.media_job_id
+        JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = j.media_discovery_association_version_id
+        JOIN public.media_profile_version pv ON pv.media_profile_version_id = j.media_profile_version_id
+        LEFT JOIN public.media_profile_version_root_binding b ON b.media_profile_version_id = j.media_profile_version_id
+            AND b.media_root_kind_id = r.media_root_kind_id
+        LEFT JOIN public.media_root_catalog_generation g ON g.media_root_catalog_generation_id = r.attestation_generation
+        LEFT JOIN public.media_root_catalog_slot s ON s.media_root_catalog_slot_public_id = r.media_root_catalog_slot_public_id
+        LEFT JOIN public.media_root_catalog_slot_attestation a
+            ON a.media_root_catalog_generation_id = r.attestation_generation AND a.media_root_catalog_slot_id = s.media_root_catalog_slot_id
+        WHERE r.media_job_id = media_job_id_input AND r.binding_state = 'bound' AND (
+            a.media_root_catalog_slot_attestation_id IS NULL
+            OR a.media_root_catalog_slot_attestation_id IS DISTINCT FROM
+                CASE WHEN r.media_root_kind_id = 1 THEN v.media_root_catalog_slot_attestation_id
+                    ELSE b.media_root_catalog_slot_attestation_id END
+            OR (r.media_root_kind_id IN (1, 2) AND r.root_relative_prefix IS DISTINCT FROM v.root_relative_path)
+            OR j.intent_policy_profile_id IS DISTINCT FROM pv.media_policy_profile_id
+            OR j.intent_desired_target_profile_id IS DISTINCT FROM pv.media_desired_target_profile_id
+            OR NOT EXISTS (SELECT 1 FROM public.media_root_catalog_slot_kind k
+                WHERE k.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id
+                    AND k.media_root_kind_id = r.media_root_kind_id)
+            OR ROW(r.media_root_catalog_generation_public_id, r.source_sha256, r.generation_sha256, r.logical_key,
+                r.canonical_path, r.filesystem_device, r.filesystem_inode, r.mount_id, r.filesystem_type,
+                r.capability_mask, r.durability_class, r.durability_evidence, r.sole_writer_class, r.sole_writer_evidence,
+                r.root_identity_sha256) IS DISTINCT FROM
+               ROW(g.media_root_catalog_generation_public_id, g.source_sha256, g.generation_sha256, s.logical_key,
+                a.canonical_path, a.filesystem_device, a.filesystem_inode, a.mount_id, a.filesystem_type,
+                (a.read_capable::integer + 2*a.write_capable::integer + 4*a.create_new_capable::integer
+                    + 8*a.fsync_capable::integer + 16*a.rename_capable::integer + 32*a.delete_capable::integer
+                    + 64*a.capacity_probe_capable::integer)::smallint,
+                a.durability_class, a.durability_evidence, a.sole_writer_class, a.sole_writer_evidence, a.root_identity_sha256)
+        )
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid', DETAIL = 'media_root_attestation_invalid';
+    END IF;
+END;
+$$;
+
+CREATE FUNCTION public.media_job_capture_roots_v1(job_id_input bigint) RETURNS void
+LANGUAGE plpgsql SET search_path TO pg_catalog, public AS $$
+DECLARE
+    frame bytea;
+BEGIN
+    INSERT INTO public.media_job_root_snapshot (
+        media_job_id, media_root_kind_id, binding_state, media_root_catalog_generation_public_id,
+        attestation_generation, source_sha256, generation_sha256, media_root_catalog_slot_public_id,
+        logical_key, canonical_path, filesystem_device, filesystem_inode, mount_id, filesystem_type,
+        capability_mask, durability_class, durability_evidence, sole_writer_class, sole_writer_evidence,
+        root_relative_prefix, root_identity_sha256
+    )
+    SELECT j.media_job_id, k.media_root_kind_id, CASE WHEN a.media_root_catalog_slot_attestation_id IS NULL THEN 'not_required' ELSE 'bound' END,
+        g.media_root_catalog_generation_public_id, g.media_root_catalog_generation_id, g.source_sha256,
+        g.generation_sha256, s.media_root_catalog_slot_public_id, s.logical_key, a.canonical_path,
+        a.filesystem_device, a.filesystem_inode, a.mount_id, a.filesystem_type,
+        (a.read_capable::integer + 2*a.write_capable::integer + 4*a.create_new_capable::integer
+            + 8*a.fsync_capable::integer + 16*a.rename_capable::integer + 32*a.delete_capable::integer
+            + 64*a.capacity_probe_capable::integer)::smallint,
+        a.durability_class, a.durability_evidence, a.sole_writer_class, a.sole_writer_evidence,
+        CASE WHEN k.media_root_kind_id IN (1, 2) THEN v.root_relative_path ELSE NULL END, a.root_identity_sha256
+    FROM public.media_job j
+    JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = j.media_discovery_association_version_id
+    JOIN public.media_job_policy_behavior_snapshot p ON p.media_job_id = j.media_job_id
+    CROSS JOIN public.media_root_kind k
+    LEFT JOIN public.media_profile_version_root_binding b
+        ON b.media_profile_version_id = j.media_profile_version_id AND b.media_root_kind_id = k.media_root_kind_id
+    LEFT JOIN public.media_root_catalog_slot_attestation a ON a.media_root_catalog_slot_attestation_id =
+        CASE WHEN k.media_root_kind_id = 1 THEN v.media_root_catalog_slot_attestation_id
+            WHEN k.media_root_kind_id = 4 AND NOT p.backup_enabled THEN NULL
+            WHEN k.media_root_kind_id = 5 AND NOT p.quarantine_enabled THEN NULL
+            ELSE b.media_root_catalog_slot_attestation_id END
+    LEFT JOIN public.media_root_catalog_generation g ON g.media_root_catalog_generation_id = a.media_root_catalog_generation_id
+    LEFT JOIN public.media_root_catalog_slot s ON s.media_root_catalog_slot_id = a.media_root_catalog_slot_id
+    WHERE j.media_job_id = job_id_input ORDER BY k.media_root_kind_id;
+    PERFORM public.media_job_root_snapshot_complete_v1(job_id_input);
+    frame := public.media_job_root_snapshot_frame_v1(job_id_input);
+    INSERT INTO public.media_job_configuration_snapshot (
+        media_job_id, profile_configuration_version, media_policy_profile_id, policy_version,
+        media_desired_target_profile_id, desired_target_version, root_snapshot_contract_version,
+        root_snapshot_row_count, root_snapshot_byte_count, root_snapshot_sha256
+    ) SELECT j.media_job_id, v.version, j.intent_policy_profile_id, j.intent_policy_version,
+        j.intent_desired_target_profile_id, j.intent_desired_target_version, 1, 5, octet_length(frame), sha256(frame)
+    FROM public.media_job j JOIN public.media_profile_version v USING (media_profile_version_id)
+    WHERE j.media_job_id = job_id_input;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_job_root_snapshot_text_v1(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_job_root_snapshot_frame_v1(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_job_root_snapshot_complete_v1(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_job_capture_roots_v1(bigint) FROM PUBLIC;
+
+CREATE FUNCTION public.media_job_policy_snapshot_root_list_v1(
+    job_public_id_input uuid, attempt_number_input integer, claim_generation_input bigint
+) RETURNS SETOF public.media_job_root_snapshot
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    job_id bigint;
+    frame bytea;
+BEGIN
+    SELECT j.media_job_id INTO job_id FROM public.media_job j
+    JOIN public.media_job_attempt a ON a.media_job_attempt_id = j.current_attempt_id
+    WHERE j.media_job_public_id = job_public_id_input
+        AND a.attempt_number = attempt_number_input AND a.claim_generation = claim_generation_input
+        AND j.status = public.media_job_status_running_v1()
+        AND a.status = public.media_job_status_running_v1()
+    FOR SHARE OF j, a;
+    IF job_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_claim_stale', DETAIL = 'media_job_claim_stale';
+    END IF;
+    PERFORM s.media_root_catalog_state_id FROM public.media_root_catalog_state s
+    JOIN public.media_job_root_snapshot r
+        ON r.attestation_generation = s.active_media_root_catalog_generation_id
+    WHERE s.media_root_catalog_state_id = 1 AND s.source_state = 'ready'
+        AND s.attestation_state = 'ready' AND r.media_job_id = job_id AND r.media_root_kind_id = 1
+    FOR SHARE OF s;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_identity_mismatch', DETAIL = 'media_root_identity_mismatch';
+    END IF;
+    PERFORM public.media_job_root_snapshot_complete_v1(job_id);
+    frame := public.media_job_root_snapshot_frame_v1(job_id);
+    IF NOT EXISTS (
+        SELECT 1 FROM public.media_job_configuration_snapshot s
+        WHERE s.media_job_id = job_id AND s.root_snapshot_contract_version = 1
+            AND s.root_snapshot_row_count = 5 AND s.root_snapshot_byte_count = octet_length(frame)
+            AND s.root_snapshot_sha256 = sha256(frame)
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_root_snapshot_invalid', DETAIL = 'media_job_root_snapshot_invalid';
+    END IF;
+    RETURN QUERY SELECT r.* FROM public.media_job_root_snapshot r
+        WHERE r.media_job_id = job_id ORDER BY r.media_root_kind_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_job_policy_snapshot_root_list_v1(uuid,integer,bigint) FROM PUBLIC;
+
+CREATE FUNCTION public.media_job_replacement_recovery_list_v1(after_attempt_id_input bigint)
+RETURNS TABLE(attempt_id bigint, media_job_public_id uuid, claim_generation bigint,
+    source_root text, terminal_committed boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    candidate record;
+    frame bytea;
+BEGIN
+    IF after_attempt_id_input IS NULL OR after_attempt_id_input < 0 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid';
+    END IF;
+    FOR candidate IN
+        SELECT a.media_job_attempt_id, a.claim_generation, j.media_job_id, j.media_job_public_id
+        FROM public.media_job_attempt a
+        JOIN public.media_job j ON j.media_job_id = a.media_job_id
+        WHERE a.media_job_attempt_id > after_attempt_id_input
+            AND a.claimed_at IS NOT NULL AND NOT j.dry_run
+        ORDER BY a.media_job_attempt_id LIMIT 64
+    LOOP
+        PERFORM public.media_job_root_snapshot_complete_v1(candidate.media_job_id);
+        frame := public.media_job_root_snapshot_frame_v1(candidate.media_job_id);
+        IF NOT EXISTS (
+            SELECT 1 FROM public.media_job_configuration_snapshot s
+            WHERE s.media_job_id = candidate.media_job_id AND s.root_snapshot_contract_version = 1
+                AND s.root_snapshot_row_count = 5 AND s.root_snapshot_byte_count = octet_length(frame)
+                AND s.root_snapshot_sha256 = sha256(frame)
+        ) THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_root_snapshot_invalid';
+        END IF;
+        PERFORM s.media_root_catalog_state_id FROM public.media_root_catalog_state s
+        JOIN public.media_job_root_snapshot r
+            ON r.attestation_generation = s.active_media_root_catalog_generation_id
+        WHERE s.media_root_catalog_state_id = 1 AND s.source_state = 'ready'
+            AND s.attestation_state = 'ready'
+            AND r.media_job_id = candidate.media_job_id AND r.media_root_kind_id = 1
+        FOR SHARE OF s;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_identity_mismatch';
+        END IF;
+        RETURN QUERY SELECT candidate.media_job_attempt_id, candidate.media_job_public_id,
+            candidate.claim_generation, r.canonical_path, EXISTS (
+                SELECT 1 FROM public.media_job_terminal_outbox o
+                WHERE o.media_job_id = candidate.media_job_id
+                    AND o.media_job_attempt_id = candidate.media_job_attempt_id AND o.event_kind = 'completed'
+            ) FROM public.media_job_root_snapshot r
+            WHERE r.media_job_id = candidate.media_job_id AND r.media_root_kind_id = 1;
+    END LOOP;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_job_replacement_recovery_list_v1(bigint) FROM PUBLIC;
+
+-- Approved rollback-only physical fingerprint refresh; content and bindings stay immutable.
+CREATE FUNCTION public.media_job_restored_source_refresh_v1(
+    job_public_id_input uuid, generation_input bigint, source_path_input text,
+    identity_input text, size_input bigint, modified_ns_input bigint,
+    changed_ns_input bigint, sha256_input text)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    job public.media_job%ROWTYPE;
+    attempt public.media_job_attempt%ROWTYPE;
+BEGIN
+    SELECT * INTO job FROM public.media_job j WHERE j.media_job_public_id = job_public_id_input FOR UPDATE;
+    SELECT * INTO attempt FROM public.media_job_attempt a WHERE a.media_job_attempt_id = job.current_attempt_id FOR UPDATE;
+    IF job.media_job_id IS NULL OR attempt.claim_generation IS DISTINCT FROM generation_input
+        OR attempt.claimed_at IS NULL OR job.dry_run
+        OR job.status = public.media_job_status_completed_v1() THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_worker_claim_stale', DETAIL = 'media_job_worker_claim_stale';
+    END IF;
+    IF source_path_input IS DISTINCT FROM job.source_path
+        OR size_input IS DISTINCT FROM job.intent_source_size_bytes
+        OR sha256_input IS DISTINCT FROM job.intent_source_sha256
+        OR identity_input IS NULL OR identity_input !~ '^[0-9a-f]{16}:[0-9a-f]{16}$'
+        OR modified_ns_input IS NULL OR modified_ns_input < 0
+        OR changed_ns_input IS NULL OR changed_ns_input < 0 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_source_fingerprint_mismatch', DETAIL = 'media_job_source_fingerprint_mismatch';
+    END IF;
+    PERFORM public.media_job_root_snapshot_complete_v1(job.media_job_id);
+    PERFORM set_config('revaer.restored_source_job', job_public_id_input::text, true);
+    UPDATE public.media_job SET intent_source_identity = identity_input,
+        intent_source_modified_ns = modified_ns_input, intent_source_changed_ns = changed_ns_input
+    WHERE media_job_id = job.media_job_id;
+    PERFORM set_config('revaer.restored_source_job', '', true);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_job_restored_source_refresh_v1(uuid, bigint, text, text, bigint, bigint, bigint, text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_association_job_enqueue_v1(
+    actor_public_id_input uuid, association_public_id_input uuid, source_relative_path_input text,
+    dry_run_input boolean, source_identity_input text, source_size_bytes_input bigint,
+    source_modified_ns_input bigint, source_changed_ns_input bigint, source_sha256_input text,
+    association_version_input integer, expected_generation_input bigint, expected_generation_sha256_input bytea,
+    trigger_input text
+) RETURNS TABLE(media_job_public_id uuid, dry_run boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    actor_id bigint;
+    generation_id bigint;
+    association_row record;
+    readiness_row record;
+    profile_row public.media_profile_version%ROWTYPE;
+    policy_row public.media_policy_profile%ROWTYPE;
+    target_row public.media_desired_target_profile%ROWTYPE;
+    root_path text;
+    container_format_value text;
+    effective_dry_run boolean;
+    job_id bigint;
+    job_public_id uuid;
+    fingerprint_changed boolean;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'serializable'
+       OR trigger_input IS NULL OR trigger_input NOT IN ('manual', 'schedule', 'watcher')
+       OR source_relative_path_input IS NULL OR source_relative_path_input = ''
+       OR NOT public.media_root_relative_prefix_valid_v1(source_relative_path_input) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    IF source_identity_input IS NULL OR source_identity_input !~ '^[0-9a-f]{16}:[0-9a-f]{16}$'
+       OR source_size_bytes_input IS NULL OR source_size_bytes_input < 0
+       OR source_modified_ns_input IS NULL OR source_modified_ns_input < 0
+       OR source_changed_ns_input IS NULL OR source_changed_ns_input < 0
+       OR source_sha256_input IS NULL OR source_sha256_input !~ '^[0-9a-f]{64}$' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_fingerprint_invalid', DETAIL = 'media_discovery_fingerprint_invalid';
+    END IF;
+    actor_id := public.media_actor_id_for_public_id_v1(actor_public_id_input);
+    SELECT s.active_media_root_catalog_generation_id INTO generation_id
+    FROM public.media_root_catalog_state s WHERE s.media_root_catalog_state_id = 1
+        AND s.source_state = 'ready' AND s.attestation_state = 'ready' FOR SHARE;
+    IF generation_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    IF generation_id IS DISTINCT FROM expected_generation_input OR NOT EXISTS (
+        SELECT 1 FROM public.media_root_catalog_generation g WHERE g.media_root_catalog_generation_id = generation_id
+            AND g.generation_sha256 = expected_generation_sha256_input
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_stale', DETAIL = 'media_root_attestation_stale';
+    END IF;
+    SELECT v.*, p.media_profile_id, p.media_profile_public_id INTO association_row
+    FROM public.media_discovery_association a
+    JOIN public.media_discovery_association_version v ON v.media_discovery_association_version_id = a.active_media_discovery_association_version_id
+    JOIN public.media_profile_version pv ON pv.media_profile_version_id = v.media_profile_version_id
+    JOIN public.media_profile p ON p.media_profile_id = pv.media_profile_id
+    WHERE a.media_discovery_association_public_id = association_public_id_input;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_association_not_found', DETAIL = 'media_discovery_association_not_found';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_discovery_association_overlap_v1', association_row.media_root_catalog_slot_attestation_id));
+    PERFORM p.media_profile_id FROM public.media_profile p
+        WHERE p.media_profile_id = association_row.media_profile_id FOR UPDATE;
+    PERFORM a.media_discovery_association_id FROM public.media_discovery_association a
+        WHERE a.media_discovery_association_id = association_row.media_discovery_association_id FOR UPDATE;
+    IF association_row.version IS DISTINCT FROM association_version_input THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_stale', DETAIL = 'media_root_attestation_stale';
+    END IF;
+    SELECT r.* INTO readiness_row FROM public.media_discovery_association_get_v1(association_public_id_input) r;
+    IF NOT (CASE trigger_input
+        WHEN 'manual' THEN association_row.manual_enabled
+        WHEN 'schedule' THEN association_row.schedule_enabled
+        WHEN 'watcher' THEN association_row.watcher_enabled
+        ELSE FALSE END) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_' || trigger_input || '_disabled',
+            DETAIL = 'media_discovery_' || trigger_input || '_disabled';
+    END IF;
+    IF NOT COALESCE(readiness_row.binding_ready, FALSE) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    SELECT v.* INTO STRICT profile_row FROM public.media_profile_version v
+        WHERE v.media_profile_version_id = association_row.media_profile_version_id;
+    IF NOT (COALESCE(dry_run_input, TRUE) OR readiness_row.effective_dry_run)
+        AND NOT readiness_row.destructive_ready THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_durability_unproven', DETAIL = 'media_root_durability_unproven';
+    END IF;
+    IF association_row.root_relative_path <> ''
+       AND source_relative_path_input <> association_row.root_relative_path
+       AND NOT starts_with(source_relative_path_input, association_row.root_relative_path || '/') THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_source_path_outside_profile_root', DETAIL = 'media_discovery_source_path_outside_profile_root';
+    END IF;
+    SELECT a.canonical_path INTO root_path FROM public.media_root_catalog_slot_attestation a
+        WHERE a.media_root_catalog_slot_attestation_id = association_row.media_root_catalog_slot_attestation_id
+            AND a.media_root_catalog_generation_id = generation_id;
+    IF root_path IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_stale', DETAIL = 'media_root_attestation_stale';
+    END IF;
+    SELECT p.* INTO STRICT policy_row FROM public.media_policy_profile p
+        WHERE p.media_policy_profile_id = profile_row.media_policy_profile_id AND p.enabled;
+    SELECT t.* INTO STRICT target_row FROM public.media_desired_target_profile t
+        WHERE t.media_desired_target_profile_id = profile_row.media_desired_target_profile_id AND t.enabled;
+    SELECT c.container_format INTO STRICT container_format_value FROM public.media_desired_target_container c
+        WHERE c.media_desired_target_profile_id = target_row.media_desired_target_profile_id;
+    SELECT COALESCE(dry_run_input, TRUE) OR profile_row.dry_run_only OR o.dry_run INTO STRICT effective_dry_run
+        FROM public.media_policy_output o WHERE o.media_policy_profile_id = policy_row.media_policy_profile_id;
+    WITH changed AS (
+        INSERT INTO public.media_discovery_source_fingerprint (
+            media_discovery_association_version_id, source_path, source_identity,
+            source_size_bytes, source_modified_ns, source_changed_ns, source_sha256
+        ) VALUES (
+            association_row.media_discovery_association_version_id, source_relative_path_input,
+            source_identity_input, source_size_bytes_input, source_modified_ns_input,
+            source_changed_ns_input, source_sha256_input
+        ) ON CONFLICT (media_discovery_association_version_id, source_path) DO UPDATE
+        SET source_identity = EXCLUDED.source_identity, source_size_bytes = EXCLUDED.source_size_bytes,
+            source_modified_ns = EXCLUDED.source_modified_ns, source_changed_ns = EXCLUDED.source_changed_ns,
+            source_sha256 = EXCLUDED.source_sha256, last_seen_at = transaction_timestamp(),
+            absence_observations = 0, absence_observed_at = NULL, absence_generation = NULL
+        WHERE ROW(media_discovery_source_fingerprint.source_identity, media_discovery_source_fingerprint.source_size_bytes,
+            media_discovery_source_fingerprint.source_modified_ns, media_discovery_source_fingerprint.source_changed_ns,
+            media_discovery_source_fingerprint.source_sha256) IS DISTINCT FROM
+            ROW(EXCLUDED.source_identity, EXCLUDED.source_size_bytes, EXCLUDED.source_modified_ns,
+                EXCLUDED.source_changed_ns, EXCLUDED.source_sha256)
+        RETURNING 1
+    ) SELECT EXISTS (SELECT 1 FROM changed) INTO fingerprint_changed;
+    IF NOT fingerprint_changed THEN
+        RETURN;
+    END IF;
+    INSERT INTO public.media_job (
+        media_profile_id, media_profile_version_id, media_discovery_association_version_id,
+        source_path, output_path, dry_run, intent_source_root, intent_output_root, intent_policy_key,
+        intent_policy_profile_id, intent_policy_version, intent_policy_video_intent,
+        intent_desired_target_profile_id, intent_desired_target_key, intent_desired_target_version,
+        intent_desired_container_format, intent_unmatched_stream_policy,
+        intent_verification_strictness, intent_verification_duration_tolerance_millis,
+        intent_verification_mux_validation, intent_verification_decode_all_streams,
+        intent_verification_keyframe_seek, intent_verification_playback_probe,
+        intent_source_identity, intent_source_size_bytes, intent_source_modified_ns,
+        intent_source_changed_ns, intent_source_sha256, created_by_user_id
+    ) VALUES (
+        profile_row.media_profile_id, profile_row.media_profile_version_id, association_row.media_discovery_association_version_id,
+        root_path || '/' || source_relative_path_input, root_path || '/' || source_relative_path_input,
+        effective_dry_run, root_path, root_path, policy_row.policy_key,
+        policy_row.media_policy_profile_id, policy_row.version, policy_row.video_intent,
+        target_row.media_desired_target_profile_id, target_row.target_key, target_row.version,
+        container_format_value, policy_row.unmatched_stream_policy,
+        policy_row.verification_strictness, policy_row.verification_duration_tolerance_millis,
+        policy_row.verification_mux_validation, policy_row.verification_decode_all_streams,
+        policy_row.verification_keyframe_seek, policy_row.verification_playback_probe,
+        source_identity_input, source_size_bytes_input, source_modified_ns_input,
+        source_changed_ns_input, source_sha256_input, actor_id
+    ) RETURNING public.media_job.media_job_id, public.media_job.media_job_public_id INTO job_id, job_public_id;
+    INSERT INTO public.media_job_desired_target_stream (
+        media_job_id, stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec,
+        channel_count, channel_layout, video_profile, video_level, video_bitrate_bps, color_primaries,
+        color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition,
+        subtitle_placement, image_subtitle_action
+    ) SELECT job_id, s.stream_key, s.stream_kind, s.semantic_role, s.language_code, s.optional, s.sort_order, s.codec,
+        a.channel_count, a.channel_layout, s.video_profile, s.video_level, s.video_bitrate_bps, s.color_primaries,
+        s.color_transfer, s.color_space, s.hdr_format, s.title, s.default_disposition, s.forced_disposition,
+        s.subtitle_placement, s.image_subtitle_action
+    FROM public.media_desired_target_stream s LEFT JOIN public.media_desired_target_audio_stream a
+        ON a.media_desired_target_stream_id = s.media_desired_target_stream_id
+    WHERE s.media_desired_target_profile_id = target_row.media_desired_target_profile_id ORDER BY s.sort_order;
+    PERFORM public.media_job_root_snapshot_complete_v1(job_id);
+    UPDATE public.media_discovery_source_fingerprint SET last_media_job_public_id = job_public_id
+    WHERE media_discovery_association_version_id = association_row.media_discovery_association_version_id
+        AND source_path = source_relative_path_input;
+    RETURN QUERY SELECT job_public_id, effective_dry_run;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_association_job_enqueue_v1(uuid,uuid,text,boolean,text,bigint,bigint,bigint,text,integer,bigint,bytea,text) FROM PUBLIC;
+
+CREATE TABLE public.media_discovery_rescan (
+    media_discovery_association_version_id bigint PRIMARY KEY
+        REFERENCES public.media_discovery_association_version(media_discovery_association_version_id),
+    requested_sequence bigint NOT NULL CHECK (requested_sequence > 0),
+    satisfied_sequence bigint NOT NULL DEFAULT 0 CHECK (satisfied_sequence >= 0),
+    first_requested_at timestamptz NOT NULL,
+    last_requested_at timestamptz NOT NULL,
+    not_before timestamptz NOT NULL,
+    CONSTRAINT media_discovery_rescan_sequence CHECK (satisfied_sequence <= requested_sequence),
+    CONSTRAINT media_discovery_rescan_times CHECK (first_requested_at <= last_requested_at)
+);
+
+CREATE TABLE public.media_discovery_rescan_reason_kind (
+    reason_code text PRIMARY KEY
+);
+CREATE FUNCTION public.media_discovery_rescan_seed_reason_kinds_v1()
+RETURNS void LANGUAGE sql SET search_path TO pg_catalog, public AS $$
+    INSERT INTO public.media_discovery_rescan_reason_kind(reason_code) VALUES
+        ('manual'), ('schedule'), ('overflow'), ('watcher_uncertain'),
+        ('directory_changed'), ('configuration_activated'), ('restart_reconcile')
+    ON CONFLICT (reason_code) DO NOTHING;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_rescan_seed_reason_kinds_v1() FROM PUBLIC;
+SELECT public.media_discovery_rescan_seed_reason_kinds_v1();
+
+CREATE TABLE public.media_discovery_rescan_reason (
+    media_discovery_association_version_id bigint NOT NULL
+        REFERENCES public.media_discovery_rescan(media_discovery_association_version_id),
+    reason_code text NOT NULL REFERENCES public.media_discovery_rescan_reason_kind(reason_code),
+    last_requested_sequence bigint NOT NULL CHECK (last_requested_sequence > 0),
+    first_requested_at timestamptz NOT NULL,
+    last_requested_at timestamptz NOT NULL,
+    PRIMARY KEY (media_discovery_association_version_id, reason_code),
+    CONSTRAINT media_discovery_rescan_reason_times CHECK (first_requested_at <= last_requested_at)
+);
+
+-- Only a locked, validated association writer may publish an activation request.
+CREATE FUNCTION public.media_discovery_rescan_publish_v1(version_id_input bigint, reason_input text)
+RETURNS bigint LANGUAGE plpgsql SET search_path TO pg_catalog, public AS $$
+DECLARE
+    sequence_value bigint;
+    observed_at timestamptz := clock_timestamp();
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM public.media_discovery_rescan_reason_kind k
+        WHERE k.reason_code = reason_input) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    INSERT INTO public.media_discovery_rescan AS s (
+        media_discovery_association_version_id, requested_sequence, first_requested_at, last_requested_at, not_before
+    ) VALUES (version_id_input, 1, observed_at, observed_at, observed_at)
+    ON CONFLICT (media_discovery_association_version_id) DO UPDATE
+        SET requested_sequence = s.requested_sequence + 1,
+            last_requested_at = GREATEST(observed_at, s.last_requested_at),
+            not_before = LEAST(s.not_before, observed_at)
+    RETURNING requested_sequence INTO sequence_value;
+    INSERT INTO public.media_discovery_rescan_reason AS r (
+        media_discovery_association_version_id, reason_code, last_requested_sequence, first_requested_at, last_requested_at
+    ) VALUES (version_id_input, reason_input, sequence_value, observed_at, observed_at)
+    ON CONFLICT (media_discovery_association_version_id, reason_code) DO UPDATE
+        SET last_requested_sequence = sequence_value,
+            last_requested_at = GREATEST(observed_at, r.last_requested_at);
+    RETURN sequence_value;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_rescan_publish_v1(bigint, text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_rescan_get_v1(public_id_input uuid)
+RETURNS TABLE (association_version integer, requested_sequence bigint, satisfied_sequence bigint,
+    first_requested_at timestamptz, last_requested_at timestamptz, not_before timestamptz,
+    reason_code text, last_requested_sequence bigint)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT v.version, s.requested_sequence, s.satisfied_sequence,
+        s.first_requested_at, s.last_requested_at, s.not_before,
+        r.reason_code, r.last_requested_sequence
+    FROM public.media_discovery_association a
+    JOIN public.media_discovery_association_version v
+        ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+    JOIN public.media_discovery_rescan s USING (media_discovery_association_version_id)
+    JOIN public.media_discovery_rescan_reason r USING (media_discovery_association_version_id)
+    WHERE a.media_discovery_association_public_id = public_id_input
+    ORDER BY r.reason_code COLLATE "C";
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_rescan_get_v1(uuid) FROM PUBLIC;
+
+-- Request/acknowledgement authority comes from the retained catalog and the
+-- exact active association, not a scanner owner, lease or caller-supplied path.
+CREATE FUNCTION public.media_discovery_rescan_fence_v1(
+    public_id_input uuid, association_version_input integer,
+    expected_generation_input bigint, expected_generation_sha256_input bytea,
+    trigger_input text
+) RETURNS bigint LANGUAGE plpgsql SET search_path TO pg_catalog, public AS $$
+DECLARE
+    generation_id bigint;
+    association_row record;
+    readiness_row record;
+BEGIN
+    IF trigger_input IS NULL OR trigger_input NOT IN ('watcher', 'schedule') THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    SELECT s.active_media_root_catalog_generation_id INTO generation_id
+        FROM public.media_root_catalog_state s WHERE s.media_root_catalog_state_id = 1
+            AND s.source_state = 'ready' AND s.attestation_state = 'ready' FOR SHARE;
+    IF generation_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    IF generation_id IS DISTINCT FROM expected_generation_input OR NOT EXISTS (
+        SELECT 1 FROM public.media_root_catalog_generation g
+        WHERE g.media_root_catalog_generation_id = generation_id
+            AND g.generation_sha256 = expected_generation_sha256_input
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_stale', DETAIL = 'media_root_attestation_stale';
+    END IF;
+    SELECT v.*, p.media_profile_id INTO association_row
+        FROM public.media_discovery_association a
+        JOIN public.media_discovery_association_version v
+            ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+        JOIN public.media_profile_version pv USING (media_profile_version_id)
+        JOIN public.media_profile p USING (media_profile_id)
+        WHERE a.media_discovery_association_public_id = public_id_input;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_association_not_found', DETAIL = 'media_discovery_association_not_found';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_discovery_association_overlap_v1', association_row.media_root_catalog_slot_attestation_id));
+    PERFORM p.media_profile_id FROM public.media_profile p
+        WHERE p.media_profile_id = association_row.media_profile_id FOR UPDATE;
+    PERFORM a.media_discovery_association_id FROM public.media_discovery_association a
+        WHERE a.media_discovery_association_id = association_row.media_discovery_association_id FOR UPDATE;
+    SELECT r.* INTO readiness_row FROM public.media_discovery_association_get_v1(public_id_input) r;
+    IF association_row.version IS DISTINCT FROM association_version_input
+       OR readiness_row.latest_version IS DISTINCT FROM association_version_input
+       OR readiness_row.active_version IS DISTINCT FROM association_version_input THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_stale', DETAIL = 'media_root_attestation_stale';
+    END IF;
+    IF NOT (CASE trigger_input WHEN 'watcher' THEN readiness_row.watcher_enabled
+        WHEN 'schedule' THEN readiness_row.schedule_enabled ELSE FALSE END) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_discovery_' || trigger_input || '_disabled',
+            DETAIL = 'media_discovery_' || trigger_input || '_disabled';
+    END IF;
+    IF NOT COALESCE(readiness_row.binding_ready, FALSE) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    RETURN association_row.media_discovery_association_version_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_rescan_fence_v1(uuid,integer,bigint,bytea,text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_rescan_request_v1(
+    public_id_input uuid, association_version_input integer,
+    expected_generation_input bigint, expected_generation_sha256_input bytea,
+    trigger_input text, reason_input text
+) RETURNS bigint LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE version_id bigint;
+BEGIN
+    IF reason_input IS NULL OR reason_input NOT IN (
+        'schedule', 'overflow', 'watcher_uncertain', 'directory_changed', 'restart_reconcile'
+    ) OR (reason_input = 'schedule' AND trigger_input IS DISTINCT FROM 'schedule') THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    version_id := public.media_discovery_rescan_fence_v1(public_id_input, association_version_input,
+        expected_generation_input, expected_generation_sha256_input, trigger_input);
+    IF reason_input IN ('overflow','watcher_uncertain','directory_changed','restart_reconcile') THEN
+        UPDATE public.media_discovery_source_fingerprint
+        SET absence_observations = 0, absence_observed_at = NULL, absence_generation = NULL
+        WHERE media_discovery_association_version_id = version_id;
+    END IF;
+    RETURN public.media_discovery_rescan_publish_v1(version_id, reason_input);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_rescan_request_v1(uuid,integer,bigint,bytea,text,text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_rescan_observe_paths_v1(
+    public_id_input uuid, association_version_input integer, expected_generation_input bigint,
+    expected_generation_sha256_input bytea, trigger_input text, captured_sequence_input bigint,
+    paths_input text[]
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE version_id bigint; requested_value bigint; satisfied_value bigint;
+BEGIN
+    version_id := public.media_discovery_rescan_fence_v1(public_id_input, association_version_input,
+        expected_generation_input, expected_generation_sha256_input, trigger_input);
+    SELECT s.requested_sequence, s.satisfied_sequence INTO requested_value, satisfied_value
+    FROM public.media_discovery_rescan s WHERE s.media_discovery_association_version_id = version_id FOR UPDATE;
+    IF captured_sequence_input IS NULL OR requested_value IS NULL
+        OR captured_sequence_input <= satisfied_value OR captured_sequence_input > requested_value
+        OR paths_input IS NULL OR cardinality(paths_input) NOT BETWEEN 1 AND 128
+        OR EXISTS (SELECT 1 FROM unnest(paths_input) p WHERE p IS NULL OR p = ''
+            OR NOT public.media_root_relative_prefix_valid_v1(p)) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    UPDATE public.media_discovery_source_fingerprint
+    SET last_observed_sequence = GREATEST(last_observed_sequence, captured_sequence_input),
+        last_seen_at = clock_timestamp(), absence_observations = 0,
+        absence_observed_at = NULL, absence_generation = NULL
+    WHERE media_discovery_association_version_id = version_id AND source_path = ANY(paths_input);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_rescan_observe_paths_v1(uuid,integer,bigint,bytea,text,bigint,text[]) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_source_diagnostics_get_v1(public_id_input uuid, path_input text)
+RETURNS TABLE(source_path text, last_seen_at timestamptz, absence_observations smallint, diagnostic_absent boolean)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT f.source_path, f.last_seen_at, f.absence_observations,
+        f.absence_observations = 2 AND f.absence_generation = s.active_media_root_catalog_generation_id
+            AND s.source_state = 'ready' AND s.attestation_state = 'ready'
+    FROM public.media_discovery_association a
+    JOIN public.media_discovery_source_fingerprint f
+        ON f.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+    JOIN public.media_root_catalog_state s ON s.media_root_catalog_state_id = 1
+    WHERE a.media_discovery_association_public_id = public_id_input AND f.source_path = path_input;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_source_diagnostics_get_v1(uuid,text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_rescan_satisfy_v1(
+    public_id_input uuid, association_version_input integer,
+    expected_generation_input bigint, expected_generation_sha256_input bytea,
+    trigger_input text, captured_sequence_input bigint
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    version_id bigint;
+    requested_value bigint;
+    satisfied_value bigint;
+    observed_at timestamptz;
+BEGIN
+    version_id := public.media_discovery_rescan_fence_v1(public_id_input, association_version_input,
+        expected_generation_input, expected_generation_sha256_input, trigger_input);
+    SELECT s.requested_sequence, s.satisfied_sequence INTO requested_value, satisfied_value FROM public.media_discovery_rescan s
+        WHERE s.media_discovery_association_version_id = version_id FOR UPDATE;
+    IF requested_value IS NULL OR captured_sequence_input IS NULL
+       OR captured_sequence_input < 1 OR captured_sequence_input > requested_value THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    -- Only a newly completed latest request can establish absence. Replayed
+    -- acknowledgements and a scan predating a newer trigger cannot do so.
+    IF captured_sequence_input = requested_value AND captured_sequence_input > satisfied_value THEN
+        observed_at := clock_timestamp();
+        UPDATE public.media_discovery_source_fingerprint f
+        SET absence_observations = CASE
+                WHEN f.absence_generation IS DISTINCT FROM expected_generation_input THEN 1
+                ELSE LEAST(2, f.absence_observations + 1) END,
+            absence_observed_at = observed_at, absence_generation = expected_generation_input
+        WHERE f.media_discovery_association_version_id = version_id
+            AND f.last_observed_sequence < captured_sequence_input
+            AND (f.absence_observed_at IS NULL OR f.absence_generation IS DISTINCT FROM expected_generation_input
+                OR f.absence_observed_at <= observed_at - interval '1 second');
+        IF EXISTS (SELECT 1 FROM public.media_discovery_source_fingerprint f
+            WHERE f.media_discovery_association_version_id = version_id AND f.absence_observations = 1) THEN
+            -- This complete census requests its confirmation, preserving its
+            -- tentative evidence. Actual uncertainty uses request_v1 and resets it.
+            PERFORM public.media_discovery_rescan_publish_v1(version_id, 'directory_changed');
+        END IF;
+    END IF;
+    UPDATE public.media_discovery_rescan s
+        SET satisfied_sequence = GREATEST(s.satisfied_sequence, captured_sequence_input)
+        WHERE s.media_discovery_association_version_id = version_id;
+    -- Reasons retain their last requested sequence. An acknowledgement of R
+    -- cannot erase a newer reason or satisfy a request published after capture.
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_rescan_satisfy_v1(uuid,integer,bigint,bytea,text,bigint) FROM PUBLIC;
+
+CREATE TABLE public.media_discovery_schedule_state (
+    media_discovery_association_version_id bigint PRIMARY KEY
+        REFERENCES public.media_discovery_association_version(media_discovery_association_version_id),
+    interval_quantity integer NOT NULL,
+    interval_unit text NOT NULL,
+    anchor_due_at timestamptz NOT NULL,
+    next_due_at timestamptz NOT NULL,
+    last_coalesced_first_due_at timestamptz,
+    last_coalesced_last_due_at timestamptz,
+    last_coalesced_count bigint NOT NULL DEFAULT 0,
+    updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    CONSTRAINT media_discovery_schedule_interval_v1 CHECK (
+        (interval_unit = 'minutes' AND interval_quantity BETWEEN 1 AND 43200)
+        OR (interval_unit = 'hours' AND interval_quantity BETWEEN 1 AND 720)),
+    CONSTRAINT media_discovery_schedule_coalescing_v1 CHECK (
+        (last_coalesced_count = 0 AND last_coalesced_first_due_at IS NULL AND last_coalesced_last_due_at IS NULL)
+        OR (last_coalesced_count > 0 AND last_coalesced_first_due_at IS NOT NULL
+            AND last_coalesced_last_due_at IS NOT NULL
+            AND last_coalesced_first_due_at <= last_coalesced_last_due_at)),
+    CONSTRAINT media_discovery_schedule_due_v1 CHECK (next_due_at >= anchor_due_at)
+);
+CREATE INDEX media_discovery_schedule_due_v1 ON public.media_discovery_schedule_state
+    (next_due_at, media_discovery_association_version_id);
+REVOKE ALL ON TABLE public.media_discovery_schedule_state FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_schedule_configuration_get_v1(public_id_input uuid)
+RETURNS TABLE(media_discovery_association_public_id uuid, association_version integer,
+    interval_quantity integer, interval_unit text, anchor_due_at timestamptz, updated_at timestamptz)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT a.media_discovery_association_public_id, v.version,
+        s.interval_quantity, s.interval_unit, s.anchor_due_at, s.updated_at
+    FROM public.media_discovery_association a
+    JOIN public.media_discovery_association_version v
+        ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+    JOIN public.media_discovery_schedule_state s USING (media_discovery_association_version_id)
+    WHERE a.media_discovery_association_public_id = public_id_input;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_schedule_configuration_get_v1(uuid) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_schedule_configuration_write_v1(
+    actor_public_id_input uuid, public_id_input uuid, association_version_input integer,
+    interval_quantity_input integer, interval_unit_input text, expected_updated_at_input timestamptz
+) RETURNS TABLE(media_discovery_association_public_id uuid, association_version integer,
+    interval_quantity integer, interval_unit text, anchor_due_at timestamptz, updated_at timestamptz)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    association_row record;
+    readiness_row record;
+BEGIN
+    IF association_version_input IS NULL OR association_version_input <= 0
+        OR interval_quantity_input IS NULL OR interval_unit_input IS NULL
+        OR NOT ((interval_unit_input = 'minutes' AND interval_quantity_input BETWEEN 1 AND 43200)
+            OR (interval_unit_input = 'hours' AND interval_quantity_input BETWEEN 1 AND 720)) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    PERFORM public.media_actor_id_for_public_id_v1(actor_public_id_input);
+    PERFORM s.media_root_catalog_state_id FROM public.media_root_catalog_state s
+    WHERE s.media_root_catalog_state_id = 1 AND s.source_state = 'ready'
+        AND s.attestation_state = 'ready' FOR SHARE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    SELECT a.latest_media_discovery_association_version_id AS version_id,
+        a.active_media_discovery_association_version_id AS active_id, v.version
+    INTO association_row FROM public.media_discovery_association a
+    JOIN public.media_discovery_association_version v
+        ON v.media_discovery_association_version_id = a.latest_media_discovery_association_version_id
+    WHERE a.media_discovery_association_public_id = public_id_input FOR UPDATE OF a;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_schedule_association_not_found', DETAIL = 'media_schedule_association_not_found';
+    END IF;
+    IF association_row.version <> association_version_input
+        OR association_row.active_id IS DISTINCT FROM association_row.version_id THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_schedule_association_stale', DETAIL = 'media_schedule_association_stale';
+    END IF;
+    SELECT r.* INTO readiness_row FROM public.media_discovery_association_get_v1(public_id_input) r;
+    IF NOT COALESCE(readiness_row.binding_ready, FALSE) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_binding_incomplete', DETAIL = 'media_root_binding_incomplete';
+    END IF;
+    IF expected_updated_at_input IS NULL THEN
+    BEGIN
+        INSERT INTO public.media_discovery_schedule_state(media_discovery_association_version_id,
+            interval_quantity, interval_unit, anchor_due_at, next_due_at)
+        VALUES (association_row.version_id, interval_quantity_input, interval_unit_input,
+            transaction_timestamp(), transaction_timestamp());
+    EXCEPTION WHEN unique_violation THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_schedule_configuration_conflict', DETAIL = 'media_schedule_configuration_conflict';
+    END;
+    ELSE
+        UPDATE public.media_discovery_schedule_state s
+        SET interval_quantity = interval_quantity_input, interval_unit = interval_unit_input,
+            updated_at = GREATEST(clock_timestamp(), s.updated_at + interval '1 microsecond')
+        WHERE s.media_discovery_association_version_id = association_row.version_id
+            AND s.updated_at = expected_updated_at_input;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_schedule_configuration_stale', DETAIL = 'media_schedule_configuration_stale';
+        END IF;
+    END IF;
+    RETURN QUERY SELECT * FROM public.media_discovery_schedule_configuration_get_v1(public_id_input);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_schedule_configuration_write_v1(uuid,uuid,integer,integer,text,timestamptz) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_schedule_configuration_create_v1(
+    actor_public_id_input uuid, public_id_input uuid, association_version_input integer,
+    interval_quantity_input integer, interval_unit_input text
+) RETURNS TABLE(media_discovery_association_public_id uuid, association_version integer,
+    interval_quantity integer, interval_unit text, anchor_due_at timestamptz, updated_at timestamptz)
+LANGUAGE sql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT * FROM public.media_discovery_schedule_configuration_write_v1(
+        actor_public_id_input, public_id_input, association_version_input,
+        interval_quantity_input, interval_unit_input, NULL::timestamptz);
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_schedule_configuration_create_v1(uuid,uuid,integer,integer,text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_discovery_schedule_configuration_replace_v1(
+    actor_public_id_input uuid, public_id_input uuid, association_version_input integer,
+    interval_quantity_input integer, interval_unit_input text, expected_updated_at_input timestamptz
+) RETURNS TABLE(media_discovery_association_public_id uuid, association_version integer,
+    interval_quantity integer, interval_unit text, anchor_due_at timestamptz, updated_at timestamptz)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+BEGIN
+    IF expected_updated_at_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    RETURN QUERY SELECT * FROM public.media_discovery_schedule_configuration_write_v1(
+        actor_public_id_input, public_id_input, association_version_input,
+        interval_quantity_input, interval_unit_input, expected_updated_at_input);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_schedule_configuration_replace_v1(uuid,uuid,integer,integer,text,timestamptz) FROM PUBLIC;
+
+-- Observe one configured cadence and publish its coalesced request atomically.
+CREATE FUNCTION public.media_discovery_schedule_observe_due_v1(
+    public_id_input uuid, association_version_input integer, generation_input bigint,
+    generation_sha256_input bytea, trigger_input text
+) RETURNS bigint
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE
+    version_id bigint;
+    cadence public.media_discovery_schedule_state%ROWTYPE;
+    observed_at timestamptz;
+    cadence_interval interval;
+    due_count bigint;
+    last_due timestamptz;
+BEGIN
+    IF trigger_input IS DISTINCT FROM 'schedule' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_configuration_invalid', DETAIL = 'media_configuration_invalid';
+    END IF;
+    version_id := public.media_discovery_rescan_fence_v1(public_id_input, association_version_input,
+        generation_input, generation_sha256_input, trigger_input);
+    SELECT s.* INTO cadence FROM public.media_discovery_schedule_state s
+    WHERE s.media_discovery_association_version_id = version_id FOR UPDATE;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+    observed_at := clock_timestamp();
+    IF cadence.next_due_at > observed_at THEN RETURN NULL; END IF;
+    cadence_interval := CASE cadence.interval_unit
+        WHEN 'minutes' THEN cadence.interval_quantity * interval '1 minute'
+        WHEN 'hours' THEN cadence.interval_quantity * interval '1 hour'
+    END;
+    due_count := floor(extract(epoch FROM observed_at - cadence.next_due_at)
+        / extract(epoch FROM cadence_interval))::bigint + 1;
+    last_due := cadence.next_due_at + (due_count - 1) * cadence_interval;
+    UPDATE public.media_discovery_schedule_state s
+    SET next_due_at = last_due + cadence_interval,
+        last_coalesced_first_due_at = cadence.next_due_at,
+        last_coalesced_last_due_at = last_due,
+        last_coalesced_count = due_count,
+        updated_at = GREATEST(observed_at, s.updated_at + interval '1 microsecond')
+    WHERE s.media_discovery_association_version_id = version_id;
+    RETURN public.media_discovery_rescan_publish_v1(version_id, 'schedule');
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_discovery_schedule_observe_due_v1(uuid,integer,bigint,bytea,text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_job_operator_path_v1(path_input text, root_input text)
+RETURNS text LANGUAGE plpgsql IMMUTABLE SET search_path TO pg_catalog, public AS $$
+DECLARE relative_value text;
+BEGIN
+    IF path_input IS NULL THEN RETURN NULL; END IF;
+    IF root_input IS NULL OR root_input = '' OR NOT starts_with(path_input, root_input || '/') THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_path_snapshot_invalid', DETAIL = 'media_job_path_snapshot_invalid';
+    END IF;
+    relative_value := substring(path_input FROM char_length(root_input) + 2);
+    IF relative_value = '' OR NOT public.media_root_relative_prefix_valid_v1(relative_value) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_job_path_snapshot_invalid', DETAIL = 'media_job_path_snapshot_invalid';
+    END IF;
+    RETURN relative_value;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.media_job_operator_path_v1(text,text) FROM PUBLIC;
+
+CREATE FUNCTION public.media_job_operator_get_v1(media_job_public_id_input uuid)
+RETURNS TABLE(media_job_public_id uuid, source_path text, output_path text, status public.media_job_status,
+    dry_run boolean, queued_at timestamptz, started_at timestamptz, completed_at timestamptz, last_error text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT reported.media_job_public_id,
+        public.media_job_operator_path_v1(reported.source_path, job.intent_source_root),
+        public.media_job_operator_path_v1(reported.output_path, job.intent_output_root),
+        reported.status, reported.dry_run, reported.queued_at, reported.started_at, reported.completed_at, reported.last_error
+    FROM public.media_job_get_v1(media_job_public_id_input) reported
+    JOIN public.media_job job USING (media_job_public_id);
+$$;
+REVOKE ALL ON FUNCTION public.media_job_operator_get_v1(uuid) FROM PUBLIC;
+
+CREATE FUNCTION public.media_job_operator_list_v1(media_profile_public_id_input uuid, status_input public.media_job_status)
+RETURNS TABLE(media_job_public_id uuid, source_path text, output_path text, status public.media_job_status,
+    dry_run boolean, queued_at timestamptz, started_at timestamptz, completed_at timestamptz, last_error text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT reported.media_job_public_id,
+        public.media_job_operator_path_v1(reported.source_path, job.intent_source_root),
+        public.media_job_operator_path_v1(reported.output_path, job.intent_output_root),
+        reported.status, reported.dry_run, reported.queued_at, reported.started_at, reported.completed_at, reported.last_error
+    FROM public.media_job_list_v1(media_profile_public_id_input, status_input) WITH ORDINALITY reported
+    JOIN public.media_job job USING (media_job_public_id) ORDER BY reported.ordinality;
+$$;
+REVOKE ALL ON FUNCTION public.media_job_operator_list_v1(uuid,public.media_job_status) FROM PUBLIC;
+
+CREATE FUNCTION public.media_job_operator_recent_page_v1(limit_input integer, cursor_queued_at_input timestamptz,
+    cursor_public_id_input uuid, media_profile_public_id_input uuid)
+RETURNS TABLE(media_job_public_id uuid, media_profile_public_id uuid, source_path text, output_path text,
+    status_text text, dry_run boolean, queued_at timestamptz, started_at timestamptz, completed_at timestamptz,
+    last_error text, operation_count bigint, violation_count bigint, plan_reason_count bigint,
+    verification_check_count bigint, artifact_count bigint, compact_audit_count bigint)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+    SELECT reported.media_job_public_id, reported.media_profile_public_id,
+        public.media_job_operator_path_v1(reported.source_path, job.intent_source_root),
+        public.media_job_operator_path_v1(reported.output_path, job.intent_output_root),
+        reported.status_text, reported.dry_run, reported.queued_at, reported.started_at, reported.completed_at,
+        reported.last_error, reported.operation_count, reported.violation_count, reported.plan_reason_count,
+        reported.verification_check_count, reported.artifact_count, reported.compact_audit_count
+    FROM public.media_job_recent_page_v1(limit_input, cursor_queued_at_input, cursor_public_id_input,
+        media_profile_public_id_input) WITH ORDINALITY reported
+    JOIN public.media_job job USING (media_job_public_id) ORDER BY reported.ordinality;
+$$;
+REVOKE ALL ON FUNCTION public.media_job_operator_recent_page_v1(integer,timestamptz,uuid,uuid) FROM PUBLIC;
+
+-- Seed defaults only after every application relation exists. The same reset
+-- procedure restores the closed root kinds and fail-closed catalog state.
+SET search_path = public, revaer_config, revaer_runtime;
+SELECT revaer_config.factory_reset();
+RESET search_path;
+
+-- ADR 551 finalization: lifecycle and explicit authored routine privileges.
+CREATE SCHEMA revaer_system;
+ALTER SCHEMA public OWNER TO CURRENT_USER;
+
+CREATE TABLE revaer_system.database_baseline (
+    baseline_id smallint NOT NULL,
+    contract_version smallint NOT NULL,
+    init_sha256 bytea NOT NULL,
+    postgres_version_num integer NOT NULL,
+    schema_owner_role name NOT NULL,
+    runtime_role name NOT NULL,
+    sealed_at timestamptz NOT NULL,
+    CONSTRAINT database_baseline_pkey PRIMARY KEY (baseline_id),
+    CONSTRAINT database_baseline_singleton CHECK (baseline_id = 1),
+    CONSTRAINT database_baseline_contract_v1 CHECK (contract_version = 1),
+    CONSTRAINT database_baseline_sha256_length CHECK (octet_length(init_sha256) = 32),
+    CONSTRAINT database_baseline_postgres_16_14 CHECK (postgres_version_num = 160014),
+    CONSTRAINT database_baseline_owner_nonempty CHECK (length(schema_owner_role::text) BETWEEN 1 AND 63),
+    CONSTRAINT database_baseline_runtime_nonempty CHECK (length(runtime_role::text) BETWEEN 1 AND 63),
+    CONSTRAINT database_baseline_distinct_roles CHECK (schema_owner_role <> runtime_role)
+);
+
+-- Completed execution outputs are scoped to the same resumable attempt.
+CREATE TABLE public.media_job_step_checkpoint (
+    media_job_attempt_id bigint NOT NULL REFERENCES public.media_job_attempt(media_job_attempt_id) ON DELETE CASCADE,
+    step_index integer NOT NULL CHECK (step_index >= 0),
+    step_signature bytea NOT NULL CHECK (octet_length(step_signature) = 32),
+    output_path text NOT NULL CHECK (length(output_path) > 0),
+    size_bytes bigint NOT NULL CHECK (size_bytes >= 0),
+    output_sha256 bytea NOT NULL CHECK (octet_length(output_sha256) = 32),
+    completed_at timestamp with time zone NOT NULL DEFAULT now(),
+    PRIMARY KEY (media_job_attempt_id, step_index)
+);
+
+CREATE FUNCTION public.media_job_step_checkpoint_get_v1(media_job_public_id_input uuid, claim_generation_input bigint, step_index_input integer)
+RETURNS TABLE(step_signature bytea, output_path text, size_bytes bigint, output_sha256 bytea)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE attempt_id bigint;
+BEGIN
+    SELECT media_job_attempt_id INTO attempt_id
+        FROM public.media_job_current_attempt_v1(media_job_public_id_input, claim_generation_input);
+    IF attempt_id IS NULL THEN
+        RAISE EXCEPTION 'stale worker claim' USING ERRCODE = public.media_app_error_code_v1(), DETAIL = 'media_job_worker_claim_stale';
+    END IF;
+    RETURN QUERY SELECT c.step_signature, c.output_path, c.size_bytes, c.output_sha256
+        FROM public.media_job_step_checkpoint c
+        WHERE c.media_job_attempt_id = attempt_id AND c.step_index = step_index_input;
+END;
+$$;
+
+CREATE FUNCTION public.media_job_step_checkpoint_write_v1(media_job_public_id_input uuid, claim_generation_input bigint,
+    step_index_input integer, step_signature_input bytea, output_path_input text, size_bytes_input bigint, output_sha256_input bytea)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+DECLARE attempt_id bigint;
+BEGIN
+    -- Serialize completion with cancellation and status changes on this job.
+    PERFORM 1 FROM public.media_job j WHERE j.media_job_public_id = media_job_public_id_input FOR UPDATE;
+    SELECT media_job_attempt_id INTO attempt_id
+        FROM public.media_job_current_attempt_v1(media_job_public_id_input, claim_generation_input);
+    IF attempt_id IS NULL THEN
+        RAISE EXCEPTION 'stale worker claim' USING ERRCODE = public.media_app_error_code_v1(), DETAIL = 'media_job_worker_claim_stale';
+    END IF;
+    INSERT INTO public.media_job_step_checkpoint AS c
+        (media_job_attempt_id, step_index, step_signature, output_path, size_bytes, output_sha256)
+    VALUES (attempt_id, step_index_input, step_signature_input, output_path_input, size_bytes_input, output_sha256_input)
+    ON CONFLICT (media_job_attempt_id, step_index) DO UPDATE SET
+        step_signature = EXCLUDED.step_signature, output_path = EXCLUDED.output_path,
+        size_bytes = EXCLUDED.size_bytes, output_sha256 = EXCLUDED.output_sha256, completed_at = now();
+END;
+$$;
+
+-- Generated authored routine security begins.
+ALTER FUNCTION public.policy_action_to_decision_type(public.policy_action) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.app_user_create(character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.app_user_create_v1(character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.app_user_update(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.app_user_update_v1(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.app_user_verify_email(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.app_user_verify_email_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_disambiguation_rule_create(uuid, public.disambiguation_rule_type, public.disambiguation_identity_type, character varying, uuid, public.disambiguation_identity_type, character varying, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_disambiguation_rule_create_v1(uuid, public.disambiguation_rule_type, public.disambiguation_identity_type, character varying, uuid, public.disambiguation_identity_type, character varying, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_merge_by_infohash(character, character) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_merge_by_infohash_v1(character, character) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_prune_low_confidence() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_prune_low_confidence_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_recompute_best_source(uuid, public.scoring_context) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_recompute_best_source_v1(uuid, public.scoring_context) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.compute_title_size_hash(text, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.compute_title_size_hash_v1(text, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.deployment_init(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.deployment_init_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.derive_magnet_hash(text, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.derive_magnet_hash_v1(text, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_create(uuid, public.import_source, boolean, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_create_v1(uuid, public.import_source, boolean, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_get_status(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_get_status_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_list_results(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_list_results_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_run_prowlarr_api(uuid, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_run_prowlarr_api_v1(uuid, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_run_prowlarr_backup(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_run_prowlarr_backup_v1(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_worker_claim_next() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_worker_claim_next_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_worker_mark_terminal(uuid, public.import_job_status, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_worker_mark_terminal_v1(uuid, public.import_job_status, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_worker_record_result(uuid, character varying, public.import_indexer_result_status, character varying, boolean, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_worker_record_result_v1(uuid, character varying, public.import_indexer_result_status, character varying, boolean, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_assert_actor_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_indexer_instance_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_indexer_instance_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_rate_limit_policy_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_rate_limit_policy_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_routing_policy_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_routing_policy_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_tag_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_tag_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_cf_state_get(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_cf_state_get_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_cf_state_reset(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_cf_state_reset_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_connectivity_profile_get(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_connectivity_profile_get_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_import_cardigann_begin(uuid, character varying, character varying, text, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_import_cardigann_begin_v1(uuid, character varying, character varying, text, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_import_cardigann_complete(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_import_cardigann_complete_v1(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_import_cardigann_field(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_import_cardigann_field_v1(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_event_list(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_event_list_v1(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_create(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_create_v1(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_delete(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_delete_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_get(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_get_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_update(uuid, uuid, character varying, public.indexer_health_notification_threshold, character varying, character varying, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_update_v1(uuid, uuid, character varying, public.indexer_health_notification_threshold, character varying, character varying, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_create(uuid, character varying, character varying, integer, public.trust_tier_key, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_create_v1(uuid, character varying, character varying, integer, public.trust_tier_key, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_field_bind_secret(uuid, uuid, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_field_bind_secret_v1(uuid, uuid, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_field_set_value(uuid, uuid, character varying, character varying, integer, numeric, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_field_set_value_v1(uuid, uuid, character varying, character varying, integer, numeric, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_set_media_domains(uuid, uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_set_media_domains_v1(uuid, uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_set_rate_limit_policy(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_set_rate_limit_policy_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_set_tags(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_set_tags_v1(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_test_finalize(uuid, uuid, boolean, public.error_class, character varying, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_test_finalize_v1(uuid, uuid, boolean, public.error_class, character varying, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_test_prepare(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_test_prepare_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_update(uuid, uuid, character varying, integer, public.trust_tier_key, uuid, boolean, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_update_v1(uuid, uuid, character varying, integer, public.trust_tier_key, uuid, boolean, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_policy_set_rule_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_policy_set_rule_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_item_seen_list(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_item_seen_list_v1(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_item_seen_mark(uuid, uuid, character varying, character, character, character) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_item_seen_mark_v1(uuid, uuid, character varying, character, character, character) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_subscription_disable(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_subscription_disable_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_subscription_get(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_subscription_get_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_subscription_set(uuid, uuid, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_subscription_set_v1(uuid, uuid, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_search_profile_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_search_profile_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_source_reputation_list(uuid, uuid, public.reputation_window, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_source_reputation_list_v1(uuid, uuid, public.reputation_window, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_torznab_instance_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_torznab_instance_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_claim_lease_seconds(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_claim_lease_seconds_v1(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.job_claim_next(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_claim_next_v1(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_base_score_refresh_recent() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_base_score_refresh_recent_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_base_score_refresh_recent_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_canonical_backfill_best_source() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_canonical_backfill_best_source_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_canonical_backfill_best_source_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_canonical_prune_low_confidence() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_canonical_prune_low_confidence_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_connectivity_profile_refresh() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_connectivity_profile_refresh_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_connectivity_profile_refresh_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_policy_snapshot_gc() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_policy_snapshot_gc_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_policy_snapshot_gc_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_policy_snapshot_refcount_repair() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_policy_snapshot_refcount_repair_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_policy_snapshot_refcount_repair_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_rate_limit_state_purge() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_rate_limit_state_purge_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_rate_limit_state_purge_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_reputation_rollup(public.reputation_window) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_reputation_rollup_v1(public.reputation_window) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_reputation_rollup_v2(public.reputation_window) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_retention_purge() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_retention_purge_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_retention_purge_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_rss_subscription_backfill() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_rss_subscription_backfill_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_rss_subscription_backfill_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_schedule_mark_completed(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_schedule_mark_completed_v1(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.log_source_metadata_conflict(bigint, bigint, public.conflict_type, text, text, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.log_source_metadata_conflict_v1(bigint, bigint, public.conflict_type, text, text, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_actor_id_for_public_id_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_app_error_code_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_audio_channel_layout_count_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_capability_run_status_completed_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_capability_run_status_failed_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_capability_run_status_running_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_capability_snapshot_encoder_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_encoder_record_v1(uuid, uuid, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_feature_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_feature_record_v1(uuid, uuid, text, text, boolean, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_latest_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_latest_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_record_v1(uuid, text, text, text, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_record_v2(uuid, uuid, text, text, text, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_run_complete_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_run_start_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_compatibility_target_list_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_compatibility_target_upsert_v1(uuid, text, integer, text, text, text, integer, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_create_v1(uuid, text, integer, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_graph_page_v1(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_list_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_append_v1(uuid, text, text, text, text, boolean, integer, text, integer, text, text, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_append_v2(uuid, text, text, text, text, boolean, integer, text, integer, text, text, boolean, boolean, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_append_v3(uuid, text, text, text, text, boolean, integer, text, integer, text, text, text, integer, text, text, text, text, text, boolean, boolean, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_append_v4(uuid, text, text, text, text, boolean, integer, text, integer, text, integer, integer, text, text, integer, text, text, text, text, text, boolean, boolean, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_append_v5(uuid, text, text, text, text, boolean, integer, text, integer, text, integer, integer, text, text, text, text, integer, text, text, text, text, text, boolean, boolean, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_count_bounded_v1(bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_insert_guard_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_limit_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_desired_target_stream_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_list_v2(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_list_v3(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_list_v4(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_list_v5(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_validate_and_activate_v1(bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_job_enqueue_v1(uuid, uuid, text, text, bigint, bigint, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_job_enqueue_v2(uuid, uuid, text, text, text, bigint, bigint, bigint, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_job_enqueue_v3(uuid, uuid, text, text, boolean, text, bigint, bigint, bigint, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_root_assert_current_v1(uuid, text, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_schedule_claim_v1(uuid, text, bigint, bigint, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_schedule_create_v1(uuid, uuid, integer, text, integer, boolean, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_watcher_create_v1(uuid, uuid, integer, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_watcher_start_v1(uuid, text, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_display_valid_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_domain_seed_defaults() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_domain_to_torznab_category_delete(uuid, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_domain_to_torznab_category_delete_v1(uuid, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_domain_to_torznab_category_upsert(uuid, character varying, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_domain_to_torznab_category_upsert_v1(uuid, character varying, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_artifact_append_v1(uuid, bigint, integer, text, text, bigint, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_artifact_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_artifact_path_is_managed_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_attempt_guard_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_attempt_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_cancel_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_cancel_v2(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_capture_configuration_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_cleanup_completed_v1(timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_cleanup_failed_terminal_diagnostics_v1(timestamp with time zone, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_compact_audit_append_v1(uuid, bigint, integer, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_compact_audit_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_configuration_immutable_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_create_v1(uuid, uuid, text, text, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_current_attempt_required_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_current_attempt_v1(uuid, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_desired_target_audio_constraints_snapshot_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_desired_target_snapshot_guard_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_desired_target_stream_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_desired_target_stream_list_v2(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_desired_target_stream_list_v3(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_desired_target_stream_list_v4(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+CREATE FUNCTION public.media_job_operation_cost_snapshot_list_v1(media_job_public_id_input uuid)
+RETURNS TABLE(operation_kind text, cost_weight integer, sort_order integer, enabled boolean)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog, public
+AS $$
+    SELECT cost.operation_kind, cost.cost_weight, cost.sort_order, cost.enabled
+      FROM public.media_job job
+      JOIN public.media_job_policy_operation_cost_snapshot cost
+        ON cost.media_job_id = job.media_job_id
+     WHERE job.media_job_public_id = media_job_public_id_input
+     ORDER BY cost.sort_order
+     LIMIT 14
+$$;
+
+ALTER FUNCTION public.media_job_desired_target_stream_list_v5(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_get_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_initial_attempt_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_list_v1(uuid, public.media_job_status, integer, timestamp with time zone, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_mark_completed_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_normalized_absolute_path_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_operation_append_v1(uuid, bigint, integer, text, integer, text, text, text, text, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_operation_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_phase_append_v1(uuid, bigint, integer, text, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_phase_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_plan_reason_append_v1(uuid, bigint, integer, integer, boolean, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_plan_reason_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_recent_page_v1(integer, timestamp with time zone, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_retention_batch_limit_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_retention_policy_get_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_retention_policy_get_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_retention_policy_update_v1(uuid, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_retention_policy_update_v2(uuid, boolean, text, integer, boolean, text, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_retention_run_v1(timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_retry_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_snapshot_source_fingerprint_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_snapshot_update_rejected_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_status_cancelled_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_status_completed_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_status_failed_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_status_queued_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_status_running_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_status_verifying_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_terminal_outbox_list_unpublished_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_terminal_outbox_mark_published_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_validate_path_within_root_v1(text, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_verification_check_append_v1(uuid, bigint, integer, text, text, text, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_verification_check_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_violation_append_v1(uuid, bigint, integer, text, text, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_violation_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_acknowledge_cancel_v1(uuid, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_claim_next_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_claim_next_v4() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_commit_replacement_terminal_v1(uuid, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_complete_v1(uuid, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_heartbeat_v1(uuid, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_mark_status_v1(uuid, bigint, public.media_job_status, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_poll_control_v1(uuid, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_key_valid_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_policy_anime_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_policy_archival_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_policy_behavior_set_v1(uuid, text, integer, text, text, text, text, text, text, boolean, boolean, text, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_compatibility_target_append_v1(uuid, text, integer, text, integer, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_component_version_guard_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_general_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_policy_maintenance_window_append_v1(uuid, text, integer, smallint, time without time zone, time without time zone, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_operation_cost_append_v1(uuid, text, integer, text, integer, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_profile_id_v1(uuid, text, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_profile_immutable_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_profile_list_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_profile_upsert_v1(uuid, text, integer, text, text, text, bigint, boolean, boolean, boolean, boolean, boolean, text, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_retention_rule_append_v1(uuid, text, integer, text, text, text, text, text, text, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_runtime_limit_set_v1(uuid, text, integer, integer, integer, integer, integer, bigint, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_runtime_limit_set_v2(uuid, text, integer, integer, integer, integer, integer, bigint, boolean, integer, text, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_safe_dry_run_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_policy_seed_bounded_defaults_trigger_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_seed_bounded_defaults_v1(bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_workspace_set_v1(uuid, text, integer, integer, boolean, integer, bigint, boolean, integer, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_create_v3(uuid, text, text, text, bigint, bigint, text, text, bigint, bigint, integer, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_desired_target_activation_guard_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_desired_target_set_v1(uuid, uuid, text, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_file_rule_append_v1(uuid, text, text, text, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_file_rule_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_filter_get_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_filter_set_v1(uuid, bigint, bigint, bigint, bigint, boolean, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_get_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_get_v2(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_get_v3(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_import_draft_delete_v1(text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_import_draft_list_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_import_draft_upsert_v1(uuid, text, text, text, boolean, boolean, integer, text, text, integer, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_list_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_list_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_list_v3() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_normalized_root_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_profile_root_add_v1(uuid, text, text, text, bigint, bigint, text, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_root_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_root_revalidate_v1(uuid, text, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_roots_overlap_v1(text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_update_v1(uuid, uuid, text, text, boolean, integer, text, text, boolean, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_upsert_v1(uuid, text, text, text, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_upsert_v2(uuid, text, text, text, boolean, integer, text, text, boolean, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_validate_all_root_overlap_trigger_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_validate_all_root_overlap_v1(bigint, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_validate_catalog_refs_v1(text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_validate_discovery_root_overlap_v1(bigint, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_validate_root_identity_v1(bigint, text, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_retention_mode_age_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_retention_mode_count_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_retention_policy_default_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_stream_classification_rule_append_v1(uuid, text, integer, text, text, text, text, smallint, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_subtitle_discovery_rule_append_v1(uuid, text, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_subtitle_policy_all_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_subtitle_policy_none_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_subtitle_policy_selected_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_video_color_value_known_v1(text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_video_level_known_v1(text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_workspace_retention_snapshot_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.normalize_magnet_uri(text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.normalize_magnet_uri_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.normalize_title(text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.normalize_title_v1(text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.outbound_request_log_write(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.outbound_request_log_write_v1(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_int_match(integer, public.policy_match_operator, integer, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_int_match_v1(integer, public.policy_match_operator, integer, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_release_group_match(bigint, text, public.policy_match_operator, text, bigint, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_release_group_match_v1(bigint, text, public.policy_match_operator, text, bigint, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_create(uuid, uuid, public.policy_rule_type, public.policy_match_field, public.policy_match_operator, integer, character varying, integer, uuid, public.policy_rule_value_item[], public.policy_action, public.policy_severity, boolean, character varying, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_create_v1(uuid, uuid, public.policy_rule_type, public.policy_match_field, public.policy_match_operator, integer, character varying, integer, uuid, public.policy_rule_value_item[], public.policy_action, public.policy_severity, boolean, character varying, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_disable(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_disable_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_enable(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_enable_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_reorder(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_reorder_v1(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_create(uuid, character varying, public.policy_scope, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_create_v1(uuid, character varying, public.policy_scope, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_disable(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_disable_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_enable(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_enable_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_reorder(uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_reorder_v1(uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_update(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_update_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_text_match(text, public.policy_match_operator, text, bigint, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_text_match_v1(text, public.policy_match_operator, text, bigint, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_uuid_match(uuid, public.policy_match_operator, uuid, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_uuid_match_v1(uuid, public.policy_match_operator, uuid, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.random_jitter_seconds(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_policy_create(uuid, character varying, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_policy_create_v1(uuid, character varying, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_policy_soft_delete(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_policy_soft_delete_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_policy_update(uuid, uuid, character varying, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_policy_update_v1(uuid, uuid, character varying, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_try_consume(public.rate_limit_scope, bigint, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_try_consume_v1(public.rate_limit_scope, bigint, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.revaer_bump_revision() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.revaer_touch_updated_at() SET search_path TO pg_catalog;
+ALTER FUNCTION public.routing_policy_bind_secret(uuid, uuid, public.routing_param_key, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_bind_secret_v1(uuid, uuid, public.routing_param_key, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_create(uuid, character varying, public.routing_policy_mode) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_create_v1(uuid, character varying, public.routing_policy_mode) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_get(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_get_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_set_param(uuid, uuid, public.routing_param_key, character varying, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_set_param_v1(uuid, uuid, public.routing_param_key, character varying, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_set_rate_limit_policy(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_set_rate_limit_policy_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rss_poll_apply(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rss_poll_apply_v1(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rss_poll_claim(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rss_poll_claim_v1(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_enqueue(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_enqueue_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_canceled(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_canceled_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_failed(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_failed_v1(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_finished(uuid, uuid, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_finished_v1(uuid, uuid, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_started(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_started_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_page_fetch(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_page_fetch_v1(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_page_list(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_page_list_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_add_policy_set(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_add_policy_set_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_create(uuid, character varying, boolean, integer, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_create_v1(uuid, character varying, boolean, integer, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_indexer_allow(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_indexer_allow_v1(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_indexer_block(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_indexer_block_v1(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_remove_policy_set(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_remove_policy_set_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_set_default(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_set_default_domain(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_set_default_domain_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_set_default_v1(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_set_domain_allowlist(uuid, uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_set_domain_allowlist_v1(uuid, uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_tag_allow(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_tag_allow_v1(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_tag_block(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_tag_block_v1(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_tag_prefer(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_tag_prefer_v1(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_update(uuid, uuid, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_update_v1(uuid, uuid, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_request_cancel(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_request_cancel_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_request_create(uuid, character varying, public.query_type, public.torznab_mode, character varying, integer, uuid, uuid, integer, integer, public.identifier_type[], text[], integer[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_request_create_v1(uuid, character varying, public.query_type, public.torznab_mode, character varying, integer, uuid, uuid, integer, integer, public.identifier_type[], text[], integer[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_request_explainability(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_request_explainability_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_request_finalize_on_runs_terminal_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_result_ingest(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_result_ingest_v1(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_create(uuid, public.secret_type, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_create_v1(uuid, public.secret_type, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_metadata_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_metadata_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_read(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_read_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_revoke(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_revoke_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_rotate(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_rotate_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_session_configure(uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_session_configure_v1(uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.source_metadata_conflict_list(uuid, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.source_metadata_conflict_list_v1(uuid, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.source_metadata_conflict_reopen(uuid, bigint, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.source_metadata_conflict_reopen_v1(uuid, bigint, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.source_metadata_conflict_resolve(uuid, bigint, public.conflict_resolution, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.source_metadata_conflict_resolve_v1(uuid, bigint, public.conflict_resolution, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_create(uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_create_v1(uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_soft_delete(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_soft_delete_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_update(uuid, uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_update_v1(uuid, uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_category_list() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_category_list_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_download_prepare(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_download_prepare_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_authenticate(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_authenticate_v1(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_create(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_create_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_enable_disable(uuid, uuid, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_enable_disable_v1(uuid, uuid, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_rotate_key(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_rotate_key_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_soft_delete(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_soft_delete_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_delete(uuid, character varying, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_delete(uuid, uuid, character varying, uuid, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_delete_v1(uuid, character varying, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_delete_v1(uuid, uuid, character varying, uuid, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_resolve_feed(uuid, uuid, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_resolve_feed_v1(uuid, uuid, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_upsert(uuid, character varying, integer, integer, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_upsert(uuid, uuid, character varying, uuid, integer, integer, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_upsert_v1(uuid, character varying, integer, integer, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_upsert_v1(uuid, uuid, character varying, uuid, integer, integer, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.trust_tier_seed_defaults() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION revaer_config.bump_app_profile_version(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.bump_revision(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.cleanup_expired_setup_tokens() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.consume_setup_token(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.delete_api_key(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.delete_secret(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.factory_reset() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.factory_reset_without_media_defaults_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION revaer_config.fetch_active_setup_token() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.fetch_api_key_auth(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.fetch_api_key_hash(text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION revaer_config.fetch_api_keys() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.fetch_app_profile_row(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.fetch_engine_profile_row(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.fetch_fs_policy_row(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.fetch_revision() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.fetch_secret_by_name(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.insert_api_key(text, text, text, boolean, integer, bigint, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.insert_setup_token(text, timestamp with time zone, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.invalidate_active_setup_tokens() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.list_app_label_policies(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.replace_app_label_policies(uuid, text[], text[], text[], bigint[], bigint[], integer[], boolean[], double precision[], bigint[], double precision[], bigint[], boolean[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.seed_media_configuration_defaults() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION revaer_config.set_engine_alt_speed(uuid, bigint, bigint, integer, integer, text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.set_engine_ip_filter(uuid, text, text, timestamp with time zone, text, text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.set_engine_list_values(uuid, text, text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.set_fs_list(uuid, text, text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.set_peer_classes(uuid, smallint[], text[], smallint[], smallint[], smallint[], boolean[], smallint[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.set_tracker_config(uuid, text, text, text, integer, boolean, boolean, text, integer, text, text, text, boolean, text, text, text, boolean, text, text, text, text[], text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_api_key_enabled(text, boolean) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_api_key_expires_at(text, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_api_key_hash(text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_api_key_label(text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_api_key_rate_limit(text, integer, bigint) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_auth_mode(uuid, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_bind_addr(uuid, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_http_port(uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_immutable_keys(uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_instance_name(uuid, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_local_networks(uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_mode(uuid, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_telemetry(uuid, text, text, boolean, text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_engine_profile(uuid, text, integer, boolean, text, integer, bigint, bigint, double precision, bigint, boolean, boolean, boolean, boolean, boolean, text, text, boolean, integer, bigint, text, text, text, boolean, integer, integer, boolean, boolean, boolean, text, text, boolean, boolean, boolean, boolean, boolean, text, boolean, boolean, boolean, boolean, boolean, boolean, integer, integer, integer, integer, integer, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_fs_array_field(uuid, text, text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_fs_boolean_field(uuid, text, boolean) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_fs_optional_string_field(uuid, text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_fs_string_field(uuid, text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.upsert_secret(text, bytea, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.delete_torrent(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.fs_job_state(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.list_torrent_files(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.list_torrents() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.mark_fs_job_completed(uuid, text, text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.mark_fs_job_failed(uuid, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.mark_fs_job_started(uuid, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.upsert_torrent(uuid, text, text, text, bigint, bigint, bigint, bigint, bigint, double precision, boolean, text, text, text, text, boolean, integer[], text[], bigint[], bigint[], text[], boolean[], timestamp with time zone, timestamp with time zone, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog;
+-- Generated authored routine security ends.
+
+CREATE FUNCTION revaer_system.read_database_baseline_v1()
+RETURNS TABLE (
+    contract_version smallint,
+    init_sha256 bytea,
+    postgres_version_num integer,
+    schema_owner_role name,
+    runtime_role name,
+    sealed_at timestamptz
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path TO pg_catalog, revaer_system
+AS $baseline_read$
+DECLARE
+    baseline record;
+BEGIN
+    BEGIN
+        SELECT * INTO STRICT baseline FROM revaer_system.database_baseline;
+    EXCEPTION WHEN no_data_found OR too_many_rows THEN
+        RAISE EXCEPTION USING MESSAGE = 'baseline_shape_invalid', DETAIL = 'baseline_shape_invalid', ERRCODE = 'P0001';
+    END;
+    IF baseline.baseline_id IS DISTINCT FROM 1
+       OR baseline.contract_version IS DISTINCT FROM 1
+       OR octet_length(baseline.init_sha256) IS DISTINCT FROM 32
+       OR baseline.postgres_version_num IS DISTINCT FROM 160014
+       OR baseline.schema_owner_role IS DISTINCT FROM current_user
+       OR baseline.runtime_role IS NULL
+       OR length(baseline.schema_owner_role::text) NOT BETWEEN 1 AND 63
+       OR length(baseline.runtime_role::text) NOT BETWEEN 1 AND 63
+       OR baseline.runtime_role = baseline.schema_owner_role
+       OR baseline.sealed_at IS NULL THEN
+        RAISE EXCEPTION USING MESSAGE = 'baseline_shape_invalid', DETAIL = 'baseline_shape_invalid', ERRCODE = 'P0001';
+    END IF;
+    IF session_user <> baseline.schema_owner_role AND session_user <> baseline.runtime_role THEN
+        RAISE EXCEPTION USING MESSAGE = 'baseline_read_denied', DETAIL = 'baseline_read_denied', ERRCODE = '42501';
+    END IF;
+    RETURN QUERY SELECT baseline.contract_version, baseline.init_sha256,
+        baseline.postgres_version_num, baseline.schema_owner_role,
+        baseline.runtime_role, baseline.sealed_at;
+EXCEPTION WHEN undefined_table OR undefined_column OR datatype_mismatch OR undefined_function THEN
+    RAISE EXCEPTION USING MESSAGE = 'baseline_shape_invalid', DETAIL = 'baseline_shape_invalid', ERRCODE = 'P0001';
+END;
+$baseline_read$;
+
+CREATE FUNCTION revaer_system.seal_database_baseline_v1(
+    contract_version_input smallint,
+    init_sha256_input bytea,
+    runtime_role_input text
+)
+RETURNS TABLE (
+    contract_version smallint,
+    init_sha256 bytea,
+    postgres_version_num integer,
+    schema_owner_role name,
+    runtime_role name,
+    sealed_at timestamptz
+)
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER
+SET search_path TO pg_catalog, revaer_system
+AS $baseline_seal$
+DECLARE
+    owner_record pg_catalog.pg_roles%ROWTYPE;
+    runtime_record pg_catalog.pg_roles%ROWTYPE;
+    routine_identity text;
+    type_identity text;
+BEGIN
+    SELECT * INTO STRICT owner_record FROM pg_catalog.pg_roles WHERE rolname = current_user;
+    IF session_user <> current_user
+       OR owner_record.oid IS DISTINCT FROM (
+           SELECT datdba FROM pg_catalog.pg_database WHERE datname = current_database()
+       )
+       OR owner_record.oid IS DISTINCT FROM (
+           SELECT nspowner FROM pg_catalog.pg_namespace WHERE nspname = 'revaer_system'
+       ) THEN
+        RAISE EXCEPTION USING MESSAGE = 'bootstrap_identity_invalid', DETAIL = 'bootstrap_identity_invalid', ERRCODE = '42501';
+    END IF;
+    IF NOT owner_record.rolcanlogin OR owner_record.rolsuper OR owner_record.rolcreatedb
+       OR owner_record.rolcreaterole OR owner_record.rolreplication OR owner_record.rolbypassrls THEN
+        RAISE EXCEPTION USING MESSAGE = 'bootstrap_privilege_invalid', DETAIL = 'bootstrap_privilege_invalid', ERRCODE = '42501';
+    END IF;
+    IF contract_version_input IS DISTINCT FROM 1 THEN
+        RAISE EXCEPTION USING MESSAGE = 'baseline_contract_unsupported', DETAIL = 'baseline_contract_unsupported', ERRCODE = 'P0001';
+    END IF;
+    IF octet_length(init_sha256_input) IS DISTINCT FROM 32 THEN
+        RAISE EXCEPTION USING MESSAGE = 'baseline_shape_invalid', DETAIL = 'baseline_shape_invalid', ERRCODE = 'P0001';
+    END IF;
+    IF current_setting('server_version_num')::integer <> 160014 THEN
+        RAISE EXCEPTION USING MESSAGE = 'postgres_identity_unsupported', DETAIL = 'postgres_identity_unsupported', ERRCODE = 'P0001';
+    END IF;
+    IF runtime_role_input IS NULL OR octet_length(runtime_role_input) NOT BETWEEN 1 AND 63 THEN
+        RAISE EXCEPTION USING MESSAGE = 'runtime_role_invalid', DETAIL = 'runtime_role_invalid', ERRCODE = 'P0001';
+    END IF;
+    SELECT * INTO runtime_record FROM pg_catalog.pg_roles WHERE rolname::text = runtime_role_input;
+    IF NOT FOUND OR runtime_record.oid = owner_record.oid OR NOT runtime_record.rolcanlogin
+       OR runtime_record.rolsuper OR runtime_record.rolcreatedb OR runtime_record.rolcreaterole
+       OR runtime_record.rolreplication OR runtime_record.rolbypassrls
+       OR pg_has_role(runtime_record.oid, owner_record.oid, 'MEMBER') THEN
+        RAISE EXCEPTION USING MESSAGE = 'runtime_role_invalid', DETAIL = 'runtime_role_invalid', ERRCODE = 'P0001';
+    END IF;
+    IF EXISTS (SELECT 1 FROM revaer_system.database_baseline) THEN
+        RAISE EXCEPTION USING MESSAGE = 'baseline_shape_invalid', DETAIL = 'baseline_shape_invalid', ERRCODE = 'P0001';
+    END IF;
+
+    EXECUTE format('REVOKE ALL ON DATABASE %I FROM PUBLIC, %I', current_database(), runtime_record.rolname);
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), runtime_record.rolname);
+    REVOKE ALL ON SCHEMA public, revaer_config, revaer_runtime, revaer_system FROM PUBLIC;
+    EXECUTE format('REVOKE ALL ON SCHEMA public, revaer_config, revaer_runtime, revaer_system FROM %I', runtime_record.rolname);
+    EXECUTE format('GRANT USAGE ON SCHEMA public, revaer_config, revaer_runtime, revaer_system TO %I', runtime_record.rolname);
+    REVOKE ALL ON ALL TABLES IN SCHEMA public, revaer_config, revaer_runtime, revaer_system FROM PUBLIC;
+    REVOKE ALL ON ALL SEQUENCES IN SCHEMA public, revaer_config, revaer_runtime, revaer_system FROM PUBLIC;
+    EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA public, revaer_config, revaer_runtime, revaer_system FROM %I', runtime_record.rolname);
+    EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA public, revaer_config, revaer_runtime, revaer_system FROM %I', runtime_record.rolname);
+
+    -- Only authored objects owned by this bootstrap principal are modified.
+    -- Extension routines are neither converted nor explicitly granted.
+    FOR routine_identity IN
+        SELECT p.oid::regprocedure::text
+        FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname IN ('public', 'revaer_config', 'revaer_runtime', 'revaer_system')
+          AND p.proowner = owner_record.oid
+          AND NOT EXISTS (
+              SELECT 1 FROM pg_catalog.pg_depend d
+              WHERE d.classid = 'pg_catalog.pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e'
+          )
+    LOOP
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, %I', routine_identity, runtime_record.rolname);
+    END LOOP;
+    FOR type_identity IN
+        SELECT format('%I.%I', n.nspname, t.typname)
+        FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+        WHERE n.nspname IN ('public', 'revaer_config', 'revaer_runtime', 'revaer_system')
+          AND t.typowner = owner_record.oid AND t.typelem = 0
+          AND NOT EXISTS (
+              SELECT 1 FROM pg_catalog.pg_depend d
+              WHERE d.classid = 'pg_catalog.pg_type'::regclass AND d.objid = t.oid AND d.deptype = 'e'
+          )
+    LOOP
+        EXECUTE format('REVOKE ALL ON TYPE %s FROM PUBLIC, %I', type_identity, runtime_record.rolname);
+        EXECUTE format('GRANT USAGE ON TYPE %s TO %I', type_identity, runtime_record.rolname);
+    END LOOP;
+    ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+    ALTER DEFAULT PRIVILEGES REVOKE USAGE ON TYPES FROM PUBLIC;
+    ALTER DEFAULT PRIVILEGES REVOKE ALL ON TABLES FROM PUBLIC;
+    ALTER DEFAULT PRIVILEGES REVOKE ALL ON SEQUENCES FROM PUBLIC;
+    ALTER DEFAULT PRIVILEGES REVOKE ALL ON SCHEMAS FROM PUBLIC;
+
+    FOREACH routine_identity IN ARRAY ARRAY[
+            'public.media_root_catalog_reconcile_begin_v1(smallint,bytea,bytea,bytea,smallint)',
+            'public.media_root_catalog_reconcile_activate_v1(uuid)',
+            'public.media_root_catalog_reconcile_slot_v1(uuid,text,text,text,bytea,bytea,bigint,text,boolean,boolean,boolean,boolean,boolean,boolean,boolean,text,text,text,text,bigint,bigint,integer,bytea)',
+            'public.media_root_catalog_reconcile_slot_kind_v1(uuid,uuid,text)',
+            'public.media_root_catalog_mark_unavailable_v1(text,text)',
+            'public.media_root_catalog_mark_attestation_invalid_v1(text)',
+            'public.media_root_catalog_state_get_v1()',
+            'public.media_root_catalog_slot_page_v1(smallint,text,uuid)',
+            'public.media_root_catalog_readiness_get_v1()',
+            'public.media_discovery_association_create_v1(uuid,text,uuid,integer,text,text,boolean,boolean,boolean)',
+            'public.media_discovery_association_get_v1(uuid)',
+            'public.media_discovery_association_page_v1(integer,text,uuid)',
+            'public.media_discovery_association_job_enqueue_v1(uuid,uuid,text,boolean,text,bigint,bigint,bigint,text,integer,bigint,bytea,text)',
+            'public.media_job_policy_snapshot_root_list_v1(uuid,integer,bigint)',
+        -- Generated authored routine grants begin.
+            'public.policy_action_to_decision_type(public.policy_action)',
+            'public.app_user_create(character varying, character varying)',
+            'public.app_user_create_v1(character varying, character varying)',
+            'public.app_user_update(uuid, character varying)',
+            'public.app_user_update_v1(uuid, character varying)',
+            'public.app_user_verify_email(uuid)',
+            'public.app_user_verify_email_v1(uuid)',
+            'public.canonical_disambiguation_rule_create(uuid, public.disambiguation_rule_type, public.disambiguation_identity_type, character varying, uuid, public.disambiguation_identity_type, character varying, uuid, character varying)',
+            'public.canonical_disambiguation_rule_create_v1(uuid, public.disambiguation_rule_type, public.disambiguation_identity_type, character varying, uuid, public.disambiguation_identity_type, character varying, uuid, character varying)',
+            'public.canonical_merge_by_infohash(character, character)',
+            'public.canonical_merge_by_infohash_v1(character, character)',
+            'public.canonical_prune_low_confidence()',
+            'public.canonical_prune_low_confidence_v1()',
+            'public.canonical_recompute_best_source(uuid, public.scoring_context)',
+            'public.canonical_recompute_best_source_v1(uuid, public.scoring_context)',
+            'public.compute_title_size_hash(text, bigint)',
+            'public.compute_title_size_hash_v1(text, bigint)',
+            'public.deployment_init(uuid)',
+            'public.deployment_init_v1(uuid)',
+            'public.derive_magnet_hash(text, text, text)',
+            'public.derive_magnet_hash_v1(text, text, text)',
+            'public.import_job_create(uuid, public.import_source, boolean, uuid, uuid)',
+            'public.import_job_create_v1(uuid, public.import_source, boolean, uuid, uuid)',
+            'public.import_job_get_status(uuid)',
+            'public.import_job_get_status_v1(uuid)',
+            'public.import_job_list_results(uuid)',
+            'public.import_job_list_results_v1(uuid)',
+            'public.import_job_run_prowlarr_api(uuid, character varying, uuid)',
+            'public.import_job_run_prowlarr_api_v1(uuid, character varying, uuid)',
+            'public.import_job_run_prowlarr_backup(uuid, character varying)',
+            'public.import_job_run_prowlarr_backup_v1(uuid, character varying)',
+            'public.import_job_worker_claim_next()',
+            'public.import_job_worker_claim_next_v1()',
+            'public.import_job_worker_mark_terminal(uuid, public.import_job_status, character varying)',
+            'public.import_job_worker_mark_terminal_v1(uuid, public.import_job_status, character varying)',
+            'public.import_job_worker_record_result(uuid, character varying, public.import_indexer_result_status, character varying, boolean, integer, integer)',
+            'public.import_job_worker_record_result_v1(uuid, character varying, public.import_indexer_result_status, character varying, boolean, integer, integer)',
+            'public.indexer_backup_assert_actor_v1(uuid)',
+            'public.indexer_backup_export_indexer_instance_list(uuid)',
+            'public.indexer_backup_export_indexer_instance_list_v1(uuid)',
+            'public.indexer_backup_export_rate_limit_policy_list(uuid)',
+            'public.indexer_backup_export_rate_limit_policy_list_v1(uuid)',
+            'public.indexer_backup_export_routing_policy_list(uuid)',
+            'public.indexer_backup_export_routing_policy_list_v1(uuid)',
+            'public.indexer_backup_export_tag_list(uuid)',
+            'public.indexer_backup_export_tag_list_v1(uuid)',
+            'public.indexer_cf_state_get(uuid, uuid)',
+            'public.indexer_cf_state_get_v1(uuid, uuid)',
+            'public.indexer_cf_state_reset(uuid, uuid, character varying)',
+            'public.indexer_cf_state_reset_v1(uuid, uuid, character varying)',
+            'public.indexer_connectivity_profile_get(uuid, uuid)',
+            'public.indexer_connectivity_profile_get_v1(uuid, uuid)',
+            'public.indexer_definition_import_cardigann_begin(uuid, character varying, character varying, text, boolean)',
+            'public.indexer_definition_import_cardigann_begin_v1(uuid, character varying, character varying, text, boolean)',
+            'public.indexer_definition_import_cardigann_complete(uuid, character varying)',
+            'public.indexer_definition_import_cardigann_complete_v1(uuid, character varying)',
+            'public.indexer_definition_import_cardigann_field(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[])',
+            'public.indexer_definition_import_cardigann_field_v1(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[])',
+            'public.indexer_definition_list(uuid)',
+            'public.indexer_definition_list_v1(uuid)',
+            'public.indexer_health_event_list(uuid, uuid, integer)',
+            'public.indexer_health_event_list_v1(uuid, uuid, integer)',
+            'public.indexer_health_notification_hook_create(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying)',
+            'public.indexer_health_notification_hook_create_v1(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying)',
+            'public.indexer_health_notification_hook_delete(uuid, uuid)',
+            'public.indexer_health_notification_hook_delete_v1(uuid, uuid)',
+            'public.indexer_health_notification_hook_get(uuid, uuid)',
+            'public.indexer_health_notification_hook_get_v1(uuid, uuid)',
+            'public.indexer_health_notification_hook_list(uuid)',
+            'public.indexer_health_notification_hook_list_v1(uuid)',
+            'public.indexer_health_notification_hook_update(uuid, uuid, character varying, public.indexer_health_notification_threshold, character varying, character varying, boolean)',
+            'public.indexer_health_notification_hook_update_v1(uuid, uuid, character varying, public.indexer_health_notification_threshold, character varying, character varying, boolean)',
+            'public.indexer_instance_create(uuid, character varying, character varying, integer, public.trust_tier_key, uuid)',
+            'public.indexer_instance_create_v1(uuid, character varying, character varying, integer, public.trust_tier_key, uuid)',
+            'public.indexer_instance_field_bind_secret(uuid, uuid, character varying, uuid)',
+            'public.indexer_instance_field_bind_secret_v1(uuid, uuid, character varying, uuid)',
+            'public.indexer_instance_field_set_value(uuid, uuid, character varying, character varying, integer, numeric, boolean)',
+            'public.indexer_instance_field_set_value_v1(uuid, uuid, character varying, character varying, integer, numeric, boolean)',
+            'public.indexer_instance_set_media_domains(uuid, uuid, text[])',
+            'public.indexer_instance_set_media_domains_v1(uuid, uuid, text[])',
+            'public.indexer_instance_set_rate_limit_policy(uuid, uuid, uuid)',
+            'public.indexer_instance_set_rate_limit_policy_v1(uuid, uuid, uuid)',
+            'public.indexer_instance_set_tags(uuid, uuid, uuid[], text[])',
+            'public.indexer_instance_set_tags_v1(uuid, uuid, uuid[], text[])',
+            'public.indexer_instance_test_finalize(uuid, uuid, boolean, public.error_class, character varying, character varying, integer)',
+            'public.indexer_instance_test_finalize_v1(uuid, uuid, boolean, public.error_class, character varying, character varying, integer)',
+            'public.indexer_instance_test_prepare(uuid, uuid)',
+            'public.indexer_instance_test_prepare_v1(uuid, uuid)',
+            'public.indexer_instance_update(uuid, uuid, character varying, integer, public.trust_tier_key, uuid, boolean, boolean, boolean, boolean)',
+            'public.indexer_instance_update_v1(uuid, uuid, character varying, integer, public.trust_tier_key, uuid, boolean, boolean, boolean, boolean)',
+            'public.indexer_policy_set_rule_list(uuid)',
+            'public.indexer_policy_set_rule_list_v1(uuid)',
+            'public.indexer_rss_item_seen_list(uuid, uuid, integer)',
+            'public.indexer_rss_item_seen_list_v1(uuid, uuid, integer)',
+            'public.indexer_rss_item_seen_mark(uuid, uuid, character varying, character, character, character)',
+            'public.indexer_rss_item_seen_mark_v1(uuid, uuid, character varying, character, character, character)',
+            'public.indexer_rss_subscription_disable(uuid, uuid)',
+            'public.indexer_rss_subscription_disable_v1(uuid, uuid)',
+            'public.indexer_rss_subscription_get(uuid, uuid)',
+            'public.indexer_rss_subscription_get_v1(uuid, uuid)',
+            'public.indexer_rss_subscription_set(uuid, uuid, boolean, integer)',
+            'public.indexer_rss_subscription_set_v1(uuid, uuid, boolean, integer)',
+            'public.indexer_search_profile_list(uuid)',
+            'public.indexer_search_profile_list_v1(uuid)',
+            'public.indexer_source_reputation_list(uuid, uuid, public.reputation_window, integer)',
+            'public.indexer_source_reputation_list_v1(uuid, uuid, public.reputation_window, integer)',
+            'public.indexer_torznab_instance_list(uuid)',
+            'public.indexer_torznab_instance_list_v1(uuid)',
+            'public.job_claim_lease_seconds(public.job_key)',
+            'public.job_claim_lease_seconds_v1(public.job_key)',
+            'public.job_claim_next(public.job_key)',
+            'public.job_claim_next_v1(public.job_key)',
+            'public.job_run_base_score_refresh_recent()',
+            'public.job_run_base_score_refresh_recent_v1()',
+            'public.job_run_base_score_refresh_recent_v2()',
+            'public.job_run_canonical_backfill_best_source()',
+            'public.job_run_canonical_backfill_best_source_v1()',
+            'public.job_run_canonical_backfill_best_source_v2()',
+            'public.job_run_canonical_prune_low_confidence()',
+            'public.job_run_canonical_prune_low_confidence_v2()',
+            'public.job_run_connectivity_profile_refresh()',
+            'public.job_run_connectivity_profile_refresh_v1()',
+            'public.job_run_connectivity_profile_refresh_v2()',
+            'public.job_run_policy_snapshot_gc()',
+            'public.job_run_policy_snapshot_gc_v1()',
+            'public.job_run_policy_snapshot_gc_v2()',
+            'public.job_run_policy_snapshot_refcount_repair()',
+            'public.job_run_policy_snapshot_refcount_repair_v1()',
+            'public.job_run_policy_snapshot_refcount_repair_v2()',
+            'public.job_run_rate_limit_state_purge()',
+            'public.job_run_rate_limit_state_purge_v1()',
+            'public.job_run_rate_limit_state_purge_v2()',
+            'public.job_run_reputation_rollup(public.reputation_window)',
+            'public.job_run_reputation_rollup_v1(public.reputation_window)',
+            'public.job_run_reputation_rollup_v2(public.reputation_window)',
+            'public.job_run_retention_purge()',
+            'public.job_run_retention_purge_v1()',
+            'public.job_run_retention_purge_v2()',
+            'public.job_run_rss_subscription_backfill()',
+            'public.job_run_rss_subscription_backfill_v1()',
+            'public.job_run_rss_subscription_backfill_v2()',
+            'public.job_schedule_mark_completed(public.job_key)',
+            'public.job_schedule_mark_completed_v1(public.job_key)',
+            'public.log_source_metadata_conflict(bigint, bigint, public.conflict_type, text, text, timestamp with time zone)',
+            'public.log_source_metadata_conflict_v1(bigint, bigint, public.conflict_type, text, text, timestamp with time zone)',
+            'public.media_actor_id_for_public_id_v1(uuid)',
+            'public.media_app_error_code_v1()',
+            'public.media_audio_channel_layout_count_v1(text)',
+            'public.media_capability_run_status_completed_v1()',
+            'public.media_capability_run_status_failed_v1()',
+            'public.media_capability_run_status_running_v1()',
+            'public.media_capability_snapshot_encoder_list_v1(uuid)',
+            'public.media_capability_snapshot_encoder_record_v1(uuid, uuid, text)',
+            'public.media_capability_snapshot_feature_list_v1(uuid)',
+            'public.media_capability_snapshot_feature_record_v1(uuid, uuid, text, text, boolean, text)',
+            'public.media_capability_snapshot_latest_v1()',
+            'public.media_capability_snapshot_latest_v2()',
+            'public.media_capability_snapshot_record_v1(uuid, text, text, text, boolean, boolean)',
+            'public.media_capability_snapshot_record_v2(uuid, uuid, text, text, text, boolean, boolean)',
+            'public.media_capability_snapshot_run_complete_v1(uuid)',
+            'public.media_capability_snapshot_run_start_v1(uuid, uuid)',
+            'public.media_compatibility_target_list_v1()',
+            'public.media_compatibility_target_upsert_v1(uuid, text, integer, text, text, text, integer, text, text)',
+            'public.media_desired_target_create_v1(uuid, text, integer, text, text)',
+            'public.media_desired_target_graph_page_v1(integer)',
+            'public.media_desired_target_list_v1()',
+            'public.media_desired_target_stream_append_v1(uuid, text, text, text, text, boolean, integer, text, integer, text, text, boolean, boolean)',
+            'public.media_desired_target_stream_append_v2(uuid, text, text, text, text, boolean, integer, text, integer, text, text, boolean, boolean, text, text)',
+            'public.media_desired_target_stream_append_v3(uuid, text, text, text, text, boolean, integer, text, integer, text, text, text, integer, text, text, text, text, text, boolean, boolean, text, text)',
+            'public.media_desired_target_stream_append_v4(uuid, text, text, text, text, boolean, integer, text, integer, text, integer, integer, text, text, integer, text, text, text, text, text, boolean, boolean, text, text)',
+            'public.media_desired_target_stream_append_v5(uuid, text, text, text, text, boolean, integer, text, integer, text, integer, integer, text, text, text, text, integer, text, text, text, text, text, boolean, boolean, text, text)',
+            'public.media_desired_target_stream_count_bounded_v1(bigint)',
+            'public.media_desired_target_stream_limit_v1()',
+            'public.media_desired_target_stream_list_v1(uuid)',
+            'public.media_desired_target_stream_list_v2(uuid)',
+            'public.media_desired_target_stream_list_v3(uuid)',
+            'public.media_desired_target_stream_list_v4(uuid)',
+            'public.media_desired_target_stream_list_v5(uuid)',
+            'public.media_desired_target_validate_and_activate_v1(bigint)',
+            'public.media_discovery_root_assert_current_v1(uuid, text, bigint, bigint)',
+            'public.media_discovery_schedule_claim_v1(uuid, text, bigint, bigint, timestamp with time zone)',
+            'public.media_discovery_schedule_create_v1(uuid, uuid, integer, text, integer, boolean, timestamp with time zone)',
+            'public.media_discovery_watcher_create_v1(uuid, uuid, integer, integer, boolean)',
+            'public.media_discovery_watcher_start_v1(uuid, text, bigint, bigint)',
+            'public.media_display_valid_v1(text)',
+            'public.media_domain_seed_defaults()',
+            'public.media_domain_to_torznab_category_delete(uuid, character varying, integer)',
+            'public.media_domain_to_torznab_category_delete_v1(uuid, character varying, integer)',
+            'public.media_domain_to_torznab_category_upsert(uuid, character varying, integer, boolean)',
+            'public.media_domain_to_torznab_category_upsert_v1(uuid, character varying, integer, boolean)',
+            'public.media_job_artifact_append_v1(uuid, bigint, integer, text, text, bigint, text)',
+            'public.media_job_artifact_list_v1(uuid)',
+            'public.media_job_artifact_path_is_managed_v1(text)',
+            'public.media_job_attempt_list_v1(uuid)',
+            'public.media_job_cancel_v1(uuid)',
+            'public.media_job_cancel_v2(uuid)',
+            'public.media_job_cleanup_completed_v1(timestamp with time zone)',
+            'public.media_job_cleanup_failed_terminal_diagnostics_v1(timestamp with time zone, integer)',
+            'public.media_job_compact_audit_append_v1(uuid, bigint, integer, text, text)',
+            'public.media_job_compact_audit_list_v1(uuid)',
+            'public.media_job_current_attempt_v1(uuid, bigint)',
+            'public.media_job_desired_target_stream_list_v1(uuid)',
+            'public.media_job_desired_target_stream_list_v2(uuid)',
+            'public.media_job_desired_target_stream_list_v3(uuid)',
+            'public.media_job_desired_target_stream_list_v4(uuid)',
+            'public.media_job_desired_target_stream_list_v5(uuid)',
+            'public.media_job_operation_cost_snapshot_list_v1(uuid)',
+            'public.media_job_get_v1(uuid)',
+            'public.media_job_operator_get_v1(uuid)',
+            'public.media_discovery_schedule_configuration_get_v1(uuid)',
+            'public.media_discovery_rescan_get_v1(uuid)',
+            'public.media_discovery_rescan_request_v1(uuid,integer,bigint,bytea,text,text)',
+            'public.media_discovery_rescan_satisfy_v1(uuid,integer,bigint,bytea,text,bigint)',
+            'public.media_discovery_rescan_observe_paths_v1(uuid,integer,bigint,bytea,text,bigint,text[])',
+            'public.media_discovery_source_diagnostics_get_v1(uuid,text)',
+            'public.media_discovery_schedule_observe_due_v1(uuid,integer,bigint,bytea,text)',
+            'public.media_discovery_schedule_configuration_create_v1(uuid,uuid,integer,integer,text)',
+            'public.media_discovery_schedule_configuration_replace_v1(uuid,uuid,integer,integer,text,timestamptz)',
+            'public.media_job_operator_list_v1(uuid, public.media_job_status)',
+            'public.media_job_operator_recent_page_v1(integer, timestamp with time zone, uuid, uuid)',
+            'public.media_job_list_v1(uuid, public.media_job_status, integer, timestamp with time zone, uuid)',
+            'public.media_job_mark_completed_v1(uuid)',
+            'public.media_job_normalized_absolute_path_v1(text)',
+            'public.media_job_operation_append_v1(uuid, bigint, integer, text, integer, text, text, text, text, text, text)',
+            'public.media_job_operation_list_v1(uuid)',
+            'public.media_job_phase_append_v1(uuid, bigint, integer, text, text, text)',
+            'public.media_job_phase_list_v1(uuid)',
+            'public.media_job_plan_reason_append_v1(uuid, bigint, integer, integer, boolean, text, text)',
+            'public.media_job_plan_reason_list_v1(uuid)',
+            'public.media_job_recent_page_v1(integer, timestamp with time zone, uuid, uuid)',
+            'public.media_job_retention_batch_limit_v1()',
+            'public.media_job_retention_policy_get_v1()',
+            'public.media_job_retention_policy_get_v2()',
+            'public.media_job_retention_policy_update_v1(uuid, integer, integer)',
+            'public.media_job_retention_policy_update_v2(uuid, boolean, text, integer, boolean, text, integer)',
+            'public.media_job_retention_run_v1(timestamp with time zone)',
+            'public.media_job_retry_v1(uuid)',
+            'public.media_job_status_cancelled_v1()',
+            'public.media_job_status_completed_v1()',
+            'public.media_job_status_failed_v1()',
+            'public.media_job_status_queued_v1()',
+            'public.media_job_status_running_v1()',
+            'public.media_job_status_verifying_v1()',
+            'public.media_job_terminal_outbox_list_unpublished_v1()',
+            'public.media_job_replacement_recovery_list_v1(bigint)',
+            'public.media_job_restored_source_refresh_v1(uuid, bigint, text, text, bigint, bigint, bigint, text)',
+            'public.media_job_terminal_outbox_mark_published_v1(uuid)',
+            'public.media_job_validate_path_within_root_v1(text, text, text)',
+            'public.media_job_verification_check_append_v1(uuid, bigint, integer, text, text, text, text, text)',
+            'public.media_job_verification_check_list_v1(uuid)',
+            'public.media_job_violation_append_v1(uuid, bigint, integer, text, text, integer)',
+            'public.media_job_violation_list_v1(uuid)',
+            'public.media_job_worker_acknowledge_cancel_v1(uuid, bigint, bigint)',
+            'public.media_job_worker_claim_next_v2()',
+            'public.media_job_worker_claim_next_v4()',
+            'public.media_job_worker_commit_replacement_terminal_v1(uuid, bigint, bigint)',
+            'public.media_job_worker_complete_v1(uuid, bigint, bigint)',
+            'public.media_job_worker_heartbeat_v1(uuid, bigint)',
+            'public.media_job_worker_interrupt_v1(uuid, bigint)',
+            'public.media_job_worker_resume_interrupted_v1(text)',
+            'public.media_job_step_checkpoint_get_v1(uuid, bigint, integer)',
+            'public.media_job_step_checkpoint_write_v1(uuid, bigint, integer, bytea, text, bigint, bytea)',
+            'public.media_job_worker_mark_status_v1(uuid, bigint, public.media_job_status, text)',
+            'public.media_job_worker_poll_control_v1(uuid, bigint, bigint)',
+            'public.media_key_valid_v1(text)',
+            'public.media_policy_anime_v1()',
+            'public.media_policy_archival_v1()',
+            'public.media_policy_behavior_set_v1(uuid, text, integer, text, text, text, text, text, text, boolean, boolean, text, boolean, boolean, boolean)',
+            'public.media_policy_compatibility_target_append_v1(uuid, text, integer, text, integer, integer, boolean)',
+            'public.media_policy_general_v1()',
+            'public.media_policy_maintenance_window_append_v1(uuid, text, integer, smallint, time without time zone, time without time zone, integer, boolean)',
+            'public.media_policy_operation_cost_append_v1(uuid, text, integer, text, integer, integer, boolean)',
+            'public.media_policy_profile_id_v1(uuid, text, integer)',
+            'public.media_policy_profile_list_v1()',
+            'public.media_policy_profile_upsert_v1(uuid, text, integer, text, text, text, bigint, boolean, boolean, boolean, boolean, boolean, text, boolean, boolean, boolean)',
+            'public.media_policy_retention_rule_append_v1(uuid, text, integer, text, text, text, text, text, text, integer, boolean)',
+            'public.media_policy_runtime_limit_set_v1(uuid, text, integer, integer, integer, integer, integer, bigint, boolean)',
+            'public.media_policy_runtime_limit_set_v2(uuid, text, integer, integer, integer, integer, integer, bigint, boolean, integer, text, boolean)',
+            'public.media_policy_safe_dry_run_v1()',
+            'public.media_policy_seed_bounded_defaults_v1(bigint)',
+            'public.media_policy_workspace_set_v1(uuid, text, integer, integer, boolean, integer, bigint, boolean, integer, bigint)',
+            'public.media_profile_create_v3(uuid, text, text, text, bigint, bigint, text, text, bigint, bigint, integer, text, text)',
+            'public.media_profile_desired_target_set_v1(uuid, uuid, text, integer)',
+            'public.media_profile_file_rule_append_v1(uuid, text, text, text, integer, boolean)',
+            'public.media_profile_file_rule_list_v1(uuid)',
+            'public.media_profile_filter_get_v1(uuid)',
+            'public.media_profile_filter_set_v1(uuid, bigint, bigint, bigint, bigint, boolean, boolean, boolean, boolean)',
+            'public.media_profile_get_v1(uuid)',
+            'public.media_profile_get_v2(uuid)',
+            'public.media_profile_get_v3(uuid)',
+            'public.media_profile_import_draft_delete_v1(text)',
+            'public.media_profile_import_draft_list_v1()',
+            'public.media_profile_import_draft_upsert_v1(uuid, text, text, text, boolean, boolean, integer, text, text, integer, text)',
+            'public.media_profile_list_v1()',
+            'public.media_profile_list_v2()',
+            'public.media_profile_list_v3()',
+            'public.media_profile_version_get_v1(uuid, boolean)',
+            'public.media_profile_active_association_count_v1(uuid)',
+            'public.media_portable_profile_versions_v1()',
+            'public.media_portable_associations_v1()',
+            'public.media_local_root_paths_v1()',
+            'public.media_configuration_import_prepare_v1(uuid,text[],text[],boolean[],integer[],text[])',
+            'public.media_profile_version_import_v1(uuid,text,integer,integer,text,text,boolean,text,integer,text,integer,text,text,text,text)',
+            'public.media_discovery_association_import_v1(uuid,text,integer,text,integer,text,text,boolean,boolean,boolean)',
+            'public.media_configuration_import_audit_v1(uuid,bytea,integer)',
+            'public.media_profile_version_page_v1(integer, text, uuid)',
+            'public.media_profile_version_create_v1(uuid, text, text, text, boolean, boolean, text, integer, text, integer, text, text, text, text)',
+            'public.media_profile_version_replace_v1(uuid, text, text, text, boolean, boolean, text, integer, text, integer, text, text, text, text, uuid, integer)',
+            'public.media_profile_normalized_root_v1(text)',
+            'public.media_profile_root_add_v1(uuid, text, text, text, bigint, bigint, text, integer, boolean)',
+            'public.media_profile_root_list_v1(uuid)',
+            'public.media_profile_root_revalidate_v1(uuid, text, bigint, bigint)',
+            'public.media_profile_roots_overlap_v1(text, text)',
+            'public.media_profile_update_v1(uuid, uuid, text, text, boolean, integer, text, text, boolean, boolean, integer)',
+            'public.media_profile_upsert_v1(uuid, text, text, text, boolean, integer)',
+            'public.media_profile_upsert_v2(uuid, text, text, text, boolean, integer, text, text, boolean, boolean, integer)',
+            'public.media_profile_validate_all_root_overlap_v1(bigint, text, text)',
+            'public.media_profile_validate_catalog_refs_v1(text, text)',
+            'public.media_profile_validate_discovery_root_overlap_v1(bigint, text)',
+            'public.media_profile_validate_root_identity_v1(bigint, text, bigint, bigint)',
+            'public.media_retention_mode_age_v1()',
+            'public.media_retention_mode_count_v1()',
+            'public.media_retention_policy_default_v1()',
+            'public.media_stream_classification_rule_append_v1(uuid, text, integer, text, text, text, text, smallint, integer, boolean)',
+            'public.media_subtitle_discovery_rule_append_v1(uuid, text, integer, boolean)',
+            'public.media_subtitle_policy_all_v1()',
+            'public.media_subtitle_policy_none_v1()',
+            'public.media_subtitle_policy_selected_v1()',
+            'public.media_video_color_value_known_v1(text, text)',
+            'public.media_video_level_known_v1(text, text)',
+            'public.media_workspace_retention_snapshot_v1()',
+            'public.normalize_magnet_uri(text)',
+            'public.normalize_magnet_uri_v1(text)',
+            'public.normalize_title(text)',
+            'public.normalize_title_v1(text)',
+            'public.outbound_request_log_write(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying)',
+            'public.outbound_request_log_write_v1(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying)',
+            'public.policy_int_match(integer, public.policy_match_operator, integer, bigint)',
+            'public.policy_int_match_v1(integer, public.policy_match_operator, integer, bigint)',
+            'public.policy_release_group_match(bigint, text, public.policy_match_operator, text, bigint, boolean)',
+            'public.policy_release_group_match_v1(bigint, text, public.policy_match_operator, text, bigint, boolean)',
+            'public.policy_rule_create(uuid, uuid, public.policy_rule_type, public.policy_match_field, public.policy_match_operator, integer, character varying, integer, uuid, public.policy_rule_value_item[], public.policy_action, public.policy_severity, boolean, character varying, timestamp with time zone)',
+            'public.policy_rule_create_v1(uuid, uuid, public.policy_rule_type, public.policy_match_field, public.policy_match_operator, integer, character varying, integer, uuid, public.policy_rule_value_item[], public.policy_action, public.policy_severity, boolean, character varying, timestamp with time zone)',
+            'public.policy_rule_disable(uuid, uuid)',
+            'public.policy_rule_disable_v1(uuid, uuid)',
+            'public.policy_rule_enable(uuid, uuid)',
+            'public.policy_rule_enable_v1(uuid, uuid)',
+            'public.policy_rule_reorder(uuid, uuid, uuid[])',
+            'public.policy_rule_reorder_v1(uuid, uuid, uuid[])',
+            'public.policy_set_create(uuid, character varying, public.policy_scope, boolean)',
+            'public.policy_set_create_v1(uuid, character varying, public.policy_scope, boolean)',
+            'public.policy_set_disable(uuid, uuid)',
+            'public.policy_set_disable_v1(uuid, uuid)',
+            'public.policy_set_enable(uuid, uuid)',
+            'public.policy_set_enable_v1(uuid, uuid)',
+            'public.policy_set_reorder(uuid, uuid[])',
+            'public.policy_set_reorder_v1(uuid, uuid[])',
+            'public.policy_set_update(uuid, uuid, character varying)',
+            'public.policy_set_update_v1(uuid, uuid, character varying)',
+            'public.policy_text_match(text, public.policy_match_operator, text, bigint, boolean)',
+            'public.policy_text_match_v1(text, public.policy_match_operator, text, bigint, boolean)',
+            'public.policy_uuid_match(uuid, public.policy_match_operator, uuid, bigint)',
+            'public.policy_uuid_match_v1(uuid, public.policy_match_operator, uuid, bigint)',
+            'public.random_jitter_seconds(integer)',
+            'public.rate_limit_policy_create(uuid, character varying, integer, integer, integer)',
+            'public.rate_limit_policy_create_v1(uuid, character varying, integer, integer, integer)',
+            'public.rate_limit_policy_soft_delete(uuid, uuid)',
+            'public.rate_limit_policy_soft_delete_v1(uuid, uuid)',
+            'public.rate_limit_policy_update(uuid, uuid, character varying, integer, integer, integer)',
+            'public.rate_limit_policy_update_v1(uuid, uuid, character varying, integer, integer, integer)',
+            'public.rate_limit_try_consume(public.rate_limit_scope, bigint, integer, integer)',
+            'public.rate_limit_try_consume_v1(public.rate_limit_scope, bigint, integer, integer)',
+            'public.routing_policy_bind_secret(uuid, uuid, public.routing_param_key, uuid)',
+            'public.routing_policy_bind_secret_v1(uuid, uuid, public.routing_param_key, uuid)',
+            'public.routing_policy_create(uuid, character varying, public.routing_policy_mode)',
+            'public.routing_policy_create_v1(uuid, character varying, public.routing_policy_mode)',
+            'public.routing_policy_get(uuid, uuid)',
+            'public.routing_policy_get_v1(uuid, uuid)',
+            'public.routing_policy_set_param(uuid, uuid, public.routing_param_key, character varying, integer, boolean)',
+            'public.routing_policy_set_param_v1(uuid, uuid, public.routing_param_key, character varying, integer, boolean)',
+            'public.routing_policy_set_rate_limit_policy(uuid, uuid, uuid)',
+            'public.routing_policy_set_rate_limit_policy_v1(uuid, uuid, uuid)',
+            'public.rss_poll_apply(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[])',
+            'public.rss_poll_apply_v1(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[])',
+            'public.rss_poll_claim(integer)',
+            'public.rss_poll_claim_v1(integer)',
+            'public.search_indexer_run_enqueue(uuid, uuid)',
+            'public.search_indexer_run_enqueue_v1(uuid, uuid)',
+            'public.search_indexer_run_mark_canceled(uuid, uuid)',
+            'public.search_indexer_run_mark_canceled_v1(uuid, uuid)',
+            'public.search_indexer_run_mark_failed(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope)',
+            'public.search_indexer_run_mark_failed_v1(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope)',
+            'public.search_indexer_run_mark_finished(uuid, uuid, integer, integer, integer)',
+            'public.search_indexer_run_mark_finished_v1(uuid, uuid, integer, integer, integer)',
+            'public.search_indexer_run_mark_started(uuid, uuid)',
+            'public.search_indexer_run_mark_started_v1(uuid, uuid)',
+            'public.search_page_fetch(uuid, uuid, integer)',
+            'public.search_page_fetch_v1(uuid, uuid, integer)',
+            'public.search_page_list(uuid, uuid)',
+            'public.search_page_list_v1(uuid, uuid)',
+            'public.search_profile_add_policy_set(uuid, uuid, uuid)',
+            'public.search_profile_add_policy_set_v1(uuid, uuid, uuid)',
+            'public.search_profile_create(uuid, character varying, boolean, integer, character varying, uuid)',
+            'public.search_profile_create_v1(uuid, character varying, boolean, integer, character varying, uuid)',
+            'public.search_profile_indexer_allow(uuid, uuid, uuid[])',
+            'public.search_profile_indexer_allow_v1(uuid, uuid, uuid[])',
+            'public.search_profile_indexer_block(uuid, uuid, uuid[])',
+            'public.search_profile_indexer_block_v1(uuid, uuid, uuid[])',
+            'public.search_profile_remove_policy_set(uuid, uuid, uuid)',
+            'public.search_profile_remove_policy_set_v1(uuid, uuid, uuid)',
+            'public.search_profile_set_default(uuid, uuid, integer)',
+            'public.search_profile_set_default_domain(uuid, uuid, character varying)',
+            'public.search_profile_set_default_domain_v1(uuid, uuid, character varying)',
+            'public.search_profile_set_default_v1(uuid, uuid, integer)',
+            'public.search_profile_set_domain_allowlist(uuid, uuid, text[])',
+            'public.search_profile_set_domain_allowlist_v1(uuid, uuid, text[])',
+            'public.search_profile_tag_allow(uuid, uuid, uuid[], text[])',
+            'public.search_profile_tag_allow_v1(uuid, uuid, uuid[], text[])',
+            'public.search_profile_tag_block(uuid, uuid, uuid[], text[])',
+            'public.search_profile_tag_block_v1(uuid, uuid, uuid[], text[])',
+            'public.search_profile_tag_prefer(uuid, uuid, uuid[], text[])',
+            'public.search_profile_tag_prefer_v1(uuid, uuid, uuid[], text[])',
+            'public.search_profile_update(uuid, uuid, character varying, integer)',
+            'public.search_profile_update_v1(uuid, uuid, character varying, integer)',
+            'public.search_request_cancel(uuid, uuid)',
+            'public.search_request_cancel_v1(uuid, uuid)',
+            'public.search_request_create(uuid, character varying, public.query_type, public.torznab_mode, character varying, integer, uuid, uuid, integer, integer, public.identifier_type[], text[], integer[])',
+            'public.search_request_create_v1(uuid, character varying, public.query_type, public.torznab_mode, character varying, integer, uuid, uuid, integer, integer, public.identifier_type[], text[], integer[])',
+            'public.search_request_explainability(uuid, uuid)',
+            'public.search_request_explainability_v1(uuid, uuid)',
+            'public.search_result_ingest(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[])',
+            'public.search_result_ingest_v1(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[])',
+            'public.secret_create(uuid, public.secret_type, character varying)',
+            'public.secret_create_v1(uuid, public.secret_type, character varying)',
+            'public.secret_metadata_list(uuid)',
+            'public.secret_metadata_list_v1(uuid)',
+            'public.secret_read(uuid, uuid)',
+            'public.secret_read_v1(uuid, uuid)',
+            'public.secret_revoke(uuid, uuid)',
+            'public.secret_revoke_v1(uuid, uuid)',
+            'public.secret_rotate(uuid, uuid, character varying)',
+            'public.secret_rotate_v1(uuid, uuid, character varying)',
+            'public.secret_session_configure(uuid, character varying, character varying)',
+            'public.secret_session_configure_v1(uuid, character varying, character varying)',
+            'public.source_metadata_conflict_list(uuid, boolean, integer)',
+            'public.source_metadata_conflict_list_v1(uuid, boolean, integer)',
+            'public.source_metadata_conflict_reopen(uuid, bigint, character varying)',
+            'public.source_metadata_conflict_reopen_v1(uuid, bigint, character varying)',
+            'public.source_metadata_conflict_resolve(uuid, bigint, public.conflict_resolution, character varying)',
+            'public.source_metadata_conflict_resolve_v1(uuid, bigint, public.conflict_resolution, character varying)',
+            'public.tag_create(uuid, character varying, character varying)',
+            'public.tag_create_v1(uuid, character varying, character varying)',
+            'public.tag_list(uuid)',
+            'public.tag_list_v1(uuid)',
+            'public.tag_soft_delete(uuid, uuid, character varying)',
+            'public.tag_soft_delete_v1(uuid, uuid, character varying)',
+            'public.tag_update(uuid, uuid, character varying, character varying)',
+            'public.tag_update_v1(uuid, uuid, character varying, character varying)',
+            'public.torznab_category_list()',
+            'public.torznab_category_list_v1()',
+            'public.torznab_download_prepare(uuid, uuid)',
+            'public.torznab_download_prepare_v1(uuid, uuid)',
+            'public.torznab_instance_authenticate(uuid, character varying)',
+            'public.torznab_instance_authenticate_v1(uuid, character varying)',
+            'public.torznab_instance_create(uuid, uuid, character varying)',
+            'public.torznab_instance_create_v1(uuid, uuid, character varying)',
+            'public.torznab_instance_enable_disable(uuid, uuid, boolean)',
+            'public.torznab_instance_enable_disable_v1(uuid, uuid, boolean)',
+            'public.torznab_instance_rotate_key(uuid, uuid)',
+            'public.torznab_instance_rotate_key_v1(uuid, uuid)',
+            'public.torznab_instance_soft_delete(uuid, uuid)',
+            'public.torznab_instance_soft_delete_v1(uuid, uuid)',
+            'public.tracker_category_mapping_delete(uuid, character varying, integer, integer)',
+            'public.tracker_category_mapping_delete(uuid, uuid, character varying, uuid, integer, integer)',
+            'public.tracker_category_mapping_delete_v1(uuid, character varying, integer, integer)',
+            'public.tracker_category_mapping_delete_v1(uuid, uuid, character varying, uuid, integer, integer)',
+            'public.tracker_category_mapping_resolve_feed(uuid, uuid, integer, integer)',
+            'public.tracker_category_mapping_resolve_feed_v1(uuid, uuid, integer, integer)',
+            'public.tracker_category_mapping_upsert(uuid, character varying, integer, integer, integer, character varying)',
+            'public.tracker_category_mapping_upsert(uuid, uuid, character varying, uuid, integer, integer, integer, character varying)',
+            'public.tracker_category_mapping_upsert_v1(uuid, character varying, integer, integer, integer, character varying)',
+            'public.tracker_category_mapping_upsert_v1(uuid, uuid, character varying, uuid, integer, integer, integer, character varying)',
+            'public.trust_tier_seed_defaults()',
+            'revaer_config.bump_app_profile_version(uuid)',
+            'revaer_config.bump_revision(text)',
+            'revaer_config.cleanup_expired_setup_tokens()',
+            'revaer_config.consume_setup_token(uuid)',
+            'revaer_config.delete_api_key(text)',
+            'revaer_config.delete_secret(text)',
+            'revaer_config.factory_reset()',
+            'revaer_config.factory_reset_without_media_defaults_v1()',
+            'revaer_config.fetch_active_setup_token()',
+            'revaer_config.fetch_api_key_auth(text)',
+            'revaer_config.fetch_api_key_hash(text)',
+            'revaer_config.fetch_api_keys()',
+            'revaer_config.fetch_app_profile_row(uuid)',
+            'revaer_config.fetch_engine_profile_row(uuid)',
+            'revaer_config.fetch_fs_policy_row(uuid)',
+            'revaer_config.fetch_revision()',
+            'revaer_config.fetch_secret_by_name(text)',
+            'revaer_config.insert_api_key(text, text, text, boolean, integer, bigint, timestamp with time zone)',
+            'revaer_config.insert_setup_token(text, timestamp with time zone, text)',
+            'revaer_config.invalidate_active_setup_tokens()',
+            'revaer_config.list_app_label_policies(uuid)',
+            'revaer_config.replace_app_label_policies(uuid, text[], text[], text[], bigint[], bigint[], integer[], boolean[], double precision[], bigint[], double precision[], bigint[], boolean[])',
+            'revaer_config.seed_media_configuration_defaults()',
+            'revaer_config.set_engine_alt_speed(uuid, bigint, bigint, integer, integer, text[])',
+            'revaer_config.set_engine_ip_filter(uuid, text, text, timestamp with time zone, text, text[])',
+            'revaer_config.set_engine_list_values(uuid, text, text[])',
+            'revaer_config.set_fs_list(uuid, text, text[])',
+            'revaer_config.set_peer_classes(uuid, smallint[], text[], smallint[], smallint[], smallint[], boolean[], smallint[])',
+            'revaer_config.set_tracker_config(uuid, text, text, text, integer, boolean, boolean, text, integer, text, text, text, boolean, text, text, text, boolean, text, text, text, text[], text[])',
+            'revaer_config.update_api_key_enabled(text, boolean)',
+            'revaer_config.update_api_key_expires_at(text, timestamp with time zone)',
+            'revaer_config.update_api_key_hash(text, text)',
+            'revaer_config.update_api_key_label(text, text)',
+            'revaer_config.update_api_key_rate_limit(text, integer, bigint)',
+            'revaer_config.update_app_auth_mode(uuid, text)',
+            'revaer_config.update_app_bind_addr(uuid, text)',
+            'revaer_config.update_app_http_port(uuid, integer)',
+            'revaer_config.update_app_immutable_keys(uuid, text[])',
+            'revaer_config.update_app_instance_name(uuid, text)',
+            'revaer_config.update_app_local_networks(uuid, text[])',
+            'revaer_config.update_app_mode(uuid, text)',
+            'revaer_config.update_app_telemetry(uuid, text, text, boolean, text, text)',
+            'revaer_config.update_engine_profile(uuid, text, integer, boolean, text, integer, bigint, bigint, double precision, bigint, boolean, boolean, boolean, boolean, boolean, text, text, boolean, integer, bigint, text, text, text, boolean, integer, integer, boolean, boolean, boolean, text, text, boolean, boolean, boolean, boolean, boolean, text, boolean, boolean, boolean, boolean, boolean, boolean, integer, integer, integer, integer, integer, integer, integer, integer)',
+            'revaer_config.update_fs_array_field(uuid, text, text[])',
+            'revaer_config.update_fs_boolean_field(uuid, text, boolean)',
+            'revaer_config.update_fs_optional_string_field(uuid, text, text)',
+            'revaer_config.update_fs_string_field(uuid, text, text)',
+            'revaer_config.upsert_secret(text, bytea, text)',
+            'revaer_runtime.delete_torrent(uuid)',
+            'revaer_runtime.fs_job_state(uuid)',
+            'revaer_runtime.list_torrent_files(uuid)',
+            'revaer_runtime.list_torrents()',
+            'revaer_runtime.mark_fs_job_completed(uuid, text, text, text)',
+            'revaer_runtime.mark_fs_job_failed(uuid, text)',
+            'revaer_runtime.mark_fs_job_started(uuid, text)',
+            'revaer_runtime.upsert_torrent(uuid, text, text, text, bigint, bigint, bigint, bigint, bigint, double precision, boolean, text, text, text, text, boolean, integer[], text[], bigint[], bigint[], text[], boolean[], timestamp with time zone, timestamp with time zone, timestamp with time zone)'
+        -- Generated authored routine grants end.
+    ]::text[] LOOP
+        EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO %I', routine_identity, runtime_record.rolname);
+    END LOOP;
+    EXECUTE format('GRANT EXECUTE ON FUNCTION revaer_system.read_database_baseline_v1() TO %I', runtime_record.rolname);
+    INSERT INTO revaer_system.database_baseline
+        (baseline_id, contract_version, init_sha256, postgres_version_num, schema_owner_role, runtime_role, sealed_at)
+    VALUES (1, contract_version_input, init_sha256_input, current_setting('server_version_num')::integer,
+        session_user, runtime_record.rolname, transaction_timestamp());
+    RETURN QUERY SELECT b.contract_version, b.init_sha256, b.postgres_version_num,
+        b.schema_owner_role, b.runtime_role, b.sealed_at FROM revaer_system.database_baseline b;
+END;
+$baseline_seal$;
+
+REVOKE ALL ON SCHEMA revaer_system FROM PUBLIC;
+REVOKE ALL ON TABLE revaer_system.database_baseline FROM PUBLIC;
+REVOKE ALL ON FUNCTION revaer_system.read_database_baseline_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION revaer_system.seal_database_baseline_v1(smallint, bytea, text) FROM PUBLIC;
