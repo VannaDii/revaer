@@ -52,6 +52,8 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 - Validate migrated behavior against the existing native operation and retained
   artifacts. Test meaningful failures and ownership boundaries. Fixtures do not
   establish application, hosted workflow or publication acceptance.
+- Chart orchestration fixtures stage explicit media or empty chart values so
+  the checkout's compliance settings cannot change the scenario being tested.
 - Run `rv tooling-check`, `rv tooling-cov` and `rv tooling-audit` as applicable
   to the change. Keep the full project acceptance gates and migration inventory
   current; Python checks alone do not complete a tooling migration.
