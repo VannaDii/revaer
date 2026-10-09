@@ -83,6 +83,11 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 
 # Maintainability And Layout
 
+- The application media facade and discovery runtime receive the existing media
+  store, native capability detector, catalog source and watcher. `notify` provides
+  the native watcher, `rustix` retains descriptor identity, `sha2` computes aggregate
+  identities, and `yaml-rust2` validates portable configuration before persistence.
+
 - `revaer-media-runtime` owns injected native process, capability and inspection
   adapters. Its restored `rustix` dependency provides safe Unix descriptor and
   process operations without authored unsafe code.

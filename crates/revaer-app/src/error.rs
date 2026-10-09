@@ -29,6 +29,12 @@ pub enum AppError {
         /// Diagnostic sink failure.
         source: io::Error,
     },
+    /// Startup root catalog state could not be persisted.
+    #[error("media root catalog startup persistence failed")]
+    RootCatalogStorage {
+        /// Original storage failure.
+        source: revaer_data::DataError,
+    },
     /// Environment configuration was missing.
     #[error("missing environment configuration")]
     MissingEnv {
