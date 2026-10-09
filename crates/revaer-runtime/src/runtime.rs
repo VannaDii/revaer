@@ -20,15 +20,14 @@ pub struct RuntimeStore {
 }
 
 impl RuntimeStore {
-    /// Initialise the runtime store, applying any pending runtime migrations.
+    /// Construct a runtime facade over a caller-owned, baseline-verified pool.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if migrations fail or the database cannot be reached.
-    pub async fn new(pool: PgPool) -> DataResult<Self> {
-        Ok(Self {
-            inner: DataRuntimeStore::new(pool).await?,
-        })
+    /// Database verification belongs to bootstrap, not repository construction.
+    #[must_use]
+    pub const fn new(pool: PgPool) -> Self {
+        Self {
+            inner: DataRuntimeStore::new(pool),
+        }
     }
 
     /// Access the underlying connection pool used by the facade.

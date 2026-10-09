@@ -111,11 +111,7 @@ impl BootstrapDependencies {
             Metrics::new().map_err(|err| AppError::telemetry("telemetry.metrics", err))?;
 
         #[cfg(feature = "libtorrent")]
-        let runtime = Some(
-            RuntimeStore::new(config.pool().clone())
-                .await
-                .map_err(|err| AppError::runtime("runtime_store.new", err))?,
-        );
+        let runtime = Some(RuntimeStore::new(config.pool().clone()));
         #[cfg(not(feature = "libtorrent"))]
         let _runtime: Option<RuntimeStore> = None;
 
