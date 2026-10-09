@@ -85,4 +85,13 @@ mod tests {
             Duration::from_secs(2)
         ));
     }
+
+    #[test]
+    fn command_timeout_rejects_a_missing_executable() {
+        assert!(!command_succeeds_with_timeout(
+            "/definitely/missing/revaer-test-program",
+            &[],
+            Duration::from_secs(2)
+        ));
+    }
 }

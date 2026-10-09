@@ -20,6 +20,8 @@ applyTo:
   Root catalog and immutable profile adapters retain stored-procedure access.
 - Capability, profile and import adapters use the complete sealed initializer
   in their database regressions, including restricted runtime verification.
+- Job admission, discovery associations, rescan fences and step checkpoints
+  retain their normalized stored-procedure contracts and recovery regressions.
 
 - Runtime application code must call stored procedures for database behavior. Do not embed inline business SQL in Rust.
 - `rv lint` mechanically enforces that `sqlx::query*` usage stays confined to `crates/revaer-data/src`, except for the disposable test-database provisioning helper at `crates/revaer-test-support/src/postgres.rs` and its integration test. Inline DDL/DML text must not appear in authored Rust.
