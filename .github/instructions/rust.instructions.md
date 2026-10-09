@@ -103,6 +103,9 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 - Job planning, output verification and replacement retain source-identity and
   recovery checks. The `media_fixtures` integration target executes real conversions
   and verifies their resulting media graphs.
+- `just test-media-recovery` explicitly executes the retained production worker
+  H.264 metadata-replacement regression with real FFmpeg/FFprobe and all features.
+  Its synthetic catalog admission is distinct from the Linux mounted-service test.
 
 - `revaer-media-core` owns deterministic media graph compilation, planning,
   compliance and verification. Keep filesystem, process and database access in

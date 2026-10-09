@@ -6322,6 +6322,7 @@ mod tests {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum RuntimeJobTarget {
         SourceGraph,
+        H264MetadataRewrite,
         Hevc,
         HevcAudio,
     }
@@ -6332,7 +6333,9 @@ mod tests {
         job_target: RuntimeJobTarget,
     ) -> anyhow::Result<(&'static str, i32)> {
         match job_target {
-            RuntimeJobTarget::SourceGraph => create_noop_runtime_target(store, actor).await,
+            RuntimeJobTarget::SourceGraph | RuntimeJobTarget::H264MetadataRewrite => {
+                create_h264_runtime_target(store, actor, job_target).await
+            }
             RuntimeJobTarget::Hevc | RuntimeJobTarget::HevcAudio => {
                 let target_id = create_media_desired_target(
                     store.pool(),
@@ -6416,9 +6419,10 @@ mod tests {
         }
     }
 
-    async fn create_noop_runtime_target(
+    async fn create_h264_runtime_target(
         store: &MediaStore,
         actor: Uuid,
+        job_target: RuntimeJobTarget,
     ) -> anyhow::Result<(&'static str, i32)> {
         let id = create_media_desired_target(
             store.pool(),
@@ -6455,7 +6459,8 @@ mod tests {
                 color_transfer: None,
                 color_space: None,
                 hdr_format: None,
-                title: None,
+                title: (job_target == RuntimeJobTarget::H264MetadataRewrite)
+                    .then_some("Verified Main"),
                 default_disposition: false,
                 forced_disposition: false,
                 subtitle_placement: None,
@@ -6464,6 +6469,97 @@ mod tests {
         )
         .await?;
         Ok(("runtime-source", 1))
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL plus ffmpeg and ffprobe"]
+    async fn production_media_job_runtime_executes_and_persists_verified_replacement()
+    -> anyhow::Result<()> {
+        let generated = tempfile::tempdir()?;
+        let source = generated.path().join("movie.mkv");
+        let status = std::process::Command::new("ffmpeg")
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=64x64:rate=10",
+                "-t",
+                "1",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-y",
+            ])
+            .arg(&source)
+            .status()?;
+        anyhow::ensure!(
+            status.success(),
+            "ffmpeg failed to generate runtime fixture"
+        );
+        let original_source = fs::read(source)?;
+        // Reuse the canonical sealed database and normalized admission fixture.
+        // Its catalog is synthetic; native mounted-service qualification is separate.
+        let fixture = setup_runtime_with_source(
+            false,
+            true,
+            RuntimeJobTarget::H264MetadataRewrite,
+            true,
+            &original_source,
+        )
+        .await?;
+        let source_path = fs::canonicalize(fixture.temp.path())?.join("input/movie.mkv");
+        let workspace_root = fs::canonicalize(fixture.temp.path())?.join("workspace");
+        let runtime = MediaJobRuntime::new(
+            fixture.store.clone(),
+            fixture.events.clone(),
+            fixture.telemetry.clone(),
+            workspace_root,
+            Arc::new(revaer_media_runtime::process::SystemNativeProcessSupervisor),
+        );
+        runtime.run_tick().await?;
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("production media job missing"))?;
+        assert_eq!(job.status_text, "completed", "{:?}", job.last_error);
+        assert_eq!(job.last_error, None);
+        let replaced_source = fs::read(source_path)?;
+        assert!(!replaced_source.is_empty());
+        assert_ne!(replaced_source, original_source);
+        let phases = fixture.store.list_job_phases(fixture.job_id).await?;
+        for required_phase in ["execute", "verify_replace"] {
+            assert!(phases.iter().any(|phase| {
+                phase.phase_name == required_phase && phase.phase_status == "completed"
+            }));
+        }
+        let checks = fixture
+            .store
+            .list_job_verification_checks(fixture.job_id)
+            .await?;
+        for required_check in ["candidate_graph", "output_replacement", "final_graph"] {
+            assert!(checks.iter().any(|check| {
+                check.check_kind == required_check && check.check_status == "passed"
+            }));
+        }
+        assert!(
+            !fixture
+                .store
+                .list_job_compact_audits(fixture.job_id)
+                .await?
+                .is_empty()
+        );
+        assert!(
+            fs::read_dir(&runtime.workspace_root)?
+                .next()
+                .transpose()?
+                .is_none()
+        );
+        Ok(())
     }
 
     fn video_graph(source_path: &str, codec: &str) -> MediaGraph {

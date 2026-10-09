@@ -228,6 +228,14 @@ def test_media_recovery_requires_actual_tests_and_propagates_failure(
     }
 }
 #[cfg(test)] mod media_job_runtime { mod tests {
+    #[test] #[ignore = "explicit production-runtime selection"]
+    fn production_media_job_runtime_executes_and_persists_verified_replacement()
+    -> Result<(), Box<dyn std::error::Error>> {
+        assert!(cfg!(feature = "extended"));
+        std::fs::write(std::path::PathBuf::from(std::env::var("RV_FIXTURE_OUTPUT")?)
+            .join("production"), "executed")?;
+        Ok(())
+    }
     #[test] fn media_job_runtime_interrupted() -> Result<(), Box<dyn std::error::Error>> {
         assert!(!cfg!(feature = "extended"));
         std::fs::write(std::path::PathBuf::from(std::env::var("RV_FIXTURE_OUTPUT")?)
@@ -283,6 +291,7 @@ def test_media_recovery_requires_actual_tests_and_propagates_failure(
     )
     TestMediaRecovery.run(test_workspace)
     expected = {
+        "production": "executed",
         "fingerprint": "executed",
         "admission": "executed",
         "recovery": "executed",
