@@ -4,6 +4,8 @@ These commands use the caller's available database. Provisioning belongs to the
 database/CI lifecycle task, so targeted test runs do not replace a running server.
 """
 
+import re
+
 from ..context import Context, TaskResult
 from ..errors import ToolingError
 from ..external.rust import AppRegression, CargoArgs, CargoOperation
@@ -83,3 +85,83 @@ class UiE2eAppTest(Task):
             result = context.tools.cargo.app_regressions(group, environment)
             context.emit(result.stdout)
         return TaskResult("Application launch, compliance and bootstrap regressions passed")
+
+
+class TestMediaRecovery(Task):
+    """Exercise interruption/replay and the private workspace reuse boundary."""
+
+    @staticmethod
+    def run(context: Context) -> TaskResult:
+        selections: tuple[CargoArgs, ...] = (
+            CargoArgs(
+                CargoOperation.TEST,
+                ("revaer-app",),
+                all_features=False,
+                no_default_features=True,
+                test_filter="media_discovery_fingerprint::tests",
+                test_threads=1,
+            ),
+            CargoArgs(
+                CargoOperation.TEST,
+                ("revaer-app",),
+                all_features=False,
+                no_default_features=True,
+                test_filter="media::",
+                test_threads=1,
+            ),
+            CargoArgs(CargoOperation.TEST, ("revaer-media-runtime",)),
+            CargoArgs(CargoOperation.TEST, ("revaer-data",), test_filter="media::"),
+            CargoArgs(
+                CargoOperation.TEST,
+                ("revaer-app",),
+                all_features=False,
+                no_default_features=True,
+                test_filter="media_job_runtime::tests::media_job_runtime_",
+                test_threads=1,
+            ),
+        )
+        if context.host.system == "linux":
+            selections += (
+                CargoArgs(
+                    CargoOperation.TEST,
+                    ("revaer-app",),
+                    all_features=False,
+                    no_default_features=True,
+                    test_filter="bootstrap::root_catalog::native::tests",
+                    test_threads=1,
+                ),
+            )
+        for selection in selections:
+            result = context.tools.cargo.execute(selection, test_environment(context), capture=True)
+            context.emit(result.stdout)
+            if not re.search(
+                r"(?m)^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored;", result.stdout
+            ):
+                raise ToolingError("Media recovery regression selection ran no passing tests")
+        return TaskResult()
+
+
+class TestMediaServiceRecovery(Task):
+    """Run the explicit persistent-mount, active-service Linux qualification."""
+
+    @staticmethod
+    def run(context: Context) -> TaskResult:
+        if context.host.system != "linux":
+            raise ToolingError("Native media service recovery requires Linux")
+        result = context.tools.cargo.execute(
+            CargoArgs(
+                CargoOperation.TEST,
+                ("revaer-app",),
+                test_filter="bootstrap::service_recovery_tests::native_service_shutdown_resumes_active_ffmpeg",
+                include_ignored=True,
+                test_threads=1,
+            ),
+            test_environment(context),
+            capture=True,
+        )
+        context.emit(result.stdout)
+        if not re.search(r"(?m)^test result: ok\. 1 passed; 0 failed; 0 ignored;", result.stdout):
+            raise ToolingError(
+                "Native service recovery qualification did not execute one passing test"
+            )
+        return TaskResult("Native media service recovery passed")
