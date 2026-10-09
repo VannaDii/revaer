@@ -3924,6 +3924,3946 @@
           "url"
         ],
         "type": "object"
+      },
+      "DiscoveryAssociationPageResponse": {
+        "properties": {
+          "associations": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryAssociationResponse"
+            },
+            "maxItems": 200,
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "associations"
+        ],
+        "type": "object"
+      },
+      "DiscoveryAssociationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "association_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "manual_enabled": {
+            "type": "boolean"
+          },
+          "media_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "profile_version": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "root_relative_path": {
+            "description": "Explicit component-safe root-relative prefix; empty selects the whole root. Absolute paths, empty components, dot components and backslashes are rejected.",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "schedule_enabled": {
+            "type": "boolean"
+          },
+          "source_root_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "watcher_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "association_key",
+          "media_profile_public_id",
+          "profile_version",
+          "source_root_key",
+          "root_relative_path",
+          "manual_enabled",
+          "watcher_enabled",
+          "schedule_enabled"
+        ],
+        "type": "object"
+      },
+      "DiscoveryAssociationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active_version": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "association_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "binding_ready": {
+            "type": "boolean"
+          },
+          "binding_reason": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "destructive_ready": {
+            "type": "boolean"
+          },
+          "destructive_reason": {
+            "type": "string"
+          },
+          "latest_version": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "lifecycle_state": {
+            "enum": [
+              "active",
+              "draft",
+              "archived"
+            ],
+            "type": "string"
+          },
+          "manual_enabled": {
+            "type": "boolean"
+          },
+          "media_discovery_association_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "media_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "profile_version": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "resolution_state": {
+            "enum": [
+              "resolved",
+              "unmapped",
+              "kind_forbidden"
+            ],
+            "type": "string"
+          },
+          "root_relative_path": {
+            "description": "Explicit component-safe root-relative prefix; empty selects the whole root. Absolute paths, empty components, dot components and backslashes are rejected.",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "schedule_enabled": {
+            "type": "boolean"
+          },
+          "source_root_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "watcher_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "association_key",
+          "media_profile_public_id",
+          "profile_version",
+          "source_root_key",
+          "root_relative_path",
+          "manual_enabled",
+          "watcher_enabled",
+          "schedule_enabled",
+          "media_discovery_association_public_id",
+          "latest_version",
+          "lifecycle_state",
+          "resolution_state",
+          "binding_ready",
+          "destructive_ready",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "MediaCapabilityCodecResponse": {
+        "properties": {
+          "codec_name": {
+            "type": "string"
+          },
+          "decode_supported": {
+            "type": "boolean"
+          },
+          "encode_supported": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "codec_name",
+          "encode_supported",
+          "decode_supported"
+        ],
+        "type": "object"
+      },
+      "MediaCapabilityFeatureResponse": {
+        "properties": {
+          "detail_text": {
+            "type": "string"
+          },
+          "feature_family": {
+            "type": "string"
+          },
+          "feature_name": {
+            "type": "string"
+          },
+          "supported": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "feature_family",
+          "feature_name",
+          "supported"
+        ],
+        "type": "object"
+      },
+      "MediaCapabilityLatestResponse": {
+        "properties": {
+          "snapshot": {
+            "$ref": "#/components/schemas/MediaCapabilitySnapshotResponse"
+          }
+        },
+        "type": "object"
+      },
+      "MediaCapabilityReadinessResponse": {
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/MediaCapabilitySnapshotResponse"
+          }
+        },
+        "required": [
+          "ready"
+        ],
+        "type": "object"
+      },
+      "MediaCapabilityRefreshResponse": {
+        "properties": {
+          "media_capability_snapshot_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "media_capability_snapshot_id"
+        ],
+        "type": "object"
+      },
+      "MediaCapabilitySnapshotResponse": {
+        "properties": {
+          "absent_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "codecs": {
+            "items": {
+              "$ref": "#/components/schemas/MediaCapabilityCodecResponse"
+            },
+            "type": "array"
+          },
+          "compliance_links": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "decoders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "demuxers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "encoders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/MediaCapabilityFeatureResponse"
+            },
+            "type": "array"
+          },
+          "ffmpeg_enable_gpl": {
+            "type": "boolean"
+          },
+          "ffmpeg_enable_nonfree": {
+            "type": "boolean"
+          },
+          "ffmpeg_enable_version3": {
+            "type": "boolean"
+          },
+          "ffmpeg_license_mode": {
+            "type": "string"
+          },
+          "ffmpeg_version": {
+            "type": "string"
+          },
+          "ffprobe_version": {
+            "type": "string"
+          },
+          "filesystem_utilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "hardware_accelerators": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "license_mode": {
+            "type": "string"
+          },
+          "media_capability_snapshot_id": {
+            "type": "integer"
+          },
+          "muxers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "snapshot_run_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "subtitle_support": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "utility_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "media_capability_snapshot_id",
+          "snapshot_run_public_id",
+          "ffmpeg_version",
+          "ffprobe_version",
+          "codecs",
+          "encoders",
+          "decoders",
+          "muxers",
+          "demuxers",
+          "subtitle_support",
+          "hardware_accelerators",
+          "filesystem_utilities",
+          "utility_capabilities",
+          "license_mode",
+          "ffmpeg_license_mode",
+          "ffmpeg_enable_gpl",
+          "ffmpeg_enable_version3",
+          "ffmpeg_enable_nonfree",
+          "compliance_links",
+          "absent_capabilities",
+          "features",
+          "observed_at"
+        ],
+        "type": "object"
+      },
+      "MediaCompatibilityTargetListResponse": {
+        "properties": {
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/MediaCompatibilityTargetResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "targets"
+        ],
+        "type": "object"
+      },
+      "MediaCompatibilityTargetResponse": {
+        "properties": {
+          "audio_channel_layout": {
+            "type": "string"
+          },
+          "audio_channels": {
+            "type": "integer"
+          },
+          "audio_codec": {
+            "type": "string"
+          },
+          "compatibility_target_key": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "subtitle_policy": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "video_codec": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "compatibility_target_key",
+          "version",
+          "display_name",
+          "video_codec",
+          "audio_codec",
+          "subtitle_policy"
+        ],
+        "type": "object"
+      },
+      "MediaCompatibilityTargetUpsertRequest": {
+        "properties": {
+          "audio_channel_layout": {
+            "type": "string"
+          },
+          "audio_channels": {
+            "type": "integer"
+          },
+          "audio_codec": {
+            "type": "string"
+          },
+          "compatibility_target_key": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "subtitle_policy": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "video_codec": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "compatibility_target_key",
+          "version",
+          "display_name",
+          "video_codec",
+          "audio_codec",
+          "subtitle_policy"
+        ],
+        "type": "object"
+      },
+      "MediaComplianceResponse": {
+        "properties": {
+          "absent_license_excluded_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "exiftool_exception_path": {
+            "type": "string"
+          },
+          "ffmpeg_enable_gpl": {
+            "type": "boolean"
+          },
+          "ffmpeg_enable_nonfree": {
+            "type": "boolean"
+          },
+          "ffmpeg_enable_version3": {
+            "type": "boolean"
+          },
+          "ffmpeg_license_mode": {
+            "type": "string"
+          },
+          "image_license_mode": {
+            "type": "string"
+          },
+          "inventory_path": {
+            "type": "string"
+          },
+          "license_excluded_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "license_mode": {
+            "type": "string"
+          },
+          "sbom_path": {
+            "type": "string"
+          },
+          "sbom_url": {
+            "type": "string"
+          },
+          "source_compliance_bundle_digest": {
+            "type": "string"
+          },
+          "source_compliance_bundle_path": {
+            "type": "string"
+          },
+          "source_offer_path": {
+            "type": "string"
+          },
+          "source_offer_url": {
+            "type": "string"
+          },
+          "third_party_notices_path": {
+            "type": "string"
+          },
+          "third_party_notices_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "license_mode",
+          "image_license_mode",
+          "ffmpeg_license_mode",
+          "ffmpeg_enable_gpl",
+          "ffmpeg_enable_version3",
+          "ffmpeg_enable_nonfree",
+          "source_offer_path",
+          "source_offer_url",
+          "third_party_notices_path",
+          "third_party_notices_url",
+          "sbom_path",
+          "sbom_url",
+          "inventory_path",
+          "exiftool_exception_path",
+          "source_compliance_bundle_digest",
+          "source_compliance_bundle_path",
+          "license_excluded_capabilities",
+          "absent_license_excluded_capabilities"
+        ],
+        "type": "object"
+      },
+      "MediaDesiredTargetCreateRequest": {
+        "properties": {
+          "container_format": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "streams": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetStream"
+            },
+            "maxItems": 1024,
+            "minItems": 1,
+            "type": "array"
+          },
+          "target_key": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_key",
+          "version",
+          "display_name",
+          "container_format",
+          "streams"
+        ],
+        "type": "object"
+      },
+      "MediaDesiredTargetListResponse": {
+        "properties": {
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "targets"
+        ],
+        "type": "object"
+      },
+      "MediaDesiredTargetResponse": {
+        "properties": {
+          "container_format": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "media_desired_target_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "streams": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetStream"
+            },
+            "type": "array"
+          },
+          "target_key": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "media_desired_target_profile_public_id",
+          "target_key",
+          "version",
+          "display_name",
+          "container_format",
+          "streams"
+        ],
+        "type": "object"
+      },
+      "MediaDesiredTargetStream": {
+        "properties": {
+          "audio_bitrate_bps": {
+            "type": "integer"
+          },
+          "audio_dynamic_range": {
+            "type": "string"
+          },
+          "audio_loudness_profile": {
+            "type": "string"
+          },
+          "audio_sample_rate_hz": {
+            "type": "integer"
+          },
+          "channel_count": {
+            "type": "integer"
+          },
+          "channel_layout": {
+            "type": "string"
+          },
+          "codec": {
+            "type": "string"
+          },
+          "color_primaries": {
+            "type": "string"
+          },
+          "color_space": {
+            "type": "string"
+          },
+          "color_transfer": {
+            "type": "string"
+          },
+          "default_disposition": {
+            "type": "boolean"
+          },
+          "forced_disposition": {
+            "type": "boolean"
+          },
+          "hdr_format": {
+            "type": "string"
+          },
+          "image_subtitle_action": {
+            "type": "string"
+          },
+          "language_code": {
+            "type": "string"
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "semantic_role": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer"
+          },
+          "stream_key": {
+            "type": "string"
+          },
+          "stream_kind": {
+            "type": "string"
+          },
+          "subtitle_placement": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "video_bitrate_bps": {
+            "type": "integer"
+          },
+          "video_level": {
+            "type": "string"
+          },
+          "video_profile": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "stream_key",
+          "stream_kind",
+          "sort_order",
+          "codec"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryPreviewItemResponse": {
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "output_path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_path",
+          "dry_run",
+          "accepted"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryPreviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "media_discovery_association_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "source_paths": {
+            "description": "Explicit component-safe paths relative to the association's attested source root; absolute paths are rejected.",
+            "items": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 128,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "media_discovery_association_public_id",
+          "source_paths"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryPreviewResponse": {
+        "properties": {
+          "previews": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDiscoveryPreviewItemResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "previews"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryQueuedJobResponse": {
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "media_job_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "output_path": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_job_public_id",
+          "source_path",
+          "output_path",
+          "dry_run"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryRunRequest": {
+        "$ref": "#/components/schemas/MediaDiscoveryPreviewRequest"
+      },
+      "MediaDiscoveryRunResponse": {
+        "properties": {
+          "queued_jobs": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDiscoveryQueuedJobResponse"
+            },
+            "type": "array"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDiscoverySkippedItemResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "queued_jobs",
+          "skipped"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryScheduleListResponse": {
+        "properties": {
+          "next_cursor": {
+            "type": "string"
+          },
+          "schedules": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDiscoveryScheduleResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "schedules"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryScheduleResponse": {
+        "$ref": "#/components/schemas/DiscoveryAssociationResponse"
+      },
+      "MediaDiscoverySkippedItemResponse": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_path"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryWatcherListResponse": {
+        "properties": {
+          "next_cursor": {
+            "type": "string"
+          },
+          "watchers": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDiscoveryWatcherResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "watchers"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryWatcherResponse": {
+        "$ref": "#/components/schemas/DiscoveryAssociationResponse"
+      },
+      "MediaJobArtifactListResponse": {
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobArtifactResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "artifacts"
+        ],
+        "type": "object"
+      },
+      "MediaJobArtifactResponse": {
+        "properties": {
+          "artifact_index": {
+            "type": "integer"
+          },
+          "artifact_kind": {
+            "type": "string"
+          },
+          "artifact_path": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "artifact_index",
+          "artifact_kind",
+          "artifact_path",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "MediaJobCompactAuditListResponse": {
+        "properties": {
+          "audits": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobCompactAuditResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "audits"
+        ],
+        "type": "object"
+      },
+      "MediaJobCompactAuditResponse": {
+        "properties": {
+          "audit_index": {
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fact_kind": {
+            "type": "string"
+          },
+          "fact_text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "audit_index",
+          "fact_kind",
+          "fact_text",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "MediaJobDiagnosticCounts": {
+        "properties": {
+          "artifacts": {
+            "type": "integer"
+          },
+          "compact_audits": {
+            "type": "integer"
+          },
+          "operations": {
+            "type": "integer"
+          },
+          "plan_reasons": {
+            "type": "integer"
+          },
+          "verification_checks": {
+            "type": "integer"
+          },
+          "violations": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "operations",
+          "violations",
+          "plan_reasons",
+          "verification_checks",
+          "artifacts",
+          "compact_audits"
+        ],
+        "type": "object"
+      },
+      "MediaJobDiagnosticsResponse": {
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobArtifactResponse"
+            },
+            "type": "array"
+          },
+          "compact_audits": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobCompactAuditResponse"
+            },
+            "type": "array"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobOperationResponse"
+            },
+            "type": "array"
+          },
+          "plan_reasons": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobPlanReasonResponse"
+            },
+            "type": "array"
+          },
+          "verification_checks": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobVerificationCheckResponse"
+            },
+            "type": "array"
+          },
+          "violations": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobViolationResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "operations",
+          "violations",
+          "plan_reasons",
+          "verification_checks",
+          "artifacts",
+          "compact_audits"
+        ],
+        "type": "object"
+      },
+      "MediaJobListResponse": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "type": "object"
+      },
+      "MediaJobOperationListResponse": {
+        "properties": {
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobOperationResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "operations"
+        ],
+        "type": "object"
+      },
+      "MediaJobOperationResponse": {
+        "properties": {
+          "arg_1": {
+            "type": "string"
+          },
+          "arg_2": {
+            "type": "string"
+          },
+          "arg_3": {
+            "type": "string"
+          },
+          "arg_4": {
+            "type": "string"
+          },
+          "arg_5": {
+            "type": "string"
+          },
+          "command_bin": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "operation_index": {
+            "type": "integer"
+          },
+          "operation_kind": {
+            "enum": [
+              "remux",
+              "metadata_rewrite",
+              "disposition_rewrite",
+              "label_rewrite",
+              "stream_reorder",
+              "audio_transcode",
+              "video_transcode"
+            ],
+            "type": "string"
+          },
+          "stream_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "operation_index",
+          "operation_kind",
+          "command_bin",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "MediaJobPhaseListResponse": {
+        "properties": {
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobPhaseResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "phases"
+        ],
+        "type": "object"
+      },
+      "MediaJobPhaseResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "details_text": {
+            "type": "string"
+          },
+          "phase_index": {
+            "type": "integer"
+          },
+          "phase_name": {
+            "type": "string"
+          },
+          "phase_status": {
+            "enum": [
+              "queued",
+              "running",
+              "verifying",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "phase_index",
+          "phase_name",
+          "phase_status",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "MediaJobPlanReasonListResponse": {
+        "properties": {
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobPlanReasonResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "reasons"
+        ],
+        "type": "object"
+      },
+      "MediaJobPlanReasonResponse": {
+        "properties": {
+          "candidate_index": {
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "reason_index": {
+            "type": "integer"
+          },
+          "reason_text": {
+            "type": "string"
+          },
+          "selected": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reason_index",
+          "selected",
+          "reason_code",
+          "reason_text",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "MediaJobResponse": {
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "media_job_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "output_path": {
+            "type": "string"
+          },
+          "queued_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "verifying",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_job_public_id",
+          "source_path",
+          "status",
+          "dry_run",
+          "queued_at"
+        ],
+        "type": "object"
+      },
+      "MediaJobRetentionResponse": {
+        "properties": {
+          "completed_enabled": {
+            "type": "boolean"
+          },
+          "completed_limit": {
+            "type": "integer"
+          },
+          "completed_mode": {
+            "enum": [
+              "age",
+              "count"
+            ],
+            "type": "string"
+          },
+          "failed_diagnostic_enabled": {
+            "type": "boolean"
+          },
+          "failed_diagnostic_limit": {
+            "type": "integer"
+          },
+          "failed_diagnostic_mode": {
+            "enum": [
+              "age",
+              "count"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "completed_enabled",
+          "completed_mode",
+          "completed_limit",
+          "failed_diagnostic_enabled",
+          "failed_diagnostic_mode",
+          "failed_diagnostic_limit"
+        ],
+        "type": "object"
+      },
+      "MediaJobRetentionUpdateRequest": {
+        "properties": {
+          "completed_enabled": {
+            "type": "boolean"
+          },
+          "completed_limit": {
+            "type": "integer"
+          },
+          "completed_mode": {
+            "enum": [
+              "age",
+              "count"
+            ],
+            "type": "string"
+          },
+          "failed_diagnostic_enabled": {
+            "type": "boolean"
+          },
+          "failed_diagnostic_limit": {
+            "type": "integer"
+          },
+          "failed_diagnostic_mode": {
+            "enum": [
+              "age",
+              "count"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "completed_enabled",
+          "completed_mode",
+          "completed_limit",
+          "failed_diagnostic_enabled",
+          "failed_diagnostic_mode",
+          "failed_diagnostic_limit"
+        ],
+        "type": "object"
+      },
+      "MediaJobVerificationCheckListResponse": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobVerificationCheckResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "checks"
+        ],
+        "type": "object"
+      },
+      "MediaJobVerificationCheckResponse": {
+        "properties": {
+          "actual_value": {
+            "type": "string"
+          },
+          "check_index": {
+            "type": "integer"
+          },
+          "check_kind": {
+            "type": "string"
+          },
+          "check_status": {
+            "enum": [
+              "passed",
+              "failed",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "details_text": {
+            "type": "string"
+          },
+          "expected_value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "check_index",
+          "check_kind",
+          "check_status",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "MediaJobViolationListResponse": {
+        "properties": {
+          "violations": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobViolationResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "violations"
+        ],
+        "type": "object"
+      },
+      "MediaJobViolationResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "type": "string"
+          },
+          "stream_id": {
+            "type": "integer"
+          },
+          "violation_index": {
+            "type": "integer"
+          },
+          "violation_kind": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "violation_index",
+          "violation_kind",
+          "severity",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "MediaPlanningPreviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "media_discovery_association_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "source_path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_discovery_association_public_id",
+          "source_path"
+        ],
+        "type": "object"
+      },
+      "MediaPlanningPreviewResponse": {
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "output_path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accepted",
+          "source_path",
+          "dry_run"
+        ],
+        "type": "object"
+      },
+      "MediaPolicyListResponse": {
+        "properties": {
+          "policies": {
+            "items": {
+              "$ref": "#/components/schemas/MediaPolicyResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "policies"
+        ],
+        "type": "object"
+      },
+      "MediaPolicyResponse": {
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "output": {
+            "properties": {
+              "dry_run": {
+                "type": "boolean"
+              },
+              "preserve_ownership": {
+                "type": "boolean"
+              },
+              "preserve_permissions": {
+                "type": "boolean"
+              },
+              "quarantine_enabled": {
+                "type": "boolean"
+              },
+              "replacement_mode": {
+                "enum": [
+                  "disabled",
+                  "atomic_replace"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "dry_run",
+              "replacement_mode",
+              "quarantine_enabled",
+              "preserve_permissions",
+              "preserve_ownership"
+            ],
+            "type": "object"
+          },
+          "policy_key": {
+            "type": "string"
+          },
+          "verification_decode_all_streams": {
+            "type": "boolean"
+          },
+          "verification_duration_tolerance_millis": {
+            "format": "int64",
+            "maximum": 60000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "verification_keyframe_seek": {
+            "type": "boolean"
+          },
+          "verification_mux_validation": {
+            "type": "boolean"
+          },
+          "verification_playback_probe": {
+            "type": "boolean"
+          },
+          "verification_strictness": {
+            "enum": [
+              "strict",
+              "balanced",
+              "fast"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "video_intent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "policy_key",
+          "version",
+          "display_name",
+          "video_intent",
+          "output",
+          "verification_strictness",
+          "verification_duration_tolerance_millis",
+          "verification_mux_validation",
+          "verification_decode_all_streams",
+          "verification_keyframe_seek",
+          "verification_playback_probe"
+        ],
+        "type": "object"
+      },
+      "MediaPolicyUpsertRequest": {
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "output": {
+            "properties": {
+              "dry_run": {
+                "type": "boolean"
+              },
+              "preserve_ownership": {
+                "type": "boolean"
+              },
+              "preserve_permissions": {
+                "type": "boolean"
+              },
+              "quarantine_enabled": {
+                "type": "boolean"
+              },
+              "replacement_mode": {
+                "enum": [
+                  "disabled",
+                  "atomic_replace"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "dry_run",
+              "replacement_mode",
+              "quarantine_enabled",
+              "preserve_permissions",
+              "preserve_ownership"
+            ],
+            "type": "object"
+          },
+          "policy_key": {
+            "type": "string"
+          },
+          "verification_decode_all_streams": {
+            "type": "boolean"
+          },
+          "verification_duration_tolerance_millis": {
+            "format": "int64",
+            "maximum": 60000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "verification_keyframe_seek": {
+            "type": "boolean"
+          },
+          "verification_mux_validation": {
+            "type": "boolean"
+          },
+          "verification_playback_probe": {
+            "type": "boolean"
+          },
+          "verification_strictness": {
+            "enum": [
+              "strict",
+              "balanced",
+              "fast"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "video_intent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "policy_key",
+          "version",
+          "display_name",
+          "video_intent",
+          "output",
+          "verification_strictness",
+          "verification_duration_tolerance_millis",
+          "verification_mux_validation",
+          "verification_decode_all_streams",
+          "verification_keyframe_seek",
+          "verification_playback_probe"
+        ],
+        "type": "object"
+      },
+      "MediaProfileListResponse": {
+        "properties": {
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/MediaProfileResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "profiles"
+        ],
+        "type": "object"
+      },
+      "MediaProfilePatchRequest": {
+        "properties": {
+          "compatibility_target_key": {
+            "type": "string"
+          },
+          "dry_run_only": {
+            "type": "boolean"
+          },
+          "output_root": {
+            "type": "string"
+          },
+          "policy_key": {
+            "type": "string"
+          },
+          "retention_days": {
+            "type": "integer"
+          },
+          "schedule_enabled": {
+            "type": "boolean"
+          },
+          "schedule_interval_minutes": {
+            "type": "integer"
+          },
+          "source_root": {
+            "type": "string"
+          },
+          "watcher_enabled": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "MediaProfileReadinessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active_association_count": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "active_profile": {
+            "$ref": "#/components/schemas/ProfileVersionRequest"
+          },
+          "active_root_bindings": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "binding_ready": {
+                  "type": "boolean"
+                },
+                "binding_reason": {
+                  "type": "string"
+                },
+                "destructive_ready": {
+                  "type": "boolean"
+                },
+                "destructive_reason": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "output",
+                    "workspace",
+                    "backup",
+                    "quarantine"
+                  ],
+                  "type": "string"
+                },
+                "logical_key": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+                  "type": "string"
+                },
+                "resolution_state": {
+                  "enum": [
+                    "resolved",
+                    "unmapped",
+                    "kind_forbidden"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "logical_key",
+                "resolution_state",
+                "binding_ready",
+                "destructive_ready"
+              ],
+              "type": "object"
+            },
+            "maxItems": 4,
+            "minItems": 0,
+            "type": "array"
+          },
+          "binding_ready": {
+            "type": "boolean"
+          },
+          "binding_reason": {
+            "type": "string"
+          },
+          "destructive_ready": {
+            "type": "boolean"
+          },
+          "destructive_reason": {
+            "type": "string"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/ProfileVersionResponse"
+          },
+          "root_readiness": {
+            "$ref": "#/components/schemas/RootCatalogReadinessResponse"
+          }
+        },
+        "required": [
+          "profile",
+          "active_root_bindings",
+          "root_readiness",
+          "active_association_count",
+          "binding_ready",
+          "destructive_ready"
+        ],
+        "type": "object"
+      },
+      "MediaProfileResponse": {
+        "properties": {
+          "compatibility_target_key": {
+            "type": "string"
+          },
+          "desired_target_key": {
+            "type": "string"
+          },
+          "desired_target_version": {
+            "type": "integer"
+          },
+          "dry_run_only": {
+            "type": "boolean"
+          },
+          "media_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "output_root": {
+            "type": "string"
+          },
+          "policy_key": {
+            "type": "string"
+          },
+          "profile_key": {
+            "type": "string"
+          },
+          "retention_days": {
+            "type": "integer"
+          },
+          "schedule_enabled": {
+            "type": "boolean"
+          },
+          "schedule_interval_minutes": {
+            "type": "integer"
+          },
+          "source_root": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "watcher_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "media_profile_public_id",
+          "profile_key",
+          "source_root",
+          "output_root",
+          "dry_run_only",
+          "retention_days",
+          "policy_key",
+          "watcher_enabled",
+          "schedule_enabled",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "MediaProfileUpsertRequest": {
+        "properties": {
+          "compatibility_target_key": {
+            "type": "string"
+          },
+          "dry_run_only": {
+            "type": "boolean"
+          },
+          "output_root": {
+            "type": "string"
+          },
+          "policy_key": {
+            "type": "string"
+          },
+          "profile_key": {
+            "type": "string"
+          },
+          "retention_days": {
+            "type": "integer"
+          },
+          "schedule_enabled": {
+            "type": "boolean"
+          },
+          "schedule_interval_minutes": {
+            "type": "integer"
+          },
+          "source_root": {
+            "type": "string"
+          },
+          "watcher_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "profile_key",
+          "source_root",
+          "output_root",
+          "dry_run_only",
+          "retention_days"
+        ],
+        "type": "object"
+      },
+      "MediaProfileValidationResponse": {
+        "properties": {
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "valid": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid",
+          "issues"
+        ],
+        "type": "object"
+      },
+      "MediaRecentJobPageResponse": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/MediaRecentJobSummaryResponse"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "type": "object"
+      },
+      "MediaRecentJobSummaryResponse": {
+        "properties": {
+          "diagnostic_counts": {
+            "$ref": "#/components/schemas/MediaJobDiagnosticCounts"
+          },
+          "media_job_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "media_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_job_public_id",
+          "media_profile_public_id",
+          "diagnostic_counts"
+        ],
+        "type": "object"
+      },
+      "MediaScheduleConfigurationRequest": {
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "properties": {
+              "interval_quantity": {
+                "maximum": 43200
+              },
+              "interval_unit": {
+                "enum": [
+                  "minutes"
+                ]
+              }
+            }
+          },
+          {
+            "properties": {
+              "interval_quantity": {
+                "maximum": 720
+              },
+              "interval_unit": {
+                "enum": [
+                  "hours"
+                ]
+              }
+            }
+          }
+        ],
+        "properties": {
+          "association_version": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "interval_quantity": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "interval_unit": {
+            "enum": [
+              "minutes",
+              "hours"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "association_version",
+          "interval_quantity",
+          "interval_unit"
+        ],
+        "type": "object"
+      },
+      "MediaScheduleConfigurationResponse": {
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "properties": {
+              "interval_quantity": {
+                "maximum": 43200
+              },
+              "interval_unit": {
+                "enum": [
+                  "minutes"
+                ]
+              }
+            }
+          },
+          {
+            "properties": {
+              "interval_quantity": {
+                "maximum": 720
+              },
+              "interval_unit": {
+                "enum": [
+                  "hours"
+                ]
+              }
+            }
+          }
+        ],
+        "properties": {
+          "anchor_due_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "association_version": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "interval_quantity": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "interval_unit": {
+            "enum": [
+              "minutes",
+              "hours"
+            ],
+            "type": "string"
+          },
+          "media_discovery_association_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "association_version",
+          "interval_quantity",
+          "interval_unit",
+          "media_discovery_association_public_id",
+          "anchor_due_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "MediaYamlApplyResponse": {
+        "properties": {
+          "forced_dry_run": {
+            "type": "boolean"
+          },
+          "media_profile_import_draft_public_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "media_profile_public_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "forced_dry_run",
+          "media_profile_public_ids",
+          "media_profile_import_draft_public_ids"
+        ],
+        "type": "object"
+      },
+      "MediaYamlExportResponse": {
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "yaml_payload": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "yaml_payload"
+        ],
+        "type": "object"
+      },
+      "MediaYamlImportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "preconditions": {
+            "description": "Required for apply, optional for read-only validation. Explicit operator intent for every distinct kind/key; versions in YAML are not write fences.",
+            "items": {
+              "$ref": "#/components/schemas/MediaYamlResourcePrecondition"
+            },
+            "maxItems": 128,
+            "type": "array"
+          },
+          "yaml_payload": {
+            "description": "One UTF-8 YAML document, at most 4194304 bytes; JSON escaping does not enlarge that document limit.",
+            "maxLength": 4194304,
+            "type": "string"
+          }
+        },
+        "required": [
+          "yaml_payload"
+        ],
+        "type": "object"
+      },
+      "MediaYamlIssueResponse": {
+        "properties": {
+          "blocking": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "pointer": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "pointer",
+          "blocking"
+        ],
+        "type": "object"
+      },
+      "MediaYamlResourceKind": {
+        "enum": [
+          "compatibility_targets",
+          "targets",
+          "policies",
+          "profiles",
+          "discovery_associations"
+        ],
+        "type": "string"
+      },
+      "MediaYamlResourcePrecondition": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "intent": {
+                "enum": [
+                  "create"
+                ],
+                "type": "string"
+              },
+              "key": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/MediaYamlResourceKind"
+              }
+            },
+            "required": [
+              "intent",
+              "kind",
+              "key"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "expected_version": {
+                "maximum": 2147483647,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "intent": {
+                "enum": [
+                  "match"
+                ],
+                "type": "string"
+              },
+              "key": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/MediaYamlResourceKind"
+              }
+            },
+            "required": [
+              "intent",
+              "kind",
+              "key",
+              "expected_version"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "MediaYamlValidationResponse": {
+        "properties": {
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/MediaYamlIssueResponse"
+            },
+            "type": "array"
+          },
+          "profile_count": {
+            "type": "integer"
+          },
+          "valid": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "valid",
+          "issues",
+          "profile_count"
+        ],
+        "type": "object"
+      },
+      "ProfileVersionPageResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "next_cursor": {
+            "type": "string"
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileVersionResponse"
+            },
+            "maxItems": 200,
+            "type": "array"
+          }
+        },
+        "required": [
+          "profiles"
+        ],
+        "type": "object"
+      },
+      "ProfileVersionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "backup_root_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "description": {
+            "description": "Exact submitted value; at most 1024 UTF-8 bytes.",
+            "type": "string"
+          },
+          "desired_target_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "desired_target_version": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "display_name": {
+            "description": "Exact submitted value; 1-128 UTF-8 bytes.",
+            "type": "string"
+          },
+          "dry_run_only": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "output_root_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "policy_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "policy_version": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "profile_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "quarantine_root_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "workspace_root_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "profile_key",
+          "display_name",
+          "description",
+          "enabled",
+          "dry_run_only",
+          "desired_target_key",
+          "desired_target_version",
+          "policy_key",
+          "policy_version",
+          "output_root_key",
+          "workspace_root_key"
+        ],
+        "type": "object"
+      },
+      "ProfileVersionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active_version": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "backup_root_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "description": "Exact submitted value; at most 1024 UTF-8 bytes.",
+            "type": "string"
+          },
+          "desired_target_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "desired_target_version": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "display_name": {
+            "description": "Exact submitted value; 1-128 UTF-8 bytes.",
+            "type": "string"
+          },
+          "dry_run_only": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "latest_version": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "lifecycle_state": {
+            "enum": [
+              "draft",
+              "active",
+              "archived"
+            ],
+            "type": "string"
+          },
+          "media_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "output_root_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "policy_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "policy_version": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "profile_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "quarantine_root_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "root_bindings": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "binding_ready": {
+                  "type": "boolean"
+                },
+                "binding_reason": {
+                  "type": "string"
+                },
+                "destructive_ready": {
+                  "type": "boolean"
+                },
+                "destructive_reason": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "output",
+                    "workspace",
+                    "backup",
+                    "quarantine"
+                  ],
+                  "type": "string"
+                },
+                "logical_key": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+                  "type": "string"
+                },
+                "resolution_state": {
+                  "enum": [
+                    "resolved",
+                    "unmapped",
+                    "kind_forbidden"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "logical_key",
+                "resolution_state",
+                "binding_ready",
+                "destructive_ready"
+              ],
+              "type": "object"
+            },
+            "maxItems": 4,
+            "minItems": 2,
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workspace_root_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_profile_public_id",
+          "profile_key",
+          "display_name",
+          "description",
+          "enabled",
+          "dry_run_only",
+          "desired_target_key",
+          "desired_target_version",
+          "policy_key",
+          "policy_version",
+          "output_root_key",
+          "workspace_root_key",
+          "latest_version",
+          "lifecycle_state",
+          "root_bindings",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "RootCatalogAllowedKind": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_ready": {
+            "type": "boolean"
+          },
+          "binding_reason": {
+            "enum": [
+              "media_configuration_root_unmapped",
+              "media_root_slot_unknown",
+              "media_root_kind_forbidden",
+              "media_root_binding_incomplete",
+              "media_root_attestation_stale",
+              "media_root_attestation_invalid",
+              "media_root_overlap",
+              "media_root_unsafe_ancestry",
+              "media_root_durability_unproven",
+              "media_root_writer_control_unproven",
+              "media_root_identity_mismatch"
+            ],
+            "type": "string"
+          },
+          "destructive_ready": {
+            "type": "boolean"
+          },
+          "destructive_reason": {
+            "enum": [
+              "media_configuration_root_unmapped",
+              "media_root_slot_unknown",
+              "media_root_kind_forbidden",
+              "media_root_binding_incomplete",
+              "media_root_attestation_stale",
+              "media_root_attestation_invalid",
+              "media_root_overlap",
+              "media_root_unsafe_ancestry",
+              "media_root_durability_unproven",
+              "media_root_writer_control_unproven",
+              "media_root_identity_mismatch"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "source",
+              "output",
+              "workspace",
+              "backup",
+              "quarantine"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "binding_ready",
+          "destructive_ready"
+        ],
+        "type": "object"
+      },
+      "RootCatalogGeneration": {
+        "additionalProperties": false,
+        "properties": {
+          "activated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "generation": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "generation_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "media_root_catalog_generation_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reconciled_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "slot_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "source_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_root_catalog_generation_public_id",
+          "generation",
+          "source_sha256",
+          "generation_sha256",
+          "slot_count",
+          "activated_at",
+          "reconciled_at"
+        ],
+        "type": "object"
+      },
+      "RootCatalogPageResponse": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "generation": {
+                "$ref": "#/components/schemas/RootCatalogGeneration"
+              },
+              "next_cursor": {
+                "maxLength": 110,
+                "type": "string"
+              },
+              "slots": {
+                "items": {
+                  "$ref": "#/components/schemas/RootCatalogSlot"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              "source_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "slots",
+              "generation"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_state": {
+                "enum": [
+                  "not_evaluated"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "slots": {
+                "items": {
+                  "$ref": "#/components/schemas/RootCatalogSlot"
+                },
+                "maxItems": 0,
+                "type": "array"
+              },
+              "source_reason": {
+                "enum": [
+                  "media_root_catalog_source_missing"
+                ],
+                "type": "string"
+              },
+              "source_state": {
+                "enum": [
+                  "missing"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "slots",
+              "source_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_state": {
+                "enum": [
+                  "not_evaluated"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "slots": {
+                "items": {
+                  "$ref": "#/components/schemas/RootCatalogSlot"
+                },
+                "maxItems": 0,
+                "type": "array"
+              },
+              "source_reason": {
+                "enum": [
+                  "media_root_catalog_source_untrusted"
+                ],
+                "type": "string"
+              },
+              "source_state": {
+                "enum": [
+                  "untrusted"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "slots",
+              "source_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_state": {
+                "enum": [
+                  "not_evaluated"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "slots": {
+                "items": {
+                  "$ref": "#/components/schemas/RootCatalogSlot"
+                },
+                "maxItems": 0,
+                "type": "array"
+              },
+              "source_reason": {
+                "enum": [
+                  "media_root_catalog_format_invalid"
+                ],
+                "type": "string"
+              },
+              "source_state": {
+                "enum": [
+                  "invalid"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "slots",
+              "source_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_state": {
+                "enum": [
+                  "not_evaluated"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "slots": {
+                "items": {
+                  "$ref": "#/components/schemas/RootCatalogSlot"
+                },
+                "maxItems": 0,
+                "type": "array"
+              },
+              "source_reason": {
+                "enum": [
+                  "media_root_catalog_bound_exceeded"
+                ],
+                "type": "string"
+              },
+              "source_state": {
+                "enum": [
+                  "bound_exceeded"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "slots",
+              "source_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_state": {
+                "enum": [
+                  "not_evaluated"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "slots": {
+                "items": {
+                  "$ref": "#/components/schemas/RootCatalogSlot"
+                },
+                "maxItems": 0,
+                "type": "array"
+              },
+              "source_reason": {
+                "enum": [
+                  "media_root_platform_unsupported"
+                ],
+                "type": "string"
+              },
+              "source_state": {
+                "enum": [
+                  "unsupported"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "slots",
+              "source_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_reason": {
+                "enum": [
+                  "media_root_attestation_invalid"
+                ],
+                "type": "string"
+              },
+              "attestation_state": {
+                "enum": [
+                  "invalid"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "slots": {
+                "items": {
+                  "$ref": "#/components/schemas/RootCatalogSlot"
+                },
+                "maxItems": 0,
+                "type": "array"
+              },
+              "source_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "slots",
+              "attestation_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_reason": {
+                "enum": [
+                  "media_root_overlap"
+                ],
+                "type": "string"
+              },
+              "attestation_state": {
+                "enum": [
+                  "invalid"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "slots": {
+                "items": {
+                  "$ref": "#/components/schemas/RootCatalogSlot"
+                },
+                "maxItems": 0,
+                "type": "array"
+              },
+              "source_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "slots",
+              "attestation_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_reason": {
+                "enum": [
+                  "media_root_unsafe_ancestry"
+                ],
+                "type": "string"
+              },
+              "attestation_state": {
+                "enum": [
+                  "invalid"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "slots": {
+                "items": {
+                  "$ref": "#/components/schemas/RootCatalogSlot"
+                },
+                "maxItems": 0,
+                "type": "array"
+              },
+              "source_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "slots",
+              "attestation_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_reason": {
+                "enum": [
+                  "media_root_durability_unproven"
+                ],
+                "type": "string"
+              },
+              "attestation_state": {
+                "enum": [
+                  "invalid"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "slots": {
+                "items": {
+                  "$ref": "#/components/schemas/RootCatalogSlot"
+                },
+                "maxItems": 0,
+                "type": "array"
+              },
+              "source_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "slots",
+              "attestation_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_reason": {
+                "enum": [
+                  "media_root_writer_control_unproven"
+                ],
+                "type": "string"
+              },
+              "attestation_state": {
+                "enum": [
+                  "invalid"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "slots": {
+                "items": {
+                  "$ref": "#/components/schemas/RootCatalogSlot"
+                },
+                "maxItems": 0,
+                "type": "array"
+              },
+              "source_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "slots",
+              "attestation_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_reason": {
+                "enum": [
+                  "media_root_identity_mismatch"
+                ],
+                "type": "string"
+              },
+              "attestation_state": {
+                "enum": [
+                  "invalid"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "slots": {
+                "items": {
+                  "$ref": "#/components/schemas/RootCatalogSlot"
+                },
+                "maxItems": 0,
+                "type": "array"
+              },
+              "source_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "slots",
+              "attestation_reason"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "RootCatalogReadinessResponse": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "generation": {
+                "description": "Canonical decimal generation, at most 9223372036854775807.",
+                "pattern": "^[1-9][0-9]{0,18}$",
+                "type": "string"
+              },
+              "kinds": {
+                "description": "Exactly source, output, workspace, backup, quarantine in that order.",
+                "items": {
+                  "$ref": "#/components/schemas/RootKindReadiness"
+                },
+                "maxItems": 5,
+                "minItems": 5,
+                "type": "array"
+              },
+              "source_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "kinds",
+              "generation"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_state": {
+                "enum": [
+                  "not_evaluated"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "kinds": {
+                "description": "Exactly source, output, workspace, backup, quarantine in that order.",
+                "items": {
+                  "$ref": "#/components/schemas/RootKindReadiness"
+                },
+                "maxItems": 5,
+                "minItems": 5,
+                "type": "array"
+              },
+              "source_reason": {
+                "enum": [
+                  "media_root_catalog_source_missing"
+                ],
+                "type": "string"
+              },
+              "source_state": {
+                "enum": [
+                  "missing"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "kinds",
+              "source_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_state": {
+                "enum": [
+                  "not_evaluated"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "kinds": {
+                "description": "Exactly source, output, workspace, backup, quarantine in that order.",
+                "items": {
+                  "$ref": "#/components/schemas/RootKindReadiness"
+                },
+                "maxItems": 5,
+                "minItems": 5,
+                "type": "array"
+              },
+              "source_reason": {
+                "enum": [
+                  "media_root_catalog_source_untrusted"
+                ],
+                "type": "string"
+              },
+              "source_state": {
+                "enum": [
+                  "untrusted"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "kinds",
+              "source_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_state": {
+                "enum": [
+                  "not_evaluated"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "kinds": {
+                "description": "Exactly source, output, workspace, backup, quarantine in that order.",
+                "items": {
+                  "$ref": "#/components/schemas/RootKindReadiness"
+                },
+                "maxItems": 5,
+                "minItems": 5,
+                "type": "array"
+              },
+              "source_reason": {
+                "enum": [
+                  "media_root_catalog_format_invalid"
+                ],
+                "type": "string"
+              },
+              "source_state": {
+                "enum": [
+                  "invalid"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "kinds",
+              "source_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_state": {
+                "enum": [
+                  "not_evaluated"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "kinds": {
+                "description": "Exactly source, output, workspace, backup, quarantine in that order.",
+                "items": {
+                  "$ref": "#/components/schemas/RootKindReadiness"
+                },
+                "maxItems": 5,
+                "minItems": 5,
+                "type": "array"
+              },
+              "source_reason": {
+                "enum": [
+                  "media_root_catalog_bound_exceeded"
+                ],
+                "type": "string"
+              },
+              "source_state": {
+                "enum": [
+                  "bound_exceeded"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "kinds",
+              "source_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_state": {
+                "enum": [
+                  "not_evaluated"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "kinds": {
+                "description": "Exactly source, output, workspace, backup, quarantine in that order.",
+                "items": {
+                  "$ref": "#/components/schemas/RootKindReadiness"
+                },
+                "maxItems": 5,
+                "minItems": 5,
+                "type": "array"
+              },
+              "source_reason": {
+                "enum": [
+                  "media_root_platform_unsupported"
+                ],
+                "type": "string"
+              },
+              "source_state": {
+                "enum": [
+                  "unsupported"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "kinds",
+              "source_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_reason": {
+                "enum": [
+                  "media_root_attestation_invalid"
+                ],
+                "type": "string"
+              },
+              "attestation_state": {
+                "enum": [
+                  "invalid"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "kinds": {
+                "description": "Exactly source, output, workspace, backup, quarantine in that order.",
+                "items": {
+                  "$ref": "#/components/schemas/RootKindReadiness"
+                },
+                "maxItems": 5,
+                "minItems": 5,
+                "type": "array"
+              },
+              "source_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "kinds",
+              "attestation_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_reason": {
+                "enum": [
+                  "media_root_overlap"
+                ],
+                "type": "string"
+              },
+              "attestation_state": {
+                "enum": [
+                  "invalid"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "kinds": {
+                "description": "Exactly source, output, workspace, backup, quarantine in that order.",
+                "items": {
+                  "$ref": "#/components/schemas/RootKindReadiness"
+                },
+                "maxItems": 5,
+                "minItems": 5,
+                "type": "array"
+              },
+              "source_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "kinds",
+              "attestation_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_reason": {
+                "enum": [
+                  "media_root_unsafe_ancestry"
+                ],
+                "type": "string"
+              },
+              "attestation_state": {
+                "enum": [
+                  "invalid"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "kinds": {
+                "description": "Exactly source, output, workspace, backup, quarantine in that order.",
+                "items": {
+                  "$ref": "#/components/schemas/RootKindReadiness"
+                },
+                "maxItems": 5,
+                "minItems": 5,
+                "type": "array"
+              },
+              "source_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "kinds",
+              "attestation_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_reason": {
+                "enum": [
+                  "media_root_durability_unproven"
+                ],
+                "type": "string"
+              },
+              "attestation_state": {
+                "enum": [
+                  "invalid"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "kinds": {
+                "description": "Exactly source, output, workspace, backup, quarantine in that order.",
+                "items": {
+                  "$ref": "#/components/schemas/RootKindReadiness"
+                },
+                "maxItems": 5,
+                "minItems": 5,
+                "type": "array"
+              },
+              "source_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "kinds",
+              "attestation_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_reason": {
+                "enum": [
+                  "media_root_writer_control_unproven"
+                ],
+                "type": "string"
+              },
+              "attestation_state": {
+                "enum": [
+                  "invalid"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "kinds": {
+                "description": "Exactly source, output, workspace, backup, quarantine in that order.",
+                "items": {
+                  "$ref": "#/components/schemas/RootKindReadiness"
+                },
+                "maxItems": 5,
+                "minItems": 5,
+                "type": "array"
+              },
+              "source_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "kinds",
+              "attestation_reason"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attestation_reason": {
+                "enum": [
+                  "media_root_identity_mismatch"
+                ],
+                "type": "string"
+              },
+              "attestation_state": {
+                "enum": [
+                  "invalid"
+                ],
+                "type": "string"
+              },
+              "format_version": {
+                "enum": [
+                  1
+                ],
+                "type": "integer"
+              },
+              "kinds": {
+                "description": "Exactly source, output, workspace, backup, quarantine in that order.",
+                "items": {
+                  "$ref": "#/components/schemas/RootKindReadiness"
+                },
+                "maxItems": 5,
+                "minItems": 5,
+                "type": "array"
+              },
+              "source_state": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format_version",
+              "source_state",
+              "attestation_state",
+              "kinds",
+              "attestation_reason"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "RootCatalogSlot": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_kinds": {
+            "items": {
+              "$ref": "#/components/schemas/RootCatalogAllowedKind"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array"
+          },
+          "canonical_path": {
+            "maxLength": 4096,
+            "minLength": 2,
+            "type": "string"
+          },
+          "capacity_probe_capable": {
+            "type": "boolean"
+          },
+          "create_new_capable": {
+            "type": "boolean"
+          },
+          "delete_capable": {
+            "type": "boolean"
+          },
+          "durability_class": {
+            "enum": [
+              "disposable",
+              "restart_persistent"
+            ],
+            "type": "string"
+          },
+          "durability_evidence": {
+            "enum": [
+              "none",
+              "linux_dedicated_mount",
+              "kubernetes_persistent_volume_claim"
+            ],
+            "type": "string"
+          },
+          "filesystem_device": {
+            "pattern": "^[0-9a-f]{16}$",
+            "type": "string"
+          },
+          "filesystem_inode": {
+            "pattern": "^[0-9a-f]{16}$",
+            "type": "string"
+          },
+          "filesystem_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "fsync_capable": {
+            "type": "boolean"
+          },
+          "logical_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "media_root_catalog_slot_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "mode_bits": {
+            "pattern": "^[0-7]{4}$",
+            "type": "string"
+          },
+          "mount_id": {
+            "pattern": "^(0|[1-9][0-9]{0,18})$",
+            "type": "string"
+          },
+          "owner_gid": {
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "owner_uid": {
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "read_capable": {
+            "type": "boolean"
+          },
+          "rename_capable": {
+            "type": "boolean"
+          },
+          "requested_path": {
+            "maxLength": 4096,
+            "minLength": 2,
+            "type": "string"
+          },
+          "root_identity_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "sole_writer_class": {
+            "enum": [
+              "uncontrolled",
+              "revaer_exclusive"
+            ],
+            "type": "string"
+          },
+          "sole_writer_evidence": {
+            "enum": [
+              "none",
+              "linux_dedicated_service",
+              "kubernetes_read_write_once_pod"
+            ],
+            "type": "string"
+          },
+          "validated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "write_capable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "media_root_catalog_slot_public_id",
+          "logical_key",
+          "requested_path",
+          "canonical_path",
+          "filesystem_device",
+          "filesystem_inode",
+          "mount_id",
+          "filesystem_type",
+          "read_capable",
+          "write_capable",
+          "create_new_capable",
+          "fsync_capable",
+          "rename_capable",
+          "delete_capable",
+          "capacity_probe_capable",
+          "durability_class",
+          "durability_evidence",
+          "sole_writer_class",
+          "sole_writer_evidence",
+          "owner_uid",
+          "owner_gid",
+          "mode_bits",
+          "validated_at",
+          "root_identity_sha256",
+          "allowed_kinds"
+        ],
+        "type": "object"
+      },
+      "RootKindReadiness": {
+        "additionalProperties": false,
+        "description": "Counts satisfy destructive <= binding <= attested. All counts are zero without an active generation.",
+        "properties": {
+          "attested_slot_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "binding_ready_slot_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "destructive_ready_slot_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "source",
+              "output",
+              "workspace",
+              "backup",
+              "quarantine"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "attested_slot_count",
+          "binding_ready_slot_count",
+          "destructive_ready_slot_count"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
