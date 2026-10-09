@@ -328,6 +328,9 @@ applyTo:
   jobs, step order, unconditional report/upload/cleanup and missing-report failure.
   Cache keys consume `tool_version` and `fixtures` from `rv fixture-cache-key`;
   do not retain shell-script hashes after migrating the fixture implementation.
+- The media conversion job supplies its own disposable PostgreSQL service and
+  executes the production worker replacement regression before fixture conversions.
+  A successful Cargo process with no selected worker test must fail the task.
 
 - Helm packaging uses strict lint: warnings must prevent package publication.
   Negative fixtures must pass ordinary lint to distinguish warning enforcement

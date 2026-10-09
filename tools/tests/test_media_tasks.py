@@ -268,6 +268,58 @@ def test_native_cargo_runs_ignored_integration_with_all_features(cargo_context: 
         assert not (context.root / context.settings.fixtures.report).exists()
 
 
+@pytest.mark.parametrize("worker", ("pass", "failure", "absent"))
+def test_conversion_requires_executed_production_worker(
+    cargo_context: Context, worker: str
+) -> None:
+    context = cargo_context
+    manifest = context.root / "Cargo.toml"
+    manifest.write_text(manifest.read_text().replace("[workspace]", '[workspace]\nmembers=["app"]'))
+    app = context.root / "app"
+    (app / "src").mkdir(parents=True)
+    (app / "Cargo.toml").write_text(
+        '[package]\nname="revaer-app"\nversion="0.1.0"\nedition="2024"\n'
+    )
+    name = (
+        "unselected_worker"
+        if worker == "absent"
+        else "production_media_job_runtime_executes_and_persists_verified_replacement"
+    )
+    (app / "src/lib.rs").write_text(
+        "mod media_job_runtime { mod tests {\n#[test]\n#[ignore]\n"
+        f"fn {name}() -> Result<(), Box<dyn std::error::Error>> {{\n"
+        'let database = std::env::var("REVAER_TEST_DATABASE_URL")?;\n'
+        'assert_eq!(database, "postgresql://localhost/fixture");\n'
+        'std::fs::write("worker-executed", "observed")?;\n'
+        + ('Err("injected worker failure".into())' if worker == "failure" else "Ok(())")
+        + "\n} } }\n"
+    )
+    subprocess.run(
+        ["cargo", "generate-lockfile", "--offline"],
+        cwd=context.root,
+        env=context.tools.cargo.environment,
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    context = replace(
+        context,
+        settings=replace(
+            context.settings,
+            database=replace(context.settings.database, test_url="postgresql://localhost/fixture"),
+        ),
+    )
+    if worker == "pass":
+        MediaConversion.run(context)
+        assert (app / "worker-executed").read_text() == "observed"
+        assert (context.root / context.settings.fixtures.report).read_text() == REPORT
+    else:
+        with pytest.raises((CommandError, ToolingError)):
+            MediaConversion.run(context)
+        assert not (context.root / context.settings.fixtures.report).exists()
+        assert not (context.root / "target/media-conversion/tmp/owned-media").exists()
+
+
 def test_foundation_reports_only_fixture_verification(cargo_context: Context) -> None:
     context = cargo_context
     manifest = context.root / "Cargo.toml"
