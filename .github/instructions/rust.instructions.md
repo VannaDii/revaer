@@ -49,6 +49,8 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 
 - Source inspection retains the bounded ffprobe frame sample and attributes
   frame side data only to its reported stream index; unindexed frames are ignored.
+  Attachments use their stable kind marker when ffprobe omits or varies the
+  codec name; other missing codecs still fail graph or sidecar validation.
 
 - The application's default `compat-qb` feature forwards the API compatibility
   feature explicitly. Disable API dependency defaults so the application's
