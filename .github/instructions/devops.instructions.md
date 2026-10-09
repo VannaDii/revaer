@@ -15,6 +15,10 @@ applyTo:
 
 # Workflow And Release Rules
 
+- The Justfile provides compatibility aliases for the locked `rv` task registry.
+  The retained shell/Node implementations are comparison material, not the
+  current quality-gate executor.
+
 - An audit exit code of zero is insufficient when packages were skipped. Source
   dependencies must retain uv provenance/hash verification and complete advisory
   coverage; URL requirements must not silently escape the dependency gate.

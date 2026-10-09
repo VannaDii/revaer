@@ -1,7 +1,7 @@
 //! The functional interface for Yewdux
 use std::{ops::Deref, rc::Rc};
 
-use yew::functional::*;
+use yew::functional::{hook, use_context, use_memo, use_mut_ref, use_state, UseStateHandle};
 
 use crate::{dispatch::Dispatch, store::Store, Context};
 
