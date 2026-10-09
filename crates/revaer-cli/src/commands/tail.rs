@@ -1,5 +1,5 @@
-use std::fs;
 use std::time::Duration;
+use tokio::fs;
 
 use anyhow::anyhow;
 use futures_util::StreamExt;
@@ -7,16 +7,27 @@ use revaer_events::EventEnvelope;
 use uuid::Uuid;
 
 use crate::cli::TailArgs;
-use crate::client::{
-    AppContext, CliError, CliResult, HEADER_LAST_EVENT_ID, HEADER_REQUEST_ID, classify_problem,
-};
+use crate::client::{AppContext, CliError, CliResult, HEADER_LAST_EVENT_ID, classify_problem};
 
 pub(crate) async fn handle_tail(ctx: &AppContext, args: TailArgs) -> CliResult<()> {
-    let mut resume_id = args
-        .resume_file
-        .as_ref()
-        .and_then(|path| fs::read_to_string(path).ok())
-        .and_then(|value| value.trim().parse::<u64>().ok());
+    let mut resume_id = match &args.resume_file {
+        Some(path) => match fs::read_to_string(path).await {
+            Ok(value) => Some(value.trim().parse::<u64>().map_err(|err| {
+                CliError::validation(format!(
+                    "invalid resume event ID in {}: {err}",
+                    path.display()
+                ))
+            })?),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+            Err(err) => {
+                return Err(CliError::failure(anyhow!(
+                    "failed to read resume file '{}': {err}",
+                    path.display()
+                )));
+            }
+        },
+        None => None,
+    };
 
     loop {
         let mut url = ctx
@@ -112,49 +123,57 @@ pub(crate) async fn stream_events(
                     if let Some(slot) = resume_slot.as_mut() {
                         **slot = id;
                     }
-                    if let Some(path) = &args.resume_file {
-                        fs::write(path, id.to_string()).map_err(CliError::failure)?;
-                    }
+                    save_resume_id(args.resume_file.as_deref(), id).await?;
                 }
-                match serde_json::from_str::<EventEnvelope>(&payload) {
-                    Ok(event) => {
-                        let text = serde_json::to_string_pretty(&event).map_err(|err| {
-                            CliError::failure(anyhow!("failed to format event JSON: {err}"))
-                        })?;
-                        println!("{text}");
-                    }
-                    Err(err) => {
-                        eprintln!("discarding malformed event payload: {err} -- {payload}");
-                    }
-                }
+                print_event_payload(&payload)?;
             } else if let Some(data) = line.strip_prefix("data:") {
                 current_data.push(data.trim_start().to_string());
             } else if let Some(id) = line.strip_prefix("id:")
                 && let Ok(value) = id.trim_start().parse::<u64>()
             {
                 current_event_id = Some(value);
-            } else if line.starts_with("event:")
-                || line.starts_with("retry:")
-                || line.starts_with(HEADER_REQUEST_ID)
-            {
-                // ignore auxiliary fields
             }
+            // Auxiliary and unrecognized fields do not alter event state.
         }
     }
 
     Ok(last_seen)
 }
 
+async fn save_resume_id(path: Option<&std::path::Path>, id: u64) -> CliResult<()> {
+    if let Some(path) = path {
+        fs::write(path, id.to_string())
+            .await
+            .map_err(CliError::failure)?;
+    }
+    Ok(())
+}
+
+fn print_event_payload(payload: &str) -> CliResult<()> {
+    match serde_json::from_str::<EventEnvelope>(payload) {
+        Ok(event) => {
+            let text = serde_json::to_string_pretty(&event)
+                .map_err(|err| CliError::failure(anyhow!("failed to format event JSON: {err}")))?;
+            println!("{text}");
+        }
+        Err(err) => {
+            eprintln!("discarding malformed event payload: {err} -- {payload}");
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::HEADER_REQUEST_ID;
     use anyhow::Result;
     use chrono::Utc;
     use httpmock::MockServer;
     use httpmock::prelude::*;
     use reqwest::Client;
     use revaer_events::{Event, EventEnvelope};
-    use std::fs;
+    use tokio::fs;
     use uuid::Uuid;
 
     fn build_envelope(id: u64) -> EventEnvelope {
@@ -184,6 +203,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn handle_tail_reports_invalid_resume_files_before_connecting() -> Result<()> {
+        let directory =
+            std::env::temp_dir().join(format!("revaer-tail-invalid-{}", Uuid::new_v4()));
+        fs::create_dir(&directory).await?;
+        let path = directory.join("resume");
+        fs::write(&path, "invalid-event-id").await?;
+        let context = AppContext {
+            client: Client::new(),
+            base_url: reqwest::Url::parse("http://127.0.0.1:1")?,
+            api_key: None,
+        };
+        let invalid = handle_tail(&context, tail_args(Some(path))).await;
+        assert!(invalid.is_err());
+        if let Err(error) = invalid {
+            assert!(error.display_message().contains("invalid resume event ID"));
+        }
+        let unreadable = handle_tail(&context, tail_args(Some(directory.clone()))).await;
+        assert!(unreadable.is_err());
+        if let Err(error) = unreadable {
+            assert!(
+                error
+                    .display_message()
+                    .contains("failed to read resume file")
+            );
+        }
+        fs::remove_dir_all(directory).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn stream_events_updates_resume_and_file() -> Result<()> {
         let server = MockServer::start_async().await;
         let envelope1 = build_envelope(1);
@@ -200,8 +249,7 @@ mod tests {
                 .body(body);
         });
 
-        let resume_path =
-            std::env::temp_dir().join(format!("revaer-tail-resume-{}.txt", Uuid::new_v4()));
+        let resume_path = std::env::temp_dir().join("revaer-tail-resume.txt");
         let args = tail_args(Some(resume_path.clone()));
         let response = Client::new()
             .get(format!("{}/v1/torrents/events", server.base_url()))
@@ -212,9 +260,9 @@ mod tests {
 
         assert_eq!(last_id, Some(2));
         assert_eq!(resume_id, 2);
-        let stored = fs::read_to_string(&resume_path)?;
+        let stored = fs::read_to_string(&resume_path).await?;
         assert_eq!(stored.trim(), "2");
-        fs::remove_file(&resume_path)?;
+        fs::remove_file(&resume_path).await?;
         Ok(())
     }
 
@@ -229,9 +277,8 @@ mod tests {
                 .body(sse_payload(2, &envelope));
         });
 
-        let resume_path =
-            std::env::temp_dir().join(format!("revaer-tail-resume-dup-{}.txt", Uuid::new_v4()));
-        fs::write(&resume_path, "2")?;
+        let resume_path = std::env::temp_dir().join("revaer-tail-resume-dup.txt");
+        fs::write(&resume_path, "2").await?;
         let args = tail_args(Some(resume_path.clone()));
         let response = Client::new()
             .get(format!("{}/v1/torrents/events", server.base_url()))
@@ -242,9 +289,9 @@ mod tests {
 
         assert_eq!(last_id, Some(2));
         assert_eq!(resume_id, 2);
-        let stored = fs::read_to_string(&resume_path)?;
+        let stored = fs::read_to_string(&resume_path).await?;
         assert_eq!(stored.trim(), "2");
-        fs::remove_file(&resume_path)?;
+        fs::remove_file(&resume_path).await?;
         Ok(())
     }
 }
