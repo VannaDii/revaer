@@ -572,6 +572,25 @@ fn build_optional_integer_callback(
     })
 }
 
+fn build_boolean_option_callback(
+    detail_id: Uuid,
+    current: bool,
+    field: fn(&mut TorrentOptionsRequest, bool),
+    on_update_options: Callback<(Uuid, TorrentOptionsRequest)>,
+) -> Callback<Event> {
+    Callback::from(move |event: Event| {
+        if let Some(input) = event.target_dyn_into::<HtmlInputElement>() {
+            let value = input.checked();
+            if value == current {
+                return;
+            }
+            let mut request = TorrentOptionsRequest::default();
+            field(&mut request, value);
+            on_update_options.emit((detail_id, request));
+        }
+    })
+}
+
 fn render_options_tab(
     detail: &TorrentDetail,
     on_update_options: Callback<(Uuid, TorrentOptionsRequest)>,
@@ -636,18 +655,7 @@ fn render_options_tab(
     let auto_managed = settings.auto_managed.unwrap_or(true);
 
     let on_toggle = |current: bool, field: fn(&mut TorrentOptionsRequest, bool)| {
-        let on_update_options = on_update_options.clone();
-        Callback::from(move |event: Event| {
-            if let Some(input) = event.target_dyn_into::<HtmlInputElement>() {
-                let value = input.checked();
-                if value == current {
-                    return;
-                }
-                let mut request = TorrentOptionsRequest::default();
-                field(&mut request, value);
-                on_update_options.emit((detail_id, request));
-            }
-        })
+        build_boolean_option_callback(detail_id, current, field, on_update_options.clone())
     };
 
     let on_pex = on_toggle(pex_enabled, |request, value| {

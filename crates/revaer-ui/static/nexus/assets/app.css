@@ -1910,6 +1910,9 @@ strong {
         ):not(.menu-active, :active, .btn):focus-visible {
         cursor: pointer;
         background-color: var(--color-base-content);
+        color: var(--color-base-content);
+        --tw-outline-style: none;
+        outline-style: none;
     }
     @supports (color: color-mix(in lab, red, red)) {
         .menu
@@ -1924,20 +1927,6 @@ strong {
             ):not(.menu-active, :active, .btn):focus-visible {
             background-color: color-mix(in oklab, var(--color-base-content) 10%, transparent);
         }
-    }
-    .menu
-        :where(
-            li:not(.menu-title, .disabled) > :not(ul, details, .menu-title),
-            li:not(.menu-title, .disabled) > details > summary:not(.menu-title)
-        ):not(.menu-active, :active, .btn).menu-focus,
-    .menu
-        :where(
-            li:not(.menu-title, .disabled) > :not(ul, details, .menu-title),
-            li:not(.menu-title, .disabled) > details > summary:not(.menu-title)
-        ):not(.menu-active, :active, .btn):focus-visible {
-        color: var(--color-base-content);
-        --tw-outline-style: none;
-        outline-style: none;
     }
     @media (forced-colors: active) {
         .menu
@@ -1964,6 +1953,11 @@ strong {
         ) {
         cursor: pointer;
         background-color: var(--color-base-content);
+        --tw-outline-style: none;
+        outline-style: none;
+        box-shadow:
+            inset 0 1px #00000003,
+            inset 0 -1px #ffffff03;
     }
     @supports (color: color-mix(in lab, red, red)) {
         .menu
@@ -1977,17 +1971,6 @@ strong {
             background-color: color-mix(in oklab, var(--color-base-content) 10%, transparent);
         }
     }
-    .menu
-        :where(
-            li:not(.menu-title, .disabled)
-                > :not(ul, details, .menu-title):not(.menu-active, :active, .btn):hover,
-            li:not(.menu-title, .disabled)
-                > details
-                > summary:not(.menu-title):not(.menu-active, :active, .btn):hover
-        ) {
-        --tw-outline-style: none;
-        outline-style: none;
-    }
     @media (forced-colors: active) {
         .menu
             :where(
@@ -2000,18 +1983,6 @@ strong {
             outline-offset: 2px;
             outline: 2px solid #0000;
         }
-    }
-    .menu
-        :where(
-            li:not(.menu-title, .disabled)
-                > :not(ul, details, .menu-title):not(.menu-active, :active, .btn):hover,
-            li:not(.menu-title, .disabled)
-                > details
-                > summary:not(.menu-title):not(.menu-active, :active, .btn):hover
-        ) {
-        box-shadow:
-            inset 0 1px #00000003,
-            inset 0 -1px #ffffff03;
     }
     .menu :where(li:empty) {
         background-color: var(--color-base-content);
@@ -2034,6 +2005,10 @@ strong {
     .menu :where(li) > details > summary:active {
         --tw-outline-style: none;
         outline-style: none;
+        color: var(--menu-active-fg);
+        background-color: var(--menu-active-bg);
+        background-size: auto, calc(var(--noise) * 100%);
+        background-image: none, var(--fx-noise);
     }
     @media (forced-colors: active) {
         .menu :where(li) > :not(ul, .menu-title, details, .btn):active,
@@ -2042,14 +2017,6 @@ strong {
             outline-offset: 2px;
             outline: 2px solid #0000;
         }
-    }
-    .menu :where(li) > :not(ul, .menu-title, details, .btn):active,
-    .menu :where(li) > :not(ul, .menu-title, details, .btn).menu-active,
-    .menu :where(li) > details > summary:active {
-        color: var(--menu-active-fg);
-        background-color: var(--menu-active-bg);
-        background-size: auto, calc(var(--noise) * 100%);
-        background-image: none, var(--fx-noise);
     }
     :is(
         .menu :where(li) > :not(ul, .menu-title, details, .btn):active,
@@ -2089,6 +2056,10 @@ strong {
         height: 0.5rem;
         display: block;
         position: absolute;
+        content: "+";
+        pointer-events: none;
+        top: 0.9rem;
+        inset-inline-end: 1.4rem;
     }
     @media (prefers-reduced-motion: no-preference) {
         .collapse-plus > .collapse-title:after {
@@ -2096,12 +2067,6 @@ strong {
             transition-duration: 0.3s;
             transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
         }
-    }
-    .collapse-plus > .collapse-title:after {
-        content: "+";
-        pointer-events: none;
-        top: 0.9rem;
-        inset-inline-end: 1.4rem;
     }
     .dropdown {
         position-area: var(--anchor-v, bottom) var(--anchor-h, span-right);
@@ -2349,6 +2314,7 @@ strong {
         visibility: visible;
     }
     .collapse {
+        visibility: collapse;
         border-radius: var(--radius-box, 1rem);
         isolation: isolate;
         grid-template-rows: max-content 0fr;
@@ -2542,9 +2508,6 @@ strong {
         visibility: visible;
         color: var(--color-error);
         display: block;
-    }
-    .collapse {
-        visibility: collapse;
     }
     .list {
         flex-direction: column;
@@ -2822,6 +2785,10 @@ strong {
     .input:focus-within {
         --input-color: var(--color-base-content);
         box-shadow: 0 1px var(--input-color);
+        outline: 2px solid var(--input-color);
+        outline-offset: 2px;
+        isolation: isolate;
+        z-index: 1;
     }
     @supports (color: color-mix(in lab, red, red)) {
         .input:focus,
@@ -2830,13 +2797,6 @@ strong {
                 color-mix(in oklab, var(--input-color) calc(var(--depth) * 10%), #0000);
         }
     }
-    .input:focus,
-    .input:focus-within {
-        outline: 2px solid var(--input-color);
-        outline-offset: 2px;
-        isolation: isolate;
-        z-index: 1;
-    }
     .input:has(> input[disabled]),
     .input:is(:disabled, [disabled]),
     fieldset:disabled .input {
@@ -2844,6 +2804,7 @@ strong {
         border-color: var(--color-base-200);
         background-color: var(--color-base-200);
         color: var(--color-base-content);
+        box-shadow: none;
     }
     @supports (color: color-mix(in lab, red, red)) {
         .input:has(> input[disabled]),
@@ -2867,11 +2828,6 @@ strong {
         )::placeholder {
             color: color-mix(in oklab, var(--color-base-content) 20%, transparent);
         }
-    }
-    .input:has(> input[disabled]),
-    .input:is(:disabled, [disabled]),
-    fieldset:disabled .input {
-        box-shadow: none;
     }
     .input:has(> input[disabled]) > input[disabled] {
         cursor: not-allowed;
@@ -2899,6 +2855,7 @@ strong {
         inset-inline-end: 0.75em;
     }
     .table {
+        display: table;
         border-radius: var(--radius-box);
         text-align: left;
         width: 100%;
@@ -3371,6 +3328,10 @@ strong {
     .select:focus-within {
         --input-color: var(--color-base-content);
         box-shadow: 0 1px var(--input-color);
+        outline: 2px solid var(--input-color);
+        outline-offset: 2px;
+        isolation: isolate;
+        z-index: 1;
     }
     @supports (color: color-mix(in lab, red, red)) {
         .select:focus,
@@ -3378,13 +3339,6 @@ strong {
             box-shadow: 0 1px
                 color-mix(in oklab, var(--input-color) calc(var(--depth) * 10%), #0000);
         }
-    }
-    .select:focus,
-    .select:focus-within {
-        outline: 2px solid var(--input-color);
-        outline-offset: 2px;
-        isolation: isolate;
-        z-index: 1;
     }
     .select:has(> select[disabled]),
     .select:is(:disabled, [disabled]),
@@ -3463,17 +3417,14 @@ strong {
     :is(.select, .select select) option:not(:disabled):focus-visible {
         cursor: pointer;
         background-color: var(--color-base-content);
+        --tw-outline-style: none;
+        outline-style: none;
     }
     @supports (color: color-mix(in lab, red, red)) {
         :is(.select, .select select) option:not(:disabled):hover,
         :is(.select, .select select) option:not(:disabled):focus-visible {
             background-color: color-mix(in oklab, var(--color-base-content) 10%, transparent);
         }
-    }
-    :is(.select, .select select) option:not(:disabled):hover,
-    :is(.select, .select select) option:not(:disabled):focus-visible {
-        --tw-outline-style: none;
-        outline-style: none;
     }
     @media (forced-colors: active) {
         :is(.select, .select select) option:not(:disabled):hover,
@@ -4387,6 +4338,9 @@ strong {
     .textarea:focus-within {
         --input-color: var(--color-base-content);
         box-shadow: 0 1px var(--input-color);
+        outline: 2px solid var(--input-color);
+        outline-offset: 2px;
+        isolation: isolate;
     }
     @supports (color: color-mix(in lab, red, red)) {
         .textarea:focus,
@@ -4395,18 +4349,13 @@ strong {
                 color-mix(in oklab, var(--input-color) calc(var(--depth) * 10%), #0000);
         }
     }
-    .textarea:focus,
-    .textarea:focus-within {
-        outline: 2px solid var(--input-color);
-        outline-offset: 2px;
-        isolation: isolate;
-    }
     .textarea:has(> textarea[disabled]),
     .textarea:is(:disabled, [disabled]) {
         cursor: not-allowed;
         border-color: var(--color-base-200);
         background-color: var(--color-base-200);
         color: var(--color-base-content);
+        box-shadow: none;
     }
     @supports (color: color-mix(in lab, red, red)) {
         .textarea:has(> textarea[disabled]),
@@ -4421,10 +4370,6 @@ strong {
         :is(.textarea:has(> textarea[disabled]), .textarea:is(:disabled, [disabled]))::placeholder {
             color: color-mix(in oklab, var(--color-base-content) 20%, transparent);
         }
-    }
-    .textarea:has(> textarea[disabled]),
-    .textarea:is(:disabled, [disabled]) {
-        box-shadow: none;
     }
     .textarea:has(> textarea[disabled]) > textarea[disabled] {
         cursor: not-allowed;
@@ -5399,9 +5344,6 @@ strong {
     }
     .inline-grid {
         display: inline-grid;
-    }
-    .table {
-        display: table;
     }
     .aspect-square {
         aspect-ratio: 1;
@@ -9831,6 +9773,8 @@ strong {
         --btn-shadow: "";
         --btn-fg: var(--btn-color, var(--color-base-content));
         --btn-bg: var(--btn-color, var(--color-base-content));
+        --btn-border: var(--btn-color, var(--color-base-content));
+        --btn-noise: none;
     }
     @supports (color: color-mix(in lab, red, red)) {
         .btn-soft:not(
@@ -9849,17 +9793,6 @@ strong {
             );
         }
     }
-    .btn-soft:not(
-        .btn-active,
-        :hover,
-        :active:focus,
-        :focus-visible,
-        :disabled,
-        [disabled],
-        .btn-disabled
-    ) {
-        --btn-border: var(--btn-color, var(--color-base-content));
-    }
     @supports (color: color-mix(in lab, red, red)) {
         .btn-soft:not(
             .btn-active,
@@ -9877,17 +9810,6 @@ strong {
             );
         }
     }
-    .btn-soft:not(
-        .btn-active,
-        :hover,
-        :active:focus,
-        :focus-visible,
-        :disabled,
-        [disabled],
-        .btn-disabled
-    ) {
-        --btn-noise: none;
-    }
     @media (hover: none) {
         .btn-soft:hover:not(
                 .btn-active,
@@ -9900,6 +9822,8 @@ strong {
             --btn-shadow: "";
             --btn-fg: var(--btn-color, var(--color-base-content));
             --btn-bg: var(--btn-color, var(--color-base-content));
+            --btn-border: var(--btn-color, var(--color-base-content));
+            --btn-noise: none;
         }
         @supports (color: color-mix(in lab, red, red)) {
             .btn-soft:hover:not(
@@ -9917,16 +9841,6 @@ strong {
                 );
             }
         }
-        .btn-soft:hover:not(
-                .btn-active,
-                :active,
-                :focus-visible,
-                :disabled,
-                [disabled],
-                .btn-disabled
-            ) {
-            --btn-border: var(--btn-color, var(--color-base-content));
-        }
         @supports (color: color-mix(in lab, red, red)) {
             .btn-soft:hover:not(
                     .btn-active,
@@ -9942,16 +9856,6 @@ strong {
                     var(--color-base-100)
                 );
             }
-        }
-        .btn-soft:hover:not(
-                .btn-active,
-                :active,
-                :focus-visible,
-                :disabled,
-                [disabled],
-                .btn-disabled
-            ) {
-            --btn-noise: none;
         }
     }
     .btn-lg {
@@ -12067,9 +11971,9 @@ strong {
         }
         .min-sm\:container {
             width: 100%;
-        }
-        .min-sm\:container {
             max-width: 40rem;
+            margin-inline: auto;
+            padding-inline: 1rem;
         }
         @media (min-width: 48rem) {
             .min-sm\:container {
@@ -12093,9 +11997,9 @@ strong {
         }
         .sm\:container {
             width: 100%;
-        }
-        .sm\:container {
             max-width: 40rem;
+            margin-inline: auto;
+            padding-inline: 1rem;
         }
         @media (min-width: 48rem) {
             .sm\:container {
@@ -12117,10 +12021,6 @@ strong {
                 max-width: 96rem;
             }
         }
-        .min-sm\:container {
-            margin-inline: auto;
-            padding-inline: 1rem;
-        }
         @media (min-width: 48rem) {
             .min-sm\:container {
                 padding-inline: 2rem;
@@ -12140,10 +12040,6 @@ strong {
             .min-sm\:container {
                 padding-inline: 6rem;
             }
-        }
-        .sm\:container {
-            margin-inline: auto;
-            padding-inline: 1rem;
         }
         @media (min-width: 48rem) {
             .sm\:container {
@@ -14417,15 +14313,13 @@ html:not([data-theme="material"], [data-theme="material-dark"]) #layout-topbar {
 }
 .choices .choices__list.choices__list--multiple .choices__item .choices__button {
     border-color: var(--color-primary-content);
+    border-left: 1px solid inherit;
+    padding-inline-end: calc(var(--spacing) * 1.5);
 }
 @supports (color: color-mix(in lab, red, red)) {
     .choices .choices__list.choices__list--multiple .choices__item .choices__button {
         border-color: color-mix(in oklab, var(--color-primary-content) 50%, transparent);
     }
-}
-.choices .choices__list.choices__list--multiple .choices__item .choices__button {
-    border-left: 1px solid inherit;
-    padding-inline-end: calc(var(--spacing) * 1.5);
 }
 .choices .choices__list.choices__list--dropdown {
     background-color: var(--color-base-100);

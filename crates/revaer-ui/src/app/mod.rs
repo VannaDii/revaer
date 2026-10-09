@@ -224,24 +224,9 @@ pub fn revaer_app() -> Html {
         Callback::from(move |_| requested_settings_tab.set(None))
     };
     let current_route = use_route::<Route>().unwrap_or_else(|| {
-        let Some(location) = location.as_ref() else {
-            return Route::NotFound;
-        };
-        let path = location.path();
-        match path {
-            "/" => Route::Dashboard,
-            "/indexers" => Route::Indexers,
-            "/search" => Route::Search,
-            "/media" => Route::Media,
-            "/torrents" => Route::Torrents,
-            "/settings" => Route::Settings,
-            "/logs" => Route::Logs,
-            "/health" => Route::Health,
-            _ => path
-                .strip_prefix("/torrents/")
-                .map(|id| Route::TorrentDetail { id: id.to_string() })
-                .unwrap_or(Route::NotFound),
-        }
+        location
+            .as_ref()
+            .map_or(Route::NotFound, |location| route_from_path(location.path()))
     });
     let selected_route_id = match current_route.clone() {
         Route::TorrentDetail { id } => Uuid::parse_str(&id).ok(),
@@ -330,42 +315,12 @@ pub fn revaer_app() -> Html {
             || ()
         });
     }
-    {
-        let allow_anon = allow_anon.clone();
-        let app_auth_mode = *app_auth_mode;
-        let dispatch = dispatch.clone();
-        use_effect_with(app_auth_mode, move |app_auth_mode| {
-            let allow = match *app_auth_mode {
-                Some(AppAuthMode::NoAuth) => true,
-                Some(AppAuthMode::ApiKey) => false,
-                None => local_network,
-            };
-            allow_anon.set(allow);
-            let current = dispatch.get();
-            match *app_auth_mode {
-                Some(AppAuthMode::NoAuth) => {
-                    if current.auth.state.is_none() {
-                        let state = AuthState::Anonymous;
-                        persist_auth_state(&state);
-                        dispatch.reduce_mut(|store| {
-                            store.auth.mode = AuthMode::ApiKey;
-                            store.auth.state = Some(state);
-                        });
-                    }
-                }
-                Some(AppAuthMode::ApiKey) => {
-                    if matches!(current.auth.state, Some(AuthState::Anonymous)) {
-                        clear_auth_storage();
-                        dispatch.reduce_mut(|store| {
-                            store.auth.state = None;
-                        });
-                    }
-                }
-                None => {}
-            }
-            || ()
-        });
-    }
+    use_app_auth_mode(
+        allow_anon.clone(),
+        app_auth_mode.clone(),
+        dispatch.clone(),
+        local_network,
+    );
     {
         let dispatch = dispatch.clone();
         let allow_anon = *allow_anon;
@@ -414,49 +369,7 @@ pub fn revaer_app() -> Html {
         toast_id.clone(),
         (*bundle).clone(),
     );
-    {
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        let toast_id = toast_id.clone();
-        use_effect_with((), move |_| {
-            let client = api_ctx.client.clone();
-            let dispatch = dispatch.clone();
-            let toast_id = toast_id.clone();
-            yew::platform::spawn_local(async move {
-                match client.fetch_health().await {
-                    Ok(health) => {
-                        dispatch.reduce_mut(|store| {
-                            store.auth.setup_error = None;
-                            store.health.basic = Some(HealthSnapshot {
-                                status: health.status.clone(),
-                                mode: health.mode.clone(),
-                                database_status: Some(health.database.status),
-                                database_revision: health.database.revision,
-                            });
-                            store.auth.app_mode = if health.mode == "setup" {
-                                AppModeState::Setup
-                            } else {
-                                AppModeState::Active
-                            };
-                        });
-                    }
-                    Err(err) => {
-                        let message = detail_or_fallback(
-                            err.detail.clone(),
-                            "Health check failed.".to_string(),
-                        );
-                        dispatch.reduce_mut(|store| {
-                            store.auth.setup_error = Some(message.clone());
-                            store.auth.app_mode = AppModeState::Active;
-                            store.health.basic = None;
-                        });
-                        push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                    }
-                }
-            });
-            || ()
-        });
-    }
+    use_app_initial_health(dispatch.clone(), api_ctx.clone(), toast_id.clone());
     {
         let api_ctx = (*api_ctx).clone();
         let app_auth_mode = app_auth_mode.clone();
@@ -530,40 +443,7 @@ pub fn revaer_app() -> Html {
             || ()
         });
     }
-    {
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        use_effect_with(auth_state.clone(), move |auth_state| {
-            if auth_state.as_ref().is_some() {
-                let dispatch = dispatch.clone();
-                let client = api_ctx.client.clone();
-                yew::platform::spawn_local(async move {
-                    let categories = client.fetch_categories().await;
-                    let tags = client.fetch_tags().await;
-                    dispatch.reduce_mut(|store| {
-                        if let Ok(entries) = categories {
-                            store.labels.categories = entries
-                                .into_iter()
-                                .map(|entry| (entry.name.clone(), entry))
-                                .collect();
-                        }
-                        if let Ok(entries) = tags {
-                            store.labels.tags = entries
-                                .into_iter()
-                                .map(|entry| (entry.name.clone(), entry))
-                                .collect();
-                        }
-                    });
-                });
-            } else {
-                dispatch.reduce_mut(|store| {
-                    store.labels.categories.clear();
-                    store.labels.tags.clear();
-                });
-            }
-            || ()
-        });
-    }
+    use_app_labels(dispatch.clone(), api_ctx.clone(), auth_state.clone());
     {
         let dispatch = dispatch.clone();
         let api_ctx = (*api_ctx).clone();
@@ -642,49 +522,14 @@ pub fn revaer_app() -> Html {
             || ()
         });
     }
-    {
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        let selected_id = selected_id.clone();
-        let auth_state = auth_state.clone();
-        let toast_id = toast_id.clone();
-        let bundle = (*bundle).clone();
-        use_effect_with((selected_id.clone(), auth_state.clone()), move |deps| {
-            let (selected_id, auth_state) = deps;
-            let cleanup = || ();
-            let auth_state = (**auth_state).clone();
-            if let Some(id) = **selected_id {
-                if !dispatch.get().torrents.details_by_id.contains_key(&id) {
-                    let dispatch = dispatch.clone();
-                    let client = api_ctx.client.clone();
-                    let toast_id = toast_id.clone();
-                    let bundle = bundle.clone();
-                    yew::platform::spawn_local(async move {
-                        if auth_state.is_some() {
-                            if let Some(detail) = fetch_torrent_detail_with_retry(
-                                client,
-                                dispatch.clone(),
-                                toast_id,
-                                bundle,
-                                id,
-                            )
-                            .await
-                            {
-                                dispatch.reduce_mut(|store| {
-                                    upsert_detail(&mut store.torrents, id, detail);
-                                });
-                            }
-                        } else if let Some(detail) = demo_detail(&id.to_string()) {
-                            dispatch.reduce_mut(|store| {
-                                upsert_detail(&mut store.torrents, id, detail);
-                            });
-                        }
-                    });
-                }
-            }
-            cleanup
-        });
-    }
+    use_app_selected_detail(
+        dispatch.clone(),
+        api_ctx.clone(),
+        selected_id.clone(),
+        auth_state.clone(),
+        toast_id.clone(),
+        bundle.clone(),
+    );
     {
         let dispatch = dispatch.clone();
         let progress_buffer = progress_buffer.clone();
@@ -967,56 +812,12 @@ pub fn revaer_app() -> Html {
             || ()
         });
     }
-    {
-        let dispatch = dispatch.clone();
-        let api_ctx = (*api_ctx).clone();
-        let toast_id = toast_id.clone();
-        let current_route = current_route.clone();
-        use_effect_with(current_route, move |route| {
-            if matches!(route, Route::Health) {
-                let dispatch = dispatch.clone();
-                let client = api_ctx.client.clone();
-                let toast_id = toast_id.clone();
-                yew::platform::spawn_local(async move {
-                    match client.fetch_health_full().await {
-                        Ok(response) => {
-                            dispatch.reduce_mut(|store| {
-                                store.health.full = Some(map_full_health_snapshot(response));
-                            });
-                        }
-                        Err(err) => {
-                            let message = detail_or_fallback(
-                                err.detail.clone(),
-                                "Full health check failed.".to_string(),
-                            );
-                            dispatch.reduce_mut(|store| {
-                                store.health.full = None;
-                            });
-                            push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                        }
-                    }
-                    match client.fetch_metrics_text().await {
-                        Ok(text) => {
-                            dispatch.reduce_mut(|store| {
-                                store.health.metrics_text = Some(text);
-                            });
-                        }
-                        Err(err) => {
-                            let message = detail_or_fallback(
-                                err.detail.clone(),
-                                "Metrics fetch failed.".to_string(),
-                            );
-                            dispatch.reduce_mut(|store| {
-                                store.health.metrics_text = None;
-                            });
-                            push_toast(&dispatch, &toast_id, ToastKind::Error, message);
-                        }
-                    }
-                });
-            }
-            || ()
-        });
-    }
+    use_app_health_route(
+        dispatch.clone(),
+        api_ctx.clone(),
+        toast_id.clone(),
+        current_route.clone(),
+    );
     let on_copy_payload =
         build_app_on_copy_payload_callback(dispatch.clone(), toast_id.clone(), (*bundle).clone());
     let on_copy_value =
@@ -1326,6 +1127,262 @@ pub fn revaer_app() -> Html {
                 } else { html!{} }}
             </ContextProvider<TranslationBundle>>
         </ContextProvider<ApiCtx>>
+    }
+}
+
+#[hook]
+fn use_app_auth_mode(
+    allow_anon: UseStateHandle<bool>,
+    app_auth_mode: UseStateHandle<Option<AppAuthMode>>,
+    dispatch: Dispatch<AppStore>,
+    local_network: bool,
+) {
+    let allow_anon = allow_anon.clone();
+    let app_auth_mode = *app_auth_mode;
+    let dispatch = dispatch.clone();
+    use_effect_with(app_auth_mode, move |app_auth_mode| {
+        let allow = match *app_auth_mode {
+            Some(AppAuthMode::NoAuth) => true,
+            Some(AppAuthMode::ApiKey) => false,
+            None => local_network,
+        };
+        allow_anon.set(allow);
+        let current = dispatch.get();
+        match *app_auth_mode {
+            Some(AppAuthMode::NoAuth) => {
+                if current.auth.state.is_none() {
+                    let state = AuthState::Anonymous;
+                    persist_auth_state(&state);
+                    dispatch.reduce_mut(|store| {
+                        store.auth.mode = AuthMode::ApiKey;
+                        store.auth.state = Some(state);
+                    });
+                }
+            }
+            Some(AppAuthMode::ApiKey) => {
+                if matches!(current.auth.state, Some(AuthState::Anonymous)) {
+                    clear_auth_storage();
+                    dispatch.reduce_mut(|store| {
+                        store.auth.state = None;
+                    });
+                }
+            }
+            None => {}
+        }
+        || ()
+    });
+}
+
+#[hook]
+fn use_app_initial_health(
+    dispatch: Dispatch<AppStore>,
+    api_ctx: Rc<ApiCtx>,
+    toast_id: UseStateHandle<u64>,
+) {
+    let dispatch = dispatch.clone();
+    let api_ctx = (*api_ctx).clone();
+    let toast_id = toast_id.clone();
+    use_effect_with((), move |_| {
+        let client = api_ctx.client.clone();
+        let dispatch = dispatch.clone();
+        let toast_id = toast_id.clone();
+        yew::platform::spawn_local(async move {
+            match client.fetch_health().await {
+                Ok(health) => {
+                    dispatch.reduce_mut(|store| {
+                        store.auth.setup_error = None;
+                        store.health.basic = Some(HealthSnapshot {
+                            status: health.status.clone(),
+                            mode: health.mode.clone(),
+                            database_status: Some(health.database.status),
+                            database_revision: health.database.revision,
+                        });
+                        store.auth.app_mode = if health.mode == "setup" {
+                            AppModeState::Setup
+                        } else {
+                            AppModeState::Active
+                        };
+                    });
+                }
+                Err(err) => {
+                    let message =
+                        detail_or_fallback(err.detail.clone(), "Health check failed.".to_string());
+                    dispatch.reduce_mut(|store| {
+                        store.auth.setup_error = Some(message.clone());
+                        store.auth.app_mode = AppModeState::Active;
+                        store.health.basic = None;
+                    });
+                    push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                }
+            }
+        });
+        || ()
+    });
+}
+
+#[hook]
+fn use_app_labels(
+    dispatch: Dispatch<AppStore>,
+    api_ctx: Rc<ApiCtx>,
+    auth_state: Rc<Option<AuthState>>,
+) {
+    let dispatch = dispatch.clone();
+    let api_ctx = (*api_ctx).clone();
+    use_effect_with(auth_state.clone(), move |auth_state| {
+        if auth_state.as_ref().is_some() {
+            let dispatch = dispatch.clone();
+            let client = api_ctx.client.clone();
+            yew::platform::spawn_local(async move {
+                let categories = client.fetch_categories().await;
+                let tags = client.fetch_tags().await;
+                dispatch.reduce_mut(|store| {
+                    if let Ok(entries) = categories {
+                        store.labels.categories = entries
+                            .into_iter()
+                            .map(|entry| (entry.name.clone(), entry))
+                            .collect();
+                    }
+                    if let Ok(entries) = tags {
+                        store.labels.tags = entries
+                            .into_iter()
+                            .map(|entry| (entry.name.clone(), entry))
+                            .collect();
+                    }
+                });
+            });
+        } else {
+            dispatch.reduce_mut(|store| {
+                store.labels.categories.clear();
+                store.labels.tags.clear();
+            });
+        }
+        || ()
+    });
+}
+
+#[hook]
+fn use_app_selected_detail(
+    dispatch: Dispatch<AppStore>,
+    api_ctx: Rc<ApiCtx>,
+    selected_id: Rc<Option<Uuid>>,
+    auth_state: Rc<Option<AuthState>>,
+    toast_id: UseStateHandle<u64>,
+    bundle: Rc<TranslationBundle>,
+) {
+    let dispatch = dispatch.clone();
+    let api_ctx = (*api_ctx).clone();
+    let selected_id = selected_id.clone();
+    let auth_state = auth_state.clone();
+    let toast_id = toast_id.clone();
+    let bundle = (*bundle).clone();
+    use_effect_with((selected_id.clone(), auth_state.clone()), move |deps| {
+        let (selected_id, auth_state) = deps;
+        let cleanup = || ();
+        let auth_state = (**auth_state).clone();
+        if let Some(id) = **selected_id {
+            if !dispatch.get().torrents.details_by_id.contains_key(&id) {
+                let dispatch = dispatch.clone();
+                let client = api_ctx.client.clone();
+                let toast_id = toast_id.clone();
+                let bundle = bundle.clone();
+                yew::platform::spawn_local(async move {
+                    if auth_state.is_some() {
+                        if let Some(detail) = fetch_torrent_detail_with_retry(
+                            client,
+                            dispatch.clone(),
+                            toast_id,
+                            bundle,
+                            id,
+                        )
+                        .await
+                        {
+                            dispatch.reduce_mut(|store| {
+                                upsert_detail(&mut store.torrents, id, detail);
+                            });
+                        }
+                    } else if let Some(detail) = demo_detail(&id.to_string()) {
+                        dispatch.reduce_mut(|store| {
+                            upsert_detail(&mut store.torrents, id, detail);
+                        });
+                    }
+                });
+            }
+        }
+        cleanup
+    });
+}
+
+#[hook]
+fn use_app_health_route(
+    dispatch: Dispatch<AppStore>,
+    api_ctx: Rc<ApiCtx>,
+    toast_id: UseStateHandle<u64>,
+    current_route: Route,
+) {
+    let dispatch = dispatch.clone();
+    let api_ctx = (*api_ctx).clone();
+    let toast_id = toast_id.clone();
+    let current_route = current_route.clone();
+    use_effect_with(current_route, move |route| {
+        if matches!(route, Route::Health) {
+            let dispatch = dispatch.clone();
+            let client = api_ctx.client.clone();
+            let toast_id = toast_id.clone();
+            yew::platform::spawn_local(async move {
+                match client.fetch_health_full().await {
+                    Ok(response) => {
+                        dispatch.reduce_mut(|store| {
+                            store.health.full = Some(map_full_health_snapshot(response));
+                        });
+                    }
+                    Err(err) => {
+                        let message = detail_or_fallback(
+                            err.detail.clone(),
+                            "Full health check failed.".to_string(),
+                        );
+                        dispatch.reduce_mut(|store| {
+                            store.health.full = None;
+                        });
+                        push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                    }
+                }
+                match client.fetch_metrics_text().await {
+                    Ok(text) => {
+                        dispatch.reduce_mut(|store| {
+                            store.health.metrics_text = Some(text);
+                        });
+                    }
+                    Err(err) => {
+                        let message = detail_or_fallback(
+                            err.detail.clone(),
+                            "Metrics fetch failed.".to_string(),
+                        );
+                        dispatch.reduce_mut(|store| {
+                            store.health.metrics_text = None;
+                        });
+                        push_toast(&dispatch, &toast_id, ToastKind::Error, message);
+                    }
+                }
+            });
+        }
+        || ()
+    });
+}
+
+fn route_from_path(path: &str) -> Route {
+    match path {
+        "/" => Route::Dashboard,
+        "/indexers" => Route::Indexers,
+        "/search" => Route::Search,
+        "/media" => Route::Media,
+        "/torrents" => Route::Torrents,
+        "/settings" => Route::Settings,
+        "/logs" => Route::Logs,
+        "/health" => Route::Health,
+        _ => path
+            .strip_prefix("/torrents/")
+            .map(|id| Route::TorrentDetail { id: id.to_string() })
+            .unwrap_or(Route::NotFound),
     }
 }
 
