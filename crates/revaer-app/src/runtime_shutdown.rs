@@ -134,3 +134,6 @@ pub(crate) async fn sleep_or_requested(
         () = changed(receiver) => true,
     }
 }
+
+#[cfg(test)]
+mod tests;
