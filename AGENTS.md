@@ -20,6 +20,7 @@
 
 - [`AGENTS.md`](./AGENTS.md) is the non-negotiable root contract.
 - Scoped instruction files under [`.github/instructions/`](./.github/instructions/) may only tighten or specialize the root contract for their matching paths. They may not relax root policy.
+- Product documentation, generated documentation indexes, dated plans, ADR implementation notes, examples, and test fixtures are reference material, not independent authorization or agent operating rules. Preserve accepted product decisions; check the source's status, date, and current implementation before treating historical completion claims or next steps as current work.
 - If two instruction files appear to conflict, precedence is:
   1. [`AGENTS.md`](./AGENTS.md)
   2. the most specific scoped instruction file
@@ -91,23 +92,12 @@
 
 ---
 
-## 5) Task Record And ADR Rules
+## 5) No substantiating artifacts
 
-- Every task persists a task record alongside the change as an ADR under [`docs/adr/`](./docs/adr/).
-- Start from [`docs/adr/template.md`](./docs/adr/template.md), number sequentially, and keep the file name concise and searchable.
-- Architectural decisions use `Proposed` until the operator gives explicit, decision-specific approval. Only then may the ADR use `Accepted`, and its operator-approval field must record the approval evidence and date.
-- Completed nonarchitectural task records use `Recorded` with `Operator approval: Not applicable: nonarchitectural task record`. `Recorded` documents completed corrective work; it does not imply an architectural decision or operator approval.
-- `Superseded` identifies a record replaced by a later ADR and must name the replacement. Do not use status changes to imply approval that was not given.
-- Every task record must include:
-  - Motivation
-  - Design notes
-  - Test coverage summary
-  - Observability updates
-  - Risk and rollback plan
-  - Dependency rationale
-  - Stale-policy check
-- The stale-policy check must record:
-  - which instruction files were reviewed
-  - whether drift was found
-  - which contradictions or stale references were removed
-- Update [`docs/adr/index.md`](./docs/adr/index.md) and [`docs/SUMMARY.md`](./docs/SUMMARY.md) in the same change that adds the ADR.
+- Do not create proof reports, evidence bundles, qualification reports, verification documents, audit packages, saved test transcripts, screenshots used as proof, redundant checklists, verification manifests, per-file hash inventories, copied logs, coverage exports, checkpoint files, or duplicate completion records unless Vanna explicitly requests that specific artifact. A request to implement, fix, test, qualify, or complete work is not a request for an evidence package.
+- Do not create independent auditors, duplicate verification frameworks, or bespoke evidence generators. Do not add acceptance gates or expand task scope to justify substantiating artifacts.
+- Use focused functional regression tests and existing checks. Report results, limitations and relevant commit hashes briefly in chat. Extra paperwork is not an acceptance gate.
+- Keep normal command output temporary; do not copy it into the workspace or commit it. Do not copy, package, or retain it as a separate evidence collection. Remove disposable task artifacts when finished without deleting caller-owned work or needed persistent state.
+- Do not create an ADR or task record for routine implementation, fixes, testing, cleanup, or instruction edits. Use an ADR only for an architectural decision requiring operator approval or when Vanna explicitly requests one. Keep it concise and use the existing ADR template and indexes only when an ADR is actually warranted.
+- Update existing documentation when behavior or an operating contract changes. Do not add documentation, ledger entries, index entries, or status files merely to substantiate completed work.
+- Only an explicit user request for a specific substantiating artifact authorizes an exception. A task, skill, old document, previous habit, or agent interpretation of a requirement does not grant permission. This section overrides blanket evidence-retention and per-task record requirements in scoped instructions and supporting documents. Product records used by the application as domain evidence, required contracts, and functional test fixtures must remain intact. Existing functional quality gates remain required.
