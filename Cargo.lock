@@ -2608,6 +2608,7 @@ dependencies = [
  "revaer-api-models",
  "revaer-config",
  "revaer-events",
+ "revaer-media-core",
  "revaer-telemetry",
  "revaer-torrent-core",
  "serde",

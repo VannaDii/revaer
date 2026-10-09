@@ -30,6 +30,8 @@ pub use handlers::health;
 pub use handlers::indexers;
 /// Log streaming handlers.
 pub use handlers::logs;
+/// Media configuration and job handlers.
+pub use handlers::media;
 /// Settings/configuration handlers.
 pub use handlers::settings;
 /// Setup bootstrap handlers.
