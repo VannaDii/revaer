@@ -3094,4 +3094,54 @@ mod tests {
         let path = openapi_output_path();
         assert!(path.ends_with(OPENAPI_FILENAME));
     }
+
+    #[test]
+    fn profile_create_contract_documents_required_wildcard_and_problem_response() {
+        let document = crate::openapi_document();
+        let operation = &document["paths"]["/v1/media/profiles"]["post"];
+        assert_eq!(operation["parameters"][0]["name"], "If-None-Match");
+        assert_eq!(operation["parameters"][0]["required"], true);
+        assert_eq!(
+            operation["parameters"][0]["schema"]["enum"],
+            serde_json::json!(["*"])
+        );
+        assert_eq!(
+            operation["responses"]["428"]["content"]["application/problem+json"]["schema"]["$ref"],
+            "#/components/schemas/ProblemDetails"
+        );
+        assert_eq!(
+            operation["responses"]["428"]["headers"]["Cache-Control"]["schema"]["enum"],
+            serde_json::json!(["no-store"])
+        );
+    }
+
+    #[test]
+    fn profile_replacement_contract_requires_path_and_version_fence() {
+        let document = crate::openapi_document();
+        let path = &document["paths"]["/v1/media/profiles/{media_profile_public_id}"];
+        assert!(path.get("patch").is_none());
+        let operation = &path["put"];
+        assert_eq!(operation["parameters"][0]["in"], "path");
+        assert_eq!(operation["parameters"][1]["name"], "If-Match");
+        assert_eq!(operation["parameters"][1]["required"], true);
+        assert_eq!(
+            operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ProfileVersionRequest"
+        );
+        assert!(operation["responses"].get("412").is_some());
+        assert!(operation["responses"].get("428").is_some());
+    }
+
+    #[test]
+    fn association_contract_fences_complete_body() {
+        let document = crate::openapi_document();
+        assert_eq!(
+            document["paths"]["/v1/media/discovery-associations"]["post"]["parameters"][0]["required"],
+            true
+        );
+        assert_eq!(
+            document["components"]["schemas"]["DiscoveryAssociationRequest"]["additionalProperties"],
+            false
+        );
+    }
 }
