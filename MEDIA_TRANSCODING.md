@@ -1,11 +1,7 @@
 # Revaer Media Transcoding Implementation Plan
 
-> For agentic workers: required implementation workflow is
-> `superpowers:subagent-driven-development` or
-> `superpowers:executing-plans`. Implement this plan task-by-task, keep the
-> root repository policy in `AGENTS.md` authoritative, add the required ADR for
-> each implementation slice, and run `just ci` plus `just ui-e2e` before
-> handoff.
+> Agent operating rules and quality gates are defined in [AGENTS.md](AGENTS.md).
+> This specification does not authorize substantiating artifacts or task records.
 
 Status: consolidated executable plan.
 
@@ -49,8 +45,7 @@ This subsystem must follow the root repository contract:
   constructs concrete adapters or reads environment.
 - All local and CI gates run through `just`.
 - Implementation handoff requires `just ci` and `just ui-e2e`.
-- Each implementation slice adds an ADR under `docs/adr/`, updates
-  `docs/adr/index.md`, and updates `docs/SUMMARY.md`.
+- Follow [root documentation policy](AGENTS.md#5-no-substantiating-artifacts).
 
 Existing repository patterns to reuse:
 
@@ -591,8 +586,9 @@ Primary objects:
 
 - `media_profile`: profile key, name, target profile reference, policy profile
   reference, enabled state.
-- `media_profile_root`: non-overlapping root path, media type, enabled state,
-  sort order, profile reference.
+- `media_profile_root`: requested and canonical non-overlapping root paths,
+  stable filesystem device/inode identity, media type, enabled state, sort
+  order, profile reference, and last identity verification time.
 - `media_profile_file_rule`: include/exclude rule, glob or extension, sort
   order.
 - `media_profile_filter`: min/max size, min/max duration, sample handling,
@@ -647,6 +643,11 @@ Primary objects:
 - `media_job`: job public id, profile/root association, source path, status,
   phase, dry-run effective value, selected target/policy versions, timestamps,
   compliance score, output disposition.
+- `media_job_configuration_snapshot` and normalized child snapshot tables:
+  immutable roots, matching rules, filters, discovery rules, and selected policy
+  components captured when the job is created.
+- `media_job_attempt`: immutable attempt number, monotonic claim generation,
+  lifecycle timestamps, cancellation generation, and terminal result.
 - `media_job_phase`: normalized job phase events.
 - `media_job_operation`: selected operations and execution status.
 - `media_job_violation`: normalized compliance violations.
@@ -654,6 +655,12 @@ Primary objects:
 - `media_job_verification_check`: normalized verification checks.
 - `media_job_artifact`: bounded diagnostic artifact references.
 - `media_job_compact_audit`: compact audit facts retained after detail pruning.
+
+Retained job history is read only through hard-capped keyset pagination ordered
+by `(queued_at, media_job_id)`. Worker mutations and evidence appends require the
+active attempt's claim generation. Failed diagnostic pruning uses fixed-size
+locked batches and records `diagnostics_pruned_at` so each retained shell is
+processed once; parent job retention remains a separate policy operation.
 
 Application state must not use JSONB. Planner explanations, audit facts, and
 verification details should be normalized into rows. If a compact textual
