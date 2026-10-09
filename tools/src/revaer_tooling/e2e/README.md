@@ -33,6 +33,25 @@ The phases are explicit and ordered:
 2. `api-api-key` configures key authentication and runs the same scenarios.
 3. `ui-<browser>` runs the browser scenarios using the resulting key.
 
+Single-init media expands each API authentication mode into an absent-catalog
+phase followed by its positive API phase: `api-none-missing-catalog`, `api-none`,
+`api-api-key-missing-catalog`, `api-api-key`, then the browser phases. The original
+three missing-catalog checks run in each dedicated phase; the positive phases
+retain every foundation scenario and all other media scenarios. Each phase has
+its own selection, report and raw coverage, required by shard and coverage
+consumers. This separation preserves rejection checks alongside real discovery.
+
+Authentication setup's factory reset clears catalog tables. The media runner
+performs that setup with an absent startup source, stops and reaps that service,
+then starts the scenario service. Positive phases require the real configured
+`REVAER_MEDIA_ROOT_CATALOG_FILE` to attest successfully on Linux. No stored
+attestation is inserted by the harness. Each API phase reset uses the current
+session retained from the preceding phase, then replaces it with the new setup
+credentials. Restarting the service does not reset database authentication.
+Browser restarts retain the authenticated
+session and database without another reset. Setup and scenario logs live in
+separate phase subdirectories under `tests/logs`.
+
 API phases use one worker because they share mutable application configuration.
 UI workers are configurable. Keys pass to pytest through its environment, with
 redaction at the process boundary. Process logs are private files and reject
@@ -89,7 +108,9 @@ Do not mix artifacts from different workflow attempts.
 [`uv run --env-file` interface](https://docs.astral.sh/uv/concepts/projects/run/#environment-files).
 Existing environment variables keep uv's documented precedence. The tool does
 not implement a dotenv parser. The internal re-entry flag only prevents a second
-load after uv has prepared the environment.
+load after uv has prepared the environment. Supply the database connection in
+the process environment through `E2E_DB_ADMIN_URL`, `REVAER_TEST_DATABASE_URL`,
+or `DATABASE_URL`; the tracked defaults contain no database password.
 
 | Setting | Default and behavior |
 | --- | --- |
@@ -159,7 +180,10 @@ when at least one of its code locations ran. Identical source copies share the
 same measurement but retain distinct checkout paths. Generated Trunk loaders
 without matching authored bytes keep their raw captures; their execution is not
 attributed to an unrelated source file. This reports line coverage, not an
-independent statement or branch percentage.
+independent statement or branch percentage. Sonar coverage concerns apply only
+to production code. When the production Rust/Wasm UI has no authored JavaScript,
+the complete browser run may produce honest zero-hit records for nonproduction
+scripts; the merger never requires documentation execution to manufacture hits.
 
 The `page` fixture is instrumented before a scenario receives it. Scenarios that
 need another page request `new_page: Callable[[], Page]`; scenarios that close a

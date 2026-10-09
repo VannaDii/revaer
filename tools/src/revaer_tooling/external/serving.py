@@ -83,6 +83,7 @@ class ApplicationArgs:
     database_url: str = field(repr=False)
     media_workspace: Path
     log_path: Path
+    media_root_catalog: Path | None = None
 
 
 class Application:
@@ -113,6 +114,11 @@ class Application:
                 self.root,
                 {
                     **self.environment,
+                    **(
+                        {"REVAER_MEDIA_ROOT_CATALOG_FILE": str(args.media_root_catalog)}
+                        if args.media_root_catalog is not None
+                        else {}
+                    ),
                     "DATABASE_URL": args.database_url,
                     "REVAER_MEDIA_WORKSPACE_ROOT": str(args.media_workspace),
                     "REVAER_E2E_SERVING_ENTRY": "1"

@@ -78,8 +78,23 @@ class Python(ExternalTool):
         command = [
             "-m",
             "pytest",
-            "tests/specs/ui" if ui else "tests/specs/api",
-            *((f"tests/specs/media/{'ui' if ui else 'api'}",) if args.include_media else ()),
+            *(
+                ("tests/specs/media/api/test_root_readiness.py",)
+                if args.phase.endswith("-missing-catalog")
+                else (
+                    "tests/specs/ui" if ui else "tests/specs/api",
+                    *(
+                        (f"tests/specs/media/{'ui' if ui else 'api'}",)
+                        if args.include_media
+                        else ()
+                    ),
+                    *(
+                        ("--ignore=tests/specs/media/api/test_root_readiness.py",)
+                        if args.include_media and not ui
+                        else ()
+                    ),
+                )
+            ),
             "--reruns",
             str(settings.retries),
             "--timeout",
