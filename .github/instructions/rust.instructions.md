@@ -83,6 +83,10 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 
 # Maintainability And Layout
 
+- Media execution retains checkpoint replay, verified replacement, cooperative
+  shutdown and protected scratch cleanup. Filesystem capacity probing is shared
+  by media admission and filesystem post-processing.
+
 - The application media facade and discovery runtime receive the existing media
   store, native capability detector, catalog source and watcher. `notify` provides
   the native watcher, `rustix` retains descriptor identity, `sha2` computes aggregate

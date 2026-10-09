@@ -7,6 +7,14 @@ use tokio::runtime::Runtime;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
 
+fn test_media_workspace() -> AppResult<tempfile::TempDir> {
+    tempfile::tempdir().map_err(|source| AppError::Io {
+        operation: "test.media_workspace.create",
+        path: None,
+        source,
+    })
+}
+
 #[cfg(unix)]
 fn non_unicode_os_string() -> std::ffi::OsString {
     use std::os::unix::ffi::OsStringExt;
@@ -110,6 +118,24 @@ fn optional_env_var_with_rejects_non_unicode_values() {
 }
 
 #[test]
+fn media_workspace_root_is_required_and_absolute() {
+    assert!(matches!(
+        media_workspace_root_from_value(None),
+        Err(AppError::InvalidConfig {
+            field: "REVAER_MEDIA_WORKSPACE_ROOT",
+            reason: "absolute_private_workspace_root_required",
+            value: None,
+        })
+    ));
+    assert!(media_workspace_root_from_value(Some("relative/workspace".into())).is_err());
+    assert_eq!(
+        media_workspace_root_from_value(Some("/private/media-workspace".into()))
+            .expect("absolute workspace root"),
+        PathBuf::from("/private/media-workspace")
+    );
+}
+
+#[test]
 fn otel_and_guardrail_helpers_cover_expected_modes() -> AppResult<()> {
     assert!(env_flag_value(Some("true")));
     assert!(env_flag_value(Some(" On ")));
@@ -177,18 +203,15 @@ fn otel_and_guardrail_helpers_cover_expected_modes() -> AppResult<()> {
 }
 
 #[tokio::test]
-async fn bootstrap_dependencies_from_database_url_track_persisted_settings_changes() -> AppResult<()>
-{
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!(
-                "skipping bootstrap_dependencies_from_database_url_track_persisted_settings_changes: {err}"
-            );
-            return Ok(());
-        }
-    };
+async fn bootstrap_dependencies_from_database_url_track_persisted_settings_changes()
+-> anyhow::Result<()> {
+    // This scenario needs a running application, not an empty baseline fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
+    let workspace = test_media_workspace()?;
     let BootstrapDependencies {
         config,
         snapshot,
@@ -196,8 +219,9 @@ async fn bootstrap_dependencies_from_database_url_track_persisted_settings_chang
         events,
         telemetry,
         ..
-    } = BootstrapDependencies::from_database_url(
+    } = BootstrapDependencies::from_database_url_with_workspace_root(
         postgres.connection_string().to_string(),
+        workspace.path().to_path_buf(),
         super::compliance_tests::fixture_metadata()
             .map_err(|source| AppError::Compliance { source })?,
     )
@@ -241,18 +265,17 @@ async fn bootstrap_dependencies_from_database_url_track_persisted_settings_chang
         .map_err(|err| AppError::config("config_watcher.next", err))?;
     assert!(updated.revision >= applied.revision);
     assert_eq!(updated.app_profile.instance_name, "Bootstrap watcher");
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
-async fn build_api_server_accepts_bootstrapped_config() -> AppResult<()> {
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!("skipping build_api_server_accepts_bootstrapped_config: {err}");
-            return Ok(());
-        }
-    };
+async fn build_api_server_accepts_bootstrapped_config() -> anyhow::Result<()> {
+    // This scenario needs a running application, not an empty baseline fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
     let config = ConfigService::new(postgres.connection_string().to_string())
         .await
@@ -260,32 +283,32 @@ async fn build_api_server_accepts_bootstrapped_config() -> AppResult<()> {
     let events = EventBus::with_capacity(4);
     let telemetry = Metrics::new().map_err(|err| AppError::telemetry("telemetry.metrics", err))?;
 
-    let source_compliance = super::compliance_tests::fixture_metadata()
-        .map_err(|source| AppError::Compliance { source })?;
     let media = Arc::new(build_media_service(
         &config,
         telemetry.clone(),
-        Arc::new(SystemNativeProcessSupervisor),
+        system_native_process_supervisor(),
     ));
+    let source_compliance = super::compliance_tests::fixture_metadata()
+        .map_err(|source| AppError::Compliance { source })?;
     let server = build_api_server(&config, &events, None, telemetry, media, source_compliance)?;
     drop(server);
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
-async fn run_bootstrap_services_rejects_public_setup_bind_from_dependencies() -> AppResult<()> {
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!(
-                "skipping run_bootstrap_services_rejects_public_setup_bind_from_dependencies: {err}"
-            );
-            return Ok(());
-        }
-    };
+async fn run_bootstrap_services_rejects_public_setup_bind_from_dependencies() -> anyhow::Result<()>
+{
+    // This scenario needs a running application, not an empty baseline fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
-    let mut dependencies = BootstrapDependencies::from_database_url(
+    let workspace = test_media_workspace()?;
+    let mut dependencies = BootstrapDependencies::from_database_url_with_workspace_root(
         postgres.connection_string().to_string(),
+        workspace.path().to_path_buf(),
         super::compliance_tests::fixture_metadata()
             .map_err(|source| AppError::Compliance { source })?,
     )
@@ -304,23 +327,22 @@ async fn run_bootstrap_services_rejects_public_setup_bind_from_dependencies() ->
             value: Some(_),
         }
     ));
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
-async fn run_bootstrap_services_rejects_zero_http_port_from_dependencies() -> AppResult<()> {
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!(
-                "skipping run_bootstrap_services_rejects_zero_http_port_from_dependencies: {err}"
-            );
-            return Ok(());
-        }
-    };
+async fn run_bootstrap_services_rejects_zero_http_port_from_dependencies() -> anyhow::Result<()> {
+    // This scenario needs a running application, not an empty baseline fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
-    let mut dependencies = BootstrapDependencies::from_database_url(
+    let workspace = test_media_workspace()?;
+    let mut dependencies = BootstrapDependencies::from_database_url_with_workspace_root(
         postgres.connection_string().to_string(),
+        workspace.path().to_path_buf(),
         super::compliance_tests::fixture_metadata()
             .map_err(|source| AppError::Compliance { source })?,
     )
@@ -338,20 +360,17 @@ async fn run_bootstrap_services_rejects_zero_http_port_from_dependencies() -> Ap
             value: Some(_),
         }
     ));
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
-async fn run_bootstrap_services_surfaces_bind_failures_for_valid_snapshot() -> AppResult<()> {
-    let postgres = match start_postgres() {
-        Ok(database) => database,
-        Err(err) => {
-            eprintln!(
-                "skipping run_bootstrap_services_surfaces_bind_failures_for_valid_snapshot: {err}"
-            );
-            return Ok(());
-        }
-    };
+async fn run_bootstrap_services_surfaces_bind_failures_for_valid_snapshot() -> anyhow::Result<()> {
+    // This scenario needs a running application, not an empty baseline fixture.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
 
     let reserved_listener =
         TcpListener::bind((IpAddr::from([127, 0, 0, 1]), 0)).map_err(|source| AppError::Io {
@@ -370,8 +389,10 @@ async fn run_bootstrap_services_surfaces_bind_failures_for_valid_snapshot() -> A
             .port(),
     );
 
-    let mut dependencies = BootstrapDependencies::from_database_url(
+    let workspace = test_media_workspace()?;
+    let mut dependencies = BootstrapDependencies::from_database_url_with_workspace_root(
         postgres.connection_string().to_string(),
+        workspace.path().to_path_buf(),
         super::compliance_tests::fixture_metadata()
             .map_err(|source| AppError::Compliance { source })?,
     )
@@ -384,11 +405,12 @@ async fn run_bootstrap_services_surfaces_bind_failures_for_valid_snapshot() -> A
         .await
         .expect_err("occupied listener should fail api server startup");
     assert!(matches!(err, AppError::ApiServer { .. }), "{err:?}");
+    postgres.close()?;
     Ok(())
 }
 
 #[cfg(feature = "libtorrent")]
-mod libtorrent_tests {
+pub(super) mod libtorrent_tests {
     use super::*;
     use crate::engine_config::EngineRuntimePlan;
     use async_trait::async_trait;
@@ -547,7 +569,7 @@ mod libtorrent_tests {
         }
     }
 
-    fn sample_snapshot() -> ConfigSnapshot {
+    pub(in crate::bootstrap) fn sample_snapshot() -> ConfigSnapshot {
         let engine_profile = sample_engine_profile();
         ConfigSnapshot {
             revision: 3,
