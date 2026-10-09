@@ -274,14 +274,12 @@ where
             .map_err(|err| AppError::torrent("engine.apply_plan", err))
     }
 
-    /// Update the engine profile and propagate changes to the underlying engine.
+    /// Publish the engine profile only after preparation and completed engine updates.
+    /// Startup and the configuration watcher await each refresh serially; this
+    /// boundary does not make native changes or the wider revision atomic.
     pub(crate) async fn update_engine_profile(&self, profile: EngineProfile) -> AppResult<()> {
-        {
-            let mut guard = self.engine_profile.write().await;
-            *guard = profile.clone();
-        }
         let mut plan = EngineRuntimePlan::from_profile(&profile);
-        self.refresh_ip_filter(&mut plan).await?;
+        self.refresh_ip_filter(&profile, &mut plan).await?;
         self.resolve_tracker_auth(&mut plan).await?;
         self.resolve_proxy_auth(&mut plan).await?;
         for warning in &plan.effective.warnings {
@@ -302,10 +300,15 @@ where
             .update_limits(None, plan.global_rate_limit())
             .await
             .map_err(|err| AppError::torrent("engine.update_limits", err))?;
+        *self.engine_profile.write().await = profile;
         Ok(())
     }
 
-    async fn refresh_ip_filter(&self, plan: &mut EngineRuntimePlan) -> AppResult<()> {
+    async fn refresh_ip_filter(
+        &self,
+        profile: &EngineProfile,
+        plan: &mut EngineRuntimePlan,
+    ) -> AppResult<()> {
         let previous = plan.effective.network.ip_filter.clone();
         let mut runtime_filter =
             plan.runtime
@@ -379,13 +382,13 @@ where
         plan.effective.warnings.extend(warnings);
 
         if let Some(config) = &self.config
-            && let Err(err) = self
-                .persist_ip_filter_metadata(
-                    config.as_ref(),
-                    &previous,
-                    &plan.effective.network.ip_filter,
-                )
-                .await
+            && let Err(err) = Self::persist_ip_filter_metadata(
+                config.as_ref(),
+                profile,
+                &previous,
+                &plan.effective.network.ip_filter,
+            )
+            .await
         {
             warn!(
                 error = %err,
@@ -605,8 +608,8 @@ where
     }
 
     async fn persist_ip_filter_metadata(
-        &self,
         config: &dyn SettingsFacade,
+        profile: &EngineProfile,
         previous: &IpFilterConfig,
         updated: &IpFilterConfig,
     ) -> AppResult<()> {
@@ -617,10 +620,7 @@ where
             return Ok(());
         }
 
-        let mut profile = {
-            let guard = self.engine_profile.read().await;
-            guard.clone()
-        };
+        let mut profile = profile.clone();
         profile.ip_filter = updated.clone();
         let changeset = SettingsChangeset {
             engine_profile: Some(profile),

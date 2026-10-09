@@ -1,5 +1,5 @@
 use super::super::*;
-use super::{SYSTEM_USER_PUBLIC_ID, build_service, unique_name};
+use super::{SYSTEM_USER_PUBLIC_ID, build_service, build_service_with_admin, unique_name};
 use anyhow::Context;
 use chrono::Utc;
 use revaer_data::indexers::conflicts::log_source_metadata_conflict;
@@ -491,7 +491,7 @@ async fn assert_fixture_prepare_finalize_and_secret_metadata(
 }
 
 async fn seed_fixture_connectivity_rows(
-    service: &IndexerService,
+    admin: &sqlx::PgPool,
     fixture: &IndexerFixture,
     now: chrono::DateTime<Utc>,
 ) -> anyhow::Result<()> {
@@ -501,23 +501,23 @@ async fn seed_fixture_connectivity_rows(
          WHERE indexer_instance_public_id = $1",
     )
     .bind(fixture.indexer_instance_public_id)
-    .fetch_one(service.config.pool())
+    .fetch_one(admin)
     .await?;
 
     query(include_str!("sql/connectivity_insert_profile.sql"))
         .bind(instance_id)
         .bind(now)
-        .execute(service.config.pool())
+        .execute(admin)
         .await?;
     query(include_str!("sql/connectivity_insert_reputation.sql"))
         .bind(instance_id)
         .bind(now)
-        .execute(service.config.pool())
+        .execute(admin)
         .await?;
     query(include_str!("sql/connectivity_insert_health_event.sql"))
         .bind(instance_id)
         .bind(now)
-        .execute(service.config.pool())
+        .execute(admin)
         .await?;
     Ok(())
 }
@@ -598,9 +598,7 @@ async fn assert_fixture_connectivity_views(
 #[tokio::test]
 async fn indexer_instance_operator_roundtrip_covers_inventory_and_executor_flows()
 -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db, admin) = build_service_with_admin().await?;
 
     let definition_slug = unique_name("operator-indexer");
     let definition_name = unique_name("Operator Indexer");
@@ -613,17 +611,16 @@ async fn indexer_instance_operator_roundtrip_covers_inventory_and_executor_flows
     bind_fixture_secret_and_assert(&service, &fixture).await?;
     assert_fixture_rss_seen_roundtrip(&service, &fixture).await?;
     assert_fixture_prepare_finalize_and_secret_metadata(&service, &fixture).await?;
-    seed_fixture_connectivity_rows(&service, &fixture, now).await?;
+    seed_fixture_connectivity_rows(&admin, &fixture, now).await?;
     assert_fixture_connectivity_views(&service, &fixture).await?;
+    admin.close().await;
     Ok(())
 }
 
 #[tokio::test]
 async fn search_profiles_policy_sets_and_torznab_roundtrip_cover_operator_workflows()
 -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
     let fixture = create_search_profile_inventory_fixture(&service).await?;
     assert_search_profile_inventory(&service, &fixture).await?;
     let torznab_fixture = create_torznab_operator_fixture(&service, &fixture).await?;
@@ -1242,14 +1239,13 @@ async fn assert_search_profile_torznab_cleanup(
 
 #[tokio::test]
 async fn search_requests_import_jobs_and_conflicts_cover_wrapper_paths() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db, admin) = build_service_with_admin().await?;
     let fixture = create_search_request_import_fixture(&service).await?;
     assert_empty_search_request_pages(&service, fixture.search_profile_public_id).await?;
     let populated_request = ingest_catalog_search_request_result(&service, &fixture).await?;
-    assert_import_job_wrapper_paths(&service, fixture.search_profile_public_id).await?;
-    assert_source_metadata_conflict_roundtrip(&service, &populated_request).await?;
+    assert_import_job_wrapper_paths(&service, &admin, fixture.search_profile_public_id).await?;
+    assert_source_metadata_conflict_roundtrip(&service, &admin, &populated_request).await?;
+    admin.close().await;
     Ok(())
 }
 
@@ -1368,7 +1364,9 @@ async fn ingest_catalog_search_request_result(
     let request_public_id =
         create_runnable_search_request(service, fixture.search_profile_public_id).await;
     let canonical_torrent_source_public_id =
-        ingest_catalog_result_for_request(service, &operator_fixture, request_public_id).await?;
+        ingest_catalog_result_for_request(service, &operator_fixture, request_public_id)
+            .await
+            .context("ingest catalog result through runtime procedure")?;
     assert_catalog_search_request_page(
         service,
         &operator_fixture,
@@ -1511,6 +1509,7 @@ async fn assert_catalog_search_request_page(
 
 async fn assert_import_job_wrapper_paths(
     service: &IndexerService,
+    admin: &sqlx::PgPool,
     search_profile_public_id: Uuid,
 ) -> anyhow::Result<()> {
     let api_job_public_id = service
@@ -1574,13 +1573,7 @@ async fn assert_import_job_wrapper_paths(
     service
         .import_job_run_prowlarr_backup(backup_job_public_id, "snapshot-ref")
         .await?;
-    insert_snapshot_import_result(
-        service.config.pool(),
-        snapshot_job_public_id,
-        tag_alpha,
-        tag_beta,
-    )
-    .await?;
+    insert_snapshot_import_result(admin, snapshot_job_public_id, tag_alpha, tag_beta).await?;
 
     let snapshot_status = service
         .import_job_get_status(snapshot_job_public_id)
@@ -1611,9 +1604,10 @@ async fn assert_import_job_wrapper_paths(
 
 async fn assert_source_metadata_conflict_roundtrip(
     service: &IndexerService,
+    admin: &sqlx::PgPool,
     populated_request: &PopulatedSearchRequestFixture,
 ) -> anyhow::Result<()> {
-    let conflict_id = create_source_metadata_conflict(service, populated_request).await?;
+    let conflict_id = create_source_metadata_conflict(service, admin, populated_request).await?;
     assert_resolved_source_metadata_conflict(service, conflict_id).await?;
     assert_reopened_source_metadata_conflict(service, conflict_id).await?;
     assert_missing_source_metadata_conflict_errors(service, conflict_id).await?;
@@ -1622,6 +1616,7 @@ async fn assert_source_metadata_conflict_roundtrip(
 
 async fn create_source_metadata_conflict(
     service: &IndexerService,
+    admin: &sqlx::PgPool,
     populated_request: &PopulatedSearchRequestFixture,
 ) -> anyhow::Result<i64> {
     let canonical_torrent_source_id: i64 = query_scalar(
@@ -1630,7 +1625,7 @@ async fn create_source_metadata_conflict(
          WHERE canonical_torrent_source_public_id = $1",
     )
     .bind(populated_request.canonical_torrent_source_public_id)
-    .fetch_one(service.config.pool())
+    .fetch_one(admin)
     .await?;
     let indexer_instance_id: i64 = query_scalar(
         "SELECT indexer_instance_id
@@ -1638,7 +1633,7 @@ async fn create_source_metadata_conflict(
          WHERE indexer_instance_public_id = $1",
     )
     .bind(populated_request.indexer_instance_public_id)
-    .fetch_one(service.config.pool())
+    .fetch_one(admin)
     .await?;
     log_source_metadata_conflict(
         service.config.pool(),
@@ -1748,12 +1743,8 @@ async fn assert_missing_source_metadata_conflict_errors(
 #[tokio::test]
 async fn indexer_backup_export_and_restore_roundtrip_preserves_inventory_shapes()
 -> anyhow::Result<()> {
-    let Ok((source_service, _source_db)) = build_service().await else {
-        return Ok(());
-    };
-    let Ok((restore_service, _restore_db)) = build_service().await else {
-        return Ok(());
-    };
+    let (source_service, _source_db) = build_service().await?;
+    let (restore_service, _restore_db) = build_service().await?;
 
     let definition_slug = unique_name("backup-indexer");
     let definition_name = unique_name("Backup Indexer");
@@ -1909,9 +1900,7 @@ async fn assert_indexer_backup_restore_roundtrip_inventory(
 #[tokio::test]
 async fn restore_backup_helpers_create_inventory_and_track_missing_secret_bindings()
 -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let definition_slug = unique_name("restore-helper-indexer");
     let definition_name = unique_name("Restore Helper Indexer");
@@ -1957,9 +1946,7 @@ async fn restore_backup_helpers_create_inventory_and_track_missing_secret_bindin
 
 #[tokio::test]
 async fn restore_backup_rate_limits_reuse_existing_system_policies() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db, admin) = build_service_with_admin().await?;
 
     let system_policy_name = unique_name("restore-system-policy");
     let system_policy_public_id = service
@@ -1967,7 +1954,7 @@ async fn restore_backup_rate_limits_reuse_existing_system_policies() -> anyhow::
         .await?;
     query(include_str!("sql/rate_limit_mark_system.sql"))
         .bind(system_policy_public_id)
-        .execute(service.config.pool())
+        .execute(&admin)
         .await?;
 
     let custom_policy_name = unique_name("restore-custom-policy");
@@ -2015,15 +2002,14 @@ async fn restore_backup_rate_limits_reuse_existing_system_policies() -> anyhow::
     assert_eq!(custom.burst, 25);
     assert_eq!(custom.concurrent_requests, 5);
     assert!(!custom.is_system);
+    admin.close().await;
     Ok(())
 }
 
 #[tokio::test]
 async fn restore_backup_routing_policies_bind_existing_secrets_and_boolean_params()
 -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let rate_limit_name = unique_name("restore-bool-rate-limit");
     let rate_limit_policy_public_id = service
@@ -2095,9 +2081,7 @@ async fn restore_backup_routing_policies_bind_existing_secrets_and_boolean_param
 #[tokio::test]
 async fn restore_backup_indexer_instances_apply_links_fields_and_disabled_subscriptions()
 -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let fixture = create_restore_rich_indexer_fixture(&service).await?;
     assert_restore_rich_indexer_inventory(&service, &fixture).await?;
@@ -2365,9 +2349,7 @@ async fn assert_restore_rich_indexer_inventory(
 #[tokio::test]
 async fn restore_backup_helpers_bind_existing_secrets_without_unresolved_bindings()
 -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let fixture = create_restore_bound_secret_fixture(&service).await?;
     assert_restore_bound_secret_inventory(&service, &fixture).await?;
@@ -2587,9 +2569,7 @@ async fn assert_restore_bound_secret_inventory(
 
 #[tokio::test]
 async fn restore_backup_helpers_surface_missing_reference_errors() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
     assert_restore_backup_missing_rate_limit_error(&service).await?;
     let (definition_slug, routing_name, routing_policy_id_by_name) =
         create_missing_reference_restore_fixture(&service).await?;
@@ -2750,9 +2730,7 @@ async fn assert_restore_backup_missing_rate_limit_link_error(
 
 #[tokio::test]
 async fn run_operation_records_success_and_error_metrics() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let success = service
         .run_operation(
@@ -2782,9 +2760,7 @@ async fn run_operation_records_success_and_error_metrics() -> anyhow::Result<()>
 
 #[tokio::test]
 async fn cardigann_definition_reimport_replaces_existing_field_shape() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let upstream_slug = unique_name("reimport-cardigann");
     let first_name = unique_name("First Cardigann Import");
@@ -2825,9 +2801,7 @@ async fn cardigann_definition_reimport_replaces_existing_field_shape() -> anyhow
 
 #[tokio::test]
 async fn indexer_backup_restore_surfaces_top_level_reference_errors() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let missing_rate_limit_error = service
         .indexer_backup_restore(
@@ -2916,9 +2890,7 @@ async fn indexer_backup_restore_surfaces_top_level_reference_errors() -> anyhow:
 
 #[tokio::test]
 async fn missing_indexer_operations_surface_not_found_across_runtime_views() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let missing_indexer_public_id = Uuid::new_v4();
     assert_missing_indexer_cf_and_connectivity_errors(&service, missing_indexer_public_id).await;
@@ -3097,17 +3069,17 @@ struct TorznabDownloadPrepareFixture {
 #[tokio::test]
 async fn policy_reorder_and_torznab_download_prepare_cover_operator_contracts() -> anyhow::Result<()>
 {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
-    reorder_policy_sets_for_operator_contracts(&service).await?;
+    let (service, _db, admin) = build_service_with_admin().await?;
+    reorder_policy_sets_for_operator_contracts(&service, &admin).await?;
     let fixture = create_torznab_download_prepare_fixture(&service).await?;
     assert_torznab_download_prepare_contracts(&service, &fixture).await?;
+    admin.close().await;
     Ok(())
 }
 
 async fn reorder_policy_sets_for_operator_contracts(
     service: &IndexerService,
+    admin: &sqlx::PgPool,
 ) -> anyhow::Result<()> {
     let first_policy_name = unique_name("Policy A");
     let second_policy_name = unique_name("Policy B");
@@ -3162,19 +3134,15 @@ async fn reorder_policy_sets_for_operator_contracts(
             )
         });
 
-    let reordered_sort_orders = fetch_policy_sort_orders(
-        service.config.pool(),
-        first_policy_public_id,
-        second_policy_public_id,
-    )
-    .await?;
+    let reordered_sort_orders =
+        fetch_policy_sort_orders(admin, first_policy_public_id, second_policy_public_id).await?;
     assert!(
         reordered_sort_orders.1 < reordered_sort_orders.0,
         "second policy should sort ahead of first policy after reorder"
     );
 
     query(include_str!("sql/disable_policy_sets.sql"))
-        .execute(service.config.pool())
+        .execute(admin)
         .await?;
     Ok(())
 }
@@ -3293,9 +3261,7 @@ async fn assert_torznab_download_prepare_contracts(
 
 #[tokio::test]
 async fn secret_create_rotate_revoke_roundtrip() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let secret_id = service
         .secret_create(SYSTEM_USER_PUBLIC_ID, "api_key", "initial-value")
@@ -3333,9 +3299,7 @@ async fn secret_create_rotate_revoke_roundtrip() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn cardigann_definition_import_roundtrip() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let upstream_slug = unique_name("cardigann-app");
     let display_name = unique_name("Cardigann Import");
@@ -3365,9 +3329,7 @@ async fn cardigann_definition_import_roundtrip() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn tag_crud_roundtrip_and_reference_validation() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let tag_key = unique_name("favorites");
     let display_name = unique_name("Favorites");
@@ -3414,9 +3376,7 @@ async fn tag_crud_roundtrip_and_reference_validation() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn health_notification_hook_crud_and_validation_roundtrip() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
     let fixture = create_health_notification_hooks(&service).await?;
     assert_health_notification_hook_inventory(&service, &fixture).await?;
     assert_health_notification_hook_update_and_delete(&service, &fixture).await?;
@@ -3561,9 +3521,7 @@ async fn assert_health_notification_hook_update_and_delete(
 
 #[tokio::test]
 async fn routing_and_rate_limit_policy_roundtrip() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
     let fixture = create_routing_policy_roundtrip_fixture(&service).await?;
     assert_routing_policy_roundtrip_detail(&service, &fixture).await?;
     assert_routing_policy_roundtrip_inventory(&service, &fixture).await?;
@@ -3771,9 +3729,7 @@ async fn assert_routing_policy_roundtrip_rate_limit_lifecycle(
 
 #[tokio::test]
 async fn secret_create_rejects_empty_value() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let err = service
         .secret_create(SYSTEM_USER_PUBLIC_ID, "api_key", "")
@@ -3785,9 +3741,7 @@ async fn secret_create_rejects_empty_value() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn torznab_instance_create_requires_profile() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let err = service
         .torznab_instance_create(SYSTEM_USER_PUBLIC_ID, Uuid::new_v4(), "Torznab")
@@ -3799,9 +3753,7 @@ async fn torznab_instance_create_requires_profile() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn torznab_instance_rotate_requires_instance() -> anyhow::Result<()> {
-    let Ok((service, _db)) = build_service().await else {
-        return Ok(());
-    };
+    let (service, _db) = build_service().await?;
 
     let err = service
         .torznab_instance_rotate_key(SYSTEM_USER_PUBLIC_ID, Uuid::new_v4())
