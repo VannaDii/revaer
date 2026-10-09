@@ -106,6 +106,10 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 - `just test-media-recovery` explicitly executes the retained production worker
   H.264 metadata-replacement regression with real FFmpeg/FFprobe and all features.
   Its synthetic catalog admission is distinct from the Linux mounted-service test.
+- `just cov` includes that production worker regression after workspace collection
+  with matching all-feature FFI instrumentation, without clearing prior profiles.
+  An explicitly selected Linux recovery root also exercises the existing native
+  service workflow; each opt-in selection must execute one passing test.
 
 - `revaer-media-core` owns deterministic media graph compilation, planning,
   compliance and verification. Keep filesystem, process and database access in

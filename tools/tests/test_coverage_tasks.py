@@ -200,3 +200,36 @@ def test_rust_threshold_uses_counts_instead_of_rounded_percentages() -> None:
         rust_line_gate(report(100001), "example")
     with pytest.raises(ToolingError, match="no line records"):
         rust_line_gate('{"data": []}', "example")
+
+
+def test_production_worker_coverage_preserves_workspace_native_profiles(
+    coverage_workspace: Context,
+) -> None:
+    root = coverage_workspace.root
+    app = root / "crates/revaer-app"
+    (app / "src").mkdir(parents=True)
+    (app / "Cargo.toml").write_text(
+        '[package]\nname="revaer-app"\nversion="0.1.0"\nedition="2024"\n[features]\nextra=[]\n'
+    )
+    (app / "src/lib.rs").write_text("""
+pub fn production_value() -> u32 { 4242 }
+#[cfg(test)] mod media_job_runtime { mod tests {
+    #[test] #[ignore = "production selection"]
+    fn production_media_job_runtime_executes_and_persists_verified_replacement() {
+        assert!(cfg!(feature = "extra"));
+        assert_eq!(crate::production_value(), 4242);
+    }
+} }
+""")
+    subprocess.run(
+        ["cargo", "generate-lockfile", "--offline"],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    Coverage.run(coverage_workspace)
+    lcov = (root / "coverage/lcov.info").read_text()
+    assert "src/fixture.cpp" in lcov
+    assert "crates/pure/src/lib.rs" in lcov
+    report = json.loads((root / "coverage/crates/revaer-app.json").read_text())
+    assert report["data"][0]["totals"]["lines"]["percent"] >= 90
