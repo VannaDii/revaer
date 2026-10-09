@@ -62,8 +62,13 @@ class E2eSettings:
     def shard_suffix(self) -> str:
         return f"-shard-{self.shard_index}" if self.shard_total > 1 else ""
 
-    def phases(self) -> tuple[str, ...]:
-        available = ("api-none", "api-api-key", *(f"ui-{browser}" for browser in self.browsers))
+    def phases(self, *, media: bool = False) -> tuple[str, ...]:
+        api = (
+            ("api-none-missing-catalog", "api-none", "api-api-key-missing-catalog", "api-api-key")
+            if media
+            else ("api-none", "api-api-key")
+        )
+        available = (*api, *(f"ui-{browser}" for browser in self.browsers))
         selected = set(self.projects or available)
         unknown = selected - set(available)
         if unknown:
@@ -75,6 +80,10 @@ class E2eSettings:
                 selected.add("api-api-key")
             if "api-api-key" in selected:
                 selected.add("api-none")
+            if media:
+                for phase in ("api-none", "api-api-key"):
+                    if phase in selected:
+                        selected.add(phase + "-missing-catalog")
         return tuple(phase for phase in available if phase in selected)
 
 

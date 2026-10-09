@@ -90,6 +90,11 @@ applyTo:
   test-serving entry as the media default and preserve explicit runner overrides.
   Do not bypass production compliance startup checks to run a test suite.
 
+- Media E2E retains missing-catalog checks in each authentication mode, then
+  restarts the service to load and attest the caller's real Linux catalog after
+  authentication setup resets configuration. Profile and association scenarios
+  use catalog keys, immutable versions and server ETags.
+
 - In the single-init feature phase, the Python E2E adapter adds `tests/specs/media/ui` alongside the foundation UI suite. Route-controlled media presentation tests must remain explicitly distinguished from filesystem or persistence evidence.
 
 - `rv ui-e2e-app-test` preserves the media launch-guard and compliance library

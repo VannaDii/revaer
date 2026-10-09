@@ -8,7 +8,8 @@ from revaer_tooling.errors import ToolingError
 def test_defaults_and_project_dependencies_preserve_order() -> None:
     default = load_e2e_settings({})
     assert default.phases() == ("api-none", "api-api-key", "ui-chromium")
-    assert default.workers == 1 and default.retries == 0
+    assert default.workers == 1
+    assert default.retries == 0
     assert default.trace == Recording.RETRY
     selected = load_e2e_settings(
         {
@@ -20,7 +21,8 @@ def test_defaults_and_project_dependencies_preserve_order() -> None:
         }
     )
     assert selected.phases() == ("api-none", "api-api-key", "ui-webkit")
-    assert selected.workers == 2 and selected.retries == 2
+    assert selected.workers == 2
+    assert selected.retries == 2
     diagnostic = load_e2e_settings(
         {
             "E2E_PLAYWRIGHT_PROJECTS": "ui-chromium",
@@ -57,10 +59,29 @@ def test_invalid_settings_fail_before_any_service_is_started(environment: dict[s
 
 def test_recording_modes_preserve_first_retry_and_failure_semantics() -> None:
     assert [Recording.RETRY.enabled(attempt) for attempt in (1, 2, 3)] == [False, True, False]
-    assert Recording.ON.enabled(1) and Recording.ON.retain(False)
-    assert Recording.FAILURE.enabled(1) and not Recording.FAILURE.retain(False)
+    assert Recording.ON.enabled(1)
+    assert Recording.ON.retain(False)
+    assert Recording.FAILURE.enabled(1)
+    assert not Recording.FAILURE.retain(False)
     assert Recording.FAILURE.retain(True)
-    assert not Recording.OFF.enabled(1) and not Recording.OFF.retain(True)
+    assert not Recording.OFF.enabled(1)
+    assert not Recording.OFF.retain(True)
+
+
+def test_media_keeps_missing_catalog_checks_in_each_authentication_mode() -> None:
+    expected = (
+        "api-none-missing-catalog",
+        "api-none",
+        "api-api-key-missing-catalog",
+        "api-api-key",
+        "ui-chromium",
+    )
+    assert load_e2e_settings({}).phases(media=True) == expected
+    assert (
+        load_e2e_settings({"E2E_PLAYWRIGHT_PROJECTS": "ui-chromium"}).phases(media=True) == expected
+    )
+    focused = load_e2e_settings({"E2E_PLAYWRIGHT_PROJECTS": "api-none"})
+    assert focused.phases(media=True) == expected[:2]
 
 
 def test_shards_and_timeouts_are_explicit() -> None:
@@ -77,8 +98,10 @@ def test_shards_and_timeouts_are_explicit() -> None:
             "E2E_COVERAGE_DIR": "artifacts/coverage",
         }
     )
-    assert settings.shard_suffix == "-shard-2" and settings.startup_attempts == 8
-    assert settings.test_timeout_ms == 0 and not settings.headless
+    assert settings.shard_suffix == "-shard-2"
+    assert settings.startup_attempts == 8
+    assert settings.test_timeout_ms == 0
+    assert not settings.headless
     assert settings.api_runner == "lib-test"
     with pytest.raises(ToolingError, match="Unknown E2E projects"):
         load_e2e_settings({"E2E_PLAYWRIGHT_PROJECTS": "unknown"}).phases()

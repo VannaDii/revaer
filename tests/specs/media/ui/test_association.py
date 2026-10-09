@@ -124,7 +124,8 @@ def capture_layout(
         page.set_viewport_size({"width": width, "height": 844})
         for element in editor.get_by_role("combobox").all() if fields else [editor]:
             bounds = element.bounding_box()
-            assert bounds is not None and bounds["x"] + bounds["width"] <= width
+            assert bounds is not None
+            assert bounds["x"] + bounds["width"] <= width
         editor.screenshot(
             path=request.node.stash[ARTIFACTS] / f"{name}-{width}.png",
             animations="disabled",
@@ -193,7 +194,8 @@ def test_conflict_preserves_prefix_and_modes_without_retry(app: AppShell, page: 
         payload = object_value(route.request.post_data_json)
         submissions.append(payload)
         assert payload["root_relative_path"] == "Series/Season 1"
-        assert payload["watcher_enabled"] is True and payload["schedule_enabled"] is True
+        assert payload["watcher_enabled"] is True
+        assert payload["schedule_enabled"] is True
         route.fulfill(status=412, json={"title": "Conflict", "status": 412, "detail": REQUESTED})
 
     page.route("**/v1/media/discovery-associations", submit)
