@@ -470,5 +470,3 @@ async fn attempt_referenced_policy_mutation(
     sqlx::query("UPDATE public.media_policy_output SET quarantine_enabled = true WHERE media_policy_profile_id = (SELECT media_policy_profile_id FROM public.media_policy_profile WHERE policy_key = 'profile-save-policy')")
         .execute(admin).await.err().ok_or_else(|| anyhow::anyhow!("referenced policy component mutated"))
 }
-
-mod cancelled_begin;
