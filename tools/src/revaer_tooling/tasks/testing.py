@@ -96,6 +96,13 @@ class TestMediaRecovery(Task):
             CargoArgs(
                 CargoOperation.TEST,
                 ("revaer-app",),
+                test_filter="production_media_job_runtime_executes_and_persists_verified_replacement",
+                include_ignored=True,
+                test_threads=1,
+            ),
+            CargoArgs(
+                CargoOperation.TEST,
+                ("revaer-app",),
                 all_features=False,
                 no_default_features=True,
                 test_filter="media_discovery_fingerprint::tests",
