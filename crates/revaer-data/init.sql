@@ -29042,3 +29042,9985 @@ END;
 $$;
 
 
+--
+-- Name: source_metadata_conflict_list(uuid, boolean, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.source_metadata_conflict_list(actor_user_public_id uuid, include_resolved_input boolean, limit_input integer) RETURNS TABLE(conflict_id bigint, conflict_type public.conflict_type, existing_value character varying, incoming_value character varying, observed_at timestamp with time zone, resolved_at timestamp with time zone, resolution public.conflict_resolution, resolution_note character varying)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT * FROM source_metadata_conflict_list_v1(
+        actor_user_public_id => actor_user_public_id,
+        include_resolved_input => include_resolved_input,
+        limit_input => limit_input
+    );
+END;
+$$;
+
+
+--
+-- Name: source_metadata_conflict_list_v1(uuid, boolean, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.source_metadata_conflict_list_v1(actor_user_public_id uuid, include_resolved_input boolean, limit_input integer) RETURNS TABLE(conflict_id bigint, conflict_type public.conflict_type, existing_value character varying, incoming_value character varying, observed_at timestamp with time zone, resolved_at timestamp with time zone, resolution public.conflict_resolution, resolution_note character varying)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to list source metadata conflicts';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    include_resolved_value BOOLEAN;
+    row_limit INTEGER;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    include_resolved_value := COALESCE(include_resolved_input, FALSE);
+    row_limit := COALESCE(limit_input, 50);
+
+    IF row_limit < 1 OR row_limit > 200 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'limit_invalid';
+    END IF;
+
+    RETURN QUERY
+    SELECT source_metadata_conflict.source_metadata_conflict_id,
+           source_metadata_conflict.conflict_type,
+           source_metadata_conflict.existing_value,
+           source_metadata_conflict.incoming_value,
+           source_metadata_conflict.observed_at,
+           source_metadata_conflict.resolved_at,
+           source_metadata_conflict.resolution,
+           source_metadata_conflict.resolution_note
+    FROM source_metadata_conflict
+    WHERE include_resolved_value = TRUE
+       OR source_metadata_conflict.resolved_at IS NULL
+    ORDER BY source_metadata_conflict.observed_at DESC,
+             source_metadata_conflict.source_metadata_conflict_id DESC
+    LIMIT row_limit;
+END;
+$$;
+
+
+--
+-- Name: source_metadata_conflict_reopen(uuid, bigint, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.source_metadata_conflict_reopen(actor_user_public_id uuid, conflict_id_input bigint, resolution_note_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM source_metadata_conflict_reopen_v1(actor_user_public_id => actor_user_public_id, conflict_id_input => conflict_id_input, resolution_note_input => resolution_note_input);
+END;
+$$;
+
+
+--
+-- Name: source_metadata_conflict_reopen_v1(uuid, bigint, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.source_metadata_conflict_reopen_v1(actor_user_public_id uuid, conflict_id_input bigint, resolution_note_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to reopen conflict';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    conflict_resolved_at TIMESTAMPTZ;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF conflict_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'conflict_missing';
+    END IF;
+
+    IF resolution_note_input IS NOT NULL AND char_length(resolution_note_input) > 256 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'resolution_note_too_long';
+    END IF;
+
+    SELECT resolved_at
+    INTO conflict_resolved_at
+    FROM source_metadata_conflict
+    WHERE source_metadata_conflict_id = conflict_id_input;
+
+    IF conflict_resolved_at IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'conflict_not_resolved';
+    END IF;
+
+    UPDATE source_metadata_conflict
+    SET resolved_at = NULL,
+        resolved_by_user_id = NULL,
+        resolution = NULL,
+        resolution_note = NULL
+    WHERE source_metadata_conflict_id = conflict_id_input;
+
+    INSERT INTO source_metadata_conflict_audit_log (
+        conflict_id,
+        action,
+        actor_user_id,
+        occurred_at,
+        note
+    )
+    VALUES (
+        conflict_id_input,
+        'reopened',
+        actor_user_id,
+        now(),
+        resolution_note_input
+    );
+END;
+$$;
+
+
+--
+-- Name: source_metadata_conflict_resolve(uuid, bigint, public.conflict_resolution, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.source_metadata_conflict_resolve(actor_user_public_id uuid, conflict_id_input bigint, resolution_input public.conflict_resolution, resolution_note_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM source_metadata_conflict_resolve_v1(actor_user_public_id => actor_user_public_id, conflict_id_input => conflict_id_input, resolution_input => resolution_input, resolution_note_input => resolution_note_input);
+END;
+$$;
+
+
+--
+-- Name: source_metadata_conflict_resolve_v1(uuid, bigint, public.conflict_resolution, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.source_metadata_conflict_resolve_v1(actor_user_public_id uuid, conflict_id_input bigint, resolution_input public.conflict_resolution, resolution_note_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    AS $_$
+DECLARE
+    base_message CONSTANT text := 'Failed to resolve conflict';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    conflict_type_value conflict_type;
+    conflict_canonical_source_id BIGINT;
+    conflict_existing_value VARCHAR(256);
+    conflict_incoming_value VARCHAR(256);
+    conflict_resolved_at TIMESTAMPTZ;
+    source_guid_value VARCHAR(256);
+    source_indexer_instance_id BIGINT;
+    incoming_trimmed VARCHAR(256);
+    tracker_category_value INTEGER;
+    tracker_subcategory_value INTEGER;
+    tracker_parts TEXT[];
+    tracker_part_text TEXT;
+    tracker_part_sub TEXT;
+    has_tracker_name BOOLEAN;
+    has_tracker_category BOOLEAN;
+    has_tracker_subcategory BOOLEAN;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF conflict_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'conflict_missing';
+    END IF;
+
+    IF resolution_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'resolution_missing';
+    END IF;
+
+    IF resolution_note_input IS NOT NULL AND char_length(resolution_note_input) > 256 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'resolution_note_too_long';
+    END IF;
+
+    SELECT conflict_type,
+           canonical_torrent_source_id,
+           existing_value,
+           incoming_value,
+           resolved_at
+    INTO conflict_type_value,
+         conflict_canonical_source_id,
+         conflict_existing_value,
+         conflict_incoming_value,
+         conflict_resolved_at
+    FROM source_metadata_conflict
+    WHERE source_metadata_conflict_id = conflict_id_input;
+
+    IF conflict_canonical_source_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'conflict_not_found';
+    END IF;
+
+    IF conflict_resolved_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'conflict_already_resolved';
+    END IF;
+
+    IF resolution_input = 'accepted_incoming' THEN
+        incoming_trimmed := trim(conflict_incoming_value);
+        IF incoming_trimmed = '' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'incoming_value_invalid';
+        END IF;
+
+        IF conflict_type_value = 'source_guid' THEN
+            SELECT source_guid, indexer_instance_id
+            INTO source_guid_value, source_indexer_instance_id
+            FROM canonical_torrent_source
+            WHERE canonical_torrent_source_id = conflict_canonical_source_id;
+
+            IF source_guid_value IS NULL THEN
+                IF EXISTS (
+                    SELECT 1
+                    FROM canonical_torrent_source
+                    WHERE indexer_instance_id = source_indexer_instance_id
+                      AND source_guid = incoming_trimmed
+                ) THEN
+                    RAISE EXCEPTION USING
+                        ERRCODE = errcode,
+                        MESSAGE = base_message,
+                        DETAIL = 'source_guid_conflict';
+                END IF;
+
+                UPDATE canonical_torrent_source
+                SET source_guid = incoming_trimmed,
+                    updated_at = now()
+                WHERE canonical_torrent_source_id = conflict_canonical_source_id;
+            END IF;
+        ELSIF conflict_type_value = 'tracker_name' THEN
+            SELECT EXISTS (
+                SELECT 1
+                FROM canonical_torrent_source_attr
+                WHERE canonical_torrent_source_id = conflict_canonical_source_id
+                  AND attr_key = 'tracker_name'
+            )
+            INTO has_tracker_name;
+
+            IF has_tracker_name IS FALSE THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_text
+                )
+                VALUES (
+                    conflict_canonical_source_id,
+                    'tracker_name',
+                    incoming_trimmed
+                );
+            END IF;
+        ELSIF conflict_type_value = 'tracker_category' THEN
+            tracker_parts := regexp_split_to_array(incoming_trimmed, '[:/]');
+
+            IF array_length(tracker_parts, 1) IS NULL OR array_length(tracker_parts, 1) > 2 THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'incoming_value_invalid';
+            END IF;
+
+            tracker_part_text := tracker_parts[1];
+            IF tracker_part_text !~ '^[0-9]+$' THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'incoming_value_invalid';
+            END IF;
+
+            tracker_category_value := tracker_part_text::INTEGER;
+            tracker_subcategory_value := 0;
+
+            IF array_length(tracker_parts, 1) = 2 THEN
+                tracker_part_sub := tracker_parts[2];
+                IF tracker_part_sub !~ '^[0-9]+$' THEN
+                    RAISE EXCEPTION USING
+                        ERRCODE = errcode,
+                        MESSAGE = base_message,
+                        DETAIL = 'incoming_value_invalid';
+                END IF;
+                tracker_subcategory_value := tracker_part_sub::INTEGER;
+            END IF;
+
+            SELECT EXISTS (
+                SELECT 1
+                FROM canonical_torrent_source_attr
+                WHERE canonical_torrent_source_id = conflict_canonical_source_id
+                  AND attr_key = 'tracker_category'
+            )
+            INTO has_tracker_category;
+
+            SELECT EXISTS (
+                SELECT 1
+                FROM canonical_torrent_source_attr
+                WHERE canonical_torrent_source_id = conflict_canonical_source_id
+                  AND attr_key = 'tracker_subcategory'
+            )
+            INTO has_tracker_subcategory;
+
+            IF has_tracker_category IS FALSE THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_int
+                )
+                VALUES (
+                    conflict_canonical_source_id,
+                    'tracker_category',
+                    tracker_category_value
+                );
+            END IF;
+
+            IF has_tracker_subcategory IS FALSE THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_int
+                )
+                VALUES (
+                    conflict_canonical_source_id,
+                    'tracker_subcategory',
+                    tracker_subcategory_value
+                );
+            END IF;
+        END IF;
+    END IF;
+
+    UPDATE source_metadata_conflict
+    SET resolved_at = now(),
+        resolved_by_user_id = actor_user_id,
+        resolution = resolution_input,
+        resolution_note = resolution_note_input
+    WHERE source_metadata_conflict_id = conflict_id_input;
+
+    INSERT INTO source_metadata_conflict_audit_log (
+        conflict_id,
+        action,
+        actor_user_id,
+        occurred_at,
+        note
+    )
+    VALUES (
+        conflict_id_input,
+        'resolved',
+        actor_user_id,
+        now(),
+        resolution_note_input
+    );
+END;
+$_$;
+
+
+--
+-- Name: tag_create(uuid, character varying, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tag_create(actor_user_public_id uuid, tag_key_input character varying, display_name_input character varying) RETURNS uuid
+    LANGUAGE sql
+    AS $$
+    SELECT tag_create_v1(actor_user_public_id => actor_user_public_id, tag_key_input => tag_key_input, display_name_input => display_name_input);
+$$;
+
+
+--
+-- Name: tag_create_v1(uuid, character varying, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tag_create_v1(actor_user_public_id uuid, tag_key_input character varying, display_name_input character varying) RETURNS uuid
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to create tag';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    new_tag_id BIGINT;
+    new_tag_public_id UUID;
+    trimmed_tag_key VARCHAR(128);
+    trimmed_display_name VARCHAR(256);
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id
+    INTO actor_user_id
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF tag_key_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_key_missing';
+    END IF;
+
+    trimmed_tag_key := trim(tag_key_input);
+
+    IF trimmed_tag_key = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_key_empty';
+    END IF;
+
+    IF trimmed_tag_key <> lower(trimmed_tag_key) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_key_not_lowercase';
+    END IF;
+
+    IF char_length(trimmed_tag_key) > 128 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_key_too_long';
+    END IF;
+
+    IF display_name_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_missing';
+    END IF;
+
+    trimmed_display_name := trim(display_name_input);
+
+    IF trimmed_display_name = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_empty';
+    END IF;
+
+    IF char_length(trimmed_display_name) > 256 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_too_long';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM tag
+        WHERE tag_key = trimmed_tag_key
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_key_already_exists';
+    END IF;
+
+    new_tag_public_id := gen_random_uuid();
+
+    INSERT INTO tag (
+        tag_public_id,
+        tag_key,
+        display_name,
+        created_by_user_id,
+        updated_by_user_id
+    )
+    VALUES (
+        new_tag_public_id,
+        trimmed_tag_key,
+        trimmed_display_name,
+        actor_user_id,
+        actor_user_id
+    )
+    RETURNING tag_id INTO new_tag_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'tag',
+        new_tag_id,
+        new_tag_public_id,
+        'create',
+        actor_user_id,
+        'tag_create'
+    );
+
+    RETURN new_tag_public_id;
+END;
+$$;
+
+
+--
+-- Name: tag_list(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tag_list(actor_user_public_id uuid) RETURNS TABLE(tag_public_id uuid, tag_key character varying, display_name character varying, updated_at timestamp with time zone)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT *
+    FROM tag_list_v1(actor_user_public_id);
+END;
+$$;
+
+
+--
+-- Name: tag_list_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tag_list_v1(actor_user_public_id uuid) RETURNS TABLE(tag_public_id uuid, tag_key character varying, display_name character varying, updated_at timestamp with time zone)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to list tags';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_unauthorized';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        tag.tag_public_id,
+        tag.tag_key,
+        tag.display_name,
+        tag.updated_at
+    FROM tag
+    WHERE tag.deleted_at IS NULL
+    ORDER BY tag.display_name ASC, tag.tag_id ASC;
+END;
+$$;
+
+
+--
+-- Name: tag_soft_delete(uuid, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tag_soft_delete(actor_user_public_id uuid, tag_public_id_input uuid, tag_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM tag_soft_delete_v1(actor_user_public_id => actor_user_public_id, tag_public_id_input => tag_public_id_input, tag_key_input => tag_key_input);
+END;
+$$;
+
+
+--
+-- Name: tag_soft_delete_v1(uuid, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tag_soft_delete_v1(actor_user_public_id uuid, tag_public_id_input uuid, tag_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to delete tag';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    resolved_tag_id BIGINT;
+    resolved_tag_public_id UUID;
+    resolved_tag_key VARCHAR(128);
+    trimmed_tag_key VARCHAR(128);
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id
+    INTO actor_user_id
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF tag_public_id_input IS NULL AND tag_key_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_reference_missing';
+    END IF;
+
+    IF tag_key_input IS NOT NULL THEN
+        trimmed_tag_key := trim(tag_key_input);
+
+        IF trimmed_tag_key = '' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_key_empty';
+        END IF;
+
+        IF trimmed_tag_key <> lower(trimmed_tag_key) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_key_not_lowercase';
+        END IF;
+
+        IF char_length(trimmed_tag_key) > 128 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_key_too_long';
+        END IF;
+    END IF;
+
+    IF tag_public_id_input IS NOT NULL THEN
+        SELECT tag_id, tag_public_id, tag_key
+        INTO resolved_tag_id, resolved_tag_public_id, resolved_tag_key
+        FROM tag
+        WHERE tag_public_id = tag_public_id_input;
+
+        IF resolved_tag_id IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_not_found';
+        END IF;
+
+        IF trimmed_tag_key IS NOT NULL AND trimmed_tag_key <> resolved_tag_key THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'invalid_tag_reference';
+        END IF;
+    ELSE
+        SELECT tag_id, tag_public_id, tag_key
+        INTO resolved_tag_id, resolved_tag_public_id, resolved_tag_key
+        FROM tag
+        WHERE tag_key = trimmed_tag_key;
+
+        IF resolved_tag_id IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'unknown_key';
+        END IF;
+    END IF;
+
+    UPDATE tag
+    SET deleted_at = COALESCE(deleted_at, now()),
+        updated_by_user_id = actor_user_id,
+        updated_at = now()
+    WHERE tag_id = resolved_tag_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'tag',
+        resolved_tag_id,
+        resolved_tag_public_id,
+        'soft_delete',
+        actor_user_id,
+        'tag_soft_delete'
+    );
+END;
+$$;
+
+
+--
+-- Name: tag_update(uuid, uuid, character varying, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tag_update(actor_user_public_id uuid, tag_public_id_input uuid, tag_key_input character varying, display_name_input character varying) RETURNS uuid
+    LANGUAGE sql
+    AS $$
+    SELECT tag_update_v1(actor_user_public_id => actor_user_public_id, tag_public_id_input => tag_public_id_input, tag_key_input => tag_key_input, display_name_input => display_name_input);
+$$;
+
+
+--
+-- Name: tag_update_v1(uuid, uuid, character varying, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tag_update_v1(actor_user_public_id uuid, tag_public_id_input uuid, tag_key_input character varying, display_name_input character varying) RETURNS uuid
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to update tag';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    resolved_tag_id BIGINT;
+    resolved_tag_public_id UUID;
+    resolved_tag_key VARCHAR(128);
+    resolved_deleted_at TIMESTAMPTZ;
+    trimmed_tag_key VARCHAR(128);
+    trimmed_display_name VARCHAR(256);
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id
+    INTO actor_user_id
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF tag_public_id_input IS NULL AND tag_key_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_reference_missing';
+    END IF;
+
+    IF tag_key_input IS NOT NULL THEN
+        trimmed_tag_key := trim(tag_key_input);
+
+        IF trimmed_tag_key = '' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_key_empty';
+        END IF;
+
+        IF trimmed_tag_key <> lower(trimmed_tag_key) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_key_not_lowercase';
+        END IF;
+
+        IF char_length(trimmed_tag_key) > 128 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_key_too_long';
+        END IF;
+    END IF;
+
+    IF tag_public_id_input IS NOT NULL THEN
+        SELECT tag_id, tag_public_id, tag_key, deleted_at
+        INTO resolved_tag_id, resolved_tag_public_id, resolved_tag_key, resolved_deleted_at
+        FROM tag
+        WHERE tag_public_id = tag_public_id_input;
+
+        IF resolved_tag_id IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_not_found';
+        END IF;
+
+        IF trimmed_tag_key IS NOT NULL AND trimmed_tag_key <> resolved_tag_key THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'invalid_tag_reference';
+        END IF;
+    ELSE
+        SELECT tag_id, tag_public_id, tag_key, deleted_at
+        INTO resolved_tag_id, resolved_tag_public_id, resolved_tag_key, resolved_deleted_at
+        FROM tag
+        WHERE tag_key = trimmed_tag_key;
+
+        IF resolved_tag_id IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'unknown_key';
+        END IF;
+    END IF;
+
+    IF resolved_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_deleted';
+    END IF;
+
+    IF display_name_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_missing';
+    END IF;
+
+    trimmed_display_name := trim(display_name_input);
+
+    IF trimmed_display_name = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_empty';
+    END IF;
+
+    IF char_length(trimmed_display_name) > 256 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_too_long';
+    END IF;
+
+    UPDATE tag
+    SET display_name = trimmed_display_name,
+        updated_by_user_id = actor_user_id,
+        updated_at = now()
+    WHERE tag_id = resolved_tag_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'tag',
+        resolved_tag_id,
+        resolved_tag_public_id,
+        'update',
+        actor_user_id,
+        'tag_update'
+    );
+
+    RETURN resolved_tag_public_id;
+END;
+$$;
+
+
+--
+-- Name: torznab_category_list(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.torznab_category_list() RETURNS TABLE(torznab_cat_id integer, name character varying)
+    LANGUAGE sql
+    AS $$
+    SELECT torznab_cat_id, name
+    FROM torznab_category_list_v1();
+$$;
+
+
+--
+-- Name: torznab_category_list_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.torznab_category_list_v1() RETURNS TABLE(torznab_cat_id integer, name character varying)
+    LANGUAGE sql
+    AS $$
+    SELECT torznab_cat_id, name
+    FROM torznab_category
+    ORDER BY torznab_cat_id ASC;
+$$;
+
+
+--
+-- Name: torznab_download_prepare(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.torznab_download_prepare(torznab_instance_public_id_input uuid, canonical_torrent_source_public_id_input uuid) RETURNS TABLE(redirect_url character varying)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT * FROM torznab_download_prepare_v1(
+        torznab_instance_public_id_input,
+        canonical_torrent_source_public_id_input
+    );
+END;
+$$;
+
+
+--
+-- Name: torznab_download_prepare_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.torznab_download_prepare_v1(torznab_instance_public_id_input uuid, canonical_torrent_source_public_id_input uuid) RETURNS TABLE(redirect_url character varying)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to prepare torznab download';
+    errcode CONSTANT text := 'P0001';
+    detail_source_not_in_profile CONSTANT text := 'source_not_in_profile';
+    instance_id_value BIGINT;
+    profile_id_value BIGINT;
+    instance_enabled BOOLEAN;
+    instance_deleted_at TIMESTAMPTZ;
+    source_id_value BIGINT;
+    source_instance_id BIGINT;
+    magnet_uri_value VARCHAR(2048);
+    download_url_value VARCHAR(2048);
+    source_infohash_v1 CHAR(40);
+    source_infohash_v2 CHAR(64);
+    source_magnet_hash CHAR(64);
+    canonical_id_value BIGINT;
+    request_id_value BIGINT;
+    canonical_infohash_v1 CHAR(40);
+    canonical_infohash_v2 CHAR(64);
+    canonical_magnet_hash CHAR(64);
+    final_infohash_v1 CHAR(40);
+    final_infohash_v2 CHAR(64);
+    final_magnet_hash CHAR(64);
+    allowlist_exists BOOLEAN;
+    tag_allowlist_exists BOOLEAN;
+    in_allowlist BOOLEAN;
+    in_blocklist BOOLEAN;
+    in_tag_allowlist BOOLEAN;
+    in_tag_blocklist BOOLEAN;
+BEGIN
+    IF torznab_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_missing';
+    END IF;
+
+    IF canonical_torrent_source_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'canonical_source_missing';
+    END IF;
+
+    SELECT instance.torznab_instance_id,
+           instance.search_profile_id,
+           instance.is_enabled,
+           instance.deleted_at
+    INTO instance_id_value,
+         profile_id_value,
+         instance_enabled,
+         instance_deleted_at
+    FROM torznab_instance AS instance
+    WHERE instance.torznab_instance_public_id = torznab_instance_public_id_input;
+
+    IF instance_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_deleted';
+    END IF;
+
+    IF instance_enabled = FALSE THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_disabled';
+    END IF;
+
+    SELECT source.canonical_torrent_source_id,
+           source.indexer_instance_id,
+           source.last_seen_magnet_uri,
+           source.last_seen_download_url,
+           source.infohash_v1,
+           source.infohash_v2,
+           source.magnet_hash
+    INTO source_id_value,
+         source_instance_id,
+         magnet_uri_value,
+         download_url_value,
+         source_infohash_v1,
+         source_infohash_v2,
+         source_magnet_hash
+    FROM canonical_torrent_source AS source
+    WHERE source.canonical_torrent_source_public_id = canonical_torrent_source_public_id_input;
+
+    IF source_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'canonical_source_not_found';
+    END IF;
+
+    SELECT EXISTS(
+        SELECT 1 FROM search_profile_indexer_allow
+        WHERE search_profile_id = profile_id_value
+    )
+    INTO allowlist_exists;
+
+    IF allowlist_exists THEN
+        SELECT EXISTS(
+            SELECT 1 FROM search_profile_indexer_allow
+            WHERE search_profile_id = profile_id_value
+              AND indexer_instance_id = source_instance_id
+        )
+        INTO in_allowlist;
+
+        IF NOT in_allowlist THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = detail_source_not_in_profile;
+        END IF;
+    END IF;
+
+    SELECT EXISTS(
+        SELECT 1 FROM search_profile_indexer_block
+        WHERE search_profile_id = profile_id_value
+          AND indexer_instance_id = source_instance_id
+    )
+    INTO in_blocklist;
+
+    IF in_blocklist THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = detail_source_not_in_profile;
+    END IF;
+
+    SELECT EXISTS(
+        SELECT 1 FROM search_profile_tag_allow
+        WHERE search_profile_id = profile_id_value
+    )
+    INTO tag_allowlist_exists;
+
+    IF tag_allowlist_exists THEN
+        SELECT EXISTS(
+            SELECT 1 FROM search_profile_tag_allow sta
+            JOIN indexer_instance_tag it
+                ON it.tag_id = sta.tag_id
+            WHERE sta.search_profile_id = profile_id_value
+              AND it.indexer_instance_id = source_instance_id
+        )
+        INTO in_tag_allowlist;
+
+        IF NOT in_tag_allowlist THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = detail_source_not_in_profile;
+        END IF;
+    END IF;
+
+    SELECT EXISTS(
+        SELECT 1 FROM search_profile_tag_block stb
+        JOIN indexer_instance_tag it
+            ON it.tag_id = stb.tag_id
+        WHERE stb.search_profile_id = profile_id_value
+          AND it.indexer_instance_id = source_instance_id
+    )
+    INTO in_tag_blocklist;
+
+    IF in_tag_blocklist THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = detail_source_not_in_profile;
+    END IF;
+
+    SELECT observation.canonical_torrent_id,
+           observation.search_request_id
+    INTO canonical_id_value,
+         request_id_value
+    FROM search_request_source_observation AS observation
+    WHERE observation.canonical_torrent_source_id = source_id_value
+      AND observation.canonical_torrent_id IS NOT NULL
+    ORDER BY observation.observed_at DESC
+    LIMIT 1;
+
+    IF canonical_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'canonical_not_found';
+    END IF;
+
+    SELECT canonical.infohash_v1,
+           canonical.infohash_v2,
+           canonical.magnet_hash
+    INTO canonical_infohash_v1,
+         canonical_infohash_v2,
+         canonical_magnet_hash
+    FROM canonical_torrent AS canonical
+    WHERE canonical.canonical_torrent_id = canonical_id_value;
+
+    final_infohash_v1 := COALESCE(canonical_infohash_v1, source_infohash_v1);
+    final_infohash_v2 := COALESCE(canonical_infohash_v2, source_infohash_v2);
+    final_magnet_hash := COALESCE(canonical_magnet_hash, source_magnet_hash);
+
+    IF final_infohash_v1 IS NULL AND final_infohash_v2 IS NULL AND final_magnet_hash IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'source_missing_hash';
+    END IF;
+
+    magnet_uri_value := NULLIF(trim(magnet_uri_value), '');
+    download_url_value := NULLIF(trim(download_url_value), '');
+
+    IF magnet_uri_value IS NOT NULL THEN
+        redirect_url := magnet_uri_value;
+    ELSIF download_url_value IS NOT NULL THEN
+        redirect_url := download_url_value;
+    ELSE
+        redirect_url := NULL;
+    END IF;
+
+    IF redirect_url IS NULL THEN
+        INSERT INTO acquisition_attempt (
+            torznab_instance_id,
+            origin,
+            canonical_torrent_id,
+            canonical_torrent_source_id,
+            search_request_id,
+            user_id,
+            infohash_v1,
+            infohash_v2,
+            magnet_hash,
+            torrent_client_name,
+            started_at,
+            finished_at,
+            status,
+            failure_class,
+            failure_detail
+        )
+        VALUES (
+            instance_id_value,
+            'torznab',
+            canonical_id_value,
+            source_id_value,
+            request_id_value,
+            NULL,
+            final_infohash_v1,
+            final_infohash_v2,
+            final_magnet_hash,
+            'unknown',
+            now(),
+            now(),
+            'failed',
+            'client_error',
+            'no_download_target'
+        );
+    ELSE
+        INSERT INTO acquisition_attempt (
+            torznab_instance_id,
+            origin,
+            canonical_torrent_id,
+            canonical_torrent_source_id,
+            search_request_id,
+            user_id,
+            infohash_v1,
+            infohash_v2,
+            magnet_hash,
+            torrent_client_name,
+            started_at,
+            status
+        )
+        VALUES (
+            instance_id_value,
+            'torznab',
+            canonical_id_value,
+            source_id_value,
+            request_id_value,
+            NULL,
+            final_infohash_v1,
+            final_infohash_v2,
+            final_magnet_hash,
+            'unknown',
+            now(),
+            'started'
+        );
+    END IF;
+
+    RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: torznab_instance_authenticate(uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.torznab_instance_authenticate(torznab_instance_public_id_input uuid, api_key_plaintext_input character varying) RETURNS TABLE(torznab_instance_id bigint, search_profile_id bigint, display_name character varying)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT * FROM torznab_instance_authenticate_v1(
+        torznab_instance_public_id_input,
+        api_key_plaintext_input
+    );
+END;
+$$;
+
+
+--
+-- Name: torznab_instance_authenticate_v1(uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.torznab_instance_authenticate_v1(torznab_instance_public_id_input uuid, api_key_plaintext_input character varying) RETURNS TABLE(torznab_instance_id bigint, search_profile_id bigint, display_name character varying)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to authenticate torznab instance';
+    errcode CONSTANT text := 'P0001';
+    instance_id_value BIGINT;
+    profile_id_value BIGINT;
+    instance_enabled BOOLEAN;
+    instance_deleted_at TIMESTAMPTZ;
+    api_key_hash_value TEXT;
+    display_name_value VARCHAR(256);
+BEGIN
+    IF torznab_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_missing';
+    END IF;
+
+    IF api_key_plaintext_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'api_key_missing';
+    END IF;
+
+    SELECT instance.torznab_instance_id,
+           instance.search_profile_id,
+           instance.api_key_hash,
+           instance.is_enabled,
+           instance.deleted_at,
+           instance.display_name
+    INTO instance_id_value,
+         profile_id_value,
+         api_key_hash_value,
+         instance_enabled,
+         instance_deleted_at,
+         display_name_value
+    FROM torznab_instance AS instance
+    WHERE instance.torznab_instance_public_id = torznab_instance_public_id_input;
+
+    IF instance_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_deleted';
+    END IF;
+
+    IF instance_enabled = FALSE THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_disabled';
+    END IF;
+
+    IF api_key_hash_value IS NULL OR api_key_hash_value = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'api_key_hash_missing';
+    END IF;
+
+    IF crypt(api_key_plaintext_input, api_key_hash_value) <> api_key_hash_value THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'api_key_invalid';
+    END IF;
+
+    torznab_instance_id := instance_id_value;
+    search_profile_id := profile_id_value;
+    display_name := display_name_value;
+    RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: torznab_instance_create(uuid, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.torznab_instance_create(actor_user_public_id uuid, search_profile_public_id_input uuid, display_name_input character varying) RETURNS TABLE(torznab_instance_public_id uuid, api_key_plaintext character varying)
+    LANGUAGE sql
+    AS $$
+    SELECT * FROM torznab_instance_create_v1(actor_user_public_id => actor_user_public_id, search_profile_public_id_input => search_profile_public_id_input, display_name_input => display_name_input);
+$$;
+
+
+--
+-- Name: torznab_instance_create_v1(uuid, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.torznab_instance_create_v1(actor_user_public_id uuid, search_profile_public_id_input uuid, display_name_input character varying) RETURNS TABLE(torznab_instance_public_id uuid, api_key_plaintext character varying)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to create torznab instance';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    profile_id BIGINT;
+    profile_user_id BIGINT;
+    profile_deleted_at TIMESTAMPTZ;
+    instance_id BIGINT;
+    instance_public_id UUID;
+    trimmed_display_name VARCHAR(256);
+    raw_key TEXT;
+    api_key_hash_value TEXT;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF search_profile_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_profile_missing';
+    END IF;
+
+    SELECT search_profile_id, user_id, deleted_at
+    INTO profile_id, profile_user_id, profile_deleted_at
+    FROM search_profile
+    WHERE search_profile_public_id = search_profile_public_id_input;
+
+    IF profile_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_profile_not_found';
+    END IF;
+
+    IF profile_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_profile_deleted';
+    END IF;
+
+    IF profile_user_id IS NULL THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSE
+        IF profile_user_id <> actor_user_id AND actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    IF display_name_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_missing';
+    END IF;
+
+    trimmed_display_name := trim(display_name_input);
+    IF trimmed_display_name = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_empty';
+    END IF;
+
+    IF char_length(trimmed_display_name) > 256 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_too_long';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM torznab_instance
+        WHERE display_name = trimmed_display_name
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_already_exists';
+    END IF;
+
+    raw_key := encode(gen_random_bytes(32), 'base64');
+    api_key_plaintext := regexp_replace(translate(raw_key, '+/', '-_'), '=', '', 'g');
+    api_key_hash_value := crypt(api_key_plaintext, gen_salt('bf', 12));
+
+    IF api_key_hash_value IS NULL OR api_key_hash_value = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'api_key_hash_failed';
+    END IF;
+
+    instance_public_id := gen_random_uuid();
+
+    INSERT INTO torznab_instance (
+        search_profile_id,
+        torznab_instance_public_id,
+        display_name,
+        api_key_hash,
+        is_enabled
+    )
+    VALUES (
+        profile_id,
+        instance_public_id,
+        trimmed_display_name,
+        api_key_hash_value,
+        TRUE
+    )
+    RETURNING torznab_instance_id INTO instance_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'torznab_instance',
+        instance_id,
+        instance_public_id,
+        'create',
+        actor_user_id,
+        'torznab_instance_create'
+    );
+
+    torznab_instance_public_id := instance_public_id;
+    RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: torznab_instance_enable_disable(uuid, uuid, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.torznab_instance_enable_disable(actor_user_public_id uuid, torznab_instance_public_id_input uuid, is_enabled_input boolean) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM torznab_instance_enable_disable_v1(actor_user_public_id => actor_user_public_id, torznab_instance_public_id_input => torznab_instance_public_id_input, is_enabled_input => is_enabled_input);
+END;
+$$;
+
+
+--
+-- Name: torznab_instance_enable_disable_v1(uuid, uuid, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.torznab_instance_enable_disable_v1(actor_user_public_id uuid, torznab_instance_public_id_input uuid, is_enabled_input boolean) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to update torznab instance';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    instance_id BIGINT;
+    profile_id BIGINT;
+    profile_user_id BIGINT;
+    profile_deleted_at TIMESTAMPTZ;
+    instance_deleted_at TIMESTAMPTZ;
+    current_is_enabled BOOLEAN;
+    audit_action audit_action;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF torznab_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_missing';
+    END IF;
+
+    SELECT torznab_instance_id, search_profile_id, is_enabled, deleted_at
+    INTO instance_id, profile_id, current_is_enabled, instance_deleted_at
+    FROM torznab_instance
+    WHERE torznab_instance_public_id = torznab_instance_public_id_input;
+
+    IF instance_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_deleted';
+    END IF;
+
+    SELECT user_id, deleted_at
+    INTO profile_user_id, profile_deleted_at
+    FROM search_profile
+    WHERE search_profile_id = profile_id;
+
+    IF profile_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_profile_deleted';
+    END IF;
+
+    IF profile_user_id IS NULL THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSE
+        IF profile_user_id <> actor_user_id AND actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    IF is_enabled_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'is_enabled_missing';
+    END IF;
+
+    IF current_is_enabled IS DISTINCT FROM is_enabled_input THEN
+        IF is_enabled_input THEN
+            audit_action := 'enable';
+        ELSE
+            audit_action := 'disable';
+        END IF;
+    ELSE
+        audit_action := 'update';
+    END IF;
+
+    UPDATE torznab_instance
+    SET is_enabled = is_enabled_input,
+        updated_at = now()
+    WHERE torznab_instance_id = instance_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'torznab_instance',
+        instance_id,
+        torznab_instance_public_id_input,
+        audit_action,
+        actor_user_id,
+        'torznab_instance_enable_disable'
+    );
+END;
+$$;
+
+
+--
+-- Name: torznab_instance_rotate_key(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.torznab_instance_rotate_key(actor_user_public_id uuid, torznab_instance_public_id_input uuid) RETURNS character varying
+    LANGUAGE sql
+    AS $$
+    SELECT torznab_instance_rotate_key_v1(actor_user_public_id => actor_user_public_id, torznab_instance_public_id_input => torznab_instance_public_id_input);
+$$;
+
+
+--
+-- Name: torznab_instance_rotate_key_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.torznab_instance_rotate_key_v1(actor_user_public_id uuid, torznab_instance_public_id_input uuid) RETURNS character varying
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to rotate torznab api key';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    instance_id BIGINT;
+    profile_id BIGINT;
+    profile_user_id BIGINT;
+    profile_deleted_at TIMESTAMPTZ;
+    instance_deleted_at TIMESTAMPTZ;
+    raw_key TEXT;
+    api_key_plaintext_value TEXT;
+    api_key_hash_value TEXT;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF torznab_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_missing';
+    END IF;
+
+    SELECT torznab_instance_id, search_profile_id, deleted_at
+    INTO instance_id, profile_id, instance_deleted_at
+    FROM torznab_instance
+    WHERE torznab_instance_public_id = torznab_instance_public_id_input;
+
+    IF instance_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_deleted';
+    END IF;
+
+    SELECT user_id, deleted_at
+    INTO profile_user_id, profile_deleted_at
+    FROM search_profile
+    WHERE search_profile_id = profile_id;
+
+    IF profile_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_profile_deleted';
+    END IF;
+
+    IF profile_user_id IS NULL THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSE
+        IF profile_user_id <> actor_user_id AND actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    raw_key := encode(gen_random_bytes(32), 'base64');
+    api_key_plaintext_value := regexp_replace(translate(raw_key, '+/', '-_'), '=', '', 'g');
+    api_key_hash_value := crypt(api_key_plaintext_value, gen_salt('bf', 12));
+
+    IF api_key_hash_value IS NULL OR api_key_hash_value = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'api_key_hash_failed';
+    END IF;
+
+    UPDATE torznab_instance
+    SET api_key_hash = api_key_hash_value,
+        updated_at = now()
+    WHERE torznab_instance_id = instance_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'torznab_instance',
+        instance_id,
+        torznab_instance_public_id_input,
+        'update',
+        actor_user_id,
+        'torznab_instance_rotate_key'
+    );
+
+    RETURN api_key_plaintext_value;
+END;
+$$;
+
+
+--
+-- Name: torznab_instance_soft_delete(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.torznab_instance_soft_delete(actor_user_public_id uuid, torznab_instance_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM torznab_instance_soft_delete_v1(actor_user_public_id => actor_user_public_id, torznab_instance_public_id_input => torznab_instance_public_id_input);
+END;
+$$;
+
+
+--
+-- Name: torznab_instance_soft_delete_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.torznab_instance_soft_delete_v1(actor_user_public_id uuid, torznab_instance_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to delete torznab instance';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    instance_id BIGINT;
+    profile_id BIGINT;
+    profile_user_id BIGINT;
+    profile_deleted_at TIMESTAMPTZ;
+    instance_deleted_at TIMESTAMPTZ;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF torznab_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_missing';
+    END IF;
+
+    SELECT torznab_instance_id, search_profile_id, deleted_at
+    INTO instance_id, profile_id, instance_deleted_at
+    FROM torznab_instance
+    WHERE torznab_instance_public_id = torznab_instance_public_id_input;
+
+    IF instance_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_deleted';
+    END IF;
+
+    SELECT user_id, deleted_at
+    INTO profile_user_id, profile_deleted_at
+    FROM search_profile
+    WHERE search_profile_id = profile_id;
+
+    IF profile_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_profile_deleted';
+    END IF;
+
+    IF profile_user_id IS NULL THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSE
+        IF profile_user_id <> actor_user_id AND actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    UPDATE torznab_instance
+    SET deleted_at = COALESCE(deleted_at, now()),
+        updated_at = now()
+    WHERE torznab_instance_id = instance_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'torznab_instance',
+        instance_id,
+        torznab_instance_public_id_input,
+        'soft_delete',
+        actor_user_id,
+        'torznab_instance_soft_delete'
+    );
+END;
+$$;
+
+
+--
+-- Name: tracker_category_mapping_delete(uuid, character varying, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tracker_category_mapping_delete(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, tracker_category_input integer, tracker_subcategory_input integer) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM tracker_category_mapping_delete_v1(
+        actor_user_public_id,
+        indexer_definition_upstream_slug_input,
+        tracker_category_input,
+        tracker_subcategory_input
+    );
+END;
+$$;
+
+
+--
+-- Name: tracker_category_mapping_delete(uuid, uuid, character varying, uuid, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tracker_category_mapping_delete(actor_user_public_id uuid, torznab_instance_public_id_input uuid, indexer_definition_upstream_slug_input character varying, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM tracker_category_mapping_delete_v1(
+        actor_user_public_id,
+        torznab_instance_public_id_input,
+        indexer_definition_upstream_slug_input,
+        indexer_instance_public_id_input,
+        tracker_category_input,
+        tracker_subcategory_input
+    );
+END;
+$$;
+
+
+--
+-- Name: tracker_category_mapping_delete_v1(uuid, character varying, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tracker_category_mapping_delete_v1(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, tracker_category_input integer, tracker_subcategory_input integer) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to delete tracker category mapping';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    definition_id BIGINT;
+    mapping_id BIGINT;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id
+    INTO actor_user_id
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF indexer_definition_upstream_slug_input IS NOT NULL
+        AND btrim(indexer_definition_upstream_slug_input) != '' THEN
+        SELECT indexer_definition_id
+        INTO definition_id
+        FROM indexer_definition
+        WHERE upstream_slug = indexer_definition_upstream_slug_input;
+
+        IF definition_id IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'indexer_definition_not_found';
+        END IF;
+    ELSE
+        definition_id := NULL;
+    END IF;
+
+    SELECT tracker_category_mapping_id
+    INTO mapping_id
+    FROM tracker_category_mapping
+    WHERE tracker_category = tracker_category_input
+      AND tracker_subcategory = tracker_subcategory_input
+      AND (
+          (definition_id IS NULL AND indexer_definition_id IS NULL)
+          OR indexer_definition_id = definition_id
+      );
+
+    IF mapping_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'mapping_not_found';
+    END IF;
+
+    DELETE FROM tracker_category_mapping
+    WHERE tracker_category_mapping_id = mapping_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'tracker_category_mapping',
+        mapping_id,
+        NULL,
+        'delete',
+        actor_user_id,
+        'tracker_category_mapping_delete'
+    );
+END;
+$$;
+
+
+--
+-- Name: tracker_category_mapping_delete_v1(uuid, uuid, character varying, uuid, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tracker_category_mapping_delete_v1(actor_user_public_id uuid, torznab_instance_public_id_input uuid, indexer_definition_upstream_slug_input character varying, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to delete tracker category mapping';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    definition_id BIGINT;
+    instance_id BIGINT;
+    instance_deleted_at TIMESTAMPTZ;
+    instance_definition_id BIGINT;
+    torznab_scope_id BIGINT;
+    torznab_scope_deleted_at TIMESTAMPTZ;
+    normalized_slug VARCHAR(128);
+    mapping_id BIGINT;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF tracker_category_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'tracker_category_missing';
+    END IF;
+
+    IF tracker_category_input < 0 THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'tracker_category_invalid';
+    END IF;
+
+    IF tracker_subcategory_input IS NULL THEN
+        tracker_subcategory_input := 0;
+    END IF;
+
+    IF tracker_subcategory_input < 0 THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'tracker_subcategory_invalid';
+    END IF;
+
+    IF torznab_instance_public_id_input IS NOT NULL THEN
+        SELECT torznab_instance_id, deleted_at
+        INTO torznab_scope_id, torznab_scope_deleted_at
+        FROM torznab_instance
+        WHERE torznab_instance_public_id = torznab_instance_public_id_input;
+
+        IF torznab_scope_id IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_instance_not_found';
+        END IF;
+
+        IF torznab_scope_deleted_at IS NOT NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_instance_deleted';
+        END IF;
+    ELSE
+        torznab_scope_id := NULL;
+    END IF;
+
+    IF indexer_definition_upstream_slug_input IS NOT NULL THEN
+        normalized_slug := lower(trim(indexer_definition_upstream_slug_input));
+
+        IF normalized_slug = '' OR normalized_slug <> indexer_definition_upstream_slug_input THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_slug_invalid';
+        END IF;
+
+        SELECT indexer_definition_id
+        INTO definition_id
+        FROM indexer_definition
+        WHERE upstream_source = 'prowlarr_indexers'
+          AND upstream_slug = normalized_slug;
+
+        IF definition_id IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_definition_not_found';
+        END IF;
+    ELSE
+        definition_id := NULL;
+    END IF;
+
+    IF indexer_instance_public_id_input IS NOT NULL THEN
+        SELECT indexer_instance_id, deleted_at, indexer_definition_id
+        INTO instance_id, instance_deleted_at, instance_definition_id
+        FROM indexer_instance
+        WHERE indexer_instance_public_id = indexer_instance_public_id_input;
+
+        IF instance_id IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_instance_not_found';
+        END IF;
+
+        IF instance_deleted_at IS NOT NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_instance_deleted';
+        END IF;
+
+        IF definition_id IS NOT NULL AND definition_id <> instance_definition_id THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_scope_conflict';
+        END IF;
+
+        definition_id := instance_definition_id;
+    ELSE
+        instance_id := NULL;
+    END IF;
+
+    SELECT tracker_category_mapping_id
+    INTO mapping_id
+    FROM tracker_category_mapping
+    WHERE tracker_category = tracker_category_input
+      AND tracker_subcategory = tracker_subcategory_input
+      AND (
+          (torznab_scope_id IS NULL AND torznab_instance_id IS NULL)
+          OR torznab_instance_id = torznab_scope_id
+      )
+      AND (
+          (instance_id IS NULL AND indexer_instance_id IS NULL)
+          OR indexer_instance_id = instance_id
+      )
+      AND (
+          (definition_id IS NULL AND indexer_definition_id IS NULL)
+          OR indexer_definition_id = definition_id
+      );
+
+    IF mapping_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'mapping_not_found';
+    END IF;
+
+    DELETE FROM tracker_category_mapping
+    WHERE tracker_category_mapping_id = mapping_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'tracker_category_mapping',
+        mapping_id,
+        NULL,
+        'delete',
+        actor_user_id,
+        'tracker_category_mapping_delete'
+    );
+END;
+$$;
+
+
+--
+-- Name: tracker_category_mapping_resolve_feed(uuid, uuid, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tracker_category_mapping_resolve_feed(torznab_instance_public_id_input uuid, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer) RETURNS TABLE(torznab_cat_id integer)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT * FROM tracker_category_mapping_resolve_feed_v1(
+        torznab_instance_public_id_input,
+        indexer_instance_public_id_input,
+        tracker_category_input,
+        tracker_subcategory_input
+    );
+END;
+$$;
+
+
+--
+-- Name: tracker_category_mapping_resolve_feed_v1(uuid, uuid, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tracker_category_mapping_resolve_feed_v1(torznab_instance_public_id_input uuid, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer) RETURNS TABLE(torznab_cat_id integer)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to resolve tracker category mapping';
+    errcode CONSTANT text := 'P0001';
+    torznab_scope_id BIGINT;
+    torznab_scope_deleted_at TIMESTAMPTZ;
+    instance_id BIGINT;
+    definition_id BIGINT;
+    resolved_cat_id INTEGER;
+BEGIN
+    IF torznab_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_instance_missing';
+    END IF;
+
+    IF indexer_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_instance_missing';
+    END IF;
+
+    SELECT torznab_instance_id, deleted_at
+    INTO torznab_scope_id, torznab_scope_deleted_at
+    FROM torznab_instance
+    WHERE torznab_instance_public_id = torznab_instance_public_id_input;
+
+    IF torznab_scope_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_instance_not_found';
+    END IF;
+
+    IF torznab_scope_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_instance_deleted';
+    END IF;
+
+    SELECT indexer_instance_id, indexer_definition_id
+    INTO instance_id, definition_id
+    FROM indexer_instance
+    WHERE indexer_instance_public_id = indexer_instance_public_id_input
+      AND deleted_at IS NULL;
+
+    IF instance_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_instance_not_found';
+    END IF;
+
+    IF tracker_subcategory_input IS NULL THEN
+        tracker_subcategory_input := 0;
+    END IF;
+
+    IF tracker_category_input IS NULL THEN
+        resolved_cat_id := 8000;
+    ELSE
+        SELECT tc.torznab_cat_id
+        INTO resolved_cat_id
+        FROM tracker_category_mapping tcm
+        JOIN torznab_category tc
+          ON tc.torznab_category_id = tcm.torznab_category_id
+        WHERE tcm.tracker_category = tracker_category_input
+          AND tcm.tracker_subcategory = tracker_subcategory_input
+          AND (
+              (tcm.torznab_instance_id = torznab_scope_id AND tcm.indexer_instance_id = instance_id)
+              OR (tcm.torznab_instance_id = torznab_scope_id AND tcm.indexer_instance_id IS NULL AND tcm.indexer_definition_id = definition_id)
+              OR (tcm.torznab_instance_id = torznab_scope_id AND tcm.indexer_instance_id IS NULL AND tcm.indexer_definition_id IS NULL)
+              OR (tcm.torznab_instance_id IS NULL AND tcm.indexer_instance_id = instance_id)
+              OR (tcm.torznab_instance_id IS NULL AND tcm.indexer_instance_id IS NULL AND tcm.indexer_definition_id = definition_id)
+              OR (tcm.torznab_instance_id IS NULL AND tcm.indexer_instance_id IS NULL AND tcm.indexer_definition_id IS NULL)
+          )
+        ORDER BY
+            CASE
+                WHEN tcm.torznab_instance_id = torznab_scope_id AND tcm.indexer_instance_id = instance_id THEN 1
+                WHEN tcm.torznab_instance_id = torznab_scope_id AND tcm.indexer_instance_id IS NULL AND tcm.indexer_definition_id = definition_id THEN 2
+                WHEN tcm.torznab_instance_id = torznab_scope_id AND tcm.indexer_instance_id IS NULL AND tcm.indexer_definition_id IS NULL THEN 3
+                WHEN tcm.torznab_instance_id IS NULL AND tcm.indexer_instance_id = instance_id THEN 4
+                WHEN tcm.torznab_instance_id IS NULL AND tcm.indexer_instance_id IS NULL AND tcm.indexer_definition_id = definition_id THEN 5
+                ELSE 6
+            END
+        LIMIT 1;
+
+        IF resolved_cat_id IS NULL THEN
+            resolved_cat_id := 8000;
+        END IF;
+    END IF;
+
+    RETURN QUERY SELECT resolved_cat_id;
+END;
+$$;
+
+
+--
+-- Name: tracker_category_mapping_upsert(uuid, character varying, integer, integer, integer, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tracker_category_mapping_upsert(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, tracker_category_input integer, tracker_subcategory_input integer, torznab_cat_id_input integer, media_domain_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM tracker_category_mapping_upsert_v1(actor_user_public_id => actor_user_public_id, indexer_definition_upstream_slug_input => indexer_definition_upstream_slug_input, tracker_category_input => tracker_category_input, tracker_subcategory_input => tracker_subcategory_input, torznab_cat_id_input => torznab_cat_id_input, media_domain_key_input => media_domain_key_input);
+END;
+$$;
+
+
+--
+-- Name: tracker_category_mapping_upsert(uuid, uuid, character varying, uuid, integer, integer, integer, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tracker_category_mapping_upsert(actor_user_public_id uuid, torznab_instance_public_id_input uuid, indexer_definition_upstream_slug_input character varying, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer, torznab_cat_id_input integer, media_domain_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM tracker_category_mapping_upsert_v1(
+        actor_user_public_id,
+        torznab_instance_public_id_input,
+        indexer_definition_upstream_slug_input,
+        indexer_instance_public_id_input,
+        tracker_category_input,
+        tracker_subcategory_input,
+        torznab_cat_id_input,
+        media_domain_key_input
+    );
+END;
+$$;
+
+
+--
+-- Name: tracker_category_mapping_upsert_v1(uuid, character varying, integer, integer, integer, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tracker_category_mapping_upsert_v1(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, tracker_category_input integer, tracker_subcategory_input integer, torznab_cat_id_input integer, media_domain_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to upsert tracker category mapping';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    definition_id BIGINT;
+    torznab_category_id_value BIGINT;
+    media_domain_id_value BIGINT;
+    normalized_slug VARCHAR(128);
+    normalized_media_domain VARCHAR(128);
+    mapping_id BIGINT;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF tracker_category_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tracker_category_missing';
+    END IF;
+
+    IF tracker_category_input < 0 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tracker_category_invalid';
+    END IF;
+
+    IF tracker_subcategory_input IS NULL THEN
+        tracker_subcategory_input := 0;
+    END IF;
+
+    IF tracker_subcategory_input < 0 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tracker_subcategory_invalid';
+    END IF;
+
+    IF torznab_cat_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_category_missing';
+    END IF;
+
+    SELECT torznab_category_id
+    INTO torznab_category_id_value
+    FROM torznab_category
+    WHERE torznab_cat_id = torznab_cat_id_input;
+
+    IF torznab_category_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_category_not_found';
+    END IF;
+
+    IF media_domain_key_input IS NOT NULL THEN
+        normalized_media_domain := lower(trim(media_domain_key_input));
+
+        IF normalized_media_domain = '' OR normalized_media_domain <> media_domain_key_input THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'media_domain_key_invalid';
+        END IF;
+
+        SELECT media_domain_id
+        INTO media_domain_id_value
+        FROM media_domain
+        WHERE media_domain_key::TEXT = normalized_media_domain;
+
+        IF media_domain_id_value IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'unknown_key';
+        END IF;
+    ELSE
+        media_domain_id_value := NULL;
+    END IF;
+
+    IF indexer_definition_upstream_slug_input IS NOT NULL THEN
+        normalized_slug := lower(trim(indexer_definition_upstream_slug_input));
+
+        IF normalized_slug = '' OR normalized_slug <> indexer_definition_upstream_slug_input THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'indexer_slug_invalid';
+        END IF;
+
+        SELECT indexer_definition_id
+        INTO definition_id
+        FROM indexer_definition
+        WHERE upstream_source = 'prowlarr_indexers'
+          AND upstream_slug = normalized_slug;
+
+        IF definition_id IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'indexer_definition_not_found';
+        END IF;
+    ELSE
+        definition_id := NULL;
+    END IF;
+
+    INSERT INTO tracker_category_mapping (
+        indexer_definition_id,
+        tracker_category,
+        tracker_subcategory,
+        torznab_category_id,
+        media_domain_id,
+        confidence
+    )
+    VALUES (
+        definition_id,
+        tracker_category_input,
+        tracker_subcategory_input,
+        torznab_category_id_value,
+        media_domain_id_value,
+        1.0
+    )
+    ON CONFLICT (
+        coalesce(indexer_definition_id, 0::BIGINT),
+        tracker_category,
+        tracker_subcategory
+    )
+    DO UPDATE SET
+        torznab_category_id = EXCLUDED.torznab_category_id,
+        media_domain_id = EXCLUDED.media_domain_id,
+        confidence = EXCLUDED.confidence
+    RETURNING tracker_category_mapping_id INTO mapping_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'tracker_category_mapping',
+        mapping_id,
+        NULL,
+        'update',
+        actor_user_id,
+        'tracker_category_mapping_upsert'
+    );
+END;
+$$;
+
+
+--
+-- Name: tracker_category_mapping_upsert_v1(uuid, uuid, character varying, uuid, integer, integer, integer, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tracker_category_mapping_upsert_v1(actor_user_public_id uuid, torznab_instance_public_id_input uuid, indexer_definition_upstream_slug_input character varying, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer, torznab_cat_id_input integer, media_domain_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to upsert tracker category mapping';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    definition_id BIGINT;
+    instance_id BIGINT;
+    instance_deleted_at TIMESTAMPTZ;
+    instance_definition_id BIGINT;
+    torznab_scope_id BIGINT;
+    torznab_scope_deleted_at TIMESTAMPTZ;
+    torznab_category_id_value BIGINT;
+    media_domain_id_value BIGINT;
+    normalized_slug VARCHAR(128);
+    normalized_media_domain VARCHAR(128);
+    mapping_id BIGINT;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF tracker_category_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'tracker_category_missing';
+    END IF;
+
+    IF tracker_category_input < 0 THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'tracker_category_invalid';
+    END IF;
+
+    IF tracker_subcategory_input IS NULL THEN
+        tracker_subcategory_input := 0;
+    END IF;
+
+    IF tracker_subcategory_input < 0 THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'tracker_subcategory_invalid';
+    END IF;
+
+    IF torznab_cat_id_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_category_missing';
+    END IF;
+
+    SELECT torznab_category_id
+    INTO torznab_category_id_value
+    FROM torznab_category
+    WHERE torznab_cat_id = torznab_cat_id_input;
+
+    IF torznab_category_id_value IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_category_not_found';
+    END IF;
+
+    IF media_domain_key_input IS NOT NULL THEN
+        normalized_media_domain := lower(trim(media_domain_key_input));
+
+        IF normalized_media_domain = '' OR normalized_media_domain <> media_domain_key_input THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'media_domain_key_invalid';
+        END IF;
+
+        SELECT media_domain_id
+        INTO media_domain_id_value
+        FROM media_domain
+        WHERE media_domain_key::TEXT = normalized_media_domain;
+
+        IF media_domain_id_value IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'media_domain_not_found';
+        END IF;
+    ELSE
+        media_domain_id_value := NULL;
+    END IF;
+
+    IF torznab_instance_public_id_input IS NOT NULL THEN
+        SELECT torznab_instance_id, deleted_at
+        INTO torznab_scope_id, torznab_scope_deleted_at
+        FROM torznab_instance
+        WHERE torznab_instance_public_id = torznab_instance_public_id_input;
+
+        IF torznab_scope_id IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_instance_not_found';
+        END IF;
+
+        IF torznab_scope_deleted_at IS NOT NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_instance_deleted';
+        END IF;
+    ELSE
+        torznab_scope_id := NULL;
+    END IF;
+
+    IF indexer_definition_upstream_slug_input IS NOT NULL THEN
+        normalized_slug := lower(trim(indexer_definition_upstream_slug_input));
+
+        IF normalized_slug = '' OR normalized_slug <> indexer_definition_upstream_slug_input THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_slug_invalid';
+        END IF;
+
+        SELECT indexer_definition_id
+        INTO definition_id
+        FROM indexer_definition
+        WHERE upstream_source = 'prowlarr_indexers'
+          AND upstream_slug = normalized_slug;
+
+        IF definition_id IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_definition_not_found';
+        END IF;
+    ELSE
+        definition_id := NULL;
+    END IF;
+
+    IF indexer_instance_public_id_input IS NOT NULL THEN
+        SELECT indexer_instance_id, deleted_at, indexer_definition_id
+        INTO instance_id, instance_deleted_at, instance_definition_id
+        FROM indexer_instance
+        WHERE indexer_instance_public_id = indexer_instance_public_id_input;
+
+        IF instance_id IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_instance_not_found';
+        END IF;
+
+        IF instance_deleted_at IS NOT NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_instance_deleted';
+        END IF;
+
+        IF definition_id IS NOT NULL AND definition_id <> instance_definition_id THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_scope_conflict';
+        END IF;
+
+        definition_id := instance_definition_id;
+    ELSE
+        instance_id := NULL;
+    END IF;
+
+    INSERT INTO tracker_category_mapping (
+        torznab_instance_id,
+        indexer_definition_id,
+        indexer_instance_id,
+        tracker_category,
+        tracker_subcategory,
+        torznab_category_id,
+        media_domain_id,
+        confidence
+    )
+    VALUES (
+        torznab_scope_id,
+        definition_id,
+        instance_id,
+        tracker_category_input,
+        tracker_subcategory_input,
+        torznab_category_id_value,
+        media_domain_id_value,
+        1.0
+    )
+    ON CONFLICT (
+        coalesce(torznab_instance_id, 0::BIGINT),
+        coalesce(indexer_instance_id, 0::BIGINT),
+        coalesce(indexer_definition_id, 0::BIGINT),
+        tracker_category,
+        tracker_subcategory
+    )
+    DO UPDATE SET
+        torznab_category_id = EXCLUDED.torznab_category_id,
+        media_domain_id = EXCLUDED.media_domain_id,
+        confidence = EXCLUDED.confidence
+    RETURNING tracker_category_mapping_id INTO mapping_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'tracker_category_mapping',
+        mapping_id,
+        NULL,
+        'update',
+        actor_user_id,
+        'tracker_category_mapping_upsert'
+    );
+END;
+$$;
+
+
+--
+-- Name: trust_tier_seed_defaults(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.trust_tier_seed_defaults() RETURNS void
+    LANGUAGE plpgsql
+    AS $$DECLARE
+    base_message CONSTANT text := 'Failed to seed trust tiers';
+    errcode CONSTANT text := 'P0001';
+
+BEGIN
+    INSERT INTO trust_tier (trust_tier_key, display_name, default_weight, rank)
+    VALUES
+        ('public', 'Public', 0, 10),
+        ('semi_private', 'Semi-Private', 5, 20),
+        ('private', 'Private', 10, 30),
+        ('invite_only', 'Invite Only', 15, 40)
+    ON CONFLICT (trust_tier_key) DO NOTHING;
+
+    IF EXISTS (
+        SELECT 1
+        FROM trust_tier
+        WHERE trust_tier_key = 'public'
+          AND (
+              display_name IS DISTINCT FROM 'Public'
+              OR default_weight IS DISTINCT FROM 0
+              OR rank IS DISTINCT FROM 10
+          )
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'seed_values_mismatch';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM trust_tier
+        WHERE trust_tier_key = 'semi_private'
+          AND (
+              display_name IS DISTINCT FROM 'Semi-Private'
+              OR default_weight IS DISTINCT FROM 5
+              OR rank IS DISTINCT FROM 20
+          )
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'seed_values_mismatch';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM trust_tier
+        WHERE trust_tier_key = 'private'
+          AND (
+              display_name IS DISTINCT FROM 'Private'
+              OR default_weight IS DISTINCT FROM 10
+              OR rank IS DISTINCT FROM 30
+          )
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'seed_values_mismatch';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM trust_tier
+        WHERE trust_tier_key = 'invite_only'
+          AND (
+              display_name IS DISTINCT FROM 'Invite Only'
+              OR default_weight IS DISTINCT FROM 15
+              OR rank IS DISTINCT FROM 40
+          )
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'seed_values_mismatch';
+    END IF;
+END;
+$$;
+
+
+--
+-- Name: bump_app_profile_version(uuid); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.bump_app_profile_version(_id uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.app_profile
+    SET version = version + 1
+    WHERE id = _id;
+END;
+$$;
+
+
+--
+-- Name: bump_revision(text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.bump_revision(_source_table text) RETURNS bigint
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    new_revision BIGINT;
+BEGIN
+    UPDATE public.settings_revision
+    SET revision = revision + 1,
+        updated_at = now()
+    WHERE id = 1
+    RETURNING revision INTO new_revision;
+
+    PERFORM pg_notify('revaer_settings_changed', format('%s:%s:UPDATE', _source_table, new_revision));
+    RETURN new_revision;
+END;
+$$;
+
+
+--
+-- Name: cleanup_expired_setup_tokens(); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.cleanup_expired_setup_tokens() RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    DELETE FROM public.setup_tokens
+    WHERE consumed_at IS NULL
+      AND expires_at <= now();
+END;
+$$;
+
+
+--
+-- Name: consume_setup_token(uuid); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.consume_setup_token(_token_id uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.setup_tokens
+    SET consumed_at = now()
+    WHERE id = _token_id;
+END;
+$$;
+
+
+--
+-- Name: delete_api_key(text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.delete_api_key(_key_id text) RETURNS bigint
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    removed BIGINT;
+BEGIN
+    DELETE FROM public.auth_api_keys WHERE key_id = _key_id;
+    GET DIAGNOSTICS removed = ROW_COUNT;
+    RETURN removed;
+END;
+$$;
+
+
+--
+-- Name: delete_secret(text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.delete_secret(_name text) RETURNS bigint
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    removed BIGINT;
+BEGIN
+    DELETE FROM public.settings_secret WHERE name = _name;
+    GET DIAGNOSTICS removed = ROW_COUNT;
+    RETURN removed;
+END;
+$$;
+
+
+--
+-- Name: factory_reset(); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.factory_reset() RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM revaer_config.factory_reset_without_media_defaults_v1();
+    PERFORM revaer_config.seed_media_configuration_defaults();
+END;
+$$;
+
+
+--
+-- Name: factory_reset_without_media_defaults_v1(); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.factory_reset_without_media_defaults_v1() RETURNS void
+    LANGUAGE plpgsql
+    SET lock_timeout TO '5s'
+    AS $$
+DECLARE
+    base_rate_limit_message CONSTANT text := 'Failed to seed rate limit policies';
+    errcode CONSTANT text := 'P0001';
+    rec RECORD;
+BEGIN
+    FOR rec IN
+        SELECT schemaname, tablename
+        FROM pg_tables
+        WHERE schemaname IN ('public', 'revaer_runtime')
+          AND tablename <> '_sqlx_migrations'
+    LOOP
+        EXECUTE format(
+            'TRUNCATE TABLE %I.%I RESTART IDENTITY CASCADE',
+            rec.schemaname,
+            rec.tablename
+        );
+    END LOOP;
+
+    INSERT INTO public.settings_revision (id, revision)
+    VALUES (1, 0)
+    ON CONFLICT (id) DO UPDATE
+    SET revision = EXCLUDED.revision,
+        updated_at = now();
+
+    INSERT INTO public.media_root_kind (media_root_kind_id, root_kind)
+    VALUES (1, 'source'), (2, 'output'), (3, 'workspace'), (4, 'backup'), (5, 'quarantine');
+
+    PERFORM public.media_discovery_rescan_seed_reason_kinds_v1();
+
+    INSERT INTO public.media_root_catalog_state
+        (media_root_catalog_state_id, active_media_root_catalog_generation_id, source_state,
+         source_reason_code, attestation_state, attestation_reason_code, reconciled_at)
+    VALUES (1, NULL, 'missing', 'media_root_catalog_source_missing', 'not_evaluated', NULL, transaction_timestamp());
+
+    INSERT INTO public.app_profile (id, mode, instance_name)
+    VALUES (
+        '00000000-0000-0000-0000-000000000001',
+        'setup',
+        'revaer'
+    );
+
+    INSERT INTO public.engine_profile (id, implementation, resume_dir, download_root)
+    VALUES (
+        '00000000-0000-0000-0000-000000000002',
+        'libtorrent',
+        '.server_root/resume',
+        '.server_root/downloads'
+    );
+
+    INSERT INTO public.fs_policy (id, library_root)
+    VALUES (
+        '00000000-0000-0000-0000-000000000003',
+        '.server_root/library'
+    );
+
+    PERFORM revaer_config.update_app_telemetry(
+        '00000000-0000-0000-0000-000000000001',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL
+    );
+    PERFORM revaer_config.update_app_immutable_keys(
+        '00000000-0000-0000-0000-000000000001',
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.replace_app_label_policies(
+        '00000000-0000-0000-0000-000000000001',
+        ARRAY[]::TEXT[],
+        ARRAY[]::TEXT[],
+        ARRAY[]::TEXT[],
+        ARRAY[]::BIGINT[],
+        ARRAY[]::BIGINT[],
+        ARRAY[]::INTEGER[],
+        ARRAY[]::BOOLEAN[],
+        ARRAY[]::DOUBLE PRECISION[],
+        ARRAY[]::BIGINT[],
+        ARRAY[]::DOUBLE PRECISION[],
+        ARRAY[]::BIGINT[],
+        ARRAY[]::BOOLEAN[]
+    );
+
+    PERFORM revaer_config.set_engine_list_values(
+        '00000000-0000-0000-0000-000000000002',
+        'listen_interfaces',
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_engine_list_values(
+        '00000000-0000-0000-0000-000000000002',
+        'dht_bootstrap_nodes',
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_engine_list_values(
+        '00000000-0000-0000-0000-000000000002',
+        'dht_router_nodes',
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_engine_ip_filter(
+        '00000000-0000-0000-0000-000000000002',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_engine_alt_speed(
+        '00000000-0000-0000-0000-000000000002',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_tracker_config(
+        '00000000-0000-0000-0000-000000000002',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        FALSE,
+        FALSE,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        FALSE,
+        NULL,
+        NULL,
+        NULL,
+        TRUE,
+        NULL,
+        NULL,
+        NULL,
+        ARRAY[]::TEXT[],
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_peer_classes(
+        '00000000-0000-0000-0000-000000000002',
+        ARRAY[]::SMALLINT[],
+        ARRAY[]::TEXT[],
+        ARRAY[]::SMALLINT[],
+        ARRAY[]::SMALLINT[],
+        ARRAY[]::SMALLINT[],
+        ARRAY[]::BOOLEAN[],
+        ARRAY[]::SMALLINT[]
+    );
+
+    PERFORM revaer_config.set_fs_list(
+        '00000000-0000-0000-0000-000000000003',
+        'cleanup_keep',
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_fs_list(
+        '00000000-0000-0000-0000-000000000003',
+        'cleanup_drop',
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_fs_list(
+        '00000000-0000-0000-0000-000000000003',
+        'allow_paths',
+        ARRAY['.server_root/downloads', '.server_root/library']::TEXT[]
+    );
+
+    INSERT INTO app_user (
+        user_id,
+        user_public_id,
+        email,
+        email_normalized,
+        is_email_verified,
+        display_name,
+        role,
+        created_at
+    ) OVERRIDING SYSTEM VALUE
+    SELECT
+        0,
+        '00000000-0000-0000-0000-000000000000',
+        'system@revaer.local',
+        'system@revaer.local',
+        TRUE,
+        'System',
+        'owner',
+        now()
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM app_user
+        WHERE user_id = 0
+           OR user_public_id = '00000000-0000-0000-0000-000000000000'
+    );
+
+    PERFORM trust_tier_seed_defaults();
+    PERFORM media_domain_seed_defaults();
+
+    IF NOT EXISTS (SELECT 1 FROM deployment_config) THEN
+        INSERT INTO deployment_config DEFAULT VALUES;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM deployment_maintenance_state) THEN
+        INSERT INTO deployment_maintenance_state DEFAULT VALUES;
+    END IF;
+
+    WITH seed_categories (torznab_cat_id, name) AS (
+        VALUES
+            (2000, 'Movies'),
+            (2010, 'Movies/2010'),
+            (2020, 'Movies/2020'),
+            (2030, 'Movies/2030'),
+            (2040, 'Movies/2040'),
+            (2045, 'Movies/2045'),
+            (2050, 'Movies/2050'),
+            (2060, 'Movies/2060'),
+            (3000, 'Audio'),
+            (3010, 'Audio/3010'),
+            (3020, 'Audio/3020'),
+            (4000, 'Software'),
+            (4050, 'Software/4050'),
+            (5000, 'TV'),
+            (5010, 'TV/5010'),
+            (5020, 'TV/5020'),
+            (5030, 'TV/5030'),
+            (5040, 'TV/5040'),
+            (5045, 'TV/5045'),
+            (5050, 'TV/5050'),
+            (5060, 'TV/5060'),
+            (5070, 'TV/5070'),
+            (5075, 'TV/5075'),
+            (5080, 'TV/5080'),
+            (6000, 'Adult'),
+            (6010, 'Adult/6010'),
+            (6020, 'Adult/6020'),
+            (6030, 'Adult/6030'),
+            (6040, 'Adult/6040'),
+            (7000, 'Books'),
+            (7010, 'Books/7010'),
+            (7020, 'Books/7020'),
+            (8000, 'Other')
+    )
+    INSERT INTO torznab_category (torznab_cat_id, name)
+    SELECT torznab_cat_id, name
+    FROM seed_categories
+    ON CONFLICT (torznab_cat_id) DO NOTHING;
+
+    WITH seed_mapping (media_domain_key, torznab_cat_id, is_primary) AS (
+        VALUES
+            ('movies'::media_domain_key, 2000, TRUE),
+            ('movies'::media_domain_key, 2010, FALSE),
+            ('movies'::media_domain_key, 2020, FALSE),
+            ('movies'::media_domain_key, 2030, FALSE),
+            ('movies'::media_domain_key, 2040, FALSE),
+            ('movies'::media_domain_key, 2045, FALSE),
+            ('movies'::media_domain_key, 2050, FALSE),
+            ('movies'::media_domain_key, 2060, FALSE),
+            ('tv'::media_domain_key, 5000, TRUE),
+            ('tv'::media_domain_key, 5010, FALSE),
+            ('tv'::media_domain_key, 5020, FALSE),
+            ('tv'::media_domain_key, 5030, FALSE),
+            ('tv'::media_domain_key, 5040, FALSE),
+            ('tv'::media_domain_key, 5045, FALSE),
+            ('tv'::media_domain_key, 5050, FALSE),
+            ('tv'::media_domain_key, 5060, FALSE),
+            ('tv'::media_domain_key, 5070, FALSE),
+            ('tv'::media_domain_key, 5075, FALSE),
+            ('tv'::media_domain_key, 5080, FALSE),
+            ('audiobooks'::media_domain_key, 3020, TRUE),
+            ('ebooks'::media_domain_key, 7000, FALSE),
+            ('ebooks'::media_domain_key, 7010, TRUE),
+            ('ebooks'::media_domain_key, 7020, FALSE),
+            ('software'::media_domain_key, 4000, TRUE),
+            ('software'::media_domain_key, 4050, FALSE),
+            ('adult_movies'::media_domain_key, 6000, TRUE),
+            ('adult_movies'::media_domain_key, 6010, FALSE),
+            ('adult_movies'::media_domain_key, 6020, FALSE),
+            ('adult_movies'::media_domain_key, 6030, FALSE),
+            ('adult_movies'::media_domain_key, 6040, FALSE),
+            ('adult_scenes'::media_domain_key, 6000, TRUE),
+            ('adult_scenes'::media_domain_key, 6010, FALSE),
+            ('adult_scenes'::media_domain_key, 6020, FALSE),
+            ('adult_scenes'::media_domain_key, 6030, FALSE),
+            ('adult_scenes'::media_domain_key, 6040, FALSE)
+    )
+    INSERT INTO media_domain_to_torznab_category (
+        media_domain_id,
+        torznab_category_id,
+        is_primary
+    )
+    SELECT
+        media_domain.media_domain_id,
+        torznab_category.torznab_category_id,
+        seed_mapping.is_primary
+    FROM seed_mapping
+    JOIN media_domain
+        ON media_domain.media_domain_key = seed_mapping.media_domain_key
+    JOIN torznab_category
+        ON torznab_category.torznab_cat_id = seed_mapping.torznab_cat_id
+    ON CONFLICT (media_domain_id, torznab_category_id) DO UPDATE
+        SET is_primary = EXCLUDED.is_primary;
+
+    WITH seed_tracker_mapping (tracker_category, torznab_cat_id, media_domain_key) AS (
+        VALUES
+            (2000, 2000, 'movies'::media_domain_key),
+            (2010, 2010, 'movies'::media_domain_key),
+            (2020, 2020, 'movies'::media_domain_key),
+            (2030, 2030, 'movies'::media_domain_key),
+            (2040, 2040, 'movies'::media_domain_key),
+            (2045, 2045, 'movies'::media_domain_key),
+            (2050, 2050, 'movies'::media_domain_key),
+            (2060, 2060, 'movies'::media_domain_key),
+            (5000, 5000, 'tv'::media_domain_key),
+            (5010, 5010, 'tv'::media_domain_key),
+            (5020, 5020, 'tv'::media_domain_key),
+            (5030, 5030, 'tv'::media_domain_key),
+            (5040, 5040, 'tv'::media_domain_key),
+            (5045, 5045, 'tv'::media_domain_key),
+            (5050, 5050, 'tv'::media_domain_key),
+            (5060, 5060, 'tv'::media_domain_key),
+            (5070, 5070, 'tv'::media_domain_key),
+            (5075, 5075, 'tv'::media_domain_key),
+            (5080, 5080, 'tv'::media_domain_key),
+            (7000, 7000, 'ebooks'::media_domain_key),
+            (7010, 7010, 'ebooks'::media_domain_key),
+            (7020, 7020, 'ebooks'::media_domain_key),
+            (3020, 3020, 'audiobooks'::media_domain_key),
+            (4000, 4000, 'software'::media_domain_key),
+            (4050, 4050, 'software'::media_domain_key),
+            (6000, 6000, 'adult_movies'::media_domain_key),
+            (6010, 6010, 'adult_movies'::media_domain_key),
+            (6020, 6020, 'adult_movies'::media_domain_key),
+            (6030, 6030, 'adult_movies'::media_domain_key),
+            (6040, 6040, 'adult_movies'::media_domain_key),
+            (3000, 3000, NULL::media_domain_key),
+            (3010, 3010, NULL::media_domain_key),
+            (8000, 8000, NULL::media_domain_key)
+    )
+    INSERT INTO tracker_category_mapping (
+        indexer_definition_id,
+        tracker_category,
+        tracker_subcategory,
+        torznab_category_id,
+        media_domain_id
+    )
+    SELECT
+        NULL,
+        seed_tracker_mapping.tracker_category,
+        0,
+        torznab_category.torznab_category_id,
+        media_domain.media_domain_id
+    FROM seed_tracker_mapping
+    JOIN torznab_category
+        ON torznab_category.torznab_cat_id = seed_tracker_mapping.torznab_cat_id
+    LEFT JOIN media_domain
+        ON media_domain.media_domain_key = seed_tracker_mapping.media_domain_key
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM tracker_category_mapping existing
+        WHERE existing.indexer_definition_id IS NULL
+          AND existing.tracker_category = seed_tracker_mapping.tracker_category
+          AND existing.tracker_subcategory = 0
+    );
+
+    INSERT INTO rate_limit_policy (
+        rate_limit_policy_public_id,
+        display_name,
+        requests_per_minute,
+        burst,
+        concurrent_requests,
+        is_system
+    )
+    VALUES
+        (gen_random_uuid(), 'default_indexer', 60, 30, 2, TRUE),
+        (gen_random_uuid(), 'default_routing', 120, 60, 4, TRUE)
+    ON CONFLICT (display_name) DO NOTHING;
+
+    IF EXISTS (
+        SELECT 1
+        FROM rate_limit_policy
+        WHERE display_name = 'default_indexer'
+          AND (
+              requests_per_minute IS DISTINCT FROM 60
+              OR burst IS DISTINCT FROM 30
+              OR concurrent_requests IS DISTINCT FROM 2
+              OR is_system IS DISTINCT FROM TRUE
+          )
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_rate_limit_message,
+            DETAIL = 'seed_values_mismatch';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM rate_limit_policy
+        WHERE display_name = 'default_routing'
+          AND (
+              requests_per_minute IS DISTINCT FROM 120
+              OR burst IS DISTINCT FROM 60
+              OR concurrent_requests IS DISTINCT FROM 4
+              OR is_system IS DISTINCT FROM TRUE
+          )
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_rate_limit_message,
+            DETAIL = 'seed_values_mismatch';
+    END IF;
+
+    WITH seed_jobs (job_key, cadence_seconds, enabled) AS (
+        VALUES
+            ('retention_purge'::job_key, 3600, TRUE),
+            ('reputation_rollup_1h'::job_key, 300, TRUE),
+            ('reputation_rollup_24h'::job_key, 3600, TRUE),
+            ('reputation_rollup_7d'::job_key, 21600, TRUE),
+            ('connectivity_profile_refresh'::job_key, 300, TRUE),
+            ('canonical_backfill_best_source'::job_key, 86400, TRUE),
+            ('base_score_refresh_recent'::job_key, 3600, TRUE),
+            ('canonical_prune_low_confidence'::job_key, 86400, TRUE),
+            ('policy_snapshot_gc'::job_key, 86400, TRUE),
+            ('policy_snapshot_refcount_repair'::job_key, 86400, TRUE),
+            ('rate_limit_state_purge'::job_key, 3600, TRUE),
+            ('rss_poll'::job_key, 60, TRUE),
+            ('rss_subscription_backfill'::job_key, 300, TRUE)
+    )
+    INSERT INTO job_schedule (
+        job_key,
+        cadence_seconds,
+        jitter_seconds,
+        enabled,
+        next_run_at
+    )
+    SELECT
+        seed_jobs.job_key,
+        seed_jobs.cadence_seconds,
+        0,
+        seed_jobs.enabled,
+        now() + make_interval(
+            secs => random_jitter_seconds(seed_jobs.cadence_seconds - 1)
+        )
+    FROM seed_jobs
+    ON CONFLICT (job_key) DO NOTHING;
+END;
+$$;
+
+
+--
+-- Name: fetch_active_setup_token(); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.fetch_active_setup_token() RETURNS TABLE(id uuid, token_hash text, expires_at timestamp with time zone)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT st.id, st.token_hash, st.expires_at
+    FROM public.setup_tokens AS st
+    WHERE st.consumed_at IS NULL
+    ORDER BY st.issued_at DESC
+    LIMIT 1
+    FOR UPDATE;
+END;
+$$;
+
+
+--
+-- Name: fetch_api_key_auth(text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.fetch_api_key_auth(_key_id text) RETURNS TABLE(hash text, enabled boolean, label text, rate_limit_burst integer, rate_limit_per_seconds bigint, expires_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT ak.hash,
+           ak.enabled,
+           ak.label,
+           ak.rate_limit_burst,
+           ak.rate_limit_per_seconds,
+           ak.expires_at
+    FROM public.auth_api_keys AS ak
+    WHERE ak.key_id = _key_id
+      AND (ak.expires_at IS NULL OR ak.expires_at > now());
+END;
+$$;
+
+
+--
+-- Name: fetch_api_key_hash(text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.fetch_api_key_hash(_key_id text) RETURNS text
+    LANGUAGE plpgsql STABLE
+    AS $$
+DECLARE
+    digest TEXT;
+BEGIN
+    SELECT hash INTO digest FROM public.auth_api_keys WHERE key_id = _key_id;
+    RETURN digest;
+END;
+$$;
+
+
+--
+-- Name: fetch_api_keys(); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.fetch_api_keys() RETURNS TABLE(key_id text, label text, enabled boolean, rate_limit_burst integer, rate_limit_per_seconds bigint, expires_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT ak.key_id,
+           ak.label,
+           ak.enabled,
+           ak.rate_limit_burst,
+           ak.rate_limit_per_seconds,
+           ak.expires_at
+    FROM public.auth_api_keys AS ak
+    WHERE ak.enabled = TRUE
+      AND (ak.expires_at IS NULL OR ak.expires_at > now())
+    ORDER BY ak.created_at;
+END;
+$$;
+
+
+--
+-- Name: fetch_app_profile_row(uuid); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.fetch_app_profile_row(_id uuid) RETURNS TABLE(id uuid, instance_name text, mode text, auth_mode text, version bigint, http_port integer, bind_addr text, local_networks text[], telemetry_level text, telemetry_format text, telemetry_otel_enabled boolean, telemetry_otel_service_name text, telemetry_otel_endpoint text, immutable_keys text[])
+    LANGUAGE plpgsql STABLE
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT ap.id,
+           ap.instance_name,
+           ap.mode,
+           ap.auth_mode,
+           ap.version,
+           ap.http_port,
+           ap.bind_addr::TEXT,
+           COALESCE(
+               (
+                   SELECT array_agg(cidr ORDER BY ord)
+                   FROM public.app_profile_local_networks
+                   WHERE profile_id = ap.id
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           ap.telemetry_level,
+           ap.telemetry_format,
+           ap.telemetry_otel_enabled,
+           ap.telemetry_otel_service_name,
+           ap.telemetry_otel_endpoint,
+           COALESCE(
+               (
+                   SELECT array_agg(key ORDER BY ord)
+                   FROM public.app_profile_immutable_keys
+                   WHERE profile_id = ap.id
+               ),
+               ARRAY[]::TEXT[]
+           )
+    FROM public.app_profile AS ap
+    WHERE ap.id = _id;
+END;
+$$;
+
+
+--
+-- Name: fetch_engine_profile_row(uuid); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.fetch_engine_profile_row(_id uuid) RETURNS TABLE(id uuid, implementation text, listen_port integer, dht boolean, encryption text, max_active integer, max_download_bps bigint, max_upload_bps bigint, seed_ratio_limit double precision, seed_time_limit bigint, sequential_default boolean, auto_managed boolean, auto_manage_prefer_seeds boolean, dont_count_slow_torrents boolean, super_seeding boolean, choking_algorithm text, seed_choking_algorithm text, strict_super_seeding boolean, optimistic_unchoke_slots integer, max_queued_disk_bytes bigint, resume_dir text, download_root text, storage_mode text, use_partfile boolean, cache_size integer, cache_expiry integer, coalesce_reads boolean, coalesce_writes boolean, use_disk_cache_pool boolean, disk_read_mode text, disk_write_mode text, verify_piece_hashes boolean, enable_lsd boolean, enable_upnp boolean, enable_natpmp boolean, enable_pex boolean, listen_interfaces text[], dht_bootstrap_nodes text[], dht_router_nodes text[], ipv6_mode text, anonymous_mode boolean, force_proxy boolean, prefer_rc4 boolean, allow_multiple_connections_per_ip boolean, enable_outgoing_utp boolean, enable_incoming_utp boolean, outgoing_port_min integer, outgoing_port_max integer, peer_dscp integer, connections_limit integer, connections_limit_per_torrent integer, unchoke_slots integer, half_open_limit integer, stats_interval_ms integer, alt_speed_download_bps bigint, alt_speed_upload_bps bigint, alt_speed_schedule_start_minutes integer, alt_speed_schedule_end_minutes integer, alt_speed_days text[], ip_filter_blocklist_url text, ip_filter_etag text, ip_filter_last_updated_at timestamp with time zone, ip_filter_last_error text, ip_filter_cidrs text[], tracker_user_agent text, tracker_announce_ip text, tracker_listen_interface text, tracker_request_timeout_ms integer, tracker_announce_to_all boolean, tracker_replace_trackers boolean, tracker_proxy_host text, tracker_proxy_port integer, tracker_proxy_kind text, tracker_proxy_username_secret text, tracker_proxy_password_secret text, tracker_auth_username_secret text, tracker_auth_password_secret text, tracker_auth_cookie_secret text, tracker_ssl_cert text, tracker_ssl_private_key text, tracker_ssl_ca_cert text, tracker_ssl_verify boolean, tracker_proxy_peers boolean, tracker_default_urls text[], tracker_extra_urls text[], peer_class_ids smallint[], peer_class_labels text[], peer_class_download_priorities smallint[], peer_class_upload_priorities smallint[], peer_class_connection_limit_factors smallint[], peer_class_ignore_unchoke_slots boolean[], peer_class_default_ids smallint[])
+    LANGUAGE plpgsql STABLE
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT ep.id,
+           ep.implementation,
+           ep.listen_port,
+           ep.dht,
+           ep.encryption,
+           ep.max_active,
+           ep.max_download_bps,
+           ep.max_upload_bps,
+           ep.seed_ratio_limit,
+           ep.seed_time_limit,
+           ep.sequential_default,
+           ep.auto_managed,
+           ep.auto_manage_prefer_seeds,
+           ep.dont_count_slow_torrents,
+           ep.super_seeding,
+           ep.choking_algorithm,
+           ep.seed_choking_algorithm,
+           ep.strict_super_seeding,
+           ep.optimistic_unchoke_slots,
+           ep.max_queued_disk_bytes,
+           ep.resume_dir,
+           ep.download_root,
+           ep.storage_mode,
+           ep.use_partfile,
+           ep.cache_size,
+           ep.cache_expiry,
+           ep.coalesce_reads,
+           ep.coalesce_writes,
+           ep.use_disk_cache_pool,
+           ep.disk_read_mode,
+           ep.disk_write_mode,
+           ep.verify_piece_hashes,
+           ep.enable_lsd,
+           ep.enable_upnp,
+           ep.enable_natpmp,
+           ep.enable_pex,
+           COALESCE(
+               (
+                   SELECT array_agg(value ORDER BY ord)
+                   FROM public.engine_profile_list_values
+                   WHERE profile_id = ep.id AND kind = 'listen_interfaces'
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(value ORDER BY ord)
+                   FROM public.engine_profile_list_values
+                   WHERE profile_id = ep.id AND kind = 'dht_bootstrap_nodes'
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(value ORDER BY ord)
+                   FROM public.engine_profile_list_values
+                   WHERE profile_id = ep.id AND kind = 'dht_router_nodes'
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           ep.ipv6_mode,
+           ep.anonymous_mode,
+           ep.force_proxy,
+           ep.prefer_rc4,
+           ep.allow_multiple_connections_per_ip,
+           ep.enable_outgoing_utp,
+           ep.enable_incoming_utp,
+           ep.outgoing_port_min,
+           ep.outgoing_port_max,
+           ep.peer_dscp,
+           ep.connections_limit,
+           ep.connections_limit_per_torrent,
+           ep.unchoke_slots,
+           ep.half_open_limit,
+           ep.stats_interval_ms,
+           ea.download_bps,
+           ea.upload_bps,
+           ea.schedule_start_minutes,
+           ea.schedule_end_minutes,
+           COALESCE(
+               (
+                   SELECT array_agg(day ORDER BY ord)
+                   FROM public.engine_alt_speed_days
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           eif.blocklist_url,
+           eif.etag,
+           eif.last_updated_at,
+           eif.last_error,
+           COALESCE(
+               (
+                   SELECT array_agg(cidr ORDER BY ord)
+                   FROM public.engine_ip_filter_entries
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           etc.user_agent,
+           etc.announce_ip,
+           etc.listen_interface,
+           etc.request_timeout_ms,
+           etc.announce_to_all,
+           etc.replace_trackers,
+           etc.proxy_host,
+           etc.proxy_port,
+           etc.proxy_kind,
+           etc.proxy_username_secret,
+           etc.proxy_password_secret,
+           etc.auth_username_secret,
+           etc.auth_password_secret,
+           etc.auth_cookie_secret,
+           etc.ssl_cert,
+           etc.ssl_private_key,
+           etc.ssl_ca_cert,
+           etc.ssl_tracker_verify,
+           etc.proxy_peers,
+           COALESCE(
+               (
+                   SELECT array_agg(url ORDER BY ord)
+                   FROM public.engine_tracker_endpoints
+                   WHERE profile_id = ep.id AND kind = 'default'
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(url ORDER BY ord)
+                   FROM public.engine_tracker_endpoints
+                   WHERE profile_id = ep.id AND kind = 'extra'
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(class_id ORDER BY class_id)
+                   FROM public.engine_peer_classes
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::SMALLINT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(label ORDER BY class_id)
+                   FROM public.engine_peer_classes
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(download_priority ORDER BY class_id)
+                   FROM public.engine_peer_classes
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::SMALLINT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(upload_priority ORDER BY class_id)
+                   FROM public.engine_peer_classes
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::SMALLINT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(connection_limit_factor ORDER BY class_id)
+                   FROM public.engine_peer_classes
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::SMALLINT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(ignore_unchoke_slots ORDER BY class_id)
+                   FROM public.engine_peer_classes
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::BOOLEAN[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(class_id ORDER BY class_id)
+                   FROM public.engine_peer_class_defaults
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::SMALLINT[]
+           )
+    FROM public.engine_profile AS ep
+    LEFT JOIN public.engine_alt_speed AS ea ON ea.profile_id = ep.id
+    LEFT JOIN public.engine_ip_filter AS eif ON eif.profile_id = ep.id
+    LEFT JOIN public.engine_tracker_config AS etc ON etc.profile_id = ep.id
+    WHERE ep.id = _id;
+END;
+$$;
+
+
+--
+-- Name: fetch_fs_policy_row(uuid); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.fetch_fs_policy_row(_id uuid) RETURNS TABLE(id uuid, library_root text, "extract" boolean, par2 text, flatten boolean, move_mode text, chmod_file text, chmod_dir text, owner text, "group" text, umask text, cleanup_keep text[], cleanup_drop text[], allow_paths text[])
+    LANGUAGE plpgsql STABLE
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT fp.id,
+           fp.library_root,
+           fp."extract",
+           fp.par2,
+           fp.flatten,
+           fp.move_mode,
+           fp.chmod_file,
+           fp.chmod_dir,
+           fp.owner,
+           fp."group",
+           fp.umask,
+           COALESCE(
+               (
+                   SELECT array_agg(value ORDER BY ord)
+                   FROM public.fs_policy_list_values
+                   WHERE policy_id = fp.id AND kind = 'cleanup_keep'
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(value ORDER BY ord)
+                   FROM public.fs_policy_list_values
+                   WHERE policy_id = fp.id AND kind = 'cleanup_drop'
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(value ORDER BY ord)
+                   FROM public.fs_policy_list_values
+                   WHERE policy_id = fp.id AND kind = 'allow_paths'
+               ),
+               ARRAY[]::TEXT[]
+           )
+    FROM public.fs_policy AS fp
+    WHERE fp.id = _id;
+END;
+$$;
+
+
+--
+-- Name: fetch_revision(); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.fetch_revision() RETURNS bigint
+    LANGUAGE plpgsql STABLE
+    AS $$
+DECLARE
+    current_revision BIGINT;
+BEGIN
+    SELECT revision INTO current_revision FROM public.settings_revision WHERE id = 1;
+    RETURN current_revision;
+END;
+$$;
+
+
+--
+-- Name: fetch_secret_by_name(text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.fetch_secret_by_name(_name text) RETURNS TABLE(name text, ciphertext bytea)
+    LANGUAGE plpgsql STABLE
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT ss.name, ss.ciphertext
+    FROM public.settings_secret AS ss
+    WHERE ss.name = _name;
+END;
+$$;
+
+
+--
+-- Name: insert_api_key(text, text, text, boolean, integer, bigint, timestamp with time zone); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.insert_api_key(_key_id text, _hash text, _label text, _enabled boolean, _burst integer, _per_seconds bigint, _expires_at timestamp with time zone) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO public.auth_api_keys AS ak (
+        key_id,
+        hash,
+        label,
+        enabled,
+        expires_at,
+        rate_limit_burst,
+        rate_limit_per_seconds
+    )
+    VALUES (
+        _key_id,
+        _hash,
+        _label,
+        _enabled,
+        _expires_at,
+        _burst,
+        _per_seconds
+    )
+    ON CONFLICT (key_id) DO UPDATE
+    SET hash = EXCLUDED.hash,
+        label = EXCLUDED.label,
+        enabled = EXCLUDED.enabled,
+        expires_at = EXCLUDED.expires_at,
+        rate_limit_burst = EXCLUDED.rate_limit_burst,
+        rate_limit_per_seconds = EXCLUDED.rate_limit_per_seconds;
+END;
+$$;
+
+
+--
+-- Name: insert_setup_token(text, timestamp with time zone, text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.insert_setup_token(_token_hash text, _expires_at timestamp with time zone, _issued_by text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO public.setup_tokens (token_hash, expires_at, issued_by)
+    VALUES (_token_hash, _expires_at, _issued_by);
+END;
+$$;
+
+
+--
+-- Name: invalidate_active_setup_tokens(); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.invalidate_active_setup_tokens() RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.setup_tokens
+    SET consumed_at = now()
+    WHERE consumed_at IS NULL;
+END;
+$$;
+
+
+--
+-- Name: list_app_label_policies(uuid); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.list_app_label_policies(_profile_id uuid) RETURNS TABLE(kind text, name text, download_dir text, rate_limit_download_bps bigint, rate_limit_upload_bps bigint, queue_position integer, auto_managed boolean, seed_ratio_limit double precision, seed_time_limit bigint, cleanup_seed_ratio_limit double precision, cleanup_seed_time_limit bigint, cleanup_remove_data boolean)
+    LANGUAGE plpgsql STABLE
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT alp.kind,
+           alp.name,
+           alp.download_dir,
+           alp.rate_limit_download_bps,
+           alp.rate_limit_upload_bps,
+           alp.queue_position,
+           alp.auto_managed,
+           alp.seed_ratio_limit,
+           alp.seed_time_limit,
+           alp.cleanup_seed_ratio_limit,
+           alp.cleanup_seed_time_limit,
+           alp.cleanup_remove_data
+    FROM public.app_label_policies AS alp
+    WHERE alp.profile_id = _profile_id
+    ORDER BY alp.kind, alp.name;
+END;
+$$;
+
+
+--
+-- Name: replace_app_label_policies(uuid, text[], text[], text[], bigint[], bigint[], integer[], boolean[], double precision[], bigint[], double precision[], bigint[], boolean[]); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.replace_app_label_policies(_profile_id uuid, _kinds text[], _names text[], _download_dirs text[], _rate_limit_download_bps bigint[], _rate_limit_upload_bps bigint[], _queue_positions integer[], _auto_managed boolean[], _seed_ratio_limits double precision[], _seed_time_limits bigint[], _cleanup_seed_ratio_limits double precision[], _cleanup_seed_time_limits bigint[], _cleanup_remove_data boolean[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    DELETE FROM public.app_label_policies WHERE profile_id = _profile_id;
+
+    INSERT INTO public.app_label_policies (
+        profile_id,
+        kind,
+        name,
+        download_dir,
+        rate_limit_download_bps,
+        rate_limit_upload_bps,
+        queue_position,
+        auto_managed,
+        seed_ratio_limit,
+        seed_time_limit,
+        cleanup_seed_ratio_limit,
+        cleanup_seed_time_limit,
+        cleanup_remove_data
+    )
+    SELECT _profile_id,
+           btrim(kind),
+           btrim(name),
+           NULLIF(btrim(download_dir), ''),
+           rate_limit_download_bps,
+           rate_limit_upload_bps,
+           queue_position,
+           auto_managed,
+           seed_ratio_limit,
+           seed_time_limit,
+           cleanup_seed_ratio_limit,
+           cleanup_seed_time_limit,
+           cleanup_remove_data
+    FROM unnest(
+        COALESCE(_kinds, ARRAY[]::TEXT[]),
+        COALESCE(_names, ARRAY[]::TEXT[]),
+        COALESCE(_download_dirs, ARRAY[]::TEXT[]),
+        COALESCE(_rate_limit_download_bps, ARRAY[]::BIGINT[]),
+        COALESCE(_rate_limit_upload_bps, ARRAY[]::BIGINT[]),
+        COALESCE(_queue_positions, ARRAY[]::INTEGER[]),
+        COALESCE(_auto_managed, ARRAY[]::BOOLEAN[]),
+        COALESCE(_seed_ratio_limits, ARRAY[]::DOUBLE PRECISION[]),
+        COALESCE(_seed_time_limits, ARRAY[]::BIGINT[]),
+        COALESCE(_cleanup_seed_ratio_limits, ARRAY[]::DOUBLE PRECISION[]),
+        COALESCE(_cleanup_seed_time_limits, ARRAY[]::BIGINT[]),
+        COALESCE(_cleanup_remove_data, ARRAY[]::BOOLEAN[])
+    ) AS t(
+        kind,
+        name,
+        download_dir,
+        rate_limit_download_bps,
+        rate_limit_upload_bps,
+        queue_position,
+        auto_managed,
+        seed_ratio_limit,
+        seed_time_limit,
+        cleanup_seed_ratio_limit,
+        cleanup_seed_time_limit,
+        cleanup_remove_data
+    )
+    WHERE btrim(kind) <> ''
+      AND btrim(name) <> '';
+END;
+$$;
+
+
+--
+-- Name: seed_media_configuration_defaults(); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.seed_media_configuration_defaults() RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO media_compatibility_target (
+        compatibility_target_key,
+        version,
+        display_name,
+        video_codec,
+        audio_codec,
+        subtitle_policy
+    )
+    VALUES
+        ('hevc-aac', 1, 'HEVC/AAC', 'hevc', 'aac', media_subtitle_policy_selected_v1()),
+        ('plex-apple-tv', 1, 'Plex Apple TV HEVC/AAC', 'hevc', 'aac', media_subtitle_policy_selected_v1()),
+        ('plex-general-hevc-aac', 1, 'Plex General HEVC/AAC', 'hevc', 'aac', media_subtitle_policy_selected_v1())
+    ON CONFLICT (lower(compatibility_target_key), version) DO UPDATE SET
+        display_name = EXCLUDED.display_name,
+        video_codec = EXCLUDED.video_codec,
+        audio_codec = EXCLUDED.audio_codec,
+        subtitle_policy = EXCLUDED.subtitle_policy,
+        enabled = TRUE,
+        updated_at = now();
+
+    INSERT INTO media_policy_profile (
+        policy_key,
+        version,
+        display_name,
+        video_intent
+    )
+    VALUES
+        (media_policy_safe_dry_run_v1(), 1, 'Safe dry run', media_policy_general_v1()),
+        (media_policy_general_v1(), 1, 'General media', media_policy_general_v1()),
+        (media_policy_anime_v1(), 1, 'Anime', media_policy_anime_v1()),
+        (media_policy_archival_v1(), 1, 'Archival', media_policy_archival_v1())
+    ON CONFLICT (lower(policy_key), version) DO UPDATE SET
+        display_name = EXCLUDED.display_name,
+        video_intent = EXCLUDED.video_intent,
+        enabled = TRUE,
+        updated_at = now();
+
+
+    INSERT INTO media_job_retention_policy (
+        policy_key,
+        completed_retention_days,
+        failed_diagnostic_retention_days,
+        completed_enabled,
+        completed_mode,
+        completed_limit,
+        failed_diagnostic_enabled,
+        failed_diagnostic_mode,
+        failed_diagnostic_limit
+    )
+    VALUES (
+        media_retention_policy_default_v1(),
+        30,
+        30,
+        FALSE,
+        media_retention_mode_age_v1(),
+        30,
+        TRUE,
+        media_retention_mode_age_v1(),
+        30
+    )
+    ON CONFLICT (lower(policy_key)) DO UPDATE SET
+        completed_retention_days = EXCLUDED.completed_retention_days,
+        failed_diagnostic_retention_days = EXCLUDED.failed_diagnostic_retention_days,
+        completed_enabled = EXCLUDED.completed_enabled,
+        completed_mode = EXCLUDED.completed_mode,
+        completed_limit = EXCLUDED.completed_limit,
+        failed_diagnostic_enabled = EXCLUDED.failed_diagnostic_enabled,
+        failed_diagnostic_mode = EXCLUDED.failed_diagnostic_mode,
+        failed_diagnostic_limit = EXCLUDED.failed_diagnostic_limit,
+        enabled = TRUE,
+        updated_at = now();
+END;
+$$;
+
+
+--
+-- Name: set_engine_alt_speed(uuid, bigint, bigint, integer, integer, text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.set_engine_alt_speed(_profile_id uuid, _download_bps bigint, _upload_bps bigint, _schedule_start_minutes integer, _schedule_end_minutes integer, _days text[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO public.engine_alt_speed AS eas (
+        profile_id,
+        download_bps,
+        upload_bps,
+        schedule_start_minutes,
+        schedule_end_minutes
+    )
+    VALUES (
+        _profile_id,
+        _download_bps,
+        _upload_bps,
+        _schedule_start_minutes,
+        _schedule_end_minutes
+    )
+    ON CONFLICT (profile_id) DO UPDATE
+    SET download_bps = EXCLUDED.download_bps,
+        upload_bps = EXCLUDED.upload_bps,
+        schedule_start_minutes = EXCLUDED.schedule_start_minutes,
+        schedule_end_minutes = EXCLUDED.schedule_end_minutes,
+        updated_at = now();
+
+    DELETE FROM public.engine_alt_speed_days
+    WHERE profile_id = _profile_id;
+
+    INSERT INTO public.engine_alt_speed_days (profile_id, ord, day)
+    SELECT _profile_id,
+           ord,
+           day
+    FROM unnest(COALESCE(_days, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(day, ord)
+    WHERE day IN ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun');
+END;
+$$;
+
+
+--
+-- Name: set_engine_ip_filter(uuid, text, text, timestamp with time zone, text, text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.set_engine_ip_filter(_profile_id uuid, _blocklist_url text, _etag text, _last_updated_at timestamp with time zone, _last_error text, _cidrs text[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO public.engine_ip_filter AS eif (
+        profile_id,
+        blocklist_url,
+        etag,
+        last_updated_at,
+        last_error
+    )
+    VALUES (
+        _profile_id,
+        NULLIF(_blocklist_url, ''),
+        NULLIF(_etag, ''),
+        _last_updated_at,
+        NULLIF(_last_error, '')
+    )
+    ON CONFLICT (profile_id) DO UPDATE
+    SET blocklist_url = EXCLUDED.blocklist_url,
+        etag = EXCLUDED.etag,
+        last_updated_at = EXCLUDED.last_updated_at,
+        last_error = EXCLUDED.last_error,
+        updated_at = now();
+
+    DELETE FROM public.engine_ip_filter_entries
+    WHERE profile_id = _profile_id;
+
+    INSERT INTO public.engine_ip_filter_entries (profile_id, ord, cidr)
+    SELECT _profile_id,
+           ord,
+           btrim(value)
+    FROM unnest(COALESCE(_cidrs, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(value, ord)
+    WHERE btrim(value) <> '';
+END;
+$$;
+
+
+--
+-- Name: set_engine_list_values(uuid, text, text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.set_engine_list_values(_profile_id uuid, _kind text, _values text[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF _kind NOT IN ('listen_interfaces', 'dht_bootstrap_nodes', 'dht_router_nodes') THEN
+        RAISE EXCEPTION 'engine list kind % is not supported', _kind;
+    END IF;
+
+    DELETE FROM public.engine_profile_list_values
+    WHERE profile_id = _profile_id AND kind = _kind;
+
+    INSERT INTO public.engine_profile_list_values (profile_id, kind, ord, value)
+    SELECT _profile_id,
+           _kind,
+           ord,
+           btrim(value)
+    FROM unnest(COALESCE(_values, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(value, ord)
+    WHERE btrim(value) <> '';
+END;
+$$;
+
+
+--
+-- Name: set_fs_list(uuid, text, text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.set_fs_list(_policy_id uuid, _kind text, _values text[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF _kind NOT IN ('cleanup_keep', 'cleanup_drop', 'allow_paths') THEN
+        RAISE EXCEPTION 'fs policy list kind % is not supported', _kind;
+    END IF;
+
+    DELETE FROM public.fs_policy_list_values
+    WHERE policy_id = _policy_id AND kind = _kind;
+
+    INSERT INTO public.fs_policy_list_values (policy_id, kind, ord, value)
+    SELECT _policy_id,
+           _kind,
+           ord,
+           btrim(value)
+    FROM unnest(COALESCE(_values, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(value, ord)
+    WHERE btrim(value) <> '';
+END;
+$$;
+
+
+--
+-- Name: set_peer_classes(uuid, smallint[], text[], smallint[], smallint[], smallint[], boolean[], smallint[]); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.set_peer_classes(_profile_id uuid, _class_ids smallint[], _labels text[], _download_priorities smallint[], _upload_priorities smallint[], _connection_limit_factors smallint[], _ignore_unchoke_slots boolean[], _default_class_ids smallint[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    DELETE FROM public.engine_peer_class_defaults WHERE profile_id = _profile_id;
+    DELETE FROM public.engine_peer_classes WHERE profile_id = _profile_id;
+
+    INSERT INTO public.engine_peer_classes AS epc (
+        profile_id,
+        class_id,
+        label,
+        download_priority,
+        upload_priority,
+        connection_limit_factor,
+        ignore_unchoke_slots
+    )
+    SELECT _profile_id,
+           class_id,
+           COALESCE(NULLIF(btrim(label), ''), format('class_%s', class_id)),
+           download_priority,
+           upload_priority,
+           connection_limit_factor,
+           ignore_unchoke_slots
+    FROM unnest(
+        COALESCE(_class_ids, ARRAY[]::SMALLINT[]),
+        COALESCE(_labels, ARRAY[]::TEXT[]),
+        COALESCE(_download_priorities, ARRAY[]::SMALLINT[]),
+        COALESCE(_upload_priorities, ARRAY[]::SMALLINT[]),
+        COALESCE(_connection_limit_factors, ARRAY[]::SMALLINT[]),
+        COALESCE(_ignore_unchoke_slots, ARRAY[]::BOOLEAN[])
+    ) AS t(
+        class_id,
+        label,
+        download_priority,
+        upload_priority,
+        connection_limit_factor,
+        ignore_unchoke_slots
+    )
+    WHERE class_id BETWEEN 0 AND 31
+      AND download_priority BETWEEN 1 AND 255
+      AND upload_priority BETWEEN 1 AND 255
+      AND connection_limit_factor >= 1;
+
+    INSERT INTO public.engine_peer_class_defaults (profile_id, class_id)
+    SELECT _profile_id, class_id
+    FROM unnest(COALESCE(_default_class_ids, ARRAY[]::SMALLINT[])) AS class_id
+    WHERE EXISTS (
+        SELECT 1
+        FROM public.engine_peer_classes epc
+        WHERE epc.profile_id = _profile_id
+          AND epc.class_id = class_id
+    )
+    ON CONFLICT (profile_id, class_id) DO NOTHING;
+END;
+$$;
+
+
+--
+-- Name: set_tracker_config(uuid, text, text, text, integer, boolean, boolean, text, integer, text, text, text, boolean, text, text, text, boolean, text, text, text, text[], text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.set_tracker_config(_profile_id uuid, _user_agent text, _announce_ip text, _listen_interface text, _request_timeout_ms integer, _announce_to_all boolean, _replace_trackers boolean, _proxy_host text, _proxy_port integer, _proxy_kind text, _proxy_username_secret text, _proxy_password_secret text, _proxy_peers boolean, _ssl_cert text, _ssl_private_key text, _ssl_ca_cert text, _ssl_tracker_verify boolean, _auth_username_secret text, _auth_password_secret text, _auth_cookie_secret text, _default_urls text[], _extra_urls text[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO public.engine_tracker_config AS etc (
+        profile_id,
+        user_agent,
+        announce_ip,
+        listen_interface,
+        request_timeout_ms,
+        announce_to_all,
+        replace_trackers,
+        proxy_host,
+        proxy_port,
+        proxy_kind,
+        proxy_username_secret,
+        proxy_password_secret,
+        proxy_peers,
+        ssl_cert,
+        ssl_private_key,
+        ssl_ca_cert,
+        ssl_tracker_verify,
+        auth_username_secret,
+        auth_password_secret,
+        auth_cookie_secret
+    )
+    VALUES (
+        _profile_id,
+        NULLIF(_user_agent, ''),
+        NULLIF(_announce_ip, ''),
+        NULLIF(_listen_interface, ''),
+        _request_timeout_ms,
+        COALESCE(_announce_to_all, FALSE),
+        COALESCE(_replace_trackers, FALSE),
+        NULLIF(_proxy_host, ''),
+        _proxy_port,
+        NULLIF(_proxy_kind, ''),
+        NULLIF(_proxy_username_secret, ''),
+        NULLIF(_proxy_password_secret, ''),
+        COALESCE(_proxy_peers, FALSE),
+        NULLIF(_ssl_cert, ''),
+        NULLIF(_ssl_private_key, ''),
+        NULLIF(_ssl_ca_cert, ''),
+        COALESCE(_ssl_tracker_verify, TRUE),
+        NULLIF(_auth_username_secret, ''),
+        NULLIF(_auth_password_secret, ''),
+        NULLIF(_auth_cookie_secret, '')
+    )
+    ON CONFLICT (profile_id) DO UPDATE
+    SET user_agent = EXCLUDED.user_agent,
+        announce_ip = EXCLUDED.announce_ip,
+        listen_interface = EXCLUDED.listen_interface,
+        request_timeout_ms = EXCLUDED.request_timeout_ms,
+        announce_to_all = EXCLUDED.announce_to_all,
+        replace_trackers = EXCLUDED.replace_trackers,
+        proxy_host = EXCLUDED.proxy_host,
+        proxy_port = EXCLUDED.proxy_port,
+        proxy_kind = EXCLUDED.proxy_kind,
+        proxy_username_secret = EXCLUDED.proxy_username_secret,
+        proxy_password_secret = EXCLUDED.proxy_password_secret,
+        proxy_peers = EXCLUDED.proxy_peers,
+        ssl_cert = EXCLUDED.ssl_cert,
+        ssl_private_key = EXCLUDED.ssl_private_key,
+        ssl_ca_cert = EXCLUDED.ssl_ca_cert,
+        ssl_tracker_verify = EXCLUDED.ssl_tracker_verify,
+        auth_username_secret = EXCLUDED.auth_username_secret,
+        auth_password_secret = EXCLUDED.auth_password_secret,
+        auth_cookie_secret = EXCLUDED.auth_cookie_secret,
+        updated_at = now();
+
+    DELETE FROM public.engine_tracker_endpoints
+    WHERE profile_id = _profile_id;
+
+    INSERT INTO public.engine_tracker_endpoints (profile_id, kind, url, ord)
+    SELECT _profile_id,
+           'default',
+           btrim(url),
+           ord
+    FROM unnest(COALESCE(_default_urls, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(url, ord)
+    WHERE btrim(url) <> '';
+
+    INSERT INTO public.engine_tracker_endpoints (profile_id, kind, url, ord)
+    SELECT _profile_id,
+           'extra',
+           btrim(url),
+           ord
+    FROM unnest(COALESCE(_extra_urls, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(url, ord)
+    WHERE btrim(url) <> '';
+END;
+$$;
+
+
+--
+-- Name: update_api_key_enabled(text, boolean); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_api_key_enabled(_key_id text, _enabled boolean) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.auth_api_keys
+    SET enabled = _enabled,
+        updated_at = now()
+    WHERE key_id = _key_id;
+END;
+$$;
+
+
+--
+-- Name: update_api_key_expires_at(text, timestamp with time zone); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_api_key_expires_at(_key_id text, _expires_at timestamp with time zone) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.auth_api_keys
+    SET expires_at = _expires_at
+    WHERE key_id = _key_id;
+END;
+$$;
+
+
+--
+-- Name: update_api_key_hash(text, text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_api_key_hash(_key_id text, _hash text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.auth_api_keys
+    SET hash = _hash,
+        updated_at = now()
+    WHERE key_id = _key_id;
+END;
+$$;
+
+
+--
+-- Name: update_api_key_label(text, text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_api_key_label(_key_id text, _label text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.auth_api_keys
+    SET label = _label,
+        updated_at = now()
+    WHERE key_id = _key_id;
+END;
+$$;
+
+
+--
+-- Name: update_api_key_rate_limit(text, integer, bigint); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_api_key_rate_limit(_key_id text, _burst integer, _per_seconds bigint) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.auth_api_keys
+    SET rate_limit_burst = _burst,
+        rate_limit_per_seconds = _per_seconds
+    WHERE key_id = _key_id;
+END;
+$$;
+
+
+--
+-- Name: update_app_auth_mode(uuid, text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_app_auth_mode(_id uuid, _auth_mode text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.app_profile
+    SET auth_mode = _auth_mode
+    WHERE id = _id;
+END;
+$$;
+
+
+--
+-- Name: update_app_bind_addr(uuid, text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_app_bind_addr(_id uuid, _bind_addr text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.app_profile
+    SET bind_addr = _bind_addr::INET
+    WHERE id = _id;
+END;
+$$;
+
+
+--
+-- Name: update_app_http_port(uuid, integer); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_app_http_port(_id uuid, _port integer) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.app_profile
+    SET http_port = _port
+    WHERE id = _id;
+END;
+$$;
+
+
+--
+-- Name: update_app_immutable_keys(uuid, text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_app_immutable_keys(_profile_id uuid, _keys text[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    DELETE FROM public.app_profile_immutable_keys WHERE profile_id = _profile_id;
+
+    INSERT INTO public.app_profile_immutable_keys (profile_id, key, ord)
+    SELECT _profile_id,
+           btrim(value),
+           ord
+    FROM unnest(COALESCE(_keys, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(value, ord)
+    WHERE btrim(value) <> '';
+END;
+$$;
+
+
+--
+-- Name: update_app_instance_name(uuid, text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_app_instance_name(_id uuid, _instance_name text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.app_profile
+    SET instance_name = _instance_name
+    WHERE id = _id;
+END;
+$$;
+
+
+--
+-- Name: update_app_local_networks(uuid, text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_app_local_networks(_profile_id uuid, _cidrs text[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    DELETE FROM public.app_profile_local_networks WHERE profile_id = _profile_id;
+
+    INSERT INTO public.app_profile_local_networks (profile_id, cidr, ord)
+    SELECT _profile_id,
+           btrim(value),
+           ord
+    FROM unnest(COALESCE(_cidrs, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(value, ord)
+    WHERE btrim(value) <> '';
+END;
+$$;
+
+
+--
+-- Name: update_app_mode(uuid, text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_app_mode(_id uuid, _mode text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.app_profile
+    SET mode = _mode
+    WHERE id = _id;
+END;
+$$;
+
+
+--
+-- Name: update_app_telemetry(uuid, text, text, boolean, text, text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_app_telemetry(_id uuid, _level text, _format text, _otel_enabled boolean, _otel_service_name text, _otel_endpoint text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.app_profile
+    SET telemetry_level = _level,
+        telemetry_format = _format,
+        telemetry_otel_enabled = _otel_enabled,
+        telemetry_otel_service_name = _otel_service_name,
+        telemetry_otel_endpoint = _otel_endpoint
+    WHERE id = _id;
+END;
+$$;
+
+
+--
+-- Name: update_engine_profile(uuid, text, integer, boolean, text, integer, bigint, bigint, double precision, bigint, boolean, boolean, boolean, boolean, boolean, text, text, boolean, integer, bigint, text, text, text, boolean, integer, integer, boolean, boolean, boolean, text, text, boolean, boolean, boolean, boolean, boolean, text, boolean, boolean, boolean, boolean, boolean, boolean, integer, integer, integer, integer, integer, integer, integer, integer); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_engine_profile(_id uuid, _implementation text, _listen_port integer, _dht boolean, _encryption text, _max_active integer, _max_download_bps bigint, _max_upload_bps bigint, _seed_ratio_limit double precision, _seed_time_limit bigint, _sequential_default boolean, _auto_managed boolean, _auto_manage_prefer_seeds boolean, _dont_count_slow_torrents boolean, _super_seeding boolean, _choking_algorithm text, _seed_choking_algorithm text, _strict_super_seeding boolean, _optimistic_unchoke_slots integer, _max_queued_disk_bytes bigint, _resume_dir text, _download_root text, _storage_mode text, _use_partfile boolean, _cache_size integer, _cache_expiry integer, _coalesce_reads boolean, _coalesce_writes boolean, _use_disk_cache_pool boolean, _disk_read_mode text, _disk_write_mode text, _verify_piece_hashes boolean, _lsd boolean, _upnp boolean, _natpmp boolean, _pex boolean, _ipv6_mode text, _anonymous_mode boolean, _force_proxy boolean, _prefer_rc4 boolean, _allow_multiple_connections_per_ip boolean, _enable_outgoing_utp boolean, _enable_incoming_utp boolean, _outgoing_port_min integer, _outgoing_port_max integer, _peer_dscp integer, _connections_limit integer, _connections_limit_per_torrent integer, _unchoke_slots integer, _half_open_limit integer, _stats_interval_ms integer) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.engine_profile
+    SET implementation = _implementation,
+        listen_port = _listen_port,
+        dht = _dht,
+        encryption = _encryption,
+        max_active = _max_active,
+        max_download_bps = _max_download_bps,
+        max_upload_bps = _max_upload_bps,
+        seed_ratio_limit = _seed_ratio_limit,
+        seed_time_limit = _seed_time_limit,
+        sequential_default = _sequential_default,
+        auto_managed = _auto_managed,
+        auto_manage_prefer_seeds = _auto_manage_prefer_seeds,
+        dont_count_slow_torrents = _dont_count_slow_torrents,
+        super_seeding = _super_seeding,
+        choking_algorithm = _choking_algorithm,
+        seed_choking_algorithm = _seed_choking_algorithm,
+        strict_super_seeding = _strict_super_seeding,
+        optimistic_unchoke_slots = _optimistic_unchoke_slots,
+        max_queued_disk_bytes = _max_queued_disk_bytes,
+        resume_dir = _resume_dir,
+        download_root = _download_root,
+        storage_mode = _storage_mode,
+        use_partfile = _use_partfile,
+        cache_size = _cache_size,
+        cache_expiry = _cache_expiry,
+        coalesce_reads = _coalesce_reads,
+        coalesce_writes = _coalesce_writes,
+        use_disk_cache_pool = _use_disk_cache_pool,
+        disk_read_mode = _disk_read_mode,
+        disk_write_mode = _disk_write_mode,
+        verify_piece_hashes = _verify_piece_hashes,
+        enable_lsd = _lsd,
+        enable_upnp = _upnp,
+        enable_natpmp = _natpmp,
+        enable_pex = _pex,
+        ipv6_mode = _ipv6_mode,
+        anonymous_mode = _anonymous_mode,
+        force_proxy = _force_proxy,
+        prefer_rc4 = _prefer_rc4,
+        allow_multiple_connections_per_ip = _allow_multiple_connections_per_ip,
+        enable_outgoing_utp = _enable_outgoing_utp,
+        enable_incoming_utp = _enable_incoming_utp,
+        outgoing_port_min = _outgoing_port_min,
+        outgoing_port_max = _outgoing_port_max,
+        peer_dscp = _peer_dscp,
+        connections_limit = _connections_limit,
+        connections_limit_per_torrent = _connections_limit_per_torrent,
+        unchoke_slots = _unchoke_slots,
+        half_open_limit = _half_open_limit,
+        stats_interval_ms = _stats_interval_ms
+    WHERE id = _id;
+END;
+$$;
+
+
+--
+-- Name: update_fs_array_field(uuid, text, text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_fs_array_field(_id uuid, _column text, _values text[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM revaer_config.set_fs_list(_id, _column, _values);
+END;
+$$;
+
+
+--
+-- Name: update_fs_boolean_field(uuid, text, boolean); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_fs_boolean_field(_id uuid, _column text, _value boolean) RETURNS void
+    LANGUAGE plpgsql
+    AS $_$
+BEGIN
+    IF _column NOT IN ('extract', 'flatten') THEN
+        RAISE EXCEPTION 'Unsupported fs_policy boolean column: %', _column;
+    END IF;
+
+    EXECUTE format('UPDATE public.fs_policy SET %I = $1 WHERE id = $2', _column)
+    USING _value, _id;
+END;
+$_$;
+
+
+--
+-- Name: update_fs_optional_string_field(uuid, text, text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_fs_optional_string_field(_id uuid, _column text, _value text) RETURNS void
+    LANGUAGE plpgsql
+    AS $_$
+BEGIN
+    IF _column NOT IN ('chmod_file', 'chmod_dir', 'owner', 'group', 'umask') THEN
+        RAISE EXCEPTION 'Unsupported fs_policy optional string column: %', _column;
+    END IF;
+
+    EXECUTE format('UPDATE public.fs_policy SET %I = $1 WHERE id = $2', _column)
+    USING _value, _id;
+END;
+$_$;
+
+
+--
+-- Name: update_fs_string_field(uuid, text, text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.update_fs_string_field(_id uuid, _column text, _value text) RETURNS void
+    LANGUAGE plpgsql
+    AS $_$
+BEGIN
+    IF _column NOT IN ('library_root', 'par2', 'move_mode') THEN
+        RAISE EXCEPTION 'Unsupported fs_policy string column: %', _column;
+    END IF;
+
+    EXECUTE format('UPDATE public.fs_policy SET %I = $1 WHERE id = $2', _column)
+    USING _value, _id;
+END;
+$_$;
+
+
+--
+-- Name: upsert_secret(text, bytea, text); Type: FUNCTION; Schema: revaer_config; Owner: -
+--
+
+CREATE FUNCTION revaer_config.upsert_secret(_name text, _ciphertext bytea, _actor text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO public.settings_secret (name, ciphertext, created_by, created_at)
+    VALUES (_name, _ciphertext, _actor, now())
+    ON CONFLICT (name)
+    DO UPDATE
+    SET ciphertext = EXCLUDED.ciphertext,
+        created_by = EXCLUDED.created_by,
+        created_at = now();
+END;
+$$;
+
+
+--
+-- Name: delete_torrent(uuid); Type: FUNCTION; Schema: revaer_runtime; Owner: -
+--
+
+CREATE FUNCTION revaer_runtime.delete_torrent(_torrent_id uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    DELETE FROM revaer_runtime.torrents WHERE torrent_id = _torrent_id;
+END;
+$$;
+
+
+--
+-- Name: fs_job_state(uuid); Type: FUNCTION; Schema: revaer_runtime; Owner: -
+--
+
+CREATE FUNCTION revaer_runtime.fs_job_state(_torrent_id uuid) RETURNS TABLE(status text, attempt smallint, src_path text, dst_path text, transfer_mode text, last_error text, updated_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        fs.status::TEXT,
+        fs.attempt,
+        fs.src_path,
+        fs.dst_path,
+        fs.transfer_mode,
+        fs.last_error,
+        fs.updated_at
+    FROM revaer_runtime.fs_jobs AS fs
+    WHERE fs.torrent_id = _torrent_id;
+END;
+$$;
+
+
+--
+-- Name: list_torrent_files(uuid); Type: FUNCTION; Schema: revaer_runtime; Owner: -
+--
+
+CREATE FUNCTION revaer_runtime.list_torrent_files(_torrent_id uuid) RETURNS TABLE(file_index integer, path text, size_bytes bigint, bytes_completed bigint, priority text, selected boolean)
+    LANGUAGE plpgsql STABLE
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT tf.file_index,
+           tf.path,
+           tf.size_bytes,
+           tf.bytes_completed,
+           tf.priority,
+           tf.selected
+    FROM revaer_runtime.torrent_files AS tf
+    WHERE tf.torrent_id = _torrent_id
+    ORDER BY tf.file_index;
+END;
+$$;
+
+
+--
+-- Name: list_torrents(); Type: FUNCTION; Schema: revaer_runtime; Owner: -
+--
+
+CREATE FUNCTION revaer_runtime.list_torrents() RETURNS TABLE(torrent_id uuid, name text, state text, state_message text, progress_bytes_downloaded bigint, progress_bytes_total bigint, progress_eta_seconds bigint, download_bps bigint, upload_bps bigint, ratio double precision, sequential boolean, library_path text, download_dir text, comment text, source text, private boolean, added_at timestamp with time zone, completed_at timestamp with time zone, updated_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT t.torrent_id,
+           t.name,
+           t.state::TEXT,
+           t.state_message,
+           t.progress_bytes_downloaded,
+           t.progress_bytes_total,
+           t.progress_eta_seconds,
+           t.download_bps,
+           t.upload_bps,
+           t.ratio,
+           t.sequential,
+           t.library_path,
+           t.download_dir,
+           t.comment,
+           t.source,
+           t.private,
+           t.added_at,
+           t.completed_at,
+           t.updated_at
+    FROM revaer_runtime.torrents AS t;
+END;
+$$;
+
+
+--
+-- Name: mark_fs_job_completed(uuid, text, text, text); Type: FUNCTION; Schema: revaer_runtime; Owner: -
+--
+
+CREATE FUNCTION revaer_runtime.mark_fs_job_completed(_torrent_id uuid, _src_path text, _dst_path text, _transfer_mode text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO revaer_runtime.fs_jobs (
+        torrent_id,
+        src_path,
+        dst_path,
+        transfer_mode,
+        status,
+        attempt
+    )
+    VALUES (
+        _torrent_id,
+        _src_path,
+        _dst_path,
+        _transfer_mode,
+        'moved'::revaer_runtime.fs_status,
+        1
+    )
+    ON CONFLICT (torrent_id) DO UPDATE
+    SET
+        src_path = EXCLUDED.src_path,
+        dst_path = EXCLUDED.dst_path,
+        transfer_mode = EXCLUDED.transfer_mode,
+        status = 'moved'::revaer_runtime.fs_status,
+        attempt = CASE
+            WHEN revaer_runtime.fs_jobs.attempt > 0 THEN revaer_runtime.fs_jobs.attempt
+            ELSE 1
+        END,
+        last_error = NULL,
+        updated_at = now();
+END;
+$$;
+
+
+--
+-- Name: mark_fs_job_failed(uuid, text); Type: FUNCTION; Schema: revaer_runtime; Owner: -
+--
+
+CREATE FUNCTION revaer_runtime.mark_fs_job_failed(_torrent_id uuid, _error text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE revaer_runtime.fs_jobs
+    SET
+        status = 'failed'::revaer_runtime.fs_status,
+        attempt = attempt + 1,
+        last_error = _error,
+        updated_at = now()
+    WHERE torrent_id = _torrent_id;
+END;
+$$;
+
+
+--
+-- Name: mark_fs_job_started(uuid, text); Type: FUNCTION; Schema: revaer_runtime; Owner: -
+--
+
+CREATE FUNCTION revaer_runtime.mark_fs_job_started(_torrent_id uuid, _src_path text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO revaer_runtime.fs_jobs (
+        torrent_id,
+        src_path,
+        status,
+        attempt
+    )
+    VALUES (
+        _torrent_id,
+        _src_path,
+        'moving'::revaer_runtime.fs_status,
+        1
+    )
+    ON CONFLICT (torrent_id) DO UPDATE
+    SET
+        src_path = CASE
+            WHEN revaer_runtime.fs_jobs.status = 'failed'::revaer_runtime.fs_status
+                THEN revaer_runtime.fs_jobs.src_path
+            ELSE EXCLUDED.src_path
+        END,
+        status = CASE
+            WHEN revaer_runtime.fs_jobs.status IN (
+                'moved'::revaer_runtime.fs_status,
+                'failed'::revaer_runtime.fs_status
+            ) THEN revaer_runtime.fs_jobs.status
+            ELSE 'moving'::revaer_runtime.fs_status
+        END,
+        attempt = CASE
+            WHEN revaer_runtime.fs_jobs.status IN (
+                'moved'::revaer_runtime.fs_status,
+                'failed'::revaer_runtime.fs_status
+            ) THEN revaer_runtime.fs_jobs.attempt
+            ELSE revaer_runtime.fs_jobs.attempt + 1
+        END,
+        last_error = CASE
+            WHEN revaer_runtime.fs_jobs.status = 'failed'::revaer_runtime.fs_status
+                THEN revaer_runtime.fs_jobs.last_error
+            ELSE NULL
+        END,
+        updated_at = now();
+END;
+$$;
+
+
+--
+-- Name: upsert_torrent(uuid, text, text, text, bigint, bigint, bigint, bigint, bigint, double precision, boolean, text, text, text, text, boolean, integer[], text[], bigint[], bigint[], text[], boolean[], timestamp with time zone, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: revaer_runtime; Owner: -
+--
+
+CREATE FUNCTION revaer_runtime.upsert_torrent(_torrent_id uuid, _name text, _state text, _state_message text, _progress_bytes_downloaded bigint, _progress_bytes_total bigint, _progress_eta_seconds bigint, _download_bps bigint, _upload_bps bigint, _ratio double precision, _sequential boolean, _library_path text, _download_dir text, _comment text, _source text, _private boolean, _file_indexes integer[], _file_paths text[], _file_sizes bigint[], _file_bytes_completed bigint[], _file_priorities text[], _file_selected boolean[], _added_at timestamp with time zone, _completed_at timestamp with time zone, _updated_at timestamp with time zone) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO revaer_runtime.torrents (
+        torrent_id,
+        name,
+        state,
+        state_message,
+        progress_bytes_downloaded,
+        progress_bytes_total,
+        progress_eta_seconds,
+        download_bps,
+        upload_bps,
+        ratio,
+        sequential,
+        library_path,
+        download_dir,
+        comment,
+        source,
+        private,
+        added_at,
+        completed_at,
+        updated_at
+    )
+    VALUES (
+        _torrent_id,
+        _name,
+        _state::revaer_runtime.torrent_state,
+        _state_message,
+        _progress_bytes_downloaded,
+        _progress_bytes_total,
+        _progress_eta_seconds,
+        _download_bps,
+        _upload_bps,
+        _ratio,
+        _sequential,
+        _library_path,
+        _download_dir,
+        NULLIF(_comment, ''),
+        NULLIF(_source, ''),
+        _private,
+        _added_at,
+        _completed_at,
+        _updated_at
+    )
+    ON CONFLICT (torrent_id) DO UPDATE
+    SET name = EXCLUDED.name,
+        state = EXCLUDED.state,
+        state_message = EXCLUDED.state_message,
+        progress_bytes_downloaded = EXCLUDED.progress_bytes_downloaded,
+        progress_bytes_total = EXCLUDED.progress_bytes_total,
+        progress_eta_seconds = EXCLUDED.progress_eta_seconds,
+        download_bps = EXCLUDED.download_bps,
+        upload_bps = EXCLUDED.upload_bps,
+        ratio = EXCLUDED.ratio,
+        sequential = EXCLUDED.sequential,
+        library_path = EXCLUDED.library_path,
+        download_dir = EXCLUDED.download_dir,
+        comment = EXCLUDED.comment,
+        source = EXCLUDED.source,
+        private = EXCLUDED.private,
+        added_at = EXCLUDED.added_at,
+        completed_at = EXCLUDED.completed_at,
+        updated_at = EXCLUDED.updated_at;
+
+    DELETE FROM revaer_runtime.torrent_files
+    WHERE torrent_id = _torrent_id;
+
+    INSERT INTO revaer_runtime.torrent_files (
+        torrent_id,
+        file_index,
+        path,
+        size_bytes,
+        bytes_completed,
+        priority,
+        selected
+    )
+    SELECT _torrent_id,
+           file_index,
+           path,
+           size_bytes,
+           bytes_completed,
+           priority,
+           selected
+    FROM unnest(
+        COALESCE(_file_indexes, ARRAY[]::INTEGER[]),
+        COALESCE(_file_paths, ARRAY[]::TEXT[]),
+        COALESCE(_file_sizes, ARRAY[]::BIGINT[]),
+        COALESCE(_file_bytes_completed, ARRAY[]::BIGINT[]),
+        COALESCE(_file_priorities, ARRAY[]::TEXT[]),
+        COALESCE(_file_selected, ARRAY[]::BOOLEAN[])
+    ) AS t(
+        file_index,
+        path,
+        size_bytes,
+        bytes_completed,
+        priority,
+        selected
+    );
+END;
+$$;
+
+
+SET default_table_access_method = heap;
+
+--
+-- Name: acquisition_attempt; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.acquisition_attempt (
+    acquisition_attempt_id bigint NOT NULL,
+    torznab_instance_id bigint,
+    origin public.acquisition_origin NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    canonical_torrent_source_id bigint NOT NULL,
+    search_request_id bigint,
+    user_id bigint,
+    infohash_v1 character(40),
+    infohash_v2 character(64),
+    magnet_hash character(64),
+    torrent_client_id character varying(128),
+    torrent_client_name public.torrent_client_name NOT NULL,
+    started_at timestamp with time zone NOT NULL,
+    finished_at timestamp with time zone,
+    status public.acquisition_status NOT NULL,
+    failure_class public.acquisition_failure_class,
+    failure_detail character varying(256),
+    CONSTRAINT acquisition_attempt_failure_class_chk CHECK ((((status = 'failed'::public.acquisition_status) AND (failure_class IS NOT NULL)) OR ((status <> 'failed'::public.acquisition_status) AND (failure_class IS NULL)))),
+    CONSTRAINT acquisition_attempt_identifier_chk CHECK (((infohash_v1 IS NOT NULL) OR (infohash_v2 IS NOT NULL) OR (magnet_hash IS NOT NULL))),
+    CONSTRAINT acquisition_attempt_infohash_v1_chk CHECK (((infohash_v1 IS NULL) OR (infohash_v1 ~ '^[0-9a-f]{40}$'::text))),
+    CONSTRAINT acquisition_attempt_infohash_v2_chk CHECK (((infohash_v2 IS NULL) OR (infohash_v2 ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT acquisition_attempt_magnet_hash_chk CHECK (((magnet_hash IS NULL) OR (magnet_hash ~ '^[0-9a-f]{64}$'::text)))
+);
+
+
+--
+-- Name: acquisition_attempt_acquisition_attempt_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.acquisition_attempt ALTER COLUMN acquisition_attempt_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.acquisition_attempt_acquisition_attempt_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: app_label_policies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_label_policies (
+    profile_id uuid NOT NULL,
+    kind text NOT NULL,
+    name text NOT NULL,
+    download_dir text,
+    rate_limit_download_bps bigint,
+    rate_limit_upload_bps bigint,
+    queue_position integer,
+    auto_managed boolean,
+    seed_ratio_limit double precision,
+    seed_time_limit bigint,
+    cleanup_seed_ratio_limit double precision,
+    cleanup_seed_time_limit bigint,
+    cleanup_remove_data boolean,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_label_policies_kind_check CHECK ((kind = ANY (ARRAY['category'::text, 'tag'::text])))
+);
+
+
+--
+-- Name: app_profile; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_profile (
+    id uuid NOT NULL,
+    version bigint DEFAULT 0 NOT NULL,
+    mode text NOT NULL,
+    auth_mode text DEFAULT 'none'::text NOT NULL,
+    instance_name text NOT NULL,
+    http_port integer DEFAULT 7070 NOT NULL,
+    bind_addr inet DEFAULT '127.0.0.1'::inet NOT NULL,
+    telemetry_level text,
+    telemetry_format text,
+    telemetry_otel_enabled boolean,
+    telemetry_otel_service_name text,
+    telemetry_otel_endpoint text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_profile_auth_mode_check CHECK ((auth_mode = ANY (ARRAY['api_key'::text, 'none'::text]))),
+    CONSTRAINT app_profile_mode_check CHECK ((mode = ANY (ARRAY['setup'::text, 'active'::text]))),
+    CONSTRAINT app_profile_singleton CHECK ((id = '00000000-0000-0000-0000-000000000001'::uuid))
+);
+
+
+--
+-- Name: app_profile_immutable_keys; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_profile_immutable_keys (
+    profile_id uuid NOT NULL,
+    key text NOT NULL,
+    ord integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: app_profile_local_networks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_profile_local_networks (
+    profile_id uuid NOT NULL,
+    cidr text NOT NULL,
+    ord integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: app_user; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_user (
+    user_id bigint NOT NULL,
+    user_public_id uuid NOT NULL,
+    email character varying(320) NOT NULL,
+    email_normalized character varying(320) NOT NULL,
+    is_email_verified boolean DEFAULT false NOT NULL,
+    display_name character varying(256) NOT NULL,
+    role public.deployment_role NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_user_email_normalized_lc CHECK (((email_normalized)::text = lower(TRIM(BOTH FROM email_normalized))))
+);
+
+
+--
+-- Name: app_user_user_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.app_user ALTER COLUMN user_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.app_user_user_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: auth_api_keys; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.auth_api_keys (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    key_id text NOT NULL,
+    hash text NOT NULL,
+    label text,
+    enabled boolean DEFAULT true NOT NULL,
+    expires_at timestamp with time zone,
+    rate_limit_burst integer,
+    rate_limit_per_seconds bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: canonical_disambiguation_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.canonical_disambiguation_rule (
+    canonical_disambiguation_rule_id bigint NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    rule_type public.disambiguation_rule_type NOT NULL,
+    identity_left_type public.disambiguation_identity_type NOT NULL,
+    identity_left_value_text character varying(64),
+    identity_left_value_uuid uuid,
+    identity_right_type public.disambiguation_identity_type NOT NULL,
+    identity_right_value_text character varying(64),
+    identity_right_value_uuid uuid,
+    reason character varying(256),
+    CONSTRAINT canonical_disambiguation_rule_distinct_chk CHECK (((identity_left_type IS DISTINCT FROM identity_right_type) OR ((identity_left_value_text)::text IS DISTINCT FROM (identity_right_value_text)::text) OR (identity_left_value_uuid IS DISTINCT FROM identity_right_value_uuid))),
+    CONSTRAINT canonical_disambiguation_rule_left_hash_chk CHECK (((identity_left_type = 'canonical_public_id'::public.disambiguation_identity_type) OR ((identity_left_type = 'infohash_v1'::public.disambiguation_identity_type) AND ((identity_left_value_text)::text ~ '^[0-9a-f]{40}$'::text)) OR ((identity_left_type = 'infohash_v2'::public.disambiguation_identity_type) AND ((identity_left_value_text)::text ~ '^[0-9a-f]{64}$'::text)) OR ((identity_left_type = 'magnet_hash'::public.disambiguation_identity_type) AND ((identity_left_value_text)::text ~ '^[0-9a-f]{64}$'::text)))),
+    CONSTRAINT canonical_disambiguation_rule_left_type_chk CHECK ((((identity_left_type = 'canonical_public_id'::public.disambiguation_identity_type) AND (identity_left_value_uuid IS NOT NULL)) OR ((identity_left_type <> 'canonical_public_id'::public.disambiguation_identity_type) AND (identity_left_value_text IS NOT NULL)))),
+    CONSTRAINT canonical_disambiguation_rule_left_value_chk CHECK (((((identity_left_value_text IS NOT NULL))::integer + ((identity_left_value_uuid IS NOT NULL))::integer) = 1)),
+    CONSTRAINT canonical_disambiguation_rule_right_hash_chk CHECK (((identity_right_type = 'canonical_public_id'::public.disambiguation_identity_type) OR ((identity_right_type = 'infohash_v1'::public.disambiguation_identity_type) AND ((identity_right_value_text)::text ~ '^[0-9a-f]{40}$'::text)) OR ((identity_right_type = 'infohash_v2'::public.disambiguation_identity_type) AND ((identity_right_value_text)::text ~ '^[0-9a-f]{64}$'::text)) OR ((identity_right_type = 'magnet_hash'::public.disambiguation_identity_type) AND ((identity_right_value_text)::text ~ '^[0-9a-f]{64}$'::text)))),
+    CONSTRAINT canonical_disambiguation_rule_right_type_chk CHECK ((((identity_right_type = 'canonical_public_id'::public.disambiguation_identity_type) AND (identity_right_value_uuid IS NOT NULL)) OR ((identity_right_type <> 'canonical_public_id'::public.disambiguation_identity_type) AND (identity_right_value_text IS NOT NULL)))),
+    CONSTRAINT canonical_disambiguation_rule_right_value_chk CHECK (((((identity_right_value_text IS NOT NULL))::integer + ((identity_right_value_uuid IS NOT NULL))::integer) = 1))
+);
+
+
+--
+-- Name: canonical_disambiguation_rule_canonical_disambiguation_rule_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.canonical_disambiguation_rule ALTER COLUMN canonical_disambiguation_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_disambiguation_rule_canonical_disambiguation_rule_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: canonical_external_id; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.canonical_external_id (
+    canonical_external_id_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    id_type public.identifier_type NOT NULL,
+    id_value_text character varying(16),
+    id_value_int integer,
+    source_canonical_torrent_source_id bigint,
+    trust_tier_rank smallint NOT NULL,
+    first_seen_at timestamp with time zone NOT NULL,
+    last_seen_at timestamp with time zone NOT NULL,
+    CONSTRAINT canonical_external_id_imdb_chk CHECK (((id_type <> 'imdb'::public.identifier_type) OR ((id_value_text IS NOT NULL) AND ((id_value_text)::text ~ '^tt[0-9]{7,9}$'::text)))),
+    CONSTRAINT canonical_external_id_single_value_chk CHECK (((((id_value_text IS NOT NULL))::integer + ((id_value_int IS NOT NULL))::integer) = 1)),
+    CONSTRAINT canonical_external_id_tmdb_chk CHECK (((id_type <> 'tmdb'::public.identifier_type) OR ((id_value_int IS NOT NULL) AND (id_value_int > 0)))),
+    CONSTRAINT canonical_external_id_trust_tier_rank_check CHECK ((trust_tier_rank >= 0)),
+    CONSTRAINT canonical_external_id_tvdb_chk CHECK (((id_type <> 'tvdb'::public.identifier_type) OR ((id_value_int IS NOT NULL) AND (id_value_int > 0))))
+);
+
+
+--
+-- Name: canonical_external_id_canonical_external_id_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.canonical_external_id ALTER COLUMN canonical_external_id_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_external_id_canonical_external_id_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: canonical_size_rollup; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.canonical_size_rollup (
+    canonical_size_rollup_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    sample_count integer NOT NULL,
+    size_median bigint NOT NULL,
+    size_min bigint NOT NULL,
+    size_max bigint NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT canonical_size_rollup_sample_count_check CHECK ((sample_count > 0)),
+    CONSTRAINT canonical_size_rollup_size_max_check CHECK ((size_max > 0)),
+    CONSTRAINT canonical_size_rollup_size_median_check CHECK ((size_median > 0)),
+    CONSTRAINT canonical_size_rollup_size_min_check CHECK ((size_min > 0))
+);
+
+
+--
+-- Name: canonical_size_rollup_canonical_size_rollup_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.canonical_size_rollup ALTER COLUMN canonical_size_rollup_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_size_rollup_canonical_size_rollup_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: canonical_size_sample; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.canonical_size_sample (
+    canonical_size_sample_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    observed_at timestamp with time zone NOT NULL,
+    size_bytes bigint NOT NULL,
+    CONSTRAINT canonical_size_sample_size_bytes_check CHECK ((size_bytes > 0))
+);
+
+
+--
+-- Name: canonical_size_sample_canonical_size_sample_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.canonical_size_sample ALTER COLUMN canonical_size_sample_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_size_sample_canonical_size_sample_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: canonical_torrent; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.canonical_torrent (
+    canonical_torrent_id bigint NOT NULL,
+    canonical_torrent_public_id uuid NOT NULL,
+    identity_confidence numeric(4,3) NOT NULL,
+    identity_strategy public.identity_strategy NOT NULL,
+    infohash_v1 character(40),
+    infohash_v2 character(64),
+    magnet_hash character(64),
+    title_size_hash character(64),
+    imdb_id character varying(16),
+    tmdb_id integer,
+    tvdb_id integer,
+    ids_confidence numeric(4,3),
+    title_display character varying(512) NOT NULL,
+    title_normalized character varying(512) NOT NULL,
+    size_bytes bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT canonical_torrent_identity_confidence_check CHECK (((identity_confidence >= (0)::numeric) AND (identity_confidence <= (1)::numeric))),
+    CONSTRAINT canonical_torrent_identity_strategy_chk CHECK ((((identity_strategy = 'infohash_v2'::public.identity_strategy) AND (infohash_v2 IS NOT NULL)) OR ((identity_strategy = 'infohash_v1'::public.identity_strategy) AND (infohash_v1 IS NOT NULL)) OR ((identity_strategy = 'magnet_hash'::public.identity_strategy) AND (magnet_hash IS NOT NULL)) OR ((identity_strategy = 'title_size_fallback'::public.identity_strategy) AND (title_size_hash IS NOT NULL)))),
+    CONSTRAINT canonical_torrent_ids_confidence_chk CHECK (((ids_confidence IS NULL) OR ((ids_confidence >= (0)::numeric) AND (ids_confidence <= (1)::numeric)))),
+    CONSTRAINT canonical_torrent_imdb_id_chk CHECK (((imdb_id IS NULL) OR ((imdb_id)::text ~ '^tt[0-9]{7,9}$'::text))),
+    CONSTRAINT canonical_torrent_infohash_v1_chk CHECK (((infohash_v1 IS NULL) OR (infohash_v1 ~ '^[0-9a-f]{40}$'::text))),
+    CONSTRAINT canonical_torrent_infohash_v2_chk CHECK (((infohash_v2 IS NULL) OR (infohash_v2 ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT canonical_torrent_magnet_hash_chk CHECK (((magnet_hash IS NULL) OR (magnet_hash ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT canonical_torrent_size_bytes_chk CHECK (((size_bytes IS NULL) OR (size_bytes >= 0))),
+    CONSTRAINT canonical_torrent_title_normalized_lc CHECK (((title_normalized)::text = lower((title_normalized)::text))),
+    CONSTRAINT canonical_torrent_title_size_hash_chk CHECK (((title_size_hash IS NULL) OR (title_size_hash ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT canonical_torrent_title_size_requires_size_chk CHECK (((title_size_hash IS NULL) OR (size_bytes IS NOT NULL))),
+    CONSTRAINT canonical_torrent_tmdb_id_chk CHECK (((tmdb_id IS NULL) OR (tmdb_id > 0))),
+    CONSTRAINT canonical_torrent_tvdb_id_chk CHECK (((tvdb_id IS NULL) OR (tvdb_id > 0)))
+);
+
+
+--
+-- Name: canonical_torrent_best_source_context; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.canonical_torrent_best_source_context (
+    canonical_torrent_best_source_context_id bigint NOT NULL,
+    context_key_type public.context_key_type NOT NULL,
+    context_key_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    canonical_torrent_source_id bigint NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT canonical_torrent_best_source_context_context_key_id_check CHECK ((context_key_id > 0))
+);
+
+
+--
+-- Name: canonical_torrent_best_source_canonical_torrent_best_sourc_seq1; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.canonical_torrent_best_source_context ALTER COLUMN canonical_torrent_best_source_context_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_best_source_canonical_torrent_best_sourc_seq1
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: canonical_torrent_best_source_global; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.canonical_torrent_best_source_global (
+    canonical_torrent_best_source_global_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    canonical_torrent_source_id bigint NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: canonical_torrent_best_source_canonical_torrent_best_source_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.canonical_torrent_best_source_global ALTER COLUMN canonical_torrent_best_source_global_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_best_source_canonical_torrent_best_source_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: canonical_torrent_canonical_torrent_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.canonical_torrent ALTER COLUMN canonical_torrent_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_canonical_torrent_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: canonical_torrent_signal; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.canonical_torrent_signal (
+    canonical_torrent_signal_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    signal_key public.signal_key NOT NULL,
+    value_text character varying(128),
+    value_int integer,
+    confidence numeric(4,3) NOT NULL,
+    parser_version smallint DEFAULT 1 NOT NULL,
+    CONSTRAINT canonical_torrent_signal_confidence_check CHECK (((confidence >= (0)::numeric) AND (confidence <= (1)::numeric))),
+    CONSTRAINT canonical_torrent_signal_single_value_chk CHECK (((((value_text IS NOT NULL))::integer + ((value_int IS NOT NULL))::integer) = 1))
+);
+
+
+--
+-- Name: canonical_torrent_signal_canonical_torrent_signal_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.canonical_torrent_signal ALTER COLUMN canonical_torrent_signal_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_signal_canonical_torrent_signal_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: canonical_torrent_source; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.canonical_torrent_source (
+    canonical_torrent_source_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    canonical_torrent_source_public_id uuid NOT NULL,
+    source_guid character varying(256),
+    infohash_v1 character(40),
+    infohash_v2 character(64),
+    magnet_hash character(64),
+    title_normalized character varying(512) NOT NULL,
+    size_bytes bigint,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_seen_seeders integer,
+    last_seen_leechers integer,
+    last_seen_published_at timestamp with time zone,
+    last_seen_download_url character varying(2048),
+    last_seen_magnet_uri character varying(2048),
+    last_seen_details_url character varying(2048),
+    last_seen_uploader character varying(256),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT canonical_torrent_source_infohash_v1_chk CHECK (((infohash_v1 IS NULL) OR (infohash_v1 ~ '^[0-9a-f]{40}$'::text))),
+    CONSTRAINT canonical_torrent_source_infohash_v2_chk CHECK (((infohash_v2 IS NULL) OR (infohash_v2 ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT canonical_torrent_source_magnet_hash_chk CHECK (((magnet_hash IS NULL) OR (magnet_hash ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT canonical_torrent_source_seen_leechers_chk CHECK (((last_seen_leechers IS NULL) OR (last_seen_leechers >= 0))),
+    CONSTRAINT canonical_torrent_source_seen_seeders_chk CHECK (((last_seen_seeders IS NULL) OR (last_seen_seeders >= 0))),
+    CONSTRAINT canonical_torrent_source_size_bytes_chk CHECK (((size_bytes IS NULL) OR (size_bytes >= 0))),
+    CONSTRAINT canonical_torrent_source_title_normalized_lc CHECK (((title_normalized)::text = lower((title_normalized)::text)))
+);
+
+
+--
+-- Name: canonical_torrent_source_attr; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.canonical_torrent_source_attr (
+    canonical_torrent_source_attr_id bigint NOT NULL,
+    canonical_torrent_source_id bigint NOT NULL,
+    attr_key public.durable_source_attr_key NOT NULL,
+    value_text character varying(512),
+    value_int integer,
+    value_bigint bigint,
+    value_numeric numeric(12,4),
+    value_bool boolean,
+    CONSTRAINT canonical_torrent_source_attr_episode_chk CHECK (((attr_key <> 'episode'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT canonical_torrent_source_attr_files_count_chk CHECK (((attr_key <> 'files_count'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT canonical_torrent_source_attr_imdb_chk CHECK (((attr_key <> 'imdb_id'::public.durable_source_attr_key) OR ((value_text)::text ~ '^tt[0-9]{7,9}$'::text))),
+    CONSTRAINT canonical_torrent_source_attr_key_type_chk CHECK ((((attr_key = ANY (ARRAY['tracker_name'::public.durable_source_attr_key, 'imdb_id'::public.durable_source_attr_key])) AND (value_text IS NOT NULL)) OR ((attr_key = 'size_bytes_reported'::public.durable_source_attr_key) AND (value_bigint IS NOT NULL)) OR ((attr_key = ANY (ARRAY['tracker_category'::public.durable_source_attr_key, 'tracker_subcategory'::public.durable_source_attr_key, 'files_count'::public.durable_source_attr_key, 'season'::public.durable_source_attr_key, 'episode'::public.durable_source_attr_key, 'year'::public.durable_source_attr_key, 'tmdb_id'::public.durable_source_attr_key, 'tvdb_id'::public.durable_source_attr_key])) AND (value_int IS NOT NULL)))),
+    CONSTRAINT canonical_torrent_source_attr_season_chk CHECK (((attr_key <> 'season'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT canonical_torrent_source_attr_single_value_chk CHECK ((((((((value_text IS NOT NULL))::integer + ((value_int IS NOT NULL))::integer) + ((value_bigint IS NOT NULL))::integer) + ((value_numeric IS NOT NULL))::integer) + ((value_bool IS NOT NULL))::integer) = 1)),
+    CONSTRAINT canonical_torrent_source_attr_size_bytes_chk CHECK (((attr_key <> 'size_bytes_reported'::public.durable_source_attr_key) OR ((value_bigint IS NOT NULL) AND (value_bigint >= 0)))),
+    CONSTRAINT canonical_torrent_source_attr_tmdb_chk CHECK (((attr_key <> 'tmdb_id'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int > 0)))),
+    CONSTRAINT canonical_torrent_source_attr_tracker_category_chk CHECK (((attr_key <> 'tracker_category'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT canonical_torrent_source_attr_tracker_subcategory_chk CHECK (((attr_key <> 'tracker_subcategory'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT canonical_torrent_source_attr_tvdb_chk CHECK (((attr_key <> 'tvdb_id'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int > 0)))),
+    CONSTRAINT canonical_torrent_source_attr_year_chk CHECK (((attr_key <> 'year'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0))))
+);
+
+
+--
+-- Name: canonical_torrent_source_attr_canonical_torrent_source_attr_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.canonical_torrent_source_attr ALTER COLUMN canonical_torrent_source_attr_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_source_attr_canonical_torrent_source_attr_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: canonical_torrent_source_base_score; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.canonical_torrent_source_base_score (
+    canonical_torrent_source_base_score_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    canonical_torrent_source_id bigint NOT NULL,
+    score_total_base numeric(12,4) NOT NULL,
+    score_seed numeric(12,4) NOT NULL,
+    score_leech numeric(12,4) NOT NULL,
+    score_age numeric(12,4) NOT NULL,
+    score_trust numeric(12,4) NOT NULL,
+    score_health numeric(12,4) NOT NULL,
+    score_reputation numeric(12,4) NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT canonical_torrent_source_base_score_score_total_base_check CHECK (((score_total_base >= ('-10000'::integer)::numeric) AND (score_total_base <= (10000)::numeric)))
+);
+
+
+--
+-- Name: canonical_torrent_source_base_canonical_torrent_source_base_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.canonical_torrent_source_base_score ALTER COLUMN canonical_torrent_source_base_score_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_source_base_canonical_torrent_source_base_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: canonical_torrent_source_canonical_torrent_source_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.canonical_torrent_source ALTER COLUMN canonical_torrent_source_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_source_canonical_torrent_source_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: canonical_torrent_source_context_score; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.canonical_torrent_source_context_score (
+    canonical_torrent_source_context_score_id bigint NOT NULL,
+    context_key_type public.context_key_type NOT NULL,
+    context_key_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    canonical_torrent_source_id bigint NOT NULL,
+    score_total_context numeric(12,4) NOT NULL,
+    score_policy_adjust numeric(12,4) NOT NULL,
+    score_tag_adjust numeric(12,4) NOT NULL,
+    is_dropped boolean DEFAULT false NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT canonical_torrent_source_context_scor_score_total_context_check CHECK (((score_total_context >= ('-10000'::integer)::numeric) AND (score_total_context <= (10000)::numeric))),
+    CONSTRAINT canonical_torrent_source_context_score_context_key_id_check CHECK ((context_key_id > 0))
+);
+
+
+--
+-- Name: canonical_torrent_source_cont_canonical_torrent_source_cont_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.canonical_torrent_source_context_score ALTER COLUMN canonical_torrent_source_context_score_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_source_cont_canonical_torrent_source_cont_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: config_audit_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.config_audit_log (
+    audit_log_id bigint NOT NULL,
+    entity_type public.audit_entity_type NOT NULL,
+    entity_pk_bigint bigint,
+    entity_public_id uuid,
+    action public.audit_action NOT NULL,
+    changed_by_user_id bigint NOT NULL,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL,
+    change_summary character varying(1024) NOT NULL,
+    change_detail character varying(1024),
+    CONSTRAINT config_audit_entity_ref_chk CHECK (((entity_pk_bigint IS NOT NULL) OR (entity_public_id IS NOT NULL)))
+);
+
+
+--
+-- Name: config_audit_log_audit_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.config_audit_log ALTER COLUMN audit_log_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.config_audit_log_audit_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: deployment_config; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.deployment_config (
+    deployment_config_id bigint NOT NULL,
+    default_page_size integer DEFAULT 50 NOT NULL,
+    retention_search_days integer DEFAULT 7 NOT NULL,
+    retention_health_events_days integer DEFAULT 14 NOT NULL,
+    retention_reputation_days integer DEFAULT 180 NOT NULL,
+    retention_outbound_request_log_days integer DEFAULT 14 NOT NULL,
+    retention_source_metadata_conflict_days integer DEFAULT 30 NOT NULL,
+    retention_source_metadata_conflict_audit_days integer DEFAULT 90 NOT NULL,
+    retention_rss_item_seen_days integer DEFAULT 30 NOT NULL,
+    connectivity_refresh_seconds integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT deployment_config_connectivity_refresh_seconds_check CHECK (((connectivity_refresh_seconds >= 30) AND (connectivity_refresh_seconds <= 3600))),
+    CONSTRAINT deployment_config_default_page_size_check CHECK (((default_page_size >= 10) AND (default_page_size <= 200))),
+    CONSTRAINT deployment_config_retention_health_events_days_check CHECK (((retention_health_events_days >= 1) AND (retention_health_events_days <= 90))),
+    CONSTRAINT deployment_config_retention_outbound_request_log_days_check CHECK (((retention_outbound_request_log_days >= 1) AND (retention_outbound_request_log_days <= 90))),
+    CONSTRAINT deployment_config_retention_reputation_days_check CHECK (((retention_reputation_days >= 30) AND (retention_reputation_days <= 3650))),
+    CONSTRAINT deployment_config_retention_rss_item_seen_days_check CHECK (((retention_rss_item_seen_days >= 1) AND (retention_rss_item_seen_days <= 365))),
+    CONSTRAINT deployment_config_retention_search_days_check CHECK (((retention_search_days >= 1) AND (retention_search_days <= 90))),
+    CONSTRAINT deployment_config_retention_source_metadata_conflict_audi_check CHECK (((retention_source_metadata_conflict_audit_days >= 7) AND (retention_source_metadata_conflict_audit_days <= 3650))),
+    CONSTRAINT deployment_config_retention_source_metadata_conflict_days_check CHECK (((retention_source_metadata_conflict_days >= 1) AND (retention_source_metadata_conflict_days <= 365)))
+);
+
+
+--
+-- Name: deployment_config_deployment_config_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.deployment_config ALTER COLUMN deployment_config_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.deployment_config_deployment_config_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: deployment_maintenance_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.deployment_maintenance_state (
+    deployment_maintenance_state_id bigint NOT NULL,
+    rss_subscription_backfill_completed_at timestamp with time zone,
+    last_updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: deployment_maintenance_state_deployment_maintenance_state_i_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.deployment_maintenance_state ALTER COLUMN deployment_maintenance_state_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.deployment_maintenance_state_deployment_maintenance_state_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: engine_alt_speed; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.engine_alt_speed (
+    profile_id uuid NOT NULL,
+    download_bps bigint,
+    upload_bps bigint,
+    schedule_start_minutes integer,
+    schedule_end_minutes integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: engine_alt_speed_days; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.engine_alt_speed_days (
+    profile_id uuid NOT NULL,
+    ord integer NOT NULL,
+    day text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT engine_alt_speed_days_day_check CHECK ((day = ANY (ARRAY['mon'::text, 'tue'::text, 'wed'::text, 'thu'::text, 'fri'::text, 'sat'::text, 'sun'::text])))
+);
+
+
+--
+-- Name: engine_ip_filter; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.engine_ip_filter (
+    profile_id uuid NOT NULL,
+    blocklist_url text,
+    etag text,
+    last_updated_at timestamp with time zone,
+    last_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: engine_ip_filter_entries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.engine_ip_filter_entries (
+    profile_id uuid NOT NULL,
+    ord integer NOT NULL,
+    cidr text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: engine_peer_class_defaults; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.engine_peer_class_defaults (
+    profile_id uuid NOT NULL,
+    class_id smallint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: engine_peer_classes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.engine_peer_classes (
+    profile_id uuid NOT NULL,
+    class_id smallint NOT NULL,
+    label text NOT NULL,
+    download_priority smallint NOT NULL,
+    upload_priority smallint NOT NULL,
+    connection_limit_factor smallint DEFAULT 100 NOT NULL,
+    ignore_unchoke_slots boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT engine_peer_class_connection_limit_factor_bounds CHECK ((connection_limit_factor >= 1)),
+    CONSTRAINT engine_peer_class_download_priority_bounds CHECK (((download_priority >= 1) AND (download_priority <= 255))),
+    CONSTRAINT engine_peer_class_id_bounds CHECK (((class_id >= 0) AND (class_id <= 31))),
+    CONSTRAINT engine_peer_class_upload_priority_bounds CHECK (((upload_priority >= 1) AND (upload_priority <= 255)))
+);
+
+
+--
+-- Name: engine_profile; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.engine_profile (
+    id uuid NOT NULL,
+    implementation text NOT NULL,
+    listen_port integer,
+    dht boolean DEFAULT false NOT NULL,
+    encryption text DEFAULT 'require'::text NOT NULL,
+    max_active integer,
+    max_download_bps bigint,
+    max_upload_bps bigint,
+    seed_ratio_limit double precision,
+    seed_time_limit bigint,
+    sequential_default boolean DEFAULT true NOT NULL,
+    auto_managed boolean DEFAULT true NOT NULL,
+    auto_manage_prefer_seeds boolean DEFAULT false NOT NULL,
+    dont_count_slow_torrents boolean DEFAULT true NOT NULL,
+    super_seeding boolean DEFAULT false NOT NULL,
+    choking_algorithm text DEFAULT 'fixed_slots'::text NOT NULL,
+    seed_choking_algorithm text DEFAULT 'round_robin'::text NOT NULL,
+    strict_super_seeding boolean DEFAULT false NOT NULL,
+    optimistic_unchoke_slots integer,
+    max_queued_disk_bytes bigint,
+    resume_dir text NOT NULL,
+    download_root text NOT NULL,
+    storage_mode text DEFAULT 'sparse'::text NOT NULL,
+    use_partfile boolean DEFAULT true NOT NULL,
+    cache_size integer,
+    cache_expiry integer,
+    coalesce_reads boolean DEFAULT true NOT NULL,
+    coalesce_writes boolean DEFAULT true NOT NULL,
+    use_disk_cache_pool boolean DEFAULT true NOT NULL,
+    disk_read_mode text,
+    disk_write_mode text,
+    verify_piece_hashes boolean DEFAULT true NOT NULL,
+    enable_lsd boolean DEFAULT false NOT NULL,
+    enable_upnp boolean DEFAULT false NOT NULL,
+    enable_natpmp boolean DEFAULT false NOT NULL,
+    enable_pex boolean DEFAULT false NOT NULL,
+    ipv6_mode text DEFAULT 'disabled'::text NOT NULL,
+    anonymous_mode boolean DEFAULT false NOT NULL,
+    force_proxy boolean DEFAULT false NOT NULL,
+    prefer_rc4 boolean DEFAULT false NOT NULL,
+    allow_multiple_connections_per_ip boolean DEFAULT false NOT NULL,
+    enable_outgoing_utp boolean DEFAULT false NOT NULL,
+    enable_incoming_utp boolean DEFAULT false NOT NULL,
+    outgoing_port_min integer,
+    outgoing_port_max integer,
+    peer_dscp integer,
+    connections_limit integer,
+    connections_limit_per_torrent integer,
+    unchoke_slots integer,
+    half_open_limit integer,
+    stats_interval_ms integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT engine_profile_singleton CHECK ((id = '00000000-0000-0000-0000-000000000002'::uuid))
+);
+
+
+--
+-- Name: engine_profile_list_values; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.engine_profile_list_values (
+    profile_id uuid NOT NULL,
+    kind text NOT NULL,
+    ord integer NOT NULL,
+    value text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT engine_profile_list_values_kind_check CHECK ((kind = ANY (ARRAY['listen_interfaces'::text, 'dht_bootstrap_nodes'::text, 'dht_router_nodes'::text])))
+);
+
+
+--
+-- Name: engine_tracker_config; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.engine_tracker_config (
+    profile_id uuid NOT NULL,
+    user_agent text,
+    announce_ip text,
+    listen_interface text,
+    request_timeout_ms integer,
+    announce_to_all boolean DEFAULT false NOT NULL,
+    replace_trackers boolean DEFAULT false NOT NULL,
+    proxy_host text,
+    proxy_port integer,
+    proxy_kind text,
+    proxy_username_secret text,
+    proxy_password_secret text,
+    proxy_peers boolean DEFAULT false NOT NULL,
+    ssl_cert text,
+    ssl_private_key text,
+    ssl_ca_cert text,
+    ssl_tracker_verify boolean,
+    auth_username_secret text,
+    auth_password_secret text,
+    auth_cookie_secret text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: engine_tracker_endpoints; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.engine_tracker_endpoints (
+    id bigint NOT NULL,
+    profile_id uuid NOT NULL,
+    kind text NOT NULL,
+    url text NOT NULL,
+    ord integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT engine_tracker_endpoints_kind_check CHECK ((kind = ANY (ARRAY['default'::text, 'extra'::text])))
+);
+
+
+--
+-- Name: engine_tracker_endpoints_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.engine_tracker_endpoints_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: engine_tracker_endpoints_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.engine_tracker_endpoints_id_seq OWNED BY public.engine_tracker_endpoints.id;
+
+
+--
+-- Name: fs_policy; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fs_policy (
+    id uuid NOT NULL,
+    library_root text NOT NULL,
+    "extract" boolean DEFAULT false NOT NULL,
+    par2 text DEFAULT 'off'::text NOT NULL,
+    flatten boolean DEFAULT false NOT NULL,
+    move_mode text DEFAULT 'hardlink'::text NOT NULL,
+    chmod_file text,
+    chmod_dir text,
+    owner text,
+    "group" text,
+    umask text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT fs_policy_singleton CHECK ((id = '00000000-0000-0000-0000-000000000003'::uuid))
+);
+
+
+--
+-- Name: fs_policy_list_values; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fs_policy_list_values (
+    policy_id uuid NOT NULL,
+    kind text NOT NULL,
+    ord integer NOT NULL,
+    value text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT fs_policy_list_values_kind_check CHECK ((kind = ANY (ARRAY['cleanup_keep'::text, 'cleanup_drop'::text, 'allow_paths'::text])))
+);
+
+
+--
+-- Name: import_indexer_result; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.import_indexer_result (
+    import_indexer_result_id bigint NOT NULL,
+    import_job_id bigint NOT NULL,
+    prowlarr_identifier character varying(256) NOT NULL,
+    upstream_slug character varying(128),
+    indexer_instance_id bigint,
+    status public.import_indexer_result_status NOT NULL,
+    detail character varying(512),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    resolved_is_enabled boolean,
+    resolved_priority integer,
+    missing_secret_fields integer DEFAULT 0 NOT NULL,
+    CONSTRAINT import_indexer_result_missing_secret_fields_check CHECK ((missing_secret_fields >= 0)),
+    CONSTRAINT import_indexer_result_resolved_priority_check CHECK (((resolved_priority IS NULL) OR ((resolved_priority >= 0) AND (resolved_priority <= 100))))
+);
+
+
+--
+-- Name: import_indexer_result_import_indexer_result_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.import_indexer_result ALTER COLUMN import_indexer_result_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.import_indexer_result_import_indexer_result_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: import_indexer_result_media_domain; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.import_indexer_result_media_domain (
+    import_indexer_result_media_domain_id bigint NOT NULL,
+    import_indexer_result_id bigint NOT NULL,
+    media_domain_id bigint NOT NULL
+);
+
+
+--
+-- Name: import_indexer_result_media_d_import_indexer_result_media_d_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.import_indexer_result_media_domain ALTER COLUMN import_indexer_result_media_domain_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.import_indexer_result_media_d_import_indexer_result_media_d_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: import_indexer_result_tag; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.import_indexer_result_tag (
+    import_indexer_result_tag_id bigint NOT NULL,
+    import_indexer_result_id bigint NOT NULL,
+    tag_id bigint NOT NULL
+);
+
+
+--
+-- Name: import_indexer_result_tag_import_indexer_result_tag_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.import_indexer_result_tag ALTER COLUMN import_indexer_result_tag_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.import_indexer_result_tag_import_indexer_result_tag_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: import_job; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.import_job (
+    import_job_id bigint NOT NULL,
+    import_job_public_id uuid NOT NULL,
+    target_search_profile_id bigint,
+    target_torznab_instance_id bigint,
+    created_by_user_id bigint NOT NULL,
+    source public.import_source NOT NULL,
+    is_dry_run boolean DEFAULT false NOT NULL,
+    status public.import_job_status NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    error_detail character varying(1024),
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: import_job_import_job_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.import_job ALTER COLUMN import_job_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.import_job_import_job_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_cf_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_cf_state (
+    indexer_cf_state_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    state public.cf_state NOT NULL,
+    last_changed_at timestamp with time zone NOT NULL,
+    cf_session_id character varying(256),
+    cf_session_expires_at timestamp with time zone,
+    cooldown_until timestamp with time zone,
+    backoff_seconds integer,
+    consecutive_failures integer DEFAULT 0 NOT NULL,
+    last_error_class public.error_class,
+    CONSTRAINT indexer_cf_state_backoff_seconds_check CHECK (((backoff_seconds IS NULL) OR (backoff_seconds >= 0))),
+    CONSTRAINT indexer_cf_state_consecutive_failures_check CHECK ((consecutive_failures >= 0))
+);
+
+
+--
+-- Name: indexer_cf_state_indexer_cf_state_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_cf_state ALTER COLUMN indexer_cf_state_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_cf_state_indexer_cf_state_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_connectivity_profile; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_connectivity_profile (
+    indexer_instance_id bigint NOT NULL,
+    status public.connectivity_status NOT NULL,
+    error_class public.error_class,
+    latency_p50_ms integer,
+    latency_p95_ms integer,
+    success_rate_1h numeric(5,4),
+    success_rate_24h numeric(5,4),
+    last_checked_at timestamp with time zone NOT NULL,
+    CONSTRAINT indexer_connectivity_profile_error_class_chk CHECK ((((status = 'healthy'::public.connectivity_status) AND (error_class IS NULL)) OR (status <> 'healthy'::public.connectivity_status))),
+    CONSTRAINT indexer_connectivity_profile_latency_p50_ms_check CHECK (((latency_p50_ms IS NULL) OR (latency_p50_ms >= 0))),
+    CONSTRAINT indexer_connectivity_profile_latency_p95_ms_check CHECK (((latency_p95_ms IS NULL) OR (latency_p95_ms >= 0))),
+    CONSTRAINT indexer_connectivity_profile_success_rate_1h_check CHECK (((success_rate_1h IS NULL) OR ((success_rate_1h >= (0)::numeric) AND (success_rate_1h <= (1)::numeric)))),
+    CONSTRAINT indexer_connectivity_profile_success_rate_24h_check CHECK (((success_rate_24h IS NULL) OR ((success_rate_24h >= (0)::numeric) AND (success_rate_24h <= (1)::numeric))))
+);
+
+
+--
+-- Name: indexer_definition; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_definition (
+    indexer_definition_id bigint NOT NULL,
+    upstream_source public.upstream_source NOT NULL,
+    upstream_slug character varying(128) NOT NULL,
+    display_name character varying(256) NOT NULL,
+    protocol public.protocol NOT NULL,
+    engine public.engine NOT NULL,
+    schema_version integer NOT NULL,
+    definition_hash character(64) NOT NULL,
+    is_deprecated boolean NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT indexer_definition_hash_hex CHECK ((definition_hash ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT indexer_definition_hash_lc CHECK (((definition_hash)::text = lower((definition_hash)::text))),
+    CONSTRAINT indexer_definition_slug_lc CHECK (((upstream_slug)::text = lower((upstream_slug)::text)))
+);
+
+
+--
+-- Name: indexer_definition_field; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_definition_field (
+    indexer_definition_field_id bigint NOT NULL,
+    indexer_definition_id bigint NOT NULL,
+    name character varying(128) NOT NULL,
+    label character varying(256) NOT NULL,
+    field_type public.field_type NOT NULL,
+    is_required boolean NOT NULL,
+    is_advanced boolean NOT NULL,
+    display_order integer DEFAULT 1000 NOT NULL,
+    default_value_plain character varying(512),
+    default_value_int integer,
+    default_value_decimal numeric(12,4),
+    default_value_bool boolean,
+    CONSTRAINT indexer_definition_field_default_single_chk CHECK (((((((default_value_plain IS NOT NULL))::integer + ((default_value_int IS NOT NULL))::integer) + ((default_value_decimal IS NOT NULL))::integer) + ((default_value_bool IS NOT NULL))::integer) <= 1)),
+    CONSTRAINT indexer_definition_field_name_lc CHECK (((name)::text = lower((name)::text))),
+    CONSTRAINT indexer_definition_field_secret_default_chk CHECK (((field_type <> ALL (ARRAY['password'::public.field_type, 'api_key'::public.field_type, 'cookie'::public.field_type, 'token'::public.field_type, 'header_value'::public.field_type])) OR ((default_value_plain IS NULL) AND (default_value_int IS NULL) AND (default_value_decimal IS NULL) AND (default_value_bool IS NULL))))
+);
+
+
+--
+-- Name: indexer_definition_field_indexer_definition_field_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_definition_field ALTER COLUMN indexer_definition_field_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_definition_field_indexer_definition_field_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_definition_field_option; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_definition_field_option (
+    indexer_definition_field_option_id bigint NOT NULL,
+    indexer_definition_field_id bigint NOT NULL,
+    option_value character varying(128) NOT NULL,
+    option_label character varying(256) NOT NULL,
+    sort_order integer NOT NULL
+);
+
+
+--
+-- Name: indexer_definition_field_opti_indexer_definition_field_opti_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_definition_field_option ALTER COLUMN indexer_definition_field_option_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_definition_field_opti_indexer_definition_field_opti_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_definition_field_validation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_definition_field_validation (
+    indexer_definition_field_validation_id bigint NOT NULL,
+    indexer_definition_field_id bigint NOT NULL,
+    validation_type public.validation_type NOT NULL,
+    int_value integer,
+    numeric_value numeric(12,4),
+    text_value character varying(512),
+    text_value_norm character varying(512) GENERATED ALWAYS AS (
+CASE
+    WHEN (text_value IS NULL) THEN NULL::text
+    WHEN (validation_type = 'regex'::public.validation_type) THEN TRIM(BOTH FROM text_value)
+    ELSE lower(TRIM(BOTH FROM text_value))
+END) STORED,
+    value_set_id bigint,
+    depends_on_field_name character varying(128),
+    depends_on_operator public.depends_on_operator,
+    depends_on_value_plain character varying(512),
+    depends_on_value_plain_norm character varying(512) GENERATED ALWAYS AS (
+CASE
+    WHEN (depends_on_value_plain IS NULL) THEN NULL::text
+    ELSE lower(TRIM(BOTH FROM depends_on_value_plain))
+END) STORED,
+    depends_on_value_int integer,
+    depends_on_value_bool boolean,
+    depends_on_value_set_id bigint,
+    CONSTRAINT indexer_definition_field_validation_allowed_value_chk CHECK (((validation_type <> 'allowed_value'::public.validation_type) OR (((text_value IS NOT NULL) AND (value_set_id IS NULL)) OR ((text_value IS NULL) AND (value_set_id IS NOT NULL))))),
+    CONSTRAINT indexer_definition_field_validation_depends_name_lc CHECK (((depends_on_field_name IS NULL) OR ((depends_on_field_name)::text = lower((depends_on_field_name)::text)))),
+    CONSTRAINT indexer_definition_field_validation_min_len_chk CHECK (((validation_type <> ALL (ARRAY['min_length'::public.validation_type, 'max_length'::public.validation_type])) OR ((int_value IS NOT NULL) AND (int_value >= 0)))),
+    CONSTRAINT indexer_definition_field_validation_min_val_chk CHECK (((validation_type <> ALL (ARRAY['min_value'::public.validation_type, 'max_value'::public.validation_type])) OR (numeric_value IS NOT NULL))),
+    CONSTRAINT indexer_definition_field_validation_regex_chk CHECK (((validation_type <> 'regex'::public.validation_type) OR (text_value IS NOT NULL))),
+    CONSTRAINT indexer_definition_field_validation_required_if_chk CHECK (((validation_type <> 'required_if_field_equals'::public.validation_type) OR ((depends_on_field_name IS NOT NULL) AND (depends_on_operator IS NOT NULL) AND ((((((depends_on_value_plain IS NOT NULL))::integer + ((depends_on_value_int IS NOT NULL))::integer) + ((depends_on_value_bool IS NOT NULL))::integer) + ((depends_on_value_set_id IS NOT NULL))::integer) = 1))))
+);
+
+
+--
+-- Name: indexer_definition_field_vali_indexer_definition_field_vali_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_definition_field_validation ALTER COLUMN indexer_definition_field_validation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_definition_field_vali_indexer_definition_field_vali_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_definition_field_value_set; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_definition_field_value_set (
+    value_set_id bigint NOT NULL,
+    indexer_definition_field_validation_id bigint NOT NULL,
+    value_set_type public.value_set_type NOT NULL,
+    name character varying(256),
+    CONSTRAINT indexer_definition_field_value_set_type_chk CHECK ((value_set_type = ANY (ARRAY['text'::public.value_set_type, 'int'::public.value_set_type, 'bigint'::public.value_set_type])))
+);
+
+
+--
+-- Name: indexer_definition_field_value_set_item; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_definition_field_value_set_item (
+    value_set_item_id bigint NOT NULL,
+    value_set_id bigint NOT NULL,
+    value_text character varying(256),
+    value_int integer,
+    value_bigint bigint,
+    CONSTRAINT indexer_definition_field_value_set_item_single_chk CHECK ((((((value_text IS NOT NULL))::integer + ((value_int IS NOT NULL))::integer) + ((value_bigint IS NOT NULL))::integer) = 1)),
+    CONSTRAINT indexer_definition_field_value_set_item_text_lc CHECK (((value_text IS NULL) OR ((value_text)::text = lower((value_text)::text))))
+);
+
+
+--
+-- Name: indexer_definition_field_value_set_item_value_set_item_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_definition_field_value_set_item ALTER COLUMN value_set_item_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_definition_field_value_set_item_value_set_item_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_definition_field_value_set_value_set_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_definition_field_value_set ALTER COLUMN value_set_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_definition_field_value_set_value_set_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_definition_indexer_definition_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_definition ALTER COLUMN indexer_definition_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_definition_indexer_definition_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_health_event; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_health_event (
+    indexer_health_event_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    occurred_at timestamp with time zone NOT NULL,
+    event_type public.health_event_type NOT NULL,
+    latency_ms integer,
+    http_status integer,
+    error_class public.error_class,
+    detail character varying(1024),
+    CONSTRAINT indexer_health_event_latency_ms_check CHECK (((latency_ms IS NULL) OR (latency_ms >= 0)))
+);
+
+
+--
+-- Name: indexer_health_event_indexer_health_event_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_health_event ALTER COLUMN indexer_health_event_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_health_event_indexer_health_event_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_health_notification_hook; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_health_notification_hook (
+    indexer_health_notification_hook_id bigint NOT NULL,
+    indexer_health_notification_hook_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    channel public.indexer_health_notification_channel NOT NULL,
+    display_name character varying(120) NOT NULL,
+    status_threshold public.indexer_health_notification_threshold DEFAULT 'failing'::public.indexer_health_notification_threshold NOT NULL,
+    webhook_url character varying(2048),
+    email character varying(320),
+    email_normalized character varying(320),
+    is_enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    CONSTRAINT indexer_health_notification_hook_channel_payload_ck CHECK ((((channel = 'webhook'::public.indexer_health_notification_channel) AND (webhook_url IS NOT NULL) AND (email IS NULL) AND (email_normalized IS NULL)) OR ((channel = 'email'::public.indexer_health_notification_channel) AND (webhook_url IS NULL) AND (email IS NOT NULL) AND (email_normalized IS NOT NULL)))),
+    CONSTRAINT indexer_health_notification_hook_email_normalized_lc CHECK (((email_normalized IS NULL) OR ((email_normalized)::text = lower(TRIM(BOTH FROM email_normalized)))))
+);
+
+
+--
+-- Name: indexer_health_notification_h_indexer_health_notification_h_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_health_notification_hook ALTER COLUMN indexer_health_notification_hook_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_health_notification_h_indexer_health_notification_h_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_instance; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_instance (
+    indexer_instance_id bigint NOT NULL,
+    indexer_instance_public_id uuid NOT NULL,
+    indexer_definition_id bigint NOT NULL,
+    display_name character varying(256) NOT NULL,
+    is_enabled boolean NOT NULL,
+    migration_state public.indexer_instance_migration_state,
+    migration_detail character varying(256),
+    enable_rss boolean DEFAULT true NOT NULL,
+    enable_automatic_search boolean DEFAULT true NOT NULL,
+    enable_interactive_search boolean DEFAULT true NOT NULL,
+    priority integer DEFAULT 50 NOT NULL,
+    trust_tier_key public.trust_tier_key,
+    routing_policy_id bigint,
+    connect_timeout_ms integer DEFAULT 5000 NOT NULL,
+    read_timeout_ms integer DEFAULT 15000 NOT NULL,
+    max_parallel_requests integer DEFAULT 2 NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT indexer_instance_connect_timeout_ms_check CHECK (((connect_timeout_ms >= 500) AND (connect_timeout_ms <= 60000))),
+    CONSTRAINT indexer_instance_max_parallel_requests_check CHECK (((max_parallel_requests >= 1) AND (max_parallel_requests <= 16))),
+    CONSTRAINT indexer_instance_priority_check CHECK (((priority >= 0) AND (priority <= 100))),
+    CONSTRAINT indexer_instance_read_timeout_ms_check CHECK (((read_timeout_ms >= 500) AND (read_timeout_ms <= 120000)))
+);
+
+
+--
+-- Name: indexer_instance_field_value; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_instance_field_value (
+    indexer_instance_field_value_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    field_name character varying(128) NOT NULL,
+    field_type public.field_type NOT NULL,
+    value_plain character varying(2048),
+    value_int integer,
+    value_decimal numeric(12,4),
+    value_bool boolean,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    CONSTRAINT indexer_instance_field_name_lc CHECK (((field_name)::text = lower((field_name)::text))),
+    CONSTRAINT indexer_instance_field_name_len_chk CHECK (((length((field_name)::text) >= 1) AND (length((field_name)::text) <= 128))),
+    CONSTRAINT indexer_instance_field_value_non_secret_chk CHECK (((field_type = ANY (ARRAY['password'::public.field_type, 'api_key'::public.field_type, 'cookie'::public.field_type, 'token'::public.field_type, 'header_value'::public.field_type])) OR ((((((value_plain IS NOT NULL))::integer + ((value_int IS NOT NULL))::integer) + ((value_decimal IS NOT NULL))::integer) + ((value_bool IS NOT NULL))::integer) = 1))),
+    CONSTRAINT indexer_instance_field_value_secret_chk CHECK (((field_type <> ALL (ARRAY['password'::public.field_type, 'api_key'::public.field_type, 'cookie'::public.field_type, 'token'::public.field_type, 'header_value'::public.field_type])) OR ((value_plain IS NULL) AND (value_int IS NULL) AND (value_decimal IS NULL) AND (value_bool IS NULL))))
+);
+
+
+--
+-- Name: indexer_instance_field_value_indexer_instance_field_value_i_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_instance_field_value ALTER COLUMN indexer_instance_field_value_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_instance_field_value_indexer_instance_field_value_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_instance_import_blob; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_instance_import_blob (
+    indexer_instance_import_blob_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    source_system public.import_source_system NOT NULL,
+    import_payload_text text NOT NULL,
+    import_payload_format public.import_payload_format NOT NULL,
+    imported_at timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: indexer_instance_import_blob_indexer_instance_import_blob_i_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_instance_import_blob ALTER COLUMN indexer_instance_import_blob_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_instance_import_blob_indexer_instance_import_blob_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_instance_indexer_instance_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_instance ALTER COLUMN indexer_instance_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_instance_indexer_instance_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_instance_media_domain; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_instance_media_domain (
+    indexer_instance_media_domain_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    media_domain_id bigint NOT NULL
+);
+
+
+--
+-- Name: indexer_instance_media_domain_indexer_instance_media_domain_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_instance_media_domain ALTER COLUMN indexer_instance_media_domain_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_instance_media_domain_indexer_instance_media_domain_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_instance_rate_limit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_instance_rate_limit (
+    indexer_instance_rate_limit_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    rate_limit_policy_id bigint NOT NULL
+);
+
+
+--
+-- Name: indexer_instance_rate_limit_indexer_instance_rate_limit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_instance_rate_limit ALTER COLUMN indexer_instance_rate_limit_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_instance_rate_limit_indexer_instance_rate_limit_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_instance_tag; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_instance_tag (
+    indexer_instance_tag_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    tag_id bigint NOT NULL
+);
+
+
+--
+-- Name: indexer_instance_tag_indexer_instance_tag_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_instance_tag ALTER COLUMN indexer_instance_tag_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_instance_tag_indexer_instance_tag_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_rss_item_seen; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_rss_item_seen (
+    rss_item_seen_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    item_guid character varying(256),
+    infohash_v1 character(40),
+    infohash_v2 character(64),
+    magnet_hash character(64),
+    first_seen_at timestamp with time zone NOT NULL,
+    CONSTRAINT indexer_rss_item_seen_identifier_chk CHECK (((item_guid IS NOT NULL) OR (infohash_v1 IS NOT NULL) OR (infohash_v2 IS NOT NULL) OR (magnet_hash IS NOT NULL))),
+    CONSTRAINT indexer_rss_item_seen_infohash_v1_chk CHECK (((infohash_v1 IS NULL) OR (infohash_v1 ~ '^[0-9a-f]{40}$'::text))),
+    CONSTRAINT indexer_rss_item_seen_infohash_v2_chk CHECK (((infohash_v2 IS NULL) OR (infohash_v2 ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT indexer_rss_item_seen_magnet_hash_chk CHECK (((magnet_hash IS NULL) OR (magnet_hash ~ '^[0-9a-f]{64}$'::text)))
+);
+
+
+--
+-- Name: indexer_rss_item_seen_rss_item_seen_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_rss_item_seen ALTER COLUMN rss_item_seen_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_rss_item_seen_rss_item_seen_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_rss_subscription; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_rss_subscription (
+    indexer_rss_subscription_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    is_enabled boolean DEFAULT true NOT NULL,
+    interval_seconds integer DEFAULT 900 NOT NULL,
+    last_polled_at timestamp with time zone,
+    next_poll_at timestamp with time zone,
+    backoff_seconds integer,
+    last_error_class public.error_class,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT indexer_rss_subscription_interval_seconds_check CHECK (((interval_seconds >= 300) AND (interval_seconds <= 86400))),
+    CONSTRAINT indexer_rss_subscription_next_poll_chk CHECK ((((is_enabled = true) AND (next_poll_at IS NOT NULL)) OR ((is_enabled = false) AND (next_poll_at IS NULL))))
+);
+
+
+--
+-- Name: indexer_rss_subscription_indexer_rss_subscription_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_rss_subscription ALTER COLUMN indexer_rss_subscription_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_rss_subscription_indexer_rss_subscription_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: indexer_run_cursor; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indexer_run_cursor (
+    indexer_run_cursor_id bigint NOT NULL,
+    search_request_indexer_run_id bigint NOT NULL,
+    cursor_type public.cursor_type NOT NULL,
+    "offset" integer,
+    "limit" integer,
+    page integer,
+    since timestamp with time zone,
+    opaque_token character varying(1024),
+    CONSTRAINT indexer_run_cursor_limit_chk CHECK ((("limit" IS NULL) OR ("limit" > 0))),
+    CONSTRAINT indexer_run_cursor_offset_chk CHECK ((("offset" IS NULL) OR ("offset" >= 0))),
+    CONSTRAINT indexer_run_cursor_page_chk CHECK (((page IS NULL) OR (page > 0))),
+    CONSTRAINT indexer_run_cursor_type_fields_chk CHECK ((((cursor_type = 'offset_limit'::public.cursor_type) AND ("offset" IS NOT NULL) AND ("limit" IS NOT NULL) AND (page IS NULL) AND (since IS NULL) AND (opaque_token IS NULL)) OR ((cursor_type = 'page_number'::public.cursor_type) AND (page IS NOT NULL) AND ("offset" IS NULL) AND ("limit" IS NULL) AND (since IS NULL) AND (opaque_token IS NULL)) OR ((cursor_type = 'since_time'::public.cursor_type) AND (since IS NOT NULL) AND ("offset" IS NULL) AND ("limit" IS NULL) AND (page IS NULL) AND (opaque_token IS NULL)) OR ((cursor_type = 'opaque_token'::public.cursor_type) AND (opaque_token IS NOT NULL) AND ("offset" IS NULL) AND ("limit" IS NULL) AND (page IS NULL) AND (since IS NULL))))
+);
+
+
+--
+-- Name: indexer_run_cursor_indexer_run_cursor_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indexer_run_cursor ALTER COLUMN indexer_run_cursor_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_run_cursor_indexer_run_cursor_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: job_schedule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.job_schedule (
+    job_schedule_id bigint NOT NULL,
+    job_key public.job_key NOT NULL,
+    cadence_seconds integer NOT NULL,
+    jitter_seconds integer DEFAULT 0 NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    last_run_at timestamp with time zone,
+    next_run_at timestamp with time zone NOT NULL,
+    locked_until timestamp with time zone,
+    lock_owner character varying(128),
+    CONSTRAINT job_schedule_cadence_seconds_check CHECK (((cadence_seconds >= 30) AND (cadence_seconds <= 604800))),
+    CONSTRAINT job_schedule_check CHECK (((jitter_seconds >= 0) AND (jitter_seconds <= cadence_seconds)))
+);
+
+
+--
+-- Name: job_schedule_job_schedule_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.job_schedule ALTER COLUMN job_schedule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.job_schedule_job_schedule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_capability_snapshot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_capability_snapshot (
+    media_capability_snapshot_id bigint NOT NULL,
+    ffmpeg_version text NOT NULL,
+    ffprobe_version text NOT NULL,
+    codec_name text NOT NULL,
+    encode_supported boolean DEFAULT false NOT NULL,
+    decode_supported boolean DEFAULT true NOT NULL,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    observed_by_user_id bigint NOT NULL,
+    snapshot_run_public_id uuid NOT NULL,
+    CONSTRAINT media_capability_codec_nonempty CHECK ((btrim(codec_name) <> ''::text)),
+    CONSTRAINT media_capability_versions_nonempty CHECK (((btrim(ffmpeg_version) <> ''::text) AND (btrim(ffprobe_version) <> ''::text)))
+);
+
+
+--
+-- Name: media_capability_snapshot_encoder; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_capability_snapshot_encoder (
+    media_capability_snapshot_encoder_id bigint NOT NULL,
+    snapshot_run_public_id uuid NOT NULL,
+    encoder_name text NOT NULL,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    observed_by_user_id bigint NOT NULL,
+    CONSTRAINT media_capability_snapshot_encoder_name_nonempty CHECK ((btrim(encoder_name) <> ''::text))
+);
+
+
+--
+-- Name: media_capability_snapshot_enc_media_capability_snapshot_enc_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_capability_snapshot_encoder ALTER COLUMN media_capability_snapshot_encoder_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_capability_snapshot_enc_media_capability_snapshot_enc_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_capability_snapshot_feature; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_capability_snapshot_feature (
+    media_capability_snapshot_feature_id bigint NOT NULL,
+    snapshot_run_public_id uuid NOT NULL,
+    feature_family text NOT NULL,
+    feature_name text NOT NULL,
+    supported boolean DEFAULT true NOT NULL,
+    detail_text text,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    observed_by_user_id bigint NOT NULL,
+    CONSTRAINT media_capability_snapshot_feature_family_nonempty CHECK ((btrim(feature_family) <> ''::text)),
+    CONSTRAINT media_capability_snapshot_feature_name_nonempty CHECK ((btrim(feature_name) <> ''::text))
+);
+
+
+--
+-- Name: media_capability_snapshot_fea_media_capability_snapshot_fea_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_capability_snapshot_feature ALTER COLUMN media_capability_snapshot_feature_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_capability_snapshot_fea_media_capability_snapshot_fea_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_capability_snapshot_media_capability_snapshot_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_capability_snapshot ALTER COLUMN media_capability_snapshot_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_capability_snapshot_media_capability_snapshot_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_capability_snapshot_run; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_capability_snapshot_run (
+    snapshot_run_public_id uuid NOT NULL,
+    status text NOT NULL,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    observed_by_user_id bigint NOT NULL,
+    error_code text,
+    CONSTRAINT media_capability_snapshot_run_error_nonempty CHECK (((error_code IS NULL) OR (btrim(error_code) <> ''::text))),
+    CONSTRAINT media_capability_snapshot_run_status_known CHECK ((status = ANY (ARRAY[public.media_capability_run_status_running_v1(), public.media_capability_run_status_completed_v1(), public.media_capability_run_status_failed_v1()])))
+);
+
+
+--
+-- Name: media_compatibility_target; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_compatibility_target (
+    media_compatibility_target_id bigint NOT NULL,
+    compatibility_target_key text NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    display_name text NOT NULL,
+    video_codec text NOT NULL,
+    audio_codec text NOT NULL,
+    subtitle_policy text DEFAULT public.media_subtitle_policy_selected_v1() NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    audio_channels integer,
+    audio_channel_layout text,
+    CONSTRAINT media_compatibility_target_audio_channels_positive CHECK (((audio_channels IS NULL) OR (audio_channels > 0))),
+    CONSTRAINT media_compatibility_target_audio_layout_count_matches CHECK (((audio_channel_layout IS NULL) OR (audio_channels IS NULL) OR (public.media_audio_channel_layout_count_v1(audio_channel_layout) = audio_channels))),
+    CONSTRAINT media_compatibility_target_audio_layout_known CHECK (((audio_channel_layout IS NULL) OR (public.media_audio_channel_layout_count_v1(audio_channel_layout) IS NOT NULL))),
+    CONSTRAINT media_compatibility_target_audio_layout_nonempty CHECK (((audio_channel_layout IS NULL) OR (NULLIF(btrim(audio_channel_layout), ''::text) IS NOT NULL))),
+    CONSTRAINT media_compatibility_target_codecs_nonempty CHECK (((btrim(video_codec) <> ''::text) AND (btrim(audio_codec) <> ''::text))),
+    CONSTRAINT media_compatibility_target_display_contract CHECK (public.media_display_valid_v1(display_name)),
+    CONSTRAINT media_compatibility_target_display_nonempty CHECK ((btrim(display_name) <> ''::text)),
+    CONSTRAINT media_compatibility_target_key_contract CHECK (public.media_key_valid_v1(compatibility_target_key)),
+    CONSTRAINT media_compatibility_target_key_nonempty CHECK ((btrim(compatibility_target_key) <> ''::text)),
+    CONSTRAINT media_compatibility_target_subtitle_policy_known CHECK ((subtitle_policy = ANY (ARRAY[public.media_subtitle_policy_selected_v1(), public.media_subtitle_policy_all_v1(), public.media_subtitle_policy_none_v1()]))),
+    CONSTRAINT media_compatibility_target_version_positive CHECK ((version > 0))
+);
+
+
+--
+-- Name: media_compatibility_target_media_compatibility_target_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_compatibility_target ALTER COLUMN media_compatibility_target_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_compatibility_target_media_compatibility_target_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_desired_target_audio_stream; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_desired_target_audio_stream (
+    media_desired_target_stream_id bigint NOT NULL,
+    channel_count integer,
+    channel_layout text,
+    audio_bitrate_bps integer,
+    audio_sample_rate_hz integer,
+    audio_loudness_profile text,
+    audio_dynamic_range text,
+    CONSTRAINT media_desired_target_audio_bitrate_positive CHECK (((audio_bitrate_bps IS NULL) OR (audio_bitrate_bps > 0))),
+    CONSTRAINT media_desired_target_audio_channels_positive CHECK (((channel_count IS NULL) OR (channel_count > 0))),
+    CONSTRAINT media_desired_target_audio_dynamic_range_known CHECK (((audio_dynamic_range IS NULL) OR (audio_dynamic_range = ANY (ARRAY['preserve'::text, 'speech'::text])))),
+    CONSTRAINT media_desired_target_audio_layout_count_matches CHECK (((channel_layout IS NULL) OR (channel_count IS NULL) OR (public.media_audio_channel_layout_count_v1(channel_layout) = channel_count))),
+    CONSTRAINT media_desired_target_audio_layout_known CHECK (((channel_layout IS NULL) OR (public.media_audio_channel_layout_count_v1(channel_layout) IS NOT NULL))),
+    CONSTRAINT media_desired_target_audio_layout_nonempty CHECK (((channel_layout IS NULL) OR (btrim(channel_layout) <> ''::text))),
+    CONSTRAINT media_desired_target_audio_loudness_profile_known CHECK (((audio_loudness_profile IS NULL) OR (audio_loudness_profile = 'dialog-normalized'::text))),
+    CONSTRAINT media_desired_target_audio_sample_rate_positive CHECK (((audio_sample_rate_hz IS NULL) OR (audio_sample_rate_hz > 0)))
+);
+
+
+--
+-- Name: media_desired_target_container; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_desired_target_container (
+    media_desired_target_profile_id bigint NOT NULL,
+    container_format text NOT NULL,
+    CONSTRAINT media_desired_target_container_format_nonempty CHECK ((btrim(container_format) <> ''::text))
+);
+
+
+--
+-- Name: media_desired_target_profile; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_desired_target_profile (
+    media_desired_target_profile_id bigint NOT NULL,
+    media_desired_target_profile_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    target_key text NOT NULL,
+    version integer NOT NULL,
+    display_name text NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    activated_at timestamp with time zone,
+    CONSTRAINT media_desired_target_profile_display_contract CHECK (public.media_display_valid_v1(display_name)),
+    CONSTRAINT media_desired_target_profile_display_nonempty CHECK ((btrim(display_name) <> ''::text)),
+    CONSTRAINT media_desired_target_profile_key_contract CHECK (public.media_key_valid_v1(target_key)),
+    CONSTRAINT media_desired_target_profile_key_nonempty CHECK ((btrim(target_key) <> ''::text)),
+    CONSTRAINT media_desired_target_profile_version_positive CHECK ((version > 0))
+);
+
+
+--
+-- Name: media_desired_target_profile_media_desired_target_profile_i_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_desired_target_profile ALTER COLUMN media_desired_target_profile_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_desired_target_profile_media_desired_target_profile_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_desired_target_stream; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_desired_target_stream (
+    media_desired_target_stream_id bigint NOT NULL,
+    media_desired_target_profile_id bigint NOT NULL,
+    stream_key text NOT NULL,
+    stream_kind text NOT NULL,
+    semantic_role text,
+    language_code text,
+    optional boolean DEFAULT false NOT NULL,
+    sort_order integer NOT NULL,
+    codec text NOT NULL,
+    title text,
+    default_disposition boolean DEFAULT false NOT NULL,
+    forced_disposition boolean DEFAULT false NOT NULL,
+    subtitle_placement text,
+    image_subtitle_action text,
+    video_profile text,
+    video_level text,
+    video_bitrate_bps integer,
+    color_primaries text,
+    color_transfer text,
+    color_space text,
+    hdr_format text,
+    CONSTRAINT media_desired_target_stream_codec_nonempty CHECK ((btrim(codec) <> ''::text)),
+    CONSTRAINT media_desired_target_stream_forced_subtitle_only CHECK (((NOT forced_disposition) OR (stream_kind = 'subtitle'::text))),
+    CONSTRAINT media_desired_target_stream_hdr_format_known CHECK (((hdr_format IS NULL) OR (hdr_format = 'hdr10'::text))),
+    CONSTRAINT media_desired_target_stream_key_contract CHECK (public.media_key_valid_v1(stream_key)),
+    CONSTRAINT media_desired_target_stream_key_nonempty CHECK ((btrim(stream_key) <> ''::text)),
+    CONSTRAINT media_desired_target_stream_kind_known CHECK ((stream_kind = ANY (ARRAY['video'::text, 'audio'::text, 'subtitle'::text]))),
+    CONSTRAINT media_desired_target_stream_language_nonempty CHECK (((language_code IS NULL) OR (btrim(language_code) <> ''::text))),
+    CONSTRAINT media_desired_target_stream_role_known CHECK (((semantic_role IS NULL) OR (semantic_role = ANY (ARRAY['primary'::text, 'forced'::text, 'commentary'::text, 'descriptive_audio'::text, 'sdh'::text, 'signs_songs'::text, 'karaoke'::text, 'unknown'::text])))),
+    CONSTRAINT media_desired_target_stream_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_desired_target_stream_subtitle_shape CHECK ((((stream_kind = 'subtitle'::text) AND (subtitle_placement = ANY (ARRAY['embedded'::text, 'sidecar'::text, 'both'::text, 'none'::text])) AND (image_subtitle_action = ANY (ARRAY['preserve'::text, 'remove'::text, 'fail'::text]))) OR ((stream_kind <> 'subtitle'::text) AND (subtitle_placement IS NULL) AND (image_subtitle_action IS NULL)))),
+    CONSTRAINT media_desired_target_stream_title_contract CHECK (((title IS NULL) OR public.media_display_valid_v1(title))),
+    CONSTRAINT media_desired_target_stream_video_color_known CHECK ((public.media_video_color_value_known_v1('color_primaries'::text, color_primaries) AND public.media_video_color_value_known_v1('color_transfer'::text, color_transfer) AND public.media_video_color_value_known_v1('color_space'::text, color_space))),
+    CONSTRAINT media_desired_target_stream_video_level_known CHECK (public.media_video_level_known_v1(codec, video_level)),
+    CONSTRAINT media_desired_target_stream_video_shape CHECK ((((stream_kind = 'video'::text) AND ((video_bitrate_bps IS NULL) OR (video_bitrate_bps > 0))) OR ((stream_kind <> 'video'::text) AND (video_profile IS NULL) AND (video_level IS NULL) AND (video_bitrate_bps IS NULL) AND (color_primaries IS NULL) AND (color_transfer IS NULL) AND (color_space IS NULL) AND (hdr_format IS NULL))))
+);
+
+
+--
+-- Name: media_desired_target_stream_media_desired_target_stream_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_desired_target_stream ALTER COLUMN media_desired_target_stream_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_desired_target_stream_media_desired_target_stream_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_discovery_schedule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_discovery_schedule (
+    media_discovery_schedule_id bigint NOT NULL,
+    media_discovery_schedule_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    media_profile_id bigint NOT NULL,
+    media_profile_root_id bigint NOT NULL,
+    interval_value integer NOT NULL,
+    interval_unit text NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    next_run_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_discovery_schedule_enabled_due CHECK (((NOT enabled) OR (next_run_at IS NOT NULL))),
+    CONSTRAINT media_discovery_schedule_interval_bounds CHECK (((interval_value >= 1) AND (interval_value <= 525600))),
+    CONSTRAINT media_discovery_schedule_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_discovery_schedule_unit_known CHECK ((interval_unit = ANY (ARRAY['minutes'::text, 'hours'::text, 'days'::text])))
+);
+
+
+--
+-- Name: media_discovery_schedule_media_discovery_schedule_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_discovery_schedule ALTER COLUMN media_discovery_schedule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_discovery_schedule_media_discovery_schedule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_discovery_source_fingerprint; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_discovery_source_fingerprint (
+    media_discovery_source_fingerprint_id bigint NOT NULL,
+    media_discovery_association_version_id bigint NOT NULL,
+    source_path text NOT NULL,
+    source_size_bytes bigint NOT NULL,
+    source_modified_ns bigint NOT NULL,
+    source_sha256 text NOT NULL,
+    last_media_job_public_id uuid,
+    first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    source_identity text NOT NULL,
+    source_changed_ns bigint NOT NULL,
+    CONSTRAINT media_discovery_source_identity_valid CHECK ((((source_identity IS NULL) AND (source_changed_ns IS NULL)) OR ((source_identity ~ '^[0-9a-f]{16}:[0-9a-f]{16}$'::text) AND (source_changed_ns >= 0)))),
+    CONSTRAINT media_discovery_source_modified_nonnegative CHECK ((source_modified_ns >= 0)),
+    CONSTRAINT media_discovery_source_path_nonempty CHECK ((btrim(source_path) <> ''::text)),
+    CONSTRAINT media_discovery_source_sha256_valid CHECK ((source_sha256 ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT media_discovery_source_size_nonnegative CHECK ((source_size_bytes >= 0))
+);
+
+
+--
+-- Name: media_discovery_source_finger_media_discovery_source_finger_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_discovery_source_fingerprint ALTER COLUMN media_discovery_source_fingerprint_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_discovery_source_finger_media_discovery_source_finger_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_discovery_watcher; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_discovery_watcher (
+    media_discovery_watcher_id bigint NOT NULL,
+    media_discovery_watcher_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    media_profile_id bigint NOT NULL,
+    media_profile_root_id bigint NOT NULL,
+    debounce_millis integer NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_discovery_watcher_debounce_bounds CHECK (((debounce_millis >= 100) AND (debounce_millis <= 600000))),
+    CONSTRAINT media_discovery_watcher_sort_nonnegative CHECK ((sort_order >= 0))
+);
+
+
+--
+-- Name: media_discovery_watcher_media_discovery_watcher_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_discovery_watcher ALTER COLUMN media_discovery_watcher_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_discovery_watcher_media_discovery_watcher_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_domain; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_domain (
+    media_domain_id bigint NOT NULL,
+    media_domain_key public.media_domain_key NOT NULL,
+    display_name character varying(256) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: media_domain_media_domain_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_domain ALTER COLUMN media_domain_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_domain_media_domain_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_domain_to_torznab_category; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_domain_to_torznab_category (
+    media_domain_to_torznab_category_id bigint NOT NULL,
+    media_domain_id bigint NOT NULL,
+    torznab_category_id bigint NOT NULL,
+    is_primary boolean DEFAULT false NOT NULL
+);
+
+
+--
+-- Name: media_domain_to_torznab_categ_media_domain_to_torznab_categ_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_domain_to_torznab_category ALTER COLUMN media_domain_to_torznab_category_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_domain_to_torznab_categ_media_domain_to_torznab_categ_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_job; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job (
+    media_job_id bigint NOT NULL,
+    media_job_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    media_profile_id bigint NOT NULL,
+    source_path text NOT NULL,
+    output_path text,
+    status public.media_job_status DEFAULT public.media_job_status_queued_v1() NOT NULL,
+    queued_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    last_error text,
+    dry_run boolean DEFAULT true NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    heartbeat_at timestamp with time zone,
+    intent_source_root text NOT NULL,
+    intent_output_root text NOT NULL,
+    intent_compatibility_target_key text,
+    intent_policy_key text NOT NULL,
+    intent_compatibility_target_id bigint,
+    intent_compatibility_target_version integer,
+    intent_target_video_codec text,
+    intent_target_audio_codec text,
+    intent_target_subtitle_policy text,
+    intent_policy_profile_id bigint,
+    intent_policy_version integer,
+    intent_policy_video_intent text,
+    intent_target_audio_channels integer,
+    intent_target_audio_channel_layout text,
+    intent_desired_target_profile_id bigint,
+    intent_desired_target_key text,
+    intent_desired_target_version integer,
+    intent_desired_container_format text,
+    intent_unmatched_stream_policy text,
+    cancel_generation bigint DEFAULT 0 NOT NULL,
+    cancel_acknowledged_generation bigint DEFAULT 0 NOT NULL,
+    intent_verification_strictness text DEFAULT 'balanced'::text NOT NULL,
+    intent_verification_duration_tolerance_millis bigint DEFAULT 1000 NOT NULL,
+    intent_verification_mux_validation boolean DEFAULT true NOT NULL,
+    intent_verification_decode_all_streams boolean DEFAULT true NOT NULL,
+    intent_verification_keyframe_seek boolean DEFAULT true NOT NULL,
+    intent_verification_playback_probe boolean DEFAULT false NOT NULL,
+    current_attempt_id bigint,
+    diagnostics_pruned_at timestamp with time zone,
+    intent_source_identity text,
+    intent_source_size_bytes bigint,
+    intent_source_modified_ns bigint,
+    intent_source_changed_ns bigint,
+    intent_source_sha256 text,
+    CONSTRAINT media_job_cancel_acknowledged_bounded CHECK ((cancel_acknowledged_generation <= cancel_generation)),
+    CONSTRAINT media_job_cancel_acknowledged_nonnegative CHECK ((cancel_acknowledged_generation >= 0)),
+    CONSTRAINT media_job_cancel_generation_nonnegative CHECK ((cancel_generation >= 0)),
+    CONSTRAINT media_job_compatibility_key_contract CHECK (((intent_compatibility_target_key IS NULL) OR public.media_key_valid_v1(intent_compatibility_target_key))),
+    CONSTRAINT media_job_desired_target_key_contract CHECK (((intent_desired_target_key IS NULL) OR public.media_key_valid_v1(intent_desired_target_key))),
+    CONSTRAINT media_job_diagnostics_pruned_terminal CHECK (((diagnostics_pruned_at IS NULL) OR (status = ANY (ARRAY[public.media_job_status_failed_v1(), public.media_job_status_cancelled_v1()])))),
+    CONSTRAINT media_job_intent_compatibility_target_nonempty CHECK (((intent_compatibility_target_key IS NULL) OR (btrim(intent_compatibility_target_key) <> ''::text))),
+    CONSTRAINT media_job_intent_desired_target_complete CHECK ((((intent_desired_target_profile_id IS NULL) AND (intent_desired_target_key IS NULL) AND (intent_desired_target_version IS NULL) AND (intent_desired_container_format IS NULL)) OR ((intent_desired_target_profile_id IS NOT NULL) AND (btrim(intent_desired_target_key) <> ''::text) AND (intent_desired_target_version > 0) AND (btrim(intent_desired_container_format) <> ''::text)))),
+    CONSTRAINT media_job_intent_policy_key_nonempty CHECK ((btrim(intent_policy_key) <> ''::text)),
+    CONSTRAINT media_job_intent_policy_nonempty CHECK (((intent_policy_profile_id IS NULL) OR ((intent_policy_version IS NOT NULL) AND (intent_policy_video_intent = ANY (ARRAY[public.media_policy_general_v1(), public.media_policy_anime_v1(), public.media_policy_archival_v1()]))))),
+    CONSTRAINT media_job_intent_roots_nonempty CHECK (((btrim(intent_source_root) <> ''::text) AND (btrim(intent_output_root) <> ''::text))),
+    CONSTRAINT media_job_intent_target_audio_channels_positive CHECK (((intent_target_audio_channels IS NULL) OR (intent_target_audio_channels > 0))),
+    CONSTRAINT media_job_intent_target_audio_layout_count_matches CHECK (((intent_target_audio_channel_layout IS NULL) OR (intent_target_audio_channels IS NULL) OR (public.media_audio_channel_layout_count_v1(intent_target_audio_channel_layout) = intent_target_audio_channels))),
+    CONSTRAINT media_job_intent_target_audio_layout_known CHECK (((intent_target_audio_channel_layout IS NULL) OR (public.media_audio_channel_layout_count_v1(intent_target_audio_channel_layout) IS NOT NULL))),
+    CONSTRAINT media_job_intent_target_audio_layout_nonempty CHECK (((intent_target_audio_channel_layout IS NULL) OR (NULLIF(btrim(intent_target_audio_channel_layout), ''::text) IS NOT NULL))),
+    CONSTRAINT media_job_intent_target_codecs_nonempty CHECK ((((intent_compatibility_target_id IS NULL) AND (intent_target_video_codec IS NULL) AND (intent_target_audio_codec IS NULL) AND (intent_target_subtitle_policy IS NULL)) OR ((intent_compatibility_target_id IS NOT NULL) AND (intent_compatibility_target_version IS NOT NULL) AND (btrim(intent_target_video_codec) <> ''::text) AND (btrim(intent_target_audio_codec) <> ''::text) AND (intent_target_subtitle_policy = ANY (ARRAY[public.media_subtitle_policy_selected_v1(), public.media_subtitle_policy_all_v1(), public.media_subtitle_policy_none_v1()]))))),
+    CONSTRAINT media_job_intent_unmatched_stream_policy_known CHECK (((intent_unmatched_stream_policy IS NULL) OR (intent_unmatched_stream_policy = ANY (ARRAY['remove'::text, 'preserve'::text, 'reject'::text])))),
+    CONSTRAINT media_job_paths_nonempty CHECK ((btrim(source_path) <> ''::text)),
+    CONSTRAINT media_job_policy_key_contract CHECK (((intent_policy_key IS NULL) OR public.media_key_valid_v1(intent_policy_key))),
+    CONSTRAINT media_job_source_fingerprint_snapshot_valid CHECK ((((intent_source_identity IS NULL) AND (intent_source_size_bytes IS NULL) AND (intent_source_modified_ns IS NULL) AND (intent_source_changed_ns IS NULL) AND (intent_source_sha256 IS NULL)) OR ((intent_source_identity ~ '^[0-9a-f]{16}:[0-9a-f]{16}$'::text) AND (intent_source_size_bytes >= 0) AND (intent_source_modified_ns >= 0) AND (intent_source_changed_ns >= 0) AND (intent_source_sha256 ~ '^[0-9a-f]{64}$'::text)))),
+    CONSTRAINT media_job_verification_duration_tolerance_bounded CHECK (((intent_verification_duration_tolerance_millis >= 0) AND (intent_verification_duration_tolerance_millis <= 60000))),
+    CONSTRAINT media_job_verification_fast_checks CHECK (((intent_verification_strictness <> 'fast'::text) OR ((NOT intent_verification_decode_all_streams) AND (NOT intent_verification_keyframe_seek) AND (NOT intent_verification_playback_probe)))),
+    CONSTRAINT media_job_verification_strict_checks CHECK (((intent_verification_strictness <> 'strict'::text) OR (intent_verification_mux_validation AND intent_verification_decode_all_streams AND intent_verification_keyframe_seek AND intent_verification_playback_probe))),
+    CONSTRAINT media_job_verification_strictness_known CHECK ((intent_verification_strictness = ANY (ARRAY['strict'::text, 'balanced'::text, 'fast'::text])))
+);
+
+
+--
+-- Name: media_job_artifact; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_artifact (
+    media_job_artifact_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    artifact_index integer NOT NULL,
+    artifact_kind text NOT NULL,
+    artifact_path text NOT NULL,
+    size_bytes bigint,
+    content_type text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_artifact_content_type_bounded CHECK (((content_type IS NULL) OR (char_length(btrim(content_type)) <= 128))),
+    CONSTRAINT media_job_artifact_index_nonnegative CHECK ((artifact_index >= 0)),
+    CONSTRAINT media_job_artifact_kind_bounded CHECK ((char_length(btrim(artifact_kind)) <= 64)),
+    CONSTRAINT media_job_artifact_kind_nonempty CHECK ((btrim(artifact_kind) <> ''::text)),
+    CONSTRAINT media_job_artifact_path_bounded CHECK ((char_length(btrim(artifact_path)) <= 1024)),
+    CONSTRAINT media_job_artifact_path_managed CHECK (public.media_job_artifact_path_is_managed_v1(artifact_path)),
+    CONSTRAINT media_job_artifact_path_nonempty CHECK ((btrim(artifact_path) <> ''::text)),
+    CONSTRAINT media_job_artifact_size_nonnegative CHECK (((size_bytes IS NULL) OR (size_bytes >= 0)))
+);
+
+
+--
+-- Name: media_job_artifact_media_job_artifact_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_job_artifact ALTER COLUMN media_job_artifact_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_artifact_media_job_artifact_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_job_attempt; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_attempt (
+    media_job_attempt_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    attempt_number integer NOT NULL,
+    claim_generation bigint NOT NULL,
+    status public.media_job_status DEFAULT public.media_job_status_queued_v1() NOT NULL,
+    queued_at timestamp with time zone DEFAULT now() NOT NULL,
+    claimed_at timestamp with time zone,
+    heartbeat_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    last_error text,
+    cancel_generation_at_claim bigint,
+    CONSTRAINT media_job_attempt_lifecycle CHECK (
+        -- Resumable queued attempts retain their immutable first claim timestamp.
+        (status = public.media_job_status_queued_v1()
+            AND heartbeat_at IS NULL AND completed_at IS NULL)
+        OR (status IN (public.media_job_status_running_v1(), public.media_job_status_verifying_v1())
+            AND claimed_at IS NOT NULL AND heartbeat_at IS NOT NULL AND completed_at IS NULL)
+        OR (status IN (public.media_job_status_completed_v1(), public.media_job_status_failed_v1(), public.media_job_status_cancelled_v1())
+            AND claimed_at IS NOT NULL AND completed_at IS NOT NULL)
+        OR (status = public.media_job_status_cancelled_v1()
+            AND claimed_at IS NULL AND heartbeat_at IS NULL AND completed_at IS NOT NULL)
+    ),
+    CONSTRAINT media_job_attempt_number_positive CHECK ((attempt_number > 0))
+);
+
+
+--
+-- Name: media_job_attempt_claim_generation_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_job_attempt ALTER COLUMN claim_generation ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_attempt_claim_generation_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_job_attempt_media_job_attempt_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_job_attempt ALTER COLUMN media_job_attempt_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_attempt_media_job_attempt_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_job_compact_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_compact_audit (
+    media_job_compact_audit_id bigint NOT NULL,
+    media_job_id bigint,
+    audit_index integer NOT NULL,
+    fact_kind text NOT NULL,
+    fact_text text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_public_id uuid NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_compact_audit_index_nonnegative CHECK ((audit_index >= 0)),
+    CONSTRAINT media_job_compact_audit_kind_bounded CHECK ((char_length(btrim(fact_kind)) <= 64)),
+    CONSTRAINT media_job_compact_audit_kind_nonempty CHECK ((btrim(fact_kind) <> ''::text)),
+    CONSTRAINT media_job_compact_audit_text_bounded CHECK ((char_length(btrim(fact_text)) <= 1024)),
+    CONSTRAINT media_job_compact_audit_text_nonempty CHECK ((btrim(fact_text) <> ''::text))
+);
+
+
+--
+-- Name: media_job_compact_audit_archive; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_compact_audit_archive (
+    media_job_public_id uuid NOT NULL,
+    attempt_number integer NOT NULL,
+    audit_index integer NOT NULL,
+    fact_kind text NOT NULL,
+    fact_text text NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    archived_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_job_compact_audit_archive_attempt_positive CHECK ((attempt_number > 0)),
+    CONSTRAINT media_job_compact_audit_archive_index_nonnegative CHECK ((audit_index >= 0)),
+    CONSTRAINT media_job_compact_audit_archive_kind_nonempty CHECK ((btrim(fact_kind) <> ''::text)),
+    CONSTRAINT media_job_compact_audit_archive_text_nonempty CHECK ((btrim(fact_text) <> ''::text))
+);
+
+
+--
+-- Name: media_job_compact_audit_media_job_compact_audit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_job_compact_audit ALTER COLUMN media_job_compact_audit_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_compact_audit_media_job_compact_audit_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_job_configuration_snapshot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_configuration_snapshot (
+    media_job_id bigint NOT NULL,
+    profile_configuration_version bigint NOT NULL,
+    media_policy_profile_id bigint,
+    policy_version integer,
+    media_desired_target_profile_id bigint,
+    desired_target_version integer,
+    captured_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_job_configuration_snapshot_profile_version_positive CHECK ((profile_configuration_version > 0))
+);
+
+
+--
+-- Name: media_job_desired_target_stream; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_desired_target_stream (
+    media_job_desired_target_stream_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    stream_key text NOT NULL,
+    stream_kind text NOT NULL,
+    semantic_role text,
+    language_code text,
+    optional boolean NOT NULL,
+    sort_order integer NOT NULL,
+    codec text NOT NULL,
+    channel_count integer,
+    channel_layout text,
+    title text,
+    default_disposition boolean NOT NULL,
+    forced_disposition boolean NOT NULL,
+    subtitle_placement text,
+    image_subtitle_action text,
+    video_profile text,
+    video_level text,
+    video_bitrate_bps integer,
+    color_primaries text,
+    color_transfer text,
+    color_space text,
+    hdr_format text,
+    audio_bitrate_bps integer,
+    audio_sample_rate_hz integer,
+    audio_loudness_profile text,
+    audio_dynamic_range text,
+    CONSTRAINT media_job_desired_target_stream_audio_constraints CHECK ((((stream_kind = 'audio'::text) AND ((audio_bitrate_bps IS NULL) OR (audio_bitrate_bps > 0)) AND ((audio_sample_rate_hz IS NULL) OR (audio_sample_rate_hz > 0)) AND ((audio_loudness_profile IS NULL) OR (audio_loudness_profile = 'dialog-normalized'::text)) AND ((audio_dynamic_range IS NULL) OR (audio_dynamic_range = ANY (ARRAY['preserve'::text, 'speech'::text])))) OR ((stream_kind <> 'audio'::text) AND (audio_bitrate_bps IS NULL) AND (audio_sample_rate_hz IS NULL) AND (audio_loudness_profile IS NULL) AND (audio_dynamic_range IS NULL)))),
+    CONSTRAINT media_job_desired_target_stream_audio_layout_count_matches CHECK (((channel_layout IS NULL) OR (channel_count IS NULL) OR (public.media_audio_channel_layout_count_v1(channel_layout) = channel_count))),
+    CONSTRAINT media_job_desired_target_stream_audio_layout_known CHECK (((channel_layout IS NULL) OR (public.media_audio_channel_layout_count_v1(channel_layout) IS NOT NULL))),
+    CONSTRAINT media_job_desired_target_stream_audio_shape CHECK (((stream_kind = 'audio'::text) OR ((channel_count IS NULL) AND (channel_layout IS NULL)))),
+    CONSTRAINT media_job_desired_target_stream_codec_nonempty CHECK ((btrim(codec) <> ''::text)),
+    CONSTRAINT media_job_desired_target_stream_hdr_format_known CHECK (((hdr_format IS NULL) OR (hdr_format = 'hdr10'::text))),
+    CONSTRAINT media_job_desired_target_stream_key_contract CHECK (public.media_key_valid_v1(stream_key)),
+    CONSTRAINT media_job_desired_target_stream_key_nonempty CHECK ((btrim(stream_key) <> ''::text)),
+    CONSTRAINT media_job_desired_target_stream_kind_known CHECK ((stream_kind = ANY (ARRAY['video'::text, 'audio'::text, 'subtitle'::text]))),
+    CONSTRAINT media_job_desired_target_stream_role_known CHECK (((semantic_role IS NULL) OR (semantic_role = ANY (ARRAY['primary'::text, 'forced'::text, 'commentary'::text, 'descriptive_audio'::text, 'sdh'::text, 'signs_songs'::text, 'karaoke'::text, 'unknown'::text])))),
+    CONSTRAINT media_job_desired_target_stream_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_job_desired_target_stream_subtitle_shape CHECK ((((stream_kind = 'subtitle'::text) AND (subtitle_placement = ANY (ARRAY['embedded'::text, 'sidecar'::text, 'both'::text, 'none'::text])) AND (image_subtitle_action = ANY (ARRAY['preserve'::text, 'remove'::text, 'fail'::text]))) OR ((stream_kind <> 'subtitle'::text) AND (subtitle_placement IS NULL) AND (image_subtitle_action IS NULL)))),
+    CONSTRAINT media_job_desired_target_stream_title_contract CHECK (((title IS NULL) OR public.media_display_valid_v1(title))),
+    CONSTRAINT media_job_desired_target_stream_video_color_known CHECK ((public.media_video_color_value_known_v1('color_primaries'::text, color_primaries) AND public.media_video_color_value_known_v1('color_transfer'::text, color_transfer) AND public.media_video_color_value_known_v1('color_space'::text, color_space))),
+    CONSTRAINT media_job_desired_target_stream_video_level_known CHECK (public.media_video_level_known_v1(codec, video_level)),
+    CONSTRAINT media_job_desired_target_stream_video_shape CHECK ((((stream_kind = 'video'::text) AND ((video_bitrate_bps IS NULL) OR (video_bitrate_bps > 0))) OR ((stream_kind <> 'video'::text) AND (video_profile IS NULL) AND (video_level IS NULL) AND (video_bitrate_bps IS NULL) AND (color_primaries IS NULL) AND (color_transfer IS NULL) AND (color_space IS NULL) AND (hdr_format IS NULL))))
+);
+
+
+--
+-- Name: media_job_desired_target_stre_media_job_desired_target_stre_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_job_desired_target_stream ALTER COLUMN media_job_desired_target_stream_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_desired_target_stre_media_job_desired_target_stre_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_job_file_rule_snapshot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_file_rule_snapshot (
+    media_job_id bigint NOT NULL,
+    rule_kind text NOT NULL,
+    matcher_kind text NOT NULL,
+    matcher_value text NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean NOT NULL
+);
+
+
+--
+-- Name: media_job_filter_snapshot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_filter_snapshot (
+    media_job_id bigint NOT NULL,
+    min_size_bytes bigint,
+    max_size_bytes bigint,
+    min_duration_millis bigint,
+    max_duration_millis bigint,
+    include_samples boolean NOT NULL,
+    include_trailers boolean NOT NULL,
+    exclude_trash boolean NOT NULL,
+    exclude_quarantine boolean NOT NULL
+);
+
+
+--
+-- Name: media_job_media_job_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_job ALTER COLUMN media_job_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_media_job_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_job_operation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_operation (
+    media_job_operation_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    operation_index integer NOT NULL,
+    operation_kind text NOT NULL,
+    stream_id integer,
+    command_bin text NOT NULL,
+    arg_1 text,
+    arg_2 text,
+    arg_3 text,
+    arg_4 text,
+    arg_5 text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_operation_bin_nonempty CHECK ((btrim(command_bin) <> ''::text)),
+    CONSTRAINT media_job_operation_index_nonnegative CHECK ((operation_index >= 0)),
+    CONSTRAINT media_job_operation_kind_nonempty CHECK ((btrim(operation_kind) <> ''::text))
+);
+
+
+--
+-- Name: media_job_operation_media_job_operation_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_job_operation ALTER COLUMN media_job_operation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_operation_media_job_operation_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_job_phase; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_phase (
+    media_job_phase_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    phase_index integer NOT NULL,
+    phase_name text NOT NULL,
+    phase_status public.media_job_status NOT NULL,
+    details_text text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_phase_index_nonnegative CHECK ((phase_index >= 0)),
+    CONSTRAINT media_job_phase_name_nonempty CHECK ((btrim(phase_name) <> ''::text))
+);
+
+
+--
+-- Name: media_job_phase_media_job_phase_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_job_phase ALTER COLUMN media_job_phase_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_phase_media_job_phase_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_job_plan_reason; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_plan_reason (
+    media_job_plan_reason_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    reason_index integer NOT NULL,
+    candidate_index integer,
+    selected boolean DEFAULT false NOT NULL,
+    reason_code text NOT NULL,
+    reason_text text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_plan_reason_candidate_nonnegative CHECK (((candidate_index IS NULL) OR (candidate_index >= 0))),
+    CONSTRAINT media_job_plan_reason_code_nonempty CHECK ((btrim(reason_code) <> ''::text)),
+    CONSTRAINT media_job_plan_reason_index_nonnegative CHECK ((reason_index >= 0)),
+    CONSTRAINT media_job_plan_reason_text_nonempty CHECK ((btrim(reason_text) <> ''::text))
+);
+
+
+--
+-- Name: media_job_plan_reason_media_job_plan_reason_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_job_plan_reason ALTER COLUMN media_job_plan_reason_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_plan_reason_media_job_plan_reason_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_job_policy_behavior_snapshot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_policy_behavior_snapshot (
+    media_job_id bigint NOT NULL,
+    unmatched_video_action text,
+    unmatched_audio_action text,
+    unmatched_subtitle_action text,
+    unmatched_attachment_action text,
+    unmatched_data_action text,
+    unsupported_format_action text,
+    require_all_compatibility_targets boolean,
+    max_concurrency integer,
+    max_retries integer,
+    max_runtime_seconds integer,
+    max_io_megabytes_per_second integer,
+    min_free_space_bytes bigint,
+    pause_on_battery boolean,
+    minimum_battery_percent integer,
+    thermal_pressure_limit text,
+    pause_when_thermal_exceeded boolean,
+    dry_run boolean,
+    replacement_mode text,
+    quarantine_enabled boolean,
+    preserve_permissions boolean,
+    preserve_ownership boolean,
+    workspace_retention_hours integer,
+    diagnostics_enabled boolean,
+    stale_cleanup_hours integer,
+    max_workspace_bytes bigint,
+    backup_enabled boolean,
+    backup_retention_days integer,
+    backup_min_free_space_bytes bigint,
+    verification_strictness text,
+    verification_duration_tolerance_millis bigint,
+    verification_mux_validation boolean,
+    verification_decode_all_streams boolean,
+    verification_keyframe_seek boolean,
+    verification_playback_probe boolean
+);
+
+
+--
+-- Name: media_job_policy_compatibility_target_snapshot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_policy_compatibility_target_snapshot (
+    media_job_id bigint NOT NULL,
+    compatibility_target_key text NOT NULL,
+    compatibility_target_version integer NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean NOT NULL
+);
+
+
+--
+-- Name: media_job_policy_maintenance_window_snapshot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_policy_maintenance_window_snapshot (
+    media_job_id bigint NOT NULL,
+    day_of_week smallint NOT NULL,
+    start_time time without time zone NOT NULL,
+    end_time time without time zone NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean NOT NULL
+);
+
+
+--
+-- Name: media_job_policy_operation_cost_snapshot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_policy_operation_cost_snapshot (
+    media_job_id bigint NOT NULL,
+    operation_kind text NOT NULL,
+    cost_weight integer NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean NOT NULL
+);
+
+
+--
+-- Name: media_job_policy_retention_rule_snapshot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_policy_retention_rule_snapshot (
+    media_job_id bigint NOT NULL,
+    stream_kind text NOT NULL,
+    semantic_role text,
+    language_code text,
+    codec_or_format text,
+    action text NOT NULL,
+    placement text,
+    sort_order integer NOT NULL,
+    enabled boolean NOT NULL
+);
+
+
+--
+-- Name: media_job_retention_policy; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_retention_policy (
+    media_job_retention_policy_id bigint NOT NULL,
+    policy_key text NOT NULL,
+    completed_retention_days integer NOT NULL,
+    failed_diagnostic_retention_days integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_enabled boolean DEFAULT false NOT NULL,
+    completed_mode text DEFAULT public.media_retention_mode_age_v1() NOT NULL,
+    completed_limit integer DEFAULT 30 NOT NULL,
+    failed_diagnostic_enabled boolean DEFAULT true NOT NULL,
+    failed_diagnostic_mode text DEFAULT public.media_retention_mode_age_v1() NOT NULL,
+    failed_diagnostic_limit integer DEFAULT 30 NOT NULL,
+    workspace_retention_hours integer DEFAULT 24 NOT NULL,
+    diagnostic_workspace_retention_hours integer DEFAULT 720 NOT NULL,
+    workspace_cleanup_batch_size integer DEFAULT 128 NOT NULL,
+    CONSTRAINT media_job_retention_policy_completed_bounds CHECK (((completed_retention_days >= 1) AND (completed_retention_days <= 3650))),
+    CONSTRAINT media_job_retention_policy_completed_limit_bounds CHECK (((completed_limit >= 1) AND (completed_limit <= 3650))),
+    CONSTRAINT media_job_retention_policy_completed_mode_known CHECK ((completed_mode = ANY (ARRAY[public.media_retention_mode_age_v1(), public.media_retention_mode_count_v1()]))),
+    CONSTRAINT media_job_retention_policy_diagnostic_workspace_hours_bounds CHECK (((diagnostic_workspace_retention_hours >= 1) AND (diagnostic_workspace_retention_hours <= 87600))),
+    CONSTRAINT media_job_retention_policy_failed_bounds CHECK (((failed_diagnostic_retention_days >= 1) AND (failed_diagnostic_retention_days <= 3650))),
+    CONSTRAINT media_job_retention_policy_failed_limit_bounds CHECK (((failed_diagnostic_limit >= 1) AND (failed_diagnostic_limit <= 3650))),
+    CONSTRAINT media_job_retention_policy_failed_mode_known CHECK ((failed_diagnostic_mode = ANY (ARRAY[public.media_retention_mode_age_v1(), public.media_retention_mode_count_v1()]))),
+    CONSTRAINT media_job_retention_policy_key_contract CHECK (public.media_key_valid_v1(policy_key)),
+    CONSTRAINT media_job_retention_policy_key_nonempty CHECK ((btrim(policy_key) <> ''::text)),
+    CONSTRAINT media_job_retention_policy_workspace_batch_bounds CHECK (((workspace_cleanup_batch_size >= 1) AND (workspace_cleanup_batch_size <= 4096))),
+    CONSTRAINT media_job_retention_policy_workspace_hours_bounds CHECK (((workspace_retention_hours >= 1) AND (workspace_retention_hours <= 87600)))
+);
+
+
+--
+-- Name: media_job_retention_policy_media_job_retention_policy_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_job_retention_policy ALTER COLUMN media_job_retention_policy_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_retention_policy_media_job_retention_policy_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_job_root_snapshot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_root_snapshot (
+    media_job_id bigint NOT NULL,
+    media_root_kind_id smallint NOT NULL,
+    binding_state text NOT NULL,
+    media_root_catalog_generation_public_id uuid,
+    attestation_generation bigint,
+    source_sha256 bytea,
+    generation_sha256 bytea,
+    media_root_catalog_slot_public_id uuid,
+    logical_key text,
+    canonical_path text,
+    filesystem_device bytea,
+    filesystem_inode bytea,
+    mount_id bigint,
+    filesystem_type text,
+    capability_mask smallint,
+    durability_class text,
+    durability_evidence text,
+    sole_writer_class text,
+    sole_writer_evidence text,
+    root_relative_prefix text,
+    root_identity_sha256 bytea,
+    CONSTRAINT media_job_root_snapshot_binding_state_known CHECK (binding_state IN ('bound', 'not_required')),
+    CONSTRAINT media_job_root_snapshot_required_kinds_bound CHECK (media_root_kind_id NOT IN (1, 2, 3) OR binding_state = 'bound'),
+    CONSTRAINT media_job_root_snapshot_binding_coherent CHECK (
+        (binding_state = 'bound' AND num_nonnulls(
+            media_root_catalog_generation_public_id, attestation_generation, source_sha256,
+            generation_sha256, media_root_catalog_slot_public_id, logical_key, canonical_path,
+            filesystem_device, filesystem_inode, mount_id, filesystem_type, capability_mask,
+            durability_class, durability_evidence, sole_writer_class, sole_writer_evidence,
+            root_identity_sha256) = 17)
+        OR (binding_state = 'not_required' AND num_nonnulls(
+            media_root_catalog_generation_public_id, attestation_generation, source_sha256,
+            generation_sha256, media_root_catalog_slot_public_id, logical_key, canonical_path,
+            filesystem_device, filesystem_inode, mount_id, filesystem_type, capability_mask,
+            durability_class, durability_evidence, sole_writer_class, sole_writer_evidence,
+            root_relative_prefix, root_identity_sha256) = 0)
+    ),
+    CONSTRAINT media_job_root_snapshot_attestation_generation_positive CHECK (attestation_generation > 0),
+    CONSTRAINT media_job_root_snapshot_source_sha256_length CHECK (octet_length(source_sha256) = 32),
+    CONSTRAINT media_job_root_snapshot_generation_sha256_length CHECK (octet_length(generation_sha256) = 32),
+    CONSTRAINT media_job_root_snapshot_filesystem_device_length CHECK (octet_length(filesystem_device) = 8),
+    CONSTRAINT media_job_root_snapshot_filesystem_inode_length CHECK (octet_length(filesystem_inode) = 8),
+    CONSTRAINT media_job_root_snapshot_mount_id_nonnegative CHECK (mount_id >= 0),
+    CONSTRAINT media_job_root_snapshot_filesystem_type_bounds CHECK (octet_length(filesystem_type) BETWEEN 1 AND 64),
+    CONSTRAINT media_job_root_snapshot_capability_mask_bounds CHECK (capability_mask BETWEEN 0 AND 127),
+    CONSTRAINT media_job_root_snapshot_identity_sha256_length CHECK (octet_length(root_identity_sha256) = 32),
+    CONSTRAINT media_job_root_snapshot_path_bounds CHECK (
+        left(canonical_path, 1) = '/' AND canonical_path <> '/' AND octet_length(canonical_path) BETWEEN 1 AND 4096
+    ),
+    CONSTRAINT media_job_root_snapshot_durability_pair CHECK (
+        (durability_class, durability_evidence) IN (
+            ('disposable', 'none'), ('restart_persistent', 'linux_dedicated_mount'),
+            ('restart_persistent', 'kubernetes_persistent_volume_claim')
+        )
+    ),
+    CONSTRAINT media_job_root_snapshot_writer_pair CHECK (
+        (sole_writer_class, sole_writer_evidence) IN (
+            ('uncontrolled', 'none'), ('revaer_exclusive', 'linux_dedicated_service'),
+            ('revaer_exclusive', 'kubernetes_read_write_once_pod')
+        )
+    )
+);
+
+
+--
+-- Name: media_job_stream_classification_rule_snapshot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_stream_classification_rule_snapshot (
+    media_job_id bigint NOT NULL,
+    stream_kind text NOT NULL,
+    semantic_role text NOT NULL,
+    match_kind text NOT NULL,
+    match_pattern text NOT NULL,
+    confidence smallint NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean NOT NULL
+);
+
+
+--
+-- Name: media_job_subtitle_discovery_rule_snapshot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_subtitle_discovery_rule_snapshot (
+    media_job_id bigint NOT NULL,
+    discovery_pattern text NOT NULL,
+    precedence integer NOT NULL,
+    enabled boolean NOT NULL
+);
+
+
+--
+-- Name: media_job_terminal_outbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_terminal_outbox (
+    media_job_terminal_outbox_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    event_kind text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    published_at timestamp with time zone,
+    CONSTRAINT media_job_terminal_outbox_event_valid CHECK ((event_kind = 'completed'::text))
+);
+
+
+--
+-- Name: media_job_terminal_outbox_media_job_terminal_outbox_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_job_terminal_outbox ALTER COLUMN media_job_terminal_outbox_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_terminal_outbox_media_job_terminal_outbox_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_job_verification_check; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_verification_check (
+    media_job_verification_check_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    check_index integer NOT NULL,
+    check_kind text NOT NULL,
+    check_status text NOT NULL,
+    expected_value text,
+    actual_value text,
+    details_text text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_verification_check_index_nonnegative CHECK ((check_index >= 0)),
+    CONSTRAINT media_job_verification_check_kind_nonempty CHECK ((btrim(check_kind) <> ''::text)),
+    CONSTRAINT media_job_verification_check_status_valid CHECK ((check_status = ANY (ARRAY['passed'::text, 'failed'::text, 'skipped'::text])))
+);
+
+
+--
+-- Name: media_job_verification_check_media_job_verification_check_i_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_job_verification_check ALTER COLUMN media_job_verification_check_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_verification_check_media_job_verification_check_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_job_violation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_violation (
+    media_job_violation_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    violation_index integer NOT NULL,
+    violation_kind text NOT NULL,
+    severity text NOT NULL,
+    stream_id integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_violation_index_nonnegative CHECK ((violation_index >= 0)),
+    CONSTRAINT media_job_violation_kind_nonempty CHECK ((btrim(violation_kind) <> ''::text)),
+    CONSTRAINT media_job_violation_severity_valid CHECK ((severity = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))
+);
+
+
+--
+-- Name: media_job_violation_media_job_violation_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_job_violation ALTER COLUMN media_job_violation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_violation_media_job_violation_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_policy_backup; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_backup (
+    media_policy_profile_id bigint NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    retention_days integer,
+    min_free_space_bytes bigint,
+    CONSTRAINT media_policy_backup_complete CHECK (((NOT enabled) OR ((retention_days IS NOT NULL) AND (min_free_space_bytes IS NOT NULL)))),
+    CONSTRAINT media_policy_backup_retention_bounds CHECK (((retention_days IS NULL) OR ((retention_days >= 1) AND (retention_days <= 3650)))),
+    CONSTRAINT media_policy_backup_space_bounds CHECK (((min_free_space_bytes IS NULL) OR ((min_free_space_bytes >= 0) AND (min_free_space_bytes <= '1152921504606846976'::bigint))))
+);
+
+
+--
+-- Name: media_policy_compatibility_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_compatibility_rule (
+    media_policy_profile_id bigint NOT NULL,
+    unsupported_format_action text NOT NULL,
+    require_all_targets boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_compatibility_rule_action_known CHECK ((unsupported_format_action = ANY (ARRAY['transcode'::text, 'drop'::text, 'fail'::text])))
+);
+
+
+--
+-- Name: media_policy_compatibility_target; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_compatibility_target (
+    media_policy_profile_id bigint NOT NULL,
+    media_compatibility_target_id bigint NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_compatibility_target_sort_nonnegative CHECK ((sort_order >= 0))
+);
+
+
+--
+-- Name: media_policy_maintenance_window; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_maintenance_window (
+    media_policy_profile_id bigint NOT NULL,
+    day_of_week smallint NOT NULL,
+    start_time time without time zone NOT NULL,
+    end_time time without time zone NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_maintenance_window_day_bounds CHECK (((day_of_week >= 0) AND (day_of_week <= 6))),
+    CONSTRAINT media_policy_maintenance_window_not_empty CHECK ((start_time <> end_time)),
+    CONSTRAINT media_policy_maintenance_window_sort_nonnegative CHECK ((sort_order >= 0))
+);
+
+
+--
+-- Name: media_policy_operation_cost; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_operation_cost (
+    media_policy_profile_id bigint NOT NULL,
+    operation_kind text NOT NULL,
+    cost_weight integer NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_operation_cost_kind_nonempty CHECK ((btrim(operation_kind) <> ''::text)),
+    CONSTRAINT media_policy_operation_cost_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_policy_operation_cost_weight_bounds CHECK (((cost_weight >= 0) AND (cost_weight <= 1000000)))
+);
+
+
+--
+-- Name: media_policy_output; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_output (
+    media_policy_profile_id bigint NOT NULL,
+    dry_run boolean DEFAULT true NOT NULL,
+    replacement_mode text NOT NULL,
+    quarantine_enabled boolean DEFAULT true NOT NULL,
+    preserve_permissions boolean DEFAULT true NOT NULL,
+    preserve_ownership boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_output_replacement_known CHECK ((replacement_mode = ANY (ARRAY['disabled'::text, 'atomic_replace'::text, 'side_by_side'::text])))
+);
+
+
+--
+-- Name: media_policy_profile; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_profile (
+    media_policy_profile_id bigint NOT NULL,
+    policy_key text NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    display_name text NOT NULL,
+    video_intent text DEFAULT public.media_policy_general_v1() NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    unmatched_stream_policy text DEFAULT 'remove'::text NOT NULL,
+    verification_strictness text DEFAULT 'balanced'::text NOT NULL,
+    verification_duration_tolerance_millis bigint DEFAULT 1000 NOT NULL,
+    verification_mux_validation boolean DEFAULT true NOT NULL,
+    verification_decode_all_streams boolean DEFAULT true NOT NULL,
+    verification_keyframe_seek boolean DEFAULT true NOT NULL,
+    verification_playback_probe boolean DEFAULT false NOT NULL,
+    CONSTRAINT media_policy_profile_display_contract CHECK (public.media_display_valid_v1(display_name)),
+    CONSTRAINT media_policy_profile_display_nonempty CHECK ((btrim(display_name) <> ''::text)),
+    CONSTRAINT media_policy_profile_intent_known CHECK ((video_intent = ANY (ARRAY[public.media_policy_general_v1(), public.media_policy_anime_v1(), public.media_policy_archival_v1()]))),
+    CONSTRAINT media_policy_profile_key_contract CHECK (public.media_key_valid_v1(policy_key)),
+    CONSTRAINT media_policy_profile_key_nonempty CHECK ((btrim(policy_key) <> ''::text)),
+    CONSTRAINT media_policy_profile_unmatched_stream_policy_known CHECK ((unmatched_stream_policy = ANY (ARRAY['remove'::text, 'preserve'::text, 'reject'::text]))),
+    CONSTRAINT media_policy_profile_version_positive CHECK ((version > 0)),
+    CONSTRAINT media_policy_verification_duration_tolerance_bounded CHECK (((verification_duration_tolerance_millis >= 0) AND (verification_duration_tolerance_millis <= 60000))),
+    CONSTRAINT media_policy_verification_fast_checks CHECK (((verification_strictness <> 'fast'::text) OR ((NOT verification_decode_all_streams) AND (NOT verification_keyframe_seek) AND (NOT verification_playback_probe)))),
+    CONSTRAINT media_policy_verification_strict_checks CHECK (((verification_strictness <> 'strict'::text) OR (verification_mux_validation AND verification_decode_all_streams AND verification_keyframe_seek AND verification_playback_probe))),
+    CONSTRAINT media_policy_verification_strictness_known CHECK ((verification_strictness = ANY (ARRAY['strict'::text, 'balanced'::text, 'fast'::text])))
+);
+
+
+--
+-- Name: media_policy_profile_media_policy_profile_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_policy_profile ALTER COLUMN media_policy_profile_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_policy_profile_media_policy_profile_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_policy_retention_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_retention_rule (
+    media_policy_retention_rule_id bigint NOT NULL,
+    media_policy_profile_id bigint NOT NULL,
+    stream_kind text NOT NULL,
+    semantic_role text,
+    language_code text,
+    codec_or_format text,
+    action text NOT NULL,
+    placement text,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_retention_rule_action_known CHECK ((action = ANY (ARRAY['retain'::text, 'drop'::text, 'convert'::text, 'extract'::text]))),
+    CONSTRAINT media_policy_retention_rule_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_policy_retention_rule_stream_known CHECK ((stream_kind = ANY (ARRAY['video'::text, 'audio'::text, 'subtitle'::text, 'attachment'::text, 'data'::text])))
+);
+
+
+--
+-- Name: media_policy_retention_rule_media_policy_retention_rule_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_policy_retention_rule ALTER COLUMN media_policy_retention_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_policy_retention_rule_media_policy_retention_rule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_policy_runtime_limit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_runtime_limit (
+    media_policy_profile_id bigint NOT NULL,
+    max_concurrency integer NOT NULL,
+    max_retries integer NOT NULL,
+    max_runtime_seconds integer NOT NULL,
+    max_io_megabytes_per_second integer NOT NULL,
+    min_free_space_bytes bigint NOT NULL,
+    pause_on_battery boolean DEFAULT true NOT NULL,
+    minimum_battery_percent integer,
+    thermal_pressure_limit text DEFAULT 'serious'::text NOT NULL,
+    pause_when_thermal_exceeded boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_runtime_limit_battery_bounds CHECK (((minimum_battery_percent IS NULL) OR ((minimum_battery_percent >= 1) AND (minimum_battery_percent <= 100)))),
+    CONSTRAINT media_policy_runtime_limit_battery_complete CHECK ((pause_on_battery OR (minimum_battery_percent IS NULL))),
+    CONSTRAINT media_policy_runtime_limit_concurrency_bounds CHECK (((max_concurrency >= 1) AND (max_concurrency <= 256))),
+    CONSTRAINT media_policy_runtime_limit_io_bounds CHECK (((max_io_megabytes_per_second >= 1) AND (max_io_megabytes_per_second <= 1048576))),
+    CONSTRAINT media_policy_runtime_limit_retry_bounds CHECK (((max_retries >= 0) AND (max_retries <= 100))),
+    CONSTRAINT media_policy_runtime_limit_runtime_bounds CHECK (((max_runtime_seconds >= 1) AND (max_runtime_seconds <= 604800))),
+    CONSTRAINT media_policy_runtime_limit_space_bounds CHECK (((min_free_space_bytes >= 0) AND (min_free_space_bytes <= '1152921504606846976'::bigint))),
+    CONSTRAINT media_policy_runtime_limit_thermal_known CHECK ((thermal_pressure_limit = ANY (ARRAY['nominal'::text, 'fair'::text, 'serious'::text, 'critical'::text])))
+);
+
+
+--
+-- Name: media_policy_unmatched_stream_behavior; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_unmatched_stream_behavior (
+    media_policy_profile_id bigint NOT NULL,
+    video_action text NOT NULL,
+    audio_action text NOT NULL,
+    subtitle_action text NOT NULL,
+    attachment_action text NOT NULL,
+    data_action text NOT NULL,
+    CONSTRAINT media_policy_unmatched_stream_actions_known CHECK (((video_action = ANY (ARRAY['retain'::text, 'drop'::text, 'fail'::text])) AND (audio_action = ANY (ARRAY['retain'::text, 'drop'::text, 'fail'::text])) AND (subtitle_action = ANY (ARRAY['retain'::text, 'drop'::text, 'fail'::text])) AND (attachment_action = ANY (ARRAY['retain'::text, 'drop'::text, 'fail'::text])) AND (data_action = ANY (ARRAY['retain'::text, 'drop'::text, 'fail'::text]))))
+);
+
+
+--
+-- Name: media_policy_verification; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_verification (
+    media_policy_profile_id bigint NOT NULL,
+    strictness text NOT NULL,
+    duration_tolerance_millis bigint NOT NULL,
+    mux_validation boolean NOT NULL,
+    decode_all_streams boolean NOT NULL,
+    keyframe_seek boolean NOT NULL,
+    playback_probe boolean NOT NULL,
+    CONSTRAINT media_policy_verification_duration_bounds CHECK (((duration_tolerance_millis >= 0) AND (duration_tolerance_millis <= 60000))),
+    CONSTRAINT media_policy_verification_strict_complete CHECK (((strictness <> 'strict'::text) OR (mux_validation AND decode_all_streams AND keyframe_seek AND playback_probe))),
+    CONSTRAINT media_policy_verification_strictness_known CHECK ((strictness = ANY (ARRAY['strict'::text, 'balanced'::text, 'fast'::text])))
+);
+
+
+--
+-- Name: media_policy_workspace; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_workspace (
+    media_policy_profile_id bigint NOT NULL,
+    retention_hours integer NOT NULL,
+    diagnostics_enabled boolean DEFAULT true NOT NULL,
+    stale_cleanup_hours integer NOT NULL,
+    max_workspace_bytes bigint NOT NULL,
+    CONSTRAINT media_policy_workspace_cleanup_bounds CHECK (((stale_cleanup_hours >= 1) AND (stale_cleanup_hours <= 87600))),
+    CONSTRAINT media_policy_workspace_retention_bounds CHECK (((retention_hours >= 1) AND (retention_hours <= 87600))),
+    CONSTRAINT media_policy_workspace_size_bounds CHECK (((max_workspace_bytes >= 1) AND (max_workspace_bytes <= '1152921504606846976'::bigint)))
+);
+
+
+--
+-- Name: media_profile; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_profile (
+    media_profile_id bigint NOT NULL,
+    media_profile_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    profile_key text NOT NULL,
+    source_root text NOT NULL,
+    output_root text NOT NULL,
+    dry_run_only boolean DEFAULT true NOT NULL,
+    retention_days integer DEFAULT 30 NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    compatibility_target_key text,
+    policy_key text DEFAULT 'safe_dry_run'::text NOT NULL,
+    watcher_enabled boolean DEFAULT false NOT NULL,
+    schedule_enabled boolean DEFAULT false NOT NULL,
+    schedule_interval_minutes integer,
+    desired_target_profile_id bigint,
+    configuration_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT media_profile_compatibility_key_contract CHECK (((compatibility_target_key IS NULL) OR public.media_key_valid_v1(compatibility_target_key))),
+    CONSTRAINT media_profile_compatibility_target_nonempty CHECK (((compatibility_target_key IS NULL) OR (btrim(compatibility_target_key) <> ''::text))),
+    CONSTRAINT media_profile_configuration_version_positive CHECK ((configuration_version > 0)),
+    CONSTRAINT media_profile_key_contract CHECK (public.media_key_valid_v1(profile_key)),
+    CONSTRAINT media_profile_key_nonempty CHECK ((btrim(profile_key) <> ''::text)),
+    CONSTRAINT media_profile_policy_key_contract CHECK (public.media_key_valid_v1(policy_key)),
+    CONSTRAINT media_profile_policy_key_nonempty CHECK ((btrim(policy_key) <> ''::text)),
+    CONSTRAINT media_profile_retention_bounds CHECK (((retention_days >= 1) AND (retention_days <= 3650))),
+    CONSTRAINT media_profile_roots_nonempty CHECK (((btrim(source_root) <> ''::text) AND (btrim(output_root) <> ''::text))),
+    CONSTRAINT media_profile_schedule_interval_bounds CHECK (((schedule_interval_minutes IS NULL) OR ((schedule_interval_minutes >= 1) AND (schedule_interval_minutes <= 525600)))),
+    CONSTRAINT media_profile_schedule_requires_interval CHECK (((schedule_enabled = false) OR (schedule_interval_minutes IS NOT NULL)))
+);
+
+
+--
+-- Name: media_profile_file_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_profile_file_rule (
+    media_profile_file_rule_id bigint NOT NULL,
+    media_profile_id bigint NOT NULL,
+    rule_kind text NOT NULL,
+    matcher_kind text NOT NULL,
+    matcher_value text NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_profile_file_rule_kind_known CHECK ((rule_kind = ANY (ARRAY['include'::text, 'exclude'::text]))),
+    CONSTRAINT media_profile_file_rule_matcher_known CHECK ((matcher_kind = ANY (ARRAY['glob'::text, 'extension'::text]))),
+    CONSTRAINT media_profile_file_rule_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_profile_file_rule_value_bounded CHECK (((char_length(btrim(matcher_value)) >= 1) AND (char_length(btrim(matcher_value)) <= 512)))
+);
+
+
+--
+-- Name: media_profile_file_rule_media_profile_file_rule_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_profile_file_rule ALTER COLUMN media_profile_file_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_profile_file_rule_media_profile_file_rule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_profile_filter; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_profile_filter (
+    media_profile_id bigint NOT NULL,
+    min_size_bytes bigint,
+    max_size_bytes bigint,
+    min_duration_millis bigint,
+    max_duration_millis bigint,
+    include_samples boolean DEFAULT false NOT NULL,
+    include_trailers boolean DEFAULT false NOT NULL,
+    exclude_trash boolean DEFAULT true NOT NULL,
+    exclude_quarantine boolean DEFAULT true NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_profile_filter_duration_bounds CHECK ((((min_duration_millis IS NULL) OR (min_duration_millis >= 0)) AND ((max_duration_millis IS NULL) OR (max_duration_millis >= 0)) AND ((min_duration_millis IS NULL) OR (max_duration_millis IS NULL) OR (min_duration_millis <= max_duration_millis)))),
+    CONSTRAINT media_profile_filter_is_bounded CHECK (((min_size_bytes IS NOT NULL) OR (max_size_bytes IS NOT NULL) OR (min_duration_millis IS NOT NULL) OR (max_duration_millis IS NOT NULL))),
+    CONSTRAINT media_profile_filter_size_bounds CHECK ((((min_size_bytes IS NULL) OR (min_size_bytes >= 0)) AND ((max_size_bytes IS NULL) OR (max_size_bytes >= 0)) AND ((min_size_bytes IS NULL) OR (max_size_bytes IS NULL) OR (min_size_bytes <= max_size_bytes))))
+);
+
+
+--
+-- Name: media_profile_import_draft; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_profile_import_draft (
+    media_profile_import_draft_id bigint NOT NULL,
+    media_profile_import_draft_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    profile_key text NOT NULL,
+    source_root text NOT NULL,
+    output_root text NOT NULL,
+    source_root_resolved boolean NOT NULL,
+    output_root_resolved boolean NOT NULL,
+    retention_days integer NOT NULL,
+    compatibility_target_key text,
+    desired_target_key text,
+    desired_target_version integer,
+    policy_key text NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_profile_import_draft_desired_target_complete CHECK ((((desired_target_key IS NULL) AND (desired_target_version IS NULL)) OR ((desired_target_key IS NOT NULL) AND (btrim(desired_target_key) <> ''::text) AND (desired_target_version IS NOT NULL) AND (desired_target_version > 0)))),
+    CONSTRAINT media_profile_import_draft_key_nonempty CHECK ((btrim(profile_key) <> ''::text)),
+    CONSTRAINT media_profile_import_draft_policy_nonempty CHECK ((btrim(policy_key) <> ''::text)),
+    CONSTRAINT media_profile_import_draft_retention_bounds CHECK (((retention_days >= 1) AND (retention_days <= 3650))),
+    CONSTRAINT media_profile_import_draft_roots_nonempty CHECK (((btrim(source_root) <> ''::text) AND (btrim(output_root) <> ''::text))),
+    CONSTRAINT media_profile_import_draft_unresolved CHECK (((NOT source_root_resolved) OR (NOT output_root_resolved)))
+);
+
+
+--
+-- Name: media_profile_import_draft_media_profile_import_draft_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_profile_import_draft ALTER COLUMN media_profile_import_draft_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_profile_import_draft_media_profile_import_draft_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_profile_media_profile_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_profile ALTER COLUMN media_profile_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_profile_media_profile_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_profile_root; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_profile_root (
+    media_profile_root_id bigint NOT NULL,
+    media_profile_root_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    media_profile_id bigint NOT NULL,
+    root_kind text NOT NULL,
+    requested_path text NOT NULL,
+    canonical_path text NOT NULL,
+    filesystem_device bigint,
+    filesystem_inode bigint,
+    media_type text NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    identity_verified_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_profile_root_enabled_verified CHECK (((NOT enabled) OR (identity_verified_at IS NOT NULL))),
+    CONSTRAINT media_profile_root_identity_complete CHECK ((((filesystem_device IS NULL) AND (filesystem_inode IS NULL) AND (identity_verified_at IS NULL)) OR ((filesystem_device IS NOT NULL) AND (filesystem_inode IS NOT NULL) AND (filesystem_device >= 0) AND (filesystem_inode >= 0) AND (identity_verified_at IS NOT NULL)))),
+    CONSTRAINT media_profile_root_kind_known CHECK ((root_kind = ANY (ARRAY['source'::text, 'output'::text, 'workspace'::text, 'backup'::text, 'quarantine'::text]))),
+    CONSTRAINT media_profile_root_media_type_nonempty CHECK ((btrim(media_type) <> ''::text)),
+    CONSTRAINT media_profile_root_paths_absolute CHECK (((requested_path ~~ '/%'::text) AND (canonical_path ~~ '/%'::text))),
+    CONSTRAINT media_profile_root_paths_bounded CHECK (((char_length(requested_path) >= 1) AND (char_length(requested_path) <= 4096) AND ((char_length(canonical_path) >= 1) AND (char_length(canonical_path) <= 4096)))),
+    CONSTRAINT media_profile_root_sort_nonnegative CHECK ((sort_order >= 0))
+);
+
+
+--
+-- Name: media_profile_root_media_profile_root_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_profile_root ALTER COLUMN media_profile_root_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_profile_root_media_profile_root_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_stream_classification_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_stream_classification_rule (
+    media_stream_classification_rule_id bigint NOT NULL,
+    media_policy_profile_id bigint NOT NULL,
+    stream_kind text NOT NULL,
+    semantic_role text NOT NULL,
+    match_kind text NOT NULL,
+    match_pattern text NOT NULL,
+    confidence smallint NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_stream_classification_rule_confidence_bounds CHECK (((confidence >= 0) AND (confidence <= 100))),
+    CONSTRAINT media_stream_classification_rule_match_known CHECK ((match_kind = ANY (ARRAY['title_contains'::text, 'title_regex'::text, 'disposition'::text, 'language'::text, 'codec'::text, 'filename_glob'::text]))),
+    CONSTRAINT media_stream_classification_rule_pattern_bounded CHECK (((char_length(btrim(match_pattern)) >= 1) AND (char_length(btrim(match_pattern)) <= 512))),
+    CONSTRAINT media_stream_classification_rule_role_bounded CHECK (((char_length(btrim(semantic_role)) >= 1) AND (char_length(btrim(semantic_role)) <= 64))),
+    CONSTRAINT media_stream_classification_rule_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_stream_classification_rule_stream_known CHECK ((stream_kind = ANY (ARRAY['video'::text, 'audio'::text, 'subtitle'::text, 'attachment'::text, 'data'::text])))
+);
+
+
+--
+-- Name: media_stream_classification_r_media_stream_classification_r_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_stream_classification_rule ALTER COLUMN media_stream_classification_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_stream_classification_r_media_stream_classification_r_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_subtitle_discovery_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_subtitle_discovery_rule (
+    media_subtitle_discovery_rule_id bigint NOT NULL,
+    media_profile_id bigint NOT NULL,
+    discovery_pattern text NOT NULL,
+    precedence integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_subtitle_discovery_rule_pattern_bounded CHECK (((char_length(btrim(discovery_pattern)) >= 1) AND (char_length(btrim(discovery_pattern)) <= 512))),
+    CONSTRAINT media_subtitle_discovery_rule_precedence_nonnegative CHECK ((precedence >= 0))
+);
+
+
+--
+-- Name: media_subtitle_discovery_rule_media_subtitle_discovery_rule_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_subtitle_discovery_rule ALTER COLUMN media_subtitle_discovery_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_subtitle_discovery_rule_media_subtitle_discovery_rule_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_target; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_target (
+    media_target_id bigint NOT NULL,
+    media_profile_id bigint NOT NULL,
+    target_key text NOT NULL,
+    video_codec text,
+    audio_codec text,
+    subtitle_codec text,
+    priority smallint DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_target_key_contract CHECK (public.media_key_valid_v1(target_key)),
+    CONSTRAINT media_target_key_nonempty CHECK ((btrim(target_key) <> ''::text))
+);
+
+
+--
+-- Name: media_target_media_target_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_target ALTER COLUMN media_target_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_target_media_target_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: outbound_request_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.outbound_request_log (
+    outbound_request_log_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    routing_policy_id bigint,
+    search_request_id bigint,
+    request_type public.outbound_request_type NOT NULL,
+    correlation_id uuid NOT NULL,
+    retry_seq smallint NOT NULL,
+    started_at timestamp with time zone NOT NULL,
+    finished_at timestamp with time zone NOT NULL,
+    outcome public.outbound_request_outcome NOT NULL,
+    via_mitigation public.outbound_via_mitigation NOT NULL,
+    rate_limit_denied_scope public.rate_limit_scope,
+    error_class public.error_class,
+    http_status integer,
+    latency_ms integer,
+    parse_ok boolean DEFAULT false NOT NULL,
+    result_count integer,
+    cf_detected boolean DEFAULT false NOT NULL,
+    page_number integer,
+    page_cursor_key character varying(64),
+    page_cursor_is_hashed boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT outbound_request_log_latency_chk CHECK (((latency_ms IS NULL) OR (latency_ms >= 0))),
+    CONSTRAINT outbound_request_log_outcome_chk CHECK ((((outcome = 'success'::public.outbound_request_outcome) AND (error_class IS NULL) AND (parse_ok = true)) OR ((outcome = 'failure'::public.outbound_request_outcome) AND (error_class IS NOT NULL)))),
+    CONSTRAINT outbound_request_log_page_number_chk CHECK (((page_number IS NULL) OR (page_number >= 1))),
+    CONSTRAINT outbound_request_log_rate_limit_scope_chk CHECK ((((rate_limit_denied_scope IS NULL) AND (error_class IS DISTINCT FROM 'rate_limited'::public.error_class)) OR ((rate_limit_denied_scope IS NOT NULL) AND (error_class = 'rate_limited'::public.error_class)))),
+    CONSTRAINT outbound_request_log_result_count_chk CHECK (((result_count IS NULL) OR (result_count >= 0))),
+    CONSTRAINT outbound_request_log_retry_seq_check CHECK ((retry_seq >= 0))
+);
+
+
+--
+-- Name: outbound_request_log_outbound_request_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.outbound_request_log ALTER COLUMN outbound_request_log_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.outbound_request_log_outbound_request_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: policy_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_rule (
+    policy_rule_id bigint NOT NULL,
+    policy_set_id bigint NOT NULL,
+    policy_rule_public_id uuid NOT NULL,
+    rule_type public.policy_rule_type NOT NULL,
+    match_field public.policy_match_field NOT NULL,
+    match_operator public.policy_match_operator NOT NULL,
+    sort_order integer DEFAULT 1000 NOT NULL,
+    match_value_text character varying(512),
+    match_value_int integer,
+    match_value_uuid uuid,
+    value_set_id bigint,
+    action public.policy_action NOT NULL,
+    severity public.policy_severity NOT NULL,
+    is_case_insensitive boolean DEFAULT true NOT NULL,
+    is_disabled boolean DEFAULT false NOT NULL,
+    rationale character varying(1024),
+    expires_at timestamp with time zone,
+    immutable_flag boolean DEFAULT false NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: policy_rule_policy_rule_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.policy_rule ALTER COLUMN policy_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_rule_policy_rule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: policy_rule_value_set; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_rule_value_set (
+    value_set_id bigint NOT NULL,
+    policy_rule_id bigint NOT NULL,
+    value_set_type public.value_set_type NOT NULL
+);
+
+
+--
+-- Name: policy_rule_value_set_item; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_rule_value_set_item (
+    value_set_item_id bigint NOT NULL,
+    value_set_id bigint NOT NULL,
+    value_text character varying(256),
+    value_bigint bigint,
+    value_int integer,
+    value_uuid uuid,
+    CONSTRAINT policy_rule_value_set_item_single_chk CHECK (((((((value_text IS NOT NULL))::integer + ((value_bigint IS NOT NULL))::integer) + ((value_int IS NOT NULL))::integer) + ((value_uuid IS NOT NULL))::integer) = 1)),
+    CONSTRAINT policy_rule_value_set_item_text_lc CHECK (((value_text IS NULL) OR ((value_text)::text = lower((value_text)::text))))
+);
+
+
+--
+-- Name: policy_rule_value_set_item_value_set_item_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.policy_rule_value_set_item ALTER COLUMN value_set_item_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_rule_value_set_item_value_set_item_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: policy_rule_value_set_value_set_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.policy_rule_value_set ALTER COLUMN value_set_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_rule_value_set_value_set_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: policy_set; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_set (
+    policy_set_id bigint NOT NULL,
+    policy_set_public_id uuid NOT NULL,
+    user_id bigint,
+    display_name character varying(256) NOT NULL,
+    scope public.policy_scope NOT NULL,
+    is_enabled boolean NOT NULL,
+    sort_order integer DEFAULT 1000 NOT NULL,
+    is_auto_created boolean DEFAULT false NOT NULL,
+    created_for_search_request_id bigint,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone
+);
+
+
+--
+-- Name: policy_set_policy_set_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.policy_set ALTER COLUMN policy_set_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_set_policy_set_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: policy_snapshot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_snapshot (
+    policy_snapshot_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    snapshot_hash character(64) NOT NULL,
+    ref_count integer DEFAULT 0 NOT NULL,
+    excluded_disabled_count integer DEFAULT 0 NOT NULL,
+    excluded_expired_count integer DEFAULT 0 NOT NULL
+);
+
+
+--
+-- Name: policy_snapshot_policy_snapshot_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.policy_snapshot ALTER COLUMN policy_snapshot_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_snapshot_policy_snapshot_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: policy_snapshot_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_snapshot_rule (
+    policy_snapshot_rule_id bigint NOT NULL,
+    policy_snapshot_id bigint NOT NULL,
+    policy_rule_public_id uuid NOT NULL,
+    rule_order integer NOT NULL
+);
+
+
+--
+-- Name: policy_snapshot_rule_policy_snapshot_rule_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.policy_snapshot_rule ALTER COLUMN policy_snapshot_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_snapshot_rule_policy_snapshot_rule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: query_presets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.query_presets (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    expression text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: rate_limit_policy; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rate_limit_policy (
+    rate_limit_policy_id bigint NOT NULL,
+    rate_limit_policy_public_id uuid NOT NULL,
+    display_name character varying(256) NOT NULL,
+    requests_per_minute integer NOT NULL,
+    burst integer NOT NULL,
+    concurrent_requests integer NOT NULL,
+    is_system boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT rate_limit_policy_burst_check CHECK (((burst >= 0) AND (burst <= 6000))),
+    CONSTRAINT rate_limit_policy_concurrent_requests_check CHECK (((concurrent_requests >= 1) AND (concurrent_requests <= 64))),
+    CONSTRAINT rate_limit_policy_requests_per_minute_check CHECK (((requests_per_minute >= 1) AND (requests_per_minute <= 6000)))
+);
+
+
+--
+-- Name: rate_limit_policy_rate_limit_policy_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.rate_limit_policy ALTER COLUMN rate_limit_policy_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.rate_limit_policy_rate_limit_policy_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: rate_limit_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rate_limit_state (
+    rate_limit_state_id bigint NOT NULL,
+    scope_type public.rate_limit_scope NOT NULL,
+    scope_id bigint NOT NULL,
+    window_start timestamp with time zone NOT NULL,
+    tokens_used integer NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT rate_limit_state_tokens_used_check CHECK ((tokens_used >= 0))
+);
+
+
+--
+-- Name: rate_limit_state_rate_limit_state_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.rate_limit_state ALTER COLUMN rate_limit_state_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.rate_limit_state_rate_limit_state_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: routing_policy; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.routing_policy (
+    routing_policy_id bigint NOT NULL,
+    routing_policy_public_id uuid NOT NULL,
+    display_name character varying(256) NOT NULL,
+    mode public.routing_policy_mode NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone
+);
+
+
+--
+-- Name: routing_policy_parameter; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.routing_policy_parameter (
+    routing_policy_parameter_id bigint NOT NULL,
+    routing_policy_id bigint NOT NULL,
+    param_key public.routing_param_key NOT NULL,
+    value_plain character varying(2048),
+    value_int integer,
+    value_bool boolean,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: routing_policy_parameter_routing_policy_parameter_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.routing_policy_parameter ALTER COLUMN routing_policy_parameter_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.routing_policy_parameter_routing_policy_parameter_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: routing_policy_rate_limit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.routing_policy_rate_limit (
+    routing_policy_rate_limit_id bigint NOT NULL,
+    routing_policy_id bigint NOT NULL,
+    rate_limit_policy_id bigint NOT NULL
+);
+
+
+--
+-- Name: routing_policy_rate_limit_routing_policy_rate_limit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.routing_policy_rate_limit ALTER COLUMN routing_policy_rate_limit_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.routing_policy_rate_limit_routing_policy_rate_limit_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: routing_policy_routing_policy_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.routing_policy ALTER COLUMN routing_policy_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.routing_policy_routing_policy_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_filter_decision; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_filter_decision (
+    search_filter_decision_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    policy_rule_public_id uuid NOT NULL,
+    policy_snapshot_id bigint NOT NULL,
+    observation_id bigint,
+    canonical_torrent_id bigint,
+    canonical_torrent_source_id bigint,
+    decision public.decision_type NOT NULL,
+    decision_detail character varying(512),
+    decided_at timestamp with time zone NOT NULL,
+    CONSTRAINT search_filter_decision_target_chk CHECK (((canonical_torrent_id IS NOT NULL) OR (canonical_torrent_source_id IS NOT NULL)))
+);
+
+
+--
+-- Name: search_filter_decision_search_filter_decision_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_filter_decision ALTER COLUMN search_filter_decision_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_filter_decision_search_filter_decision_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_page; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_page (
+    search_page_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    page_number integer NOT NULL,
+    sealed_at timestamp with time zone,
+    CONSTRAINT search_page_page_number_check CHECK ((page_number >= 1))
+);
+
+
+--
+-- Name: search_page_item; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_page_item (
+    search_page_item_id bigint NOT NULL,
+    search_page_id bigint NOT NULL,
+    search_request_canonical_id bigint NOT NULL,
+    "position" integer NOT NULL,
+    CONSTRAINT search_page_item_position_check CHECK (("position" >= 1))
+);
+
+
+--
+-- Name: search_page_item_search_page_item_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_page_item ALTER COLUMN search_page_item_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_page_item_search_page_item_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_page_search_page_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_page ALTER COLUMN search_page_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_page_search_page_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile (
+    search_profile_id bigint NOT NULL,
+    search_profile_public_id uuid NOT NULL,
+    user_id bigint,
+    display_name character varying(256) NOT NULL,
+    is_default boolean NOT NULL,
+    page_size integer DEFAULT 50 NOT NULL,
+    default_media_domain_id bigint,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT search_profile_page_size_check CHECK (((page_size >= 10) AND (page_size <= 200)))
+);
+
+
+--
+-- Name: search_profile_indexer_allow; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_indexer_allow (
+    search_profile_indexer_allow_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_profile_indexer_allow_search_profile_indexer_allow_i_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_indexer_allow ALTER COLUMN search_profile_indexer_allow_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_indexer_allow_search_profile_indexer_allow_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_indexer_block; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_indexer_block (
+    search_profile_indexer_block_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_profile_indexer_block_search_profile_indexer_block_i_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_indexer_block ALTER COLUMN search_profile_indexer_block_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_indexer_block_search_profile_indexer_block_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_media_domain; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_media_domain (
+    search_profile_media_domain_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    media_domain_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_profile_media_domain_search_profile_media_domain_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_media_domain ALTER COLUMN search_profile_media_domain_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_media_domain_search_profile_media_domain_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_policy_set; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_policy_set (
+    search_profile_policy_set_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    policy_set_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_profile_policy_set_search_profile_policy_set_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_policy_set ALTER COLUMN search_profile_policy_set_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_policy_set_search_profile_policy_set_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_search_profile_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile ALTER COLUMN search_profile_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_search_profile_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_tag_allow; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_tag_allow (
+    search_profile_tag_allow_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    tag_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_profile_tag_allow_search_profile_tag_allow_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_tag_allow ALTER COLUMN search_profile_tag_allow_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_tag_allow_search_profile_tag_allow_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_tag_block; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_tag_block (
+    search_profile_tag_block_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    tag_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_profile_tag_block_search_profile_tag_block_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_tag_block ALTER COLUMN search_profile_tag_block_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_tag_block_search_profile_tag_block_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_tag_prefer; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_tag_prefer (
+    search_profile_tag_prefer_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    tag_id bigint NOT NULL,
+    weight_override integer DEFAULT 5,
+    CONSTRAINT search_profile_tag_prefer_weight_override_check CHECK (((weight_override IS NULL) OR ((weight_override >= '-50'::integer) AND (weight_override <= 50))))
+);
+
+
+--
+-- Name: search_profile_tag_prefer_search_profile_tag_prefer_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_tag_prefer ALTER COLUMN search_profile_tag_prefer_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_tag_prefer_search_profile_tag_prefer_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_trust_tier; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_trust_tier (
+    search_profile_trust_tier_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    trust_tier_id bigint NOT NULL,
+    weight_override integer,
+    CONSTRAINT search_profile_trust_tier_weight_override_check CHECK (((weight_override IS NULL) OR ((weight_override >= '-50'::integer) AND (weight_override <= 50))))
+);
+
+
+--
+-- Name: search_profile_trust_tier_search_profile_trust_tier_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_trust_tier ALTER COLUMN search_profile_trust_tier_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_trust_tier_search_profile_trust_tier_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request (
+    search_request_id bigint NOT NULL,
+    search_request_public_id uuid NOT NULL,
+    user_id bigint,
+    search_profile_id bigint,
+    policy_set_id bigint,
+    policy_snapshot_id bigint NOT NULL,
+    requested_media_domain_id bigint,
+    effective_media_domain_id bigint,
+    query_text character varying(512) NOT NULL,
+    query_type public.query_type NOT NULL,
+    torznab_mode public.torznab_mode,
+    page_size integer DEFAULT 50 NOT NULL,
+    season_number integer,
+    episode_number integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    canceled_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    status public.search_status NOT NULL,
+    failure_class public.failure_class,
+    error_detail character varying(1024),
+    CONSTRAINT search_request_canceled_at_chk CHECK ((((status = 'canceled'::public.search_status) AND (canceled_at IS NOT NULL)) OR ((status <> 'canceled'::public.search_status) AND (canceled_at IS NULL)))),
+    CONSTRAINT search_request_episode_number_chk CHECK (((episode_number IS NULL) OR (episode_number >= 0))),
+    CONSTRAINT search_request_failure_class_chk CHECK ((((status = 'failed'::public.search_status) AND (failure_class IS NOT NULL)) OR ((status <> 'failed'::public.search_status) AND (failure_class IS NULL)))),
+    CONSTRAINT search_request_finished_at_chk CHECK ((((status = ANY (ARRAY['finished'::public.search_status, 'failed'::public.search_status, 'canceled'::public.search_status])) AND (finished_at IS NOT NULL)) OR ((status = 'running'::public.search_status) AND (finished_at IS NULL)))),
+    CONSTRAINT search_request_page_size_check CHECK (((page_size >= 10) AND (page_size <= 200))),
+    CONSTRAINT search_request_season_episode_mode_chk CHECK ((((torznab_mode IS NULL) AND (((query_type = 'season_episode'::public.query_type) AND (season_number IS NOT NULL) AND (episode_number IS NOT NULL)) OR ((query_type <> 'season_episode'::public.query_type) AND (season_number IS NULL) AND (episode_number IS NULL)))) OR ((torznab_mode = 'tv'::public.torznab_mode) AND ((episode_number IS NULL) OR (season_number IS NOT NULL))) OR ((torznab_mode = ANY (ARRAY['generic'::public.torznab_mode, 'movie'::public.torznab_mode])) AND (season_number IS NULL) AND (episode_number IS NULL)))),
+    CONSTRAINT search_request_season_number_chk CHECK (((season_number IS NULL) OR (season_number >= 0)))
+);
+
+
+--
+-- Name: search_request_canonical; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_canonical (
+    search_request_canonical_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    first_seen_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: search_request_canonical_search_request_canonical_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_canonical ALTER COLUMN search_request_canonical_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_canonical_search_request_canonical_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_identifier; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_identifier (
+    search_request_identifier_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    id_type public.identifier_type NOT NULL,
+    id_value_normalized character varying(32) NOT NULL,
+    id_value_raw character varying(64) NOT NULL,
+    CONSTRAINT search_request_identifier_imdb_chk CHECK (((id_type <> 'imdb'::public.identifier_type) OR ((id_value_normalized)::text ~ '^tt[0-9]{7,9}$'::text))),
+    CONSTRAINT search_request_identifier_tmdb_chk CHECK (((id_type <> 'tmdb'::public.identifier_type) OR ((id_value_normalized)::text ~ '^[0-9]{1,10}$'::text))),
+    CONSTRAINT search_request_identifier_tvdb_chk CHECK (((id_type <> 'tvdb'::public.identifier_type) OR ((id_value_normalized)::text ~ '^[0-9]{1,10}$'::text)))
+);
+
+
+--
+-- Name: search_request_identifier_search_request_identifier_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_identifier ALTER COLUMN search_request_identifier_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_identifier_search_request_identifier_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_indexer_run; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_indexer_run (
+    search_request_indexer_run_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    next_attempt_at timestamp with time zone,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    rate_limited_attempt_count integer DEFAULT 0 NOT NULL,
+    last_error_class public.error_class,
+    last_rate_limit_scope public.rate_limit_scope,
+    last_correlation_id uuid,
+    status public.run_status NOT NULL,
+    error_class public.error_class,
+    error_detail character varying(1024),
+    items_seen_count integer DEFAULT 0 NOT NULL,
+    items_emitted_count integer DEFAULT 0 NOT NULL,
+    canonical_added_count integer DEFAULT 0 NOT NULL,
+    CONSTRAINT search_request_indexer_run_attempt_count_check CHECK ((attempt_count >= 0)),
+    CONSTRAINT search_request_indexer_run_canonical_added_count_check CHECK ((canonical_added_count >= 0)),
+    CONSTRAINT search_request_indexer_run_error_class_chk CHECK ((((status = 'failed'::public.run_status) AND (error_class IS NOT NULL)) OR ((status <> 'failed'::public.run_status) AND (error_class IS NULL)))),
+    CONSTRAINT search_request_indexer_run_finished_at_chk CHECK ((((status = ANY (ARRAY['finished'::public.run_status, 'failed'::public.run_status, 'canceled'::public.run_status])) AND (finished_at IS NOT NULL)) OR ((status = ANY (ARRAY['queued'::public.run_status, 'running'::public.run_status])) AND (finished_at IS NULL)))),
+    CONSTRAINT search_request_indexer_run_items_emitted_count_check CHECK ((items_emitted_count >= 0)),
+    CONSTRAINT search_request_indexer_run_items_seen_count_check CHECK ((items_seen_count >= 0)),
+    CONSTRAINT search_request_indexer_run_rate_limit_scope_chk CHECK ((((last_error_class = 'rate_limited'::public.error_class) AND (last_rate_limit_scope IS NOT NULL)) OR ((last_error_class IS DISTINCT FROM 'rate_limited'::public.error_class) AND (last_rate_limit_scope IS NULL)))),
+    CONSTRAINT search_request_indexer_run_rate_limited_attempt_count_check CHECK ((rate_limited_attempt_count >= 0)),
+    CONSTRAINT search_request_indexer_run_started_at_chk CHECK ((((status = 'queued'::public.run_status) AND (started_at IS NULL)) OR ((status <> 'queued'::public.run_status) AND (started_at IS NOT NULL))))
+);
+
+
+--
+-- Name: search_request_indexer_run_correlation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_indexer_run_correlation (
+    search_request_indexer_run_correlation_id bigint NOT NULL,
+    search_request_indexer_run_id bigint NOT NULL,
+    correlation_id uuid NOT NULL,
+    page_number integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT search_request_indexer_run_correlation_page_chk CHECK (((page_number IS NULL) OR (page_number >= 1)))
+);
+
+
+--
+-- Name: search_request_indexer_run_co_search_request_indexer_run_co_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_indexer_run_correlation ALTER COLUMN search_request_indexer_run_correlation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_indexer_run_co_search_request_indexer_run_co_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_indexer_run_search_request_indexer_run_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_indexer_run ALTER COLUMN search_request_indexer_run_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_indexer_run_search_request_indexer_run_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_search_request_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request ALTER COLUMN search_request_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_search_request_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_source_observation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_source_observation (
+    observation_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    canonical_torrent_id bigint,
+    canonical_torrent_source_id bigint,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    seeders integer,
+    leechers integer,
+    published_at timestamp with time zone,
+    uploader character varying(256),
+    source_guid character varying(256),
+    details_url character varying(2048),
+    download_url character varying(2048),
+    magnet_uri character varying(2048),
+    title_raw character varying(512) NOT NULL,
+    size_bytes bigint,
+    infohash_v1 character(40),
+    infohash_v2 character(64),
+    magnet_hash character(64),
+    guid_conflict boolean DEFAULT false NOT NULL,
+    was_downranked boolean DEFAULT false NOT NULL,
+    was_flagged boolean DEFAULT false NOT NULL,
+    CONSTRAINT search_request_source_observation_infohash_v1_chk CHECK (((infohash_v1 IS NULL) OR (infohash_v1 ~ '^[0-9a-f]{40}$'::text))),
+    CONSTRAINT search_request_source_observation_infohash_v2_chk CHECK (((infohash_v2 IS NULL) OR (infohash_v2 ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT search_request_source_observation_leechers_chk CHECK (((leechers IS NULL) OR (leechers >= 0))),
+    CONSTRAINT search_request_source_observation_magnet_hash_chk CHECK (((magnet_hash IS NULL) OR (magnet_hash ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT search_request_source_observation_seeders_chk CHECK (((seeders IS NULL) OR (seeders >= 0))),
+    CONSTRAINT search_request_source_observation_size_bytes_chk CHECK (((size_bytes IS NULL) OR (size_bytes >= 0)))
+);
+
+
+--
+-- Name: search_request_source_observation_attr; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_source_observation_attr (
+    observation_attr_id bigint NOT NULL,
+    observation_id bigint NOT NULL,
+    attr_key public.observation_attr_key NOT NULL,
+    value_text character varying(512),
+    value_int integer,
+    value_bigint bigint,
+    value_numeric numeric(12,4),
+    value_bool boolean,
+    value_uuid uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT search_request_source_observation_attr_episode_chk CHECK (((attr_key <> 'episode'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_files_count_chk CHECK (((attr_key <> 'files_count'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_imdb_chk CHECK (((attr_key <> 'imdb_id'::public.observation_attr_key) OR ((value_text)::text ~ '^tt[0-9]{7,9}$'::text))),
+    CONSTRAINT search_request_source_observation_attr_key_type_chk CHECK ((((attr_key = ANY (ARRAY['tracker_name'::public.observation_attr_key, 'release_group'::public.observation_attr_key, 'language_primary'::public.observation_attr_key, 'subtitles_primary'::public.observation_attr_key, 'imdb_id'::public.observation_attr_key])) AND (value_text IS NOT NULL)) OR ((attr_key = 'size_bytes_reported'::public.observation_attr_key) AND (value_bigint IS NOT NULL)) OR ((attr_key = ANY (ARRAY['tracker_category'::public.observation_attr_key, 'tracker_subcategory'::public.observation_attr_key, 'files_count'::public.observation_attr_key, 'season'::public.observation_attr_key, 'episode'::public.observation_attr_key, 'year'::public.observation_attr_key, 'tmdb_id'::public.observation_attr_key, 'tvdb_id'::public.observation_attr_key, 'minimum_seed_time_hours'::public.observation_attr_key])) AND (value_int IS NOT NULL)) OR ((attr_key = 'minimum_ratio'::public.observation_attr_key) AND (value_numeric IS NOT NULL)) OR ((attr_key = ANY (ARRAY['freeleech'::public.observation_attr_key, 'internal_flag'::public.observation_attr_key, 'scene_flag'::public.observation_attr_key])) AND (value_bool IS NOT NULL)))),
+    CONSTRAINT search_request_source_observation_attr_min_ratio_chk CHECK (((attr_key <> 'minimum_ratio'::public.observation_attr_key) OR ((value_numeric IS NOT NULL) AND (value_numeric >= (0)::numeric)))),
+    CONSTRAINT search_request_source_observation_attr_min_seed_time_chk CHECK (((attr_key <> 'minimum_seed_time_hours'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_season_chk CHECK (((attr_key <> 'season'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_single_value_chk CHECK (((((((((value_text IS NOT NULL))::integer + ((value_int IS NOT NULL))::integer) + ((value_bigint IS NOT NULL))::integer) + ((value_numeric IS NOT NULL))::integer) + ((value_bool IS NOT NULL))::integer) + ((value_uuid IS NOT NULL))::integer) = 1)),
+    CONSTRAINT search_request_source_observation_attr_size_bytes_chk CHECK (((attr_key <> 'size_bytes_reported'::public.observation_attr_key) OR ((value_bigint IS NOT NULL) AND (value_bigint >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_tmdb_chk CHECK (((attr_key <> 'tmdb_id'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int > 0)))),
+    CONSTRAINT search_request_source_observation_attr_tracker_category_chk CHECK (((attr_key <> 'tracker_category'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_tracker_subcategory_chk CHECK (((attr_key <> 'tracker_subcategory'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_tvdb_chk CHECK (((attr_key <> 'tvdb_id'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int > 0)))),
+    CONSTRAINT search_request_source_observation_attr_year_chk CHECK (((attr_key <> 'year'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0))))
+);
+
+
+--
+-- Name: search_request_source_observation_attr_observation_attr_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_source_observation_attr ALTER COLUMN observation_attr_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_source_observation_attr_observation_attr_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_source_observation_observation_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_source_observation ALTER COLUMN observation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_source_observation_observation_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_torznab_category_effective; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_torznab_category_effective (
+    search_request_torznab_category_effective_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    torznab_category_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_request_torznab_catego_search_request_torznab_categ_seq1; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_torznab_category_effective ALTER COLUMN search_request_torznab_category_effective_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_torznab_catego_search_request_torznab_categ_seq1
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_torznab_category_requested; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_torznab_category_requested (
+    search_request_torznab_category_requested_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    torznab_category_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_request_torznab_catego_search_request_torznab_catego_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_torznab_category_requested ALTER COLUMN search_request_torznab_category_requested_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_torznab_catego_search_request_torznab_catego_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: secret; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.secret (
+    secret_id bigint NOT NULL,
+    secret_public_id uuid NOT NULL,
+    secret_type public.secret_type NOT NULL,
+    cipher_text bytea NOT NULL,
+    key_id character varying(128) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    rotated_at timestamp with time zone,
+    is_revoked boolean DEFAULT false NOT NULL,
+    CONSTRAINT secret_key_id_len_chk CHECK (((char_length((key_id)::text) >= 1) AND (char_length((key_id)::text) <= 128)))
+);
+
+
+--
+-- Name: secret_audit_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.secret_audit_log (
+    secret_audit_log_id bigint NOT NULL,
+    secret_id bigint NOT NULL,
+    action public.secret_audit_action NOT NULL,
+    actor_user_id bigint,
+    occurred_at timestamp with time zone DEFAULT now() NOT NULL,
+    detail character varying(256) NOT NULL,
+    CONSTRAINT secret_audit_detail_len_chk CHECK (((char_length((detail)::text) >= 1) AND (char_length((detail)::text) <= 256)))
+);
+
+
+--
+-- Name: secret_audit_log_secret_audit_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.secret_audit_log ALTER COLUMN secret_audit_log_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.secret_audit_log_secret_audit_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: secret_binding; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.secret_binding (
+    secret_binding_id bigint NOT NULL,
+    secret_id bigint NOT NULL,
+    bound_table public.secret_bound_table NOT NULL,
+    bound_id bigint NOT NULL,
+    binding_name public.secret_binding_name NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT secret_binding_name_chk CHECK ((((bound_table = 'indexer_instance_field_value'::public.secret_bound_table) AND (binding_name = ANY (ARRAY['api_key'::public.secret_binding_name, 'password'::public.secret_binding_name, 'cookie'::public.secret_binding_name, 'token'::public.secret_binding_name, 'header_value'::public.secret_binding_name]))) OR ((bound_table = 'routing_policy_parameter'::public.secret_bound_table) AND (binding_name = ANY (ARRAY['proxy_password'::public.secret_binding_name, 'socks_password'::public.secret_binding_name])))))
+);
+
+
+--
+-- Name: secret_binding_secret_binding_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.secret_binding ALTER COLUMN secret_binding_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.secret_binding_secret_binding_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: secret_secret_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.secret ALTER COLUMN secret_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.secret_secret_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: settings_revision; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.settings_revision (
+    id smallint DEFAULT 1 NOT NULL,
+    revision bigint DEFAULT 0 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT settings_revision_id_check CHECK ((id = 1))
+);
+
+
+--
+-- Name: settings_secret; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.settings_secret (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    ciphertext bytea NOT NULL,
+    created_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: setup_tokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.setup_tokens (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    token_hash text NOT NULL,
+    issued_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    consumed_at timestamp with time zone,
+    issued_by text
+);
+
+
+--
+-- Name: source_metadata_conflict; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.source_metadata_conflict (
+    source_metadata_conflict_id bigint NOT NULL,
+    canonical_torrent_source_id bigint NOT NULL,
+    conflict_type public.conflict_type NOT NULL,
+    existing_value character varying(256) NOT NULL,
+    incoming_value character varying(256) NOT NULL,
+    observed_at timestamp with time zone NOT NULL,
+    resolved_at timestamp with time zone,
+    resolved_by_user_id bigint,
+    resolution public.conflict_resolution,
+    resolution_note character varying(256)
+);
+
+
+--
+-- Name: source_metadata_conflict_audit_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.source_metadata_conflict_audit_log (
+    source_metadata_conflict_audit_log_id bigint NOT NULL,
+    conflict_id bigint NOT NULL,
+    action public.source_metadata_conflict_action NOT NULL,
+    actor_user_id bigint,
+    occurred_at timestamp with time zone NOT NULL,
+    note character varying(256)
+);
+
+
+--
+-- Name: source_metadata_conflict_audi_source_metadata_conflict_audi_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.source_metadata_conflict_audit_log ALTER COLUMN source_metadata_conflict_audit_log_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.source_metadata_conflict_audi_source_metadata_conflict_audi_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: source_metadata_conflict_source_metadata_conflict_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.source_metadata_conflict ALTER COLUMN source_metadata_conflict_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.source_metadata_conflict_source_metadata_conflict_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: source_reputation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.source_reputation (
+    source_reputation_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    window_key public.reputation_window NOT NULL,
+    window_start timestamp with time zone NOT NULL,
+    request_success_rate numeric(5,4) NOT NULL,
+    acquisition_success_rate numeric(5,4) NOT NULL,
+    fake_rate numeric(5,4) NOT NULL,
+    dmca_rate numeric(5,4) NOT NULL,
+    request_count integer NOT NULL,
+    request_success_count integer NOT NULL,
+    acquisition_count integer NOT NULL,
+    acquisition_success_count integer NOT NULL,
+    min_samples integer NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT source_reputation_acquisition_count_check CHECK ((acquisition_count >= 0)),
+    CONSTRAINT source_reputation_acquisition_success_count_check CHECK ((acquisition_success_count >= 0)),
+    CONSTRAINT source_reputation_acquisition_success_rate_check CHECK (((acquisition_success_rate >= (0)::numeric) AND (acquisition_success_rate <= (1)::numeric))),
+    CONSTRAINT source_reputation_dmca_rate_check CHECK (((dmca_rate >= (0)::numeric) AND (dmca_rate <= (1)::numeric))),
+    CONSTRAINT source_reputation_fake_rate_check CHECK (((fake_rate >= (0)::numeric) AND (fake_rate <= (1)::numeric))),
+    CONSTRAINT source_reputation_min_samples_check CHECK ((min_samples >= 0)),
+    CONSTRAINT source_reputation_request_count_check CHECK ((request_count >= 0)),
+    CONSTRAINT source_reputation_request_success_count_check CHECK ((request_success_count >= 0)),
+    CONSTRAINT source_reputation_request_success_rate_check CHECK (((request_success_rate >= (0)::numeric) AND (request_success_rate <= (1)::numeric)))
+);
+
+
+--
+-- Name: source_reputation_source_reputation_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.source_reputation ALTER COLUMN source_reputation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.source_reputation_source_reputation_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: tag; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tag (
+    tag_id bigint NOT NULL,
+    tag_public_id uuid NOT NULL,
+    tag_key character varying(128) NOT NULL,
+    display_name character varying(256) NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT tag_key_lc CHECK (((tag_key)::text = lower((tag_key)::text)))
+);
+
+
+--
+-- Name: tag_tag_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tag ALTER COLUMN tag_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.tag_tag_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: torznab_category; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.torznab_category (
+    torznab_category_id bigint NOT NULL,
+    torznab_cat_id integer NOT NULL,
+    name character varying(128) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
