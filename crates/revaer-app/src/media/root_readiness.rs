@@ -56,3 +56,6 @@ fn row_state(
         generation.as_deref(),
     )
 }
+
+#[cfg(test)]
+pub(super) mod tests;

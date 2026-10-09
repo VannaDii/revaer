@@ -62,3 +62,6 @@ pub(super) fn response(
         destructive_reason,
     })
 }
+
+#[cfg(test)]
+mod tests;
