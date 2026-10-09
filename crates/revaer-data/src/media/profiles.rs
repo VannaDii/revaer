@@ -663,20 +663,12 @@ mod tests {
     }
 
     #[test]
-    fn migration_guards_cross_profile_discovery_root_overlap() -> anyhow::Result<()> {
-        let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
-        let mut migration_body = String::new();
-        for entry in std::fs::read_dir(migrations_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().and_then(std::ffi::OsStr::to_str) == Some("sql") {
-                migration_body.push_str(&std::fs::read_to_string(path)?);
-            }
-        }
+    fn initializer_guards_cross_profile_discovery_root_overlap() {
+        let migration_body = include_str!("../../init.sql");
 
         assert!(
             migration_body.contains("media_profile_discovery_root_overlap"),
-            "media profile migrations must reject discovery roots claimed by another active profile"
+            "media initializer must reject discovery roots claimed by another active profile"
         );
         assert!(
             migration_body.contains("LOCK TABLE media_profile IN SHARE ROW EXCLUSIVE MODE"),
@@ -690,7 +682,6 @@ mod tests {
             migration_body.contains("media_profile_all_root_overlap_trigger"),
             "media profile roots must be validated for every insert and update"
         );
-        Ok(())
     }
 
     #[tokio::test]
