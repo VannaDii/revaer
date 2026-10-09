@@ -15,6 +15,10 @@ applyTo:
 
 # Workflow And Release Rules
 
+- Existing media recovery recipes retain their feature selections and require
+  positive passing tests. Native service recovery requires Linux and the owned
+  persistent-mount fixture; these checks preserve the full CI and UI gates.
+
 - The Justfile provides compatibility aliases for the locked `rv` task registry.
   The retained shell/Node implementations are comparison material, not the
   current quality-gate executor.
