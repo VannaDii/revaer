@@ -200,7 +200,8 @@ mod tests {
                 .body(body);
         });
 
-        let resume_path = std::env::temp_dir().join("revaer-tail-resume.txt");
+        let resume_path =
+            std::env::temp_dir().join(format!("revaer-tail-resume-{}.txt", Uuid::new_v4()));
         let args = tail_args(Some(resume_path.clone()));
         let response = Client::new()
             .get(format!("{}/v1/torrents/events", server.base_url()))
@@ -213,7 +214,7 @@ mod tests {
         assert_eq!(resume_id, 2);
         let stored = fs::read_to_string(&resume_path)?;
         assert_eq!(stored.trim(), "2");
-        let _ = fs::remove_file(&resume_path);
+        fs::remove_file(&resume_path)?;
         Ok(())
     }
 
@@ -228,7 +229,8 @@ mod tests {
                 .body(sse_payload(2, &envelope));
         });
 
-        let resume_path = std::env::temp_dir().join("revaer-tail-resume-dup.txt");
+        let resume_path =
+            std::env::temp_dir().join(format!("revaer-tail-resume-dup-{}.txt", Uuid::new_v4()));
         fs::write(&resume_path, "2")?;
         let args = tail_args(Some(resume_path.clone()));
         let response = Client::new()
@@ -242,7 +244,7 @@ mod tests {
         assert_eq!(resume_id, 2);
         let stored = fs::read_to_string(&resume_path)?;
         assert_eq!(stored.trim(), "2");
-        let _ = fs::remove_file(&resume_path);
+        fs::remove_file(&resume_path)?;
         Ok(())
     }
 }
