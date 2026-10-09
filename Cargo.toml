@@ -74,6 +74,7 @@ base64 = "0.22"
 regex = "1.12"
 walkdir = "2.5"
 jsonschema = { version = "0.46", default-features = false }
+sha2 = "0.10"
 rustix = { version = "1.1.4", features = ["fs", "process"] }
 revaer-test-support = { path = "crates/revaer-test-support" }
 
