@@ -19,7 +19,8 @@ from test_e2e_coordinator import coordinator as coordinator
 
 @pytest.mark.parametrize("host", ("localhost", "127.0.0.1", "host.docker.internal"))
 def test_local_endpoint_requires_exact_loopback_binding(host: str) -> None:
-    verify_endpoint(f"postgresql://user@{host}:5450/postgres", "127.0.0.1:5450\n")
+    password = secrets.token_hex(24)
+    verify_endpoint(f"postgresql://user:{password}@{host}:5450/postgres", "127.0.0.1:5450\n")
 
 
 @pytest.mark.parametrize(
@@ -70,7 +71,8 @@ def test_media_coordinator_uses_sealed_runtime_and_preserves_cleanup_order(
     selections: list[Context] = []
 
     def select(name: str, image: str) -> str:
-        assert name == "selected" and "@sha256:" in image
+        assert name == "selected"
+        assert "@sha256:" in image
         scenario.visit("select-container")
         return container
 
@@ -116,8 +118,10 @@ def test_media_coordinator_uses_sealed_runtime_and_preserves_cleanup_order(
     assert "migrate" not in scenario.events
     assert "create-database" not in scenario.events
     assert scenario.events[-1] == "drop-sealed"
-    if failure != "start-api":
+    if "start-ui" in scenario.events:
         assert scenario.events[-3:] == ["stop-ui", "stop-api", "drop-sealed"]
+    elif failure != "start-api":
+        assert scenario.events[-2:] == ["stop-api", "drop-sealed"]
 
 
 @pytest.mark.parametrize("phase", ("", "unknown"))

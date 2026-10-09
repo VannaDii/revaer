@@ -15,6 +15,14 @@ applyTo:
 
 # Workflow And Release Rules
 
+- Composed validation provisions an owned single-init fixture or verifies the
+  caller-selected database without repair. Preserve administrative test endpoints
+  and owned cleanup. Cargo lock reconciliation remains offline without registry
+  upgrades.
+- PR feature and scanner jobs exercise sealed application fixtures in the
+  accepted feature-development phase. Their guardrail requires that fixture
+  gate before feature tests and rejects historical migration replay.
+
 - Existing media recovery recipes retain their feature selections and require
   positive passing tests. Native service recovery requires Linux and the owned
   persistent-mount fixture; these checks preserve the full CI and UI gates.

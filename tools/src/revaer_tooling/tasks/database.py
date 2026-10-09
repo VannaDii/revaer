@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
 from ..context import Context, TaskResult
+from ..e2e.database import uses_single_init
 from ..errors import ToolingError
 from ..external.docker import PostgresContainerArgs
 from .base import Task
@@ -145,6 +146,17 @@ def database_connection(context: Context) -> Iterator[str]:
 def prepared_database(context: Context, *, seed: bool = False) -> Iterator[str]:
     """Hold the ownership lock through migration and the caller's service lifetime."""
     settings = context.settings.database
+    if uses_single_init(context):
+        if settings.reset or seed:
+            raise ToolingError(
+                "Single-init feature development does not reset or seed existing databases"
+            )
+        with database_connection(context) as url:
+            context.tools.cargo.run_binary(
+                "revaer-data", "verify_database_baseline", env={"DATABASE_URL": url}
+            )
+            yield url
+        return
     if settings.reset and not settings.managed:
         raise ToolingError("Refusing to reset a caller-owned database")
     if settings.reset and unquote(urlsplit(settings.url).path).strip("/") in (
@@ -196,6 +208,10 @@ class DatabaseSeed(Task):
 class DatabaseMigrate(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
+        if uses_single_init(context):
+            raise ToolingError(
+                "ADR 591 requires the complete single initializer; migrations are historical"
+            )
         context.tools.sqlx.migrate(
             context.settings.database.url,
             context.root / "crates/revaer-data/migrations",
