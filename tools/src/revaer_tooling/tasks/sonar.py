@@ -11,6 +11,7 @@ import tarfile
 import tempfile
 import tomllib
 from pathlib import Path
+from typing import Final
 
 from ..context import Context, TaskResult
 from ..errors import ToolingError
@@ -31,6 +32,7 @@ from .python_coverage import authored_python
 from .workflows import SonarPolicy
 
 RESULT_NAMES = ("ce-task", "measures", "quality-gate", "issues", "all-issues", "hotspots")
+ISSUES_SEARCH: Final = "issues/search"
 
 
 class SonarVerifyInputs(Task):
@@ -232,7 +234,7 @@ def _fetch_result(context: Context, identifier: str, records: dict[str, JsonObje
     records["quality-gate"] = api.get("qualitygates/project_status", {"analysisId": analysis})
     new_code = {} if settings.pull_request else {"sinceLeakPeriod": "true"}
     records["issues"] = api.get(
-        "issues/search",
+        ISSUES_SEARCH,
         {
             **scope,
             **new_code,
@@ -257,7 +259,7 @@ def _fetch_all_issues(context: Context) -> JsonObject:
     settings = context.settings.sonar
     scope = {"pullRequest": settings.pull_request} if settings.pull_request else {}
     parameters = {**scope, "componentKeys": settings.project_key, "resolved": "false", "ps": "500"}
-    record = context.tools.sonar_api.get("issues/search", {**parameters, "p": "1"})
+    record = context.tools.sonar_api.get(ISSUES_SEARCH, {**parameters, "p": "1"})
     total = record.get("total")
     if isinstance(total, bool) or not isinstance(total, int) or total < 0:
         raise ToolingError("Sonar issue search has an invalid total")
@@ -265,7 +267,7 @@ def _fetch_all_issues(context: Context) -> JsonObject:
     page = 1
     while len(rows) < total:
         page += 1
-        following = context.tools.sonar_api.get("issues/search", {**parameters, "p": str(page)})
+        following = context.tools.sonar_api.get(ISSUES_SEARCH, {**parameters, "p": str(page)})
         if type(following.get("total")) is not int or following.get("total") != total:
             raise ToolingError("Sonar issue search changed during pagination")
         batch = array_value(following.get("issues"))

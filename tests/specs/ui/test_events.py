@@ -8,6 +8,20 @@ from tests.pages.app_shell import AppShell
 from tests.support.polling import eventually
 
 
+def event_frame(number: int) -> str:
+    identifier = 99 if number == 1 else 100
+    payload = json.dumps(
+        {
+            "id": identifier,
+            "timestamp": "2026-10-08T00:00:00Z",
+            "event": {"type": "health_changed", "degraded": []},
+        }
+    )
+    # The second event ends without a blank-line terminator.
+    ending = "\n\n" if number == 1 else ""
+    return f"retry: 250\nid: {identifier}\ndata: {payload}" + ending
+
+
 def test_event_resume_resets_conflict_and_persists_final_frame(app: AppShell, page: Page) -> None:
     resume_headers: list[str | None] = []
     exercise_resume = False
@@ -35,21 +49,7 @@ def test_event_resume_resets_conflict_and_persists_final_frame(app: AppShell, pa
         elif number >= 4:
             route.fulfill(status=403, headers=headers)
         else:
-            identifier = 99 if number == 1 else 100
-            payload = json.dumps(
-                {
-                    "id": identifier,
-                    "timestamp": "2026-10-08T00:00:00Z",
-                    "event": {"type": "health_changed", "degraded": []},
-                }
-            )
-            # The second event ends without a blank-line terminator.
-            ending = "\n\n" if number == 1 else ""
-            route.fulfill(
-                status=200,
-                headers=headers,
-                body=f"retry: 250\nid: {identifier}\ndata: {payload}" + ending,
-            )
+            route.fulfill(status=200, headers=headers, body=event_frame(number))
 
     page.route("**/v1/torrents/events*", respond)
     app.goto("/torrents")

@@ -218,6 +218,46 @@ where
     })
 }
 
+fn indexer_callback<F, Fut>(
+    api: Option<ApiCtx>,
+    busy: UseStateHandle<bool>,
+    records: UseStateHandle<Vec<OperationRecord>>,
+    props: &IndexersPageProps,
+    title: &'static str,
+    unavailable_message: &'static str,
+    operation: F,
+) -> Callback<MouseEvent>
+where
+    F: Fn(ApiCtx, UseStateHandle<Vec<OperationRecord>>, Callback<String>, Callback<String>) -> Fut
+        + 'static,
+    Fut: Future<Output = ()> + 'static,
+{
+    let on_success_toast = props.on_success_toast.clone();
+    let on_error_toast = props.on_error_toast.clone();
+    Callback::from(move |_| {
+        let Some(api) = api.clone() else {
+            append_record(&records, title, "API context is unavailable");
+            on_error_toast.emit(unavailable_message.to_string());
+            return;
+        };
+        if *busy {
+            return;
+        }
+        busy.set(true);
+        let busy = busy.clone();
+        let future = operation(
+            api,
+            records.clone(),
+            on_success_toast.clone(),
+            on_error_toast.clone(),
+        );
+        spawn_local(async move {
+            future.await;
+            busy.set(false);
+        });
+    })
+}
+
 fn action_callback<T, F, Fut>(
     api: Option<ApiCtx>,
     busy: UseStateHandle<bool>,
@@ -232,37 +272,29 @@ where
     F: Fn(ApiCtx) -> Fut + Clone + 'static,
     Fut: Future<Output = Result<T, String>> + 'static,
 {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(&records, title, "API context is unavailable");
-            on_error_toast.emit("Indexer API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let busy = busy.clone();
-        let records = records.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        let operation = operation.clone();
-        spawn_local(async move {
-            match operation(api).await {
-                Ok(value) => {
-                    append_json_record(&records, title, &value);
-                    on_success_toast.emit(success_message.to_string());
-                }
-                Err(error) => {
-                    append_record(&records, title, error.clone());
-                    on_error_toast.emit(format!("{title}: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        title,
+        "Indexer API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let operation = operation.clone();
+            async move {
+                match operation(api).await {
+                    Ok(value) => {
+                        append_json_record(&records, title, &value);
+                        on_success_toast.emit(success_message.to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, title, error.clone());
+                        on_error_toast.emit(format!("{title}: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn void_action_callback<F, Fut>(
@@ -278,37 +310,29 @@ where
     F: Fn(ApiCtx) -> Fut + Clone + 'static,
     Fut: Future<Output = Result<(), String>> + 'static,
 {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(&records, title, "API context is unavailable");
-            on_error_toast.emit("Indexer API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let busy = busy.clone();
-        let records = records.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        let operation = operation.clone();
-        spawn_local(async move {
-            match operation(api).await {
-                Ok(()) => {
-                    append_record(&records, title, success_message);
-                    on_success_toast.emit(success_message.to_string());
-                }
-                Err(error) => {
-                    append_record(&records, title, error.clone());
-                    on_error_toast.emit(format!("{title}: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        title,
+        "Indexer API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let operation = operation.clone();
+            async move {
+                match operation(api).await {
+                    Ok(()) => {
+                        append_record(&records, title, success_message);
+                        on_success_toast.emit(success_message.to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, title, error.clone());
+                        on_error_toast.emit(format!("{title}: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn field(label: &str, hint: &str, control: Html) -> Html {
@@ -894,41 +918,33 @@ fn build_fetch_tags_callback(
     tag_inventory: UseStateHandle<TagInventoryState>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(&records, "Tag inventory", "API context is unavailable");
-            on_error_toast.emit("Tag inventory: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let client = api.client.clone();
-        let busy = busy.clone();
-        let records = records.clone();
-        let tag_inventory = tag_inventory.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        spawn_local(async move {
-            match fetch_tags(&client).await {
-                Ok(response) => {
-                    append_json_record(&records, "Tag inventory", &response.tags);
-                    tag_inventory.set(TagInventoryState {
-                        items: response.tags,
-                    });
-                    on_success_toast.emit("Tag inventory loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Tag inventory", error.clone());
-                    on_error_toast.emit(format!("Tag inventory: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Tag inventory",
+        "Tag inventory: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let client = api.client.clone();
+            let tag_inventory = tag_inventory.clone();
+            async move {
+                match fetch_tags(&client).await {
+                    Ok(response) => {
+                        append_json_record(&records, "Tag inventory", &response.tags);
+                        tag_inventory.set(TagInventoryState {
+                            items: response.tags,
+                        });
+                        on_success_toast.emit("Tag inventory loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Tag inventory", error.clone());
+                        on_error_toast.emit(format!("Tag inventory: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_fetch_secret_metadata_callback(
@@ -938,41 +954,33 @@ fn build_fetch_secret_metadata_callback(
     secret_inventory: UseStateHandle<SecretInventoryState>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(&records, "Secret inventory", "API context is unavailable");
-            on_error_toast.emit("Secret inventory: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let client = api.client.clone();
-        let busy = busy.clone();
-        let records = records.clone();
-        let secret_inventory = secret_inventory.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        spawn_local(async move {
-            match fetch_secret_metadata(&client).await {
-                Ok(response) => {
-                    append_json_record(&records, "Secret inventory", &response.secrets);
-                    secret_inventory.set(SecretInventoryState {
-                        items: response.secrets,
-                    });
-                    on_success_toast.emit("Secret inventory loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Secret inventory", error.clone());
-                    on_error_toast.emit(format!("Secret inventory: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Secret inventory",
+        "Secret inventory: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let client = api.client.clone();
+            let secret_inventory = secret_inventory.clone();
+            async move {
+                match fetch_secret_metadata(&client).await {
+                    Ok(response) => {
+                        append_json_record(&records, "Secret inventory", &response.secrets);
+                        secret_inventory.set(SecretInventoryState {
+                            items: response.secrets,
+                        });
+                        on_success_toast.emit("Secret inventory loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Secret inventory", error.clone());
+                        on_error_toast.emit(format!("Secret inventory: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_fetch_routing_inventory_callback(
@@ -982,41 +990,37 @@ fn build_fetch_routing_inventory_callback(
     routing_inventory: UseStateHandle<RoutingPolicyInventoryState>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(&records, "Routing inventory", "API context is unavailable");
-            on_error_toast.emit("Routing inventory: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let client = api.client.clone();
-        let busy = busy.clone();
-        let records = records.clone();
-        let routing_inventory = routing_inventory.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        spawn_local(async move {
-            match fetch_routing_policies(&client).await {
-                Ok(response) => {
-                    append_json_record(&records, "Routing inventory", &response.routing_policies);
-                    routing_inventory.set(RoutingPolicyInventoryState {
-                        items: response.routing_policies,
-                    });
-                    on_success_toast.emit("Routing inventory loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Routing inventory", error.clone());
-                    on_error_toast.emit(format!("Routing inventory: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Routing inventory",
+        "Routing inventory: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let client = api.client.clone();
+            let routing_inventory = routing_inventory.clone();
+            async move {
+                match fetch_routing_policies(&client).await {
+                    Ok(response) => {
+                        append_json_record(
+                            &records,
+                            "Routing inventory",
+                            &response.routing_policies,
+                        );
+                        routing_inventory.set(RoutingPolicyInventoryState {
+                            items: response.routing_policies,
+                        });
+                        on_success_toast.emit("Routing inventory loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Routing inventory", error.clone());
+                        on_error_toast.emit(format!("Routing inventory: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_fetch_rate_limit_inventory_callback(
@@ -1026,49 +1030,37 @@ fn build_fetch_rate_limit_inventory_callback(
     rate_limit_inventory: UseStateHandle<RateLimitInventoryState>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Rate-limit inventory",
-                "API context is unavailable",
-            );
-            on_error_toast.emit("Rate-limit inventory: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let client = api.client.clone();
-        let busy = busy.clone();
-        let records = records.clone();
-        let rate_limit_inventory = rate_limit_inventory.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        spawn_local(async move {
-            match fetch_rate_limit_policies(&client).await {
-                Ok(response) => {
-                    append_json_record(
-                        &records,
-                        "Rate-limit inventory",
-                        &response.rate_limit_policies,
-                    );
-                    rate_limit_inventory.set(RateLimitInventoryState {
-                        items: response.rate_limit_policies,
-                    });
-                    on_success_toast.emit("Rate-limit inventory loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Rate-limit inventory", error.clone());
-                    on_error_toast.emit(format!("Rate-limit inventory: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Rate-limit inventory",
+        "Rate-limit inventory: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let client = api.client.clone();
+            let rate_limit_inventory = rate_limit_inventory.clone();
+            async move {
+                match fetch_rate_limit_policies(&client).await {
+                    Ok(response) => {
+                        append_json_record(
+                            &records,
+                            "Rate-limit inventory",
+                            &response.rate_limit_policies,
+                        );
+                        rate_limit_inventory.set(RateLimitInventoryState {
+                            items: response.rate_limit_policies,
+                        });
+                        on_success_toast.emit("Rate-limit inventory loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Rate-limit inventory", error.clone());
+                        on_error_toast.emit(format!("Rate-limit inventory: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_fetch_indexer_instances_callback(
@@ -1078,50 +1070,37 @@ fn build_fetch_indexer_instances_callback(
     indexer_instance_inventory: UseStateHandle<IndexerInstanceInventoryState>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Indexer instance inventory",
-                "API context is unavailable",
-            );
-            on_error_toast
-                .emit("Indexer instance inventory: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let client = api.client.clone();
-        let busy = busy.clone();
-        let records = records.clone();
-        let indexer_instance_inventory = indexer_instance_inventory.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        spawn_local(async move {
-            match fetch_indexer_instances(&client).await {
-                Ok(response) => {
-                    append_json_record(
-                        &records,
-                        "Indexer instance inventory",
-                        &response.indexer_instances,
-                    );
-                    indexer_instance_inventory.set(IndexerInstanceInventoryState {
-                        items: response.indexer_instances,
-                    });
-                    on_success_toast.emit("Indexer instance inventory loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Indexer instance inventory", error.clone());
-                    on_error_toast.emit(format!("Indexer instance inventory: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Indexer instance inventory",
+        "Indexer instance inventory: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let client = api.client.clone();
+            let indexer_instance_inventory = indexer_instance_inventory.clone();
+            async move {
+                match fetch_indexer_instances(&client).await {
+                    Ok(response) => {
+                        append_json_record(
+                            &records,
+                            "Indexer instance inventory",
+                            &response.indexer_instances,
+                        );
+                        indexer_instance_inventory.set(IndexerInstanceInventoryState {
+                            items: response.indexer_instances,
+                        });
+                        on_success_toast.emit("Indexer instance inventory loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Indexer instance inventory", error.clone());
+                        on_error_toast.emit(format!("Indexer instance inventory: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_fetch_search_profiles_callback(
@@ -1131,49 +1110,37 @@ fn build_fetch_search_profiles_callback(
     search_profile_inventory: UseStateHandle<SearchProfileInventoryState>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Search-profile inventory",
-                "API context is unavailable",
-            );
-            on_error_toast.emit("Search-profile inventory: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let client = api.client.clone();
-        let busy = busy.clone();
-        let records = records.clone();
-        let search_profile_inventory = search_profile_inventory.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        spawn_local(async move {
-            match fetch_search_profiles(&client).await {
-                Ok(response) => {
-                    append_json_record(
-                        &records,
-                        "Search-profile inventory",
-                        &response.search_profiles,
-                    );
-                    search_profile_inventory.set(SearchProfileInventoryState {
-                        items: response.search_profiles,
-                    });
-                    on_success_toast.emit("Search-profile inventory loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Search-profile inventory", error.clone());
-                    on_error_toast.emit(format!("Search-profile inventory: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Search-profile inventory",
+        "Search-profile inventory: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let client = api.client.clone();
+            let search_profile_inventory = search_profile_inventory.clone();
+            async move {
+                match fetch_search_profiles(&client).await {
+                    Ok(response) => {
+                        append_json_record(
+                            &records,
+                            "Search-profile inventory",
+                            &response.search_profiles,
+                        );
+                        search_profile_inventory.set(SearchProfileInventoryState {
+                            items: response.search_profiles,
+                        });
+                        on_success_toast.emit("Search-profile inventory loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Search-profile inventory", error.clone());
+                        on_error_toast.emit(format!("Search-profile inventory: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_fetch_policy_sets_callback(
@@ -1183,45 +1150,33 @@ fn build_fetch_policy_sets_callback(
     policy_set_inventory: UseStateHandle<PolicySetInventoryState>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Policy-set inventory",
-                "API context is unavailable",
-            );
-            on_error_toast.emit("Policy-set inventory: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let client = api.client.clone();
-        let busy = busy.clone();
-        let records = records.clone();
-        let policy_set_inventory = policy_set_inventory.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        spawn_local(async move {
-            match fetch_policy_sets(&client).await {
-                Ok(response) => {
-                    append_json_record(&records, "Policy-set inventory", &response.policy_sets);
-                    policy_set_inventory.set(PolicySetInventoryState {
-                        items: response.policy_sets,
-                    });
-                    on_success_toast.emit("Policy-set inventory loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Policy-set inventory", error.clone());
-                    on_error_toast.emit(format!("Policy-set inventory: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Policy-set inventory",
+        "Policy-set inventory: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let client = api.client.clone();
+            let policy_set_inventory = policy_set_inventory.clone();
+            async move {
+                match fetch_policy_sets(&client).await {
+                    Ok(response) => {
+                        append_json_record(&records, "Policy-set inventory", &response.policy_sets);
+                        policy_set_inventory.set(PolicySetInventoryState {
+                            items: response.policy_sets,
+                        });
+                        on_success_toast.emit("Policy-set inventory loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Policy-set inventory", error.clone());
+                        on_error_toast.emit(format!("Policy-set inventory: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_fetch_torznab_instances_callback(
@@ -1231,41 +1186,37 @@ fn build_fetch_torznab_instances_callback(
     torznab_instance_inventory: UseStateHandle<TorznabInstanceInventoryState>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(&records, "Torznab inventory", "API context is unavailable");
-            on_error_toast.emit("Torznab inventory: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let client = api.client.clone();
-        let busy = busy.clone();
-        let records = records.clone();
-        let torznab_instance_inventory = torznab_instance_inventory.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        spawn_local(async move {
-            match fetch_torznab_instances(&client).await {
-                Ok(response) => {
-                    append_json_record(&records, "Torznab inventory", &response.torznab_instances);
-                    torznab_instance_inventory.set(TorznabInstanceInventoryState {
-                        items: response.torznab_instances,
-                    });
-                    on_success_toast.emit("Torznab inventory loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Torznab inventory", error.clone());
-                    on_error_toast.emit(format!("Torznab inventory: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Torznab inventory",
+        "Torznab inventory: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let client = api.client.clone();
+            let torznab_instance_inventory = torznab_instance_inventory.clone();
+            async move {
+                match fetch_torznab_instances(&client).await {
+                    Ok(response) => {
+                        append_json_record(
+                            &records,
+                            "Torznab inventory",
+                            &response.torznab_instances,
+                        );
+                        torznab_instance_inventory.set(TorznabInstanceInventoryState {
+                            items: response.torznab_instances,
+                        });
+                        on_success_toast.emit("Torznab inventory loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Torznab inventory", error.clone());
+                        on_error_toast.emit(format!("Torznab inventory: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_fetch_health_notification_hooks_callback(
@@ -1275,46 +1226,33 @@ fn build_fetch_health_notification_hooks_callback(
     hooks: UseStateHandle<HealthNotificationHooksState>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Health notification hooks",
-                "API context is unavailable",
-            );
-            on_error_toast
-                .emit("Health notification hooks: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let client = api.client.clone();
-        let busy = busy.clone();
-        let records = records.clone();
-        let hooks = hooks.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        spawn_local(async move {
-            match fetch_health_notification_hooks(&client).await {
-                Ok(response) => {
-                    append_json_record(&records, "Health notification hooks", &response.hooks);
-                    hooks.set(HealthNotificationHooksState {
-                        hooks: response.hooks,
-                    });
-                    on_success_toast.emit("Health notification hooks loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Health notification hooks", error.clone());
-                    on_error_toast.emit(format!("Health notification hooks: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Health notification hooks",
+        "Health notification hooks: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let client = api.client.clone();
+            let hooks = hooks.clone();
+            async move {
+                match fetch_health_notification_hooks(&client).await {
+                    Ok(response) => {
+                        append_json_record(&records, "Health notification hooks", &response.hooks);
+                        hooks.set(HealthNotificationHooksState {
+                            hooks: response.hooks,
+                        });
+                        on_success_toast.emit("Health notification hooks loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Health notification hooks", error.clone());
+                        on_error_toast.emit(format!("Health notification hooks: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_create_health_notification_hook_callback(
@@ -1325,48 +1263,35 @@ fn build_create_health_notification_hook_callback(
     draft: UseStateHandle<IndexersDraft>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
     let draft_snapshot = (*draft).clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Health notification hook create",
-                "API context is unavailable",
-            );
-            on_error_toast
-                .emit("Health notification hook create: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let client = api.client.clone();
-        let busy = busy.clone();
-        let records = records.clone();
-        let hooks = hooks.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        let draft_snapshot = draft_snapshot.clone();
-        spawn_local(async move {
-            match create_health_notification_hook(&client, &draft_snapshot).await {
-                Ok(response) => {
-                    append_json_record(&records, "Health notification hook create", &response);
-                    let mut next = (*hooks).clone();
-                    next.hooks.push(response);
-                    hooks.set(next);
-                    on_success_toast.emit("Health notification hook created".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Health notification hook create", error.clone());
-                    on_error_toast.emit(format!("Health notification hook create: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Health notification hook create",
+        "Health notification hook create: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let client = api.client.clone();
+            let hooks = hooks.clone();
+            let draft_snapshot = draft_snapshot.clone();
+            async move {
+                match create_health_notification_hook(&client, &draft_snapshot).await {
+                    Ok(response) => {
+                        append_json_record(&records, "Health notification hook create", &response);
+                        let mut next = (*hooks).clone();
+                        next.hooks.push(response);
+                        hooks.set(next);
+                        on_success_toast.emit("Health notification hook created".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Health notification hook create", error.clone());
+                        on_error_toast.emit(format!("Health notification hook create: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_update_health_notification_hook_callback(
@@ -1377,55 +1302,42 @@ fn build_update_health_notification_hook_callback(
     draft: UseStateHandle<IndexersDraft>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
     let draft_snapshot = (*draft).clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Health notification hook update",
-                "API context is unavailable",
-            );
-            on_error_toast
-                .emit("Health notification hook update: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let client = api.client.clone();
-        let busy = busy.clone();
-        let records = records.clone();
-        let hooks = hooks.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        let draft_snapshot = draft_snapshot.clone();
-        spawn_local(async move {
-            match update_health_notification_hook(&client, &draft_snapshot).await {
-                Ok(response) => {
-                    append_json_record(&records, "Health notification hook update", &response);
-                    let mut next = (*hooks).clone();
-                    if let Some(existing) = next.hooks.iter_mut().find(|item| {
-                        item.indexer_health_notification_hook_public_id
-                            == response.indexer_health_notification_hook_public_id
-                    }) {
-                        *existing = response;
-                    } else {
-                        next.hooks.push(response);
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Health notification hook update",
+        "Health notification hook update: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let client = api.client.clone();
+            let hooks = hooks.clone();
+            let draft_snapshot = draft_snapshot.clone();
+            async move {
+                match update_health_notification_hook(&client, &draft_snapshot).await {
+                    Ok(response) => {
+                        append_json_record(&records, "Health notification hook update", &response);
+                        let mut next = (*hooks).clone();
+                        if let Some(existing) = next.hooks.iter_mut().find(|item| {
+                            item.indexer_health_notification_hook_public_id
+                                == response.indexer_health_notification_hook_public_id
+                        }) {
+                            *existing = response;
+                        } else {
+                            next.hooks.push(response);
+                        }
+                        hooks.set(next);
+                        on_success_toast.emit("Health notification hook updated".to_string());
                     }
-                    hooks.set(next);
-                    on_success_toast.emit("Health notification hook updated".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Health notification hook update", error.clone());
-                    on_error_toast.emit(format!("Health notification hook update: {error}"));
+                    Err(error) => {
+                        append_record(&records, "Health notification hook update", error.clone());
+                        on_error_toast.emit(format!("Health notification hook update: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_delete_health_notification_hook_callback(
@@ -1436,55 +1348,42 @@ fn build_delete_health_notification_hook_callback(
     draft: UseStateHandle<IndexersDraft>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
     let draft_snapshot = (*draft).clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Health notification hook delete",
-                "API context is unavailable",
-            );
-            on_error_toast
-                .emit("Health notification hook delete: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let client = api.client.clone();
-        let busy = busy.clone();
-        let records = records.clone();
-        let hooks = hooks.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        let draft_snapshot = draft_snapshot.clone();
-        spawn_local(async move {
-            match delete_health_notification_hook(&client, &draft_snapshot).await {
-                Ok(()) => {
-                    append_record(
-                        &records,
-                        "Health notification hook delete",
-                        "Health notification hook deleted",
-                    );
-                    let mut next = (*hooks).clone();
-                    next.hooks.retain(|item| {
-                        item.indexer_health_notification_hook_public_id.to_string()
-                            != draft_snapshot.health_notification_hook_public_id
-                    });
-                    hooks.set(next);
-                    on_success_toast.emit("Health notification hook deleted".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Health notification hook delete", error.clone());
-                    on_error_toast.emit(format!("Health notification hook delete: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Health notification hook delete",
+        "Health notification hook delete: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let client = api.client.clone();
+            let hooks = hooks.clone();
+            let draft_snapshot = draft_snapshot.clone();
+            async move {
+                match delete_health_notification_hook(&client, &draft_snapshot).await {
+                    Ok(()) => {
+                        append_record(
+                            &records,
+                            "Health notification hook delete",
+                            "Health notification hook deleted",
+                        );
+                        let mut next = (*hooks).clone();
+                        next.hooks.retain(|item| {
+                            item.indexer_health_notification_hook_public_id.to_string()
+                                != draft_snapshot.health_notification_hook_public_id
+                        });
+                        hooks.set(next);
+                        on_success_toast.emit("Health notification hook deleted".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Health notification hook delete", error.clone());
+                        on_error_toast.emit(format!("Health notification hook delete: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_fetch_routing_callback(
@@ -1495,47 +1394,35 @@ fn build_fetch_routing_callback(
     draft: UseStateHandle<IndexersDraft>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
     let draft_snapshot = (*draft).clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Routing policy fetch",
-                "API context is unavailable",
-            );
-            on_error_toast.emit("Routing policy fetch: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let busy = busy.clone();
-        let records = records.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        let routing_policy = routing_policy.clone();
-        let draft_snapshot = draft_snapshot.clone();
-        spawn_local(async move {
-            let client = api.client.clone();
-            match fetch_routing_policy(&client, &draft_snapshot).await {
-                Ok(value) => {
-                    append_json_record(&records, "Routing policy fetch", &value);
-                    routing_policy.set(RoutingPolicyState {
-                        detail: Some(value),
-                    });
-                    on_success_toast.emit("Routing policy loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Routing policy fetch", error.clone());
-                    on_error_toast.emit(format!("Routing policy fetch: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Routing policy fetch",
+        "Routing policy fetch: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let routing_policy = routing_policy.clone();
+            let draft_snapshot = draft_snapshot.clone();
+            async move {
+                let client = api.client.clone();
+                match fetch_routing_policy(&client, &draft_snapshot).await {
+                    Ok(value) => {
+                        append_json_record(&records, "Routing policy fetch", &value);
+                        routing_policy.set(RoutingPolicyState {
+                            detail: Some(value),
+                        });
+                        on_success_toast.emit("Routing policy loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Routing policy fetch", error.clone());
+                        on_error_toast.emit(format!("Routing policy fetch: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_fetch_connectivity_profile_callback(
@@ -1547,46 +1434,34 @@ fn build_fetch_connectivity_profile_callback(
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
     let draft_snapshot = (*draft).clone();
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Connectivity profile fetch",
-                "API context is unavailable",
-            );
-            on_error_toast.emit("Indexer API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let client = api.client.clone();
-        let draft_snapshot = draft_snapshot.clone();
-        let connectivity = connectivity.clone();
-        let records = records.clone();
-        let busy = busy.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        spawn_local(async move {
-            match fetch_indexer_connectivity_profile(&client, &draft_snapshot).await {
-                Ok(profile) => {
-                    append_json_record(&records, "Connectivity profile fetch", &profile);
-                    let mut next = (*connectivity).clone();
-                    next.profile = Some(profile);
-                    connectivity.set(next);
-                    on_success_toast.emit("Connectivity profile loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Connectivity profile fetch", error.clone());
-                    on_error_toast.emit(format!("Connectivity profile fetch: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Connectivity profile fetch",
+        "Indexer API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let client = api.client.clone();
+            let draft_snapshot = draft_snapshot.clone();
+            let connectivity = connectivity.clone();
+            async move {
+                match fetch_indexer_connectivity_profile(&client, &draft_snapshot).await {
+                    Ok(profile) => {
+                        append_json_record(&records, "Connectivity profile fetch", &profile);
+                        let mut next = (*connectivity).clone();
+                        next.profile = Some(profile);
+                        connectivity.set(next);
+                        on_success_toast.emit("Connectivity profile loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Connectivity profile fetch", error.clone());
+                        on_error_toast.emit(format!("Connectivity profile fetch: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_fetch_source_reputation_callback(
@@ -1598,47 +1473,35 @@ fn build_fetch_source_reputation_callback(
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
     let draft_snapshot = (*draft).clone();
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Source reputation fetch",
-                "API context is unavailable",
-            );
-            on_error_toast.emit("Indexer API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let client = api.client.clone();
-        let draft_snapshot = draft_snapshot.clone();
-        let connectivity = connectivity.clone();
-        let records = records.clone();
-        let busy = busy.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        spawn_local(async move {
-            match fetch_indexer_source_reputation(&client, &draft_snapshot).await {
-                Ok(response) => {
-                    let items = response.items;
-                    append_json_record(&records, "Source reputation fetch", &items);
-                    let mut next = (*connectivity).clone();
-                    next.reputation_items = items;
-                    connectivity.set(next);
-                    on_success_toast.emit("Source reputation loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Source reputation fetch", error.clone());
-                    on_error_toast.emit(format!("Source reputation fetch: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Source reputation fetch",
+        "Indexer API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let client = api.client.clone();
+            let draft_snapshot = draft_snapshot.clone();
+            let connectivity = connectivity.clone();
+            async move {
+                match fetch_indexer_source_reputation(&client, &draft_snapshot).await {
+                    Ok(response) => {
+                        let items = response.items;
+                        append_json_record(&records, "Source reputation fetch", &items);
+                        let mut next = (*connectivity).clone();
+                        next.reputation_items = items;
+                        connectivity.set(next);
+                        on_success_toast.emit("Source reputation loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Source reputation fetch", error.clone());
+                        on_error_toast.emit(format!("Source reputation fetch: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_fetch_health_events_callback(
@@ -1650,45 +1513,33 @@ fn build_fetch_health_events_callback(
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
     let draft_snapshot = (*draft).clone();
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Health events fetch",
-                "API context is unavailable",
-            );
-            on_error_toast.emit("Indexer API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let client = api.client.clone();
-        let draft_snapshot = draft_snapshot.clone();
-        let health_events = health_events.clone();
-        let records = records.clone();
-        let busy = busy.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        spawn_local(async move {
-            match fetch_indexer_health_events(&client, &draft_snapshot).await {
-                Ok(response) => {
-                    let items = response.items;
-                    append_json_record(&records, "Health events fetch", &items);
-                    health_events.set(HealthEventsState { items });
-                    on_success_toast.emit("Health events loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Health events fetch", error.clone());
-                    on_error_toast.emit(format!("Health events fetch: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Health events fetch",
+        "Indexer API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let client = api.client.clone();
+            let draft_snapshot = draft_snapshot.clone();
+            let health_events = health_events.clone();
+            async move {
+                match fetch_indexer_health_events(&client, &draft_snapshot).await {
+                    Ok(response) => {
+                        let items = response.items;
+                        append_json_record(&records, "Health events fetch", &items);
+                        health_events.set(HealthEventsState { items });
+                        on_success_toast.emit("Health events loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Health events fetch", error.clone());
+                        on_error_toast.emit(format!("Health events fetch: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_create_import_job_callback(
@@ -1699,45 +1550,37 @@ fn build_create_import_job_callback(
     records: UseStateHandle<Vec<OperationRecord>>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
     let draft_snapshot = (*draft).clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(&records, "Import job create", "API context is unavailable");
-            on_error_toast.emit("Import job create: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let busy = busy.clone();
-        let draft = draft.clone();
-        let import_job = import_job.clone();
-        let records = records.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        let draft_snapshot = draft_snapshot.clone();
-        spawn_local(async move {
-            let client = api.client.clone();
-            match create_import_job(&client, &draft_snapshot).await {
-                Ok(value) => {
-                    append_json_record(&records, "Import job create", &value);
-                    let mut next = (*draft).clone();
-                    next.import_job_public_id = value.import_job_public_id.to_string();
-                    draft.set(next);
-                    import_job.set(ImportJobState::default());
-                    on_success_toast.emit("Import job created".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Import job create", error.clone());
-                    on_error_toast.emit(format!("Import job create: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Import job create",
+        "Import job create: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let draft = draft.clone();
+            let import_job = import_job.clone();
+            let draft_snapshot = draft_snapshot.clone();
+            async move {
+                let client = api.client.clone();
+                match create_import_job(&client, &draft_snapshot).await {
+                    Ok(value) => {
+                        append_json_record(&records, "Import job create", &value);
+                        let mut next = (*draft).clone();
+                        next.import_job_public_id = value.import_job_public_id.to_string();
+                        draft.set(next);
+                        import_job.set(ImportJobState::default());
+                        on_success_toast.emit("Import job created".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Import job create", error.clone());
+                        on_error_toast.emit(format!("Import job create: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_run_import_api_callback(
@@ -1747,48 +1590,35 @@ fn build_run_import_api_callback(
     records: UseStateHandle<Vec<OperationRecord>>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
     let draft_snapshot = (*draft).clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Import job run (Prowlarr API)",
-                "API context is unavailable",
-            );
-            on_error_toast
-                .emit("Import job run (Prowlarr API): API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let busy = busy.clone();
-        let draft = draft.clone();
-        let records = records.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        let draft_snapshot = draft_snapshot.clone();
-        spawn_local(async move {
-            let client = api.client.clone();
-            match run_import_job_api(&client, &draft_snapshot).await {
-                Ok(value) => {
-                    append_json_record(&records, "Import job run (Prowlarr API)", &value);
-                    let mut next = (*draft).clone();
-                    next.import_job_public_id = value.import_job_public_id.to_string();
-                    draft.set(next);
-                    on_success_toast.emit("Prowlarr API import started".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Import job run (Prowlarr API)", error.clone());
-                    on_error_toast.emit(format!("Import job run (Prowlarr API): {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Import job run (Prowlarr API)",
+        "Import job run (Prowlarr API): API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let draft = draft.clone();
+            let draft_snapshot = draft_snapshot.clone();
+            async move {
+                let client = api.client.clone();
+                match run_import_job_api(&client, &draft_snapshot).await {
+                    Ok(value) => {
+                        append_json_record(&records, "Import job run (Prowlarr API)", &value);
+                        let mut next = (*draft).clone();
+                        next.import_job_public_id = value.import_job_public_id.to_string();
+                        draft.set(next);
+                        on_success_toast.emit("Prowlarr API import started".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Import job run (Prowlarr API)", error.clone());
+                        on_error_toast.emit(format!("Import job run (Prowlarr API): {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_run_import_backup_callback(
@@ -1798,47 +1628,35 @@ fn build_run_import_backup_callback(
     records: UseStateHandle<Vec<OperationRecord>>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
     let draft_snapshot = (*draft).clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Import job run (backup)",
-                "API context is unavailable",
-            );
-            on_error_toast.emit("Import job run (backup): API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let busy = busy.clone();
-        let draft = draft.clone();
-        let records = records.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        let draft_snapshot = draft_snapshot.clone();
-        spawn_local(async move {
-            let client = api.client.clone();
-            match run_import_job_backup(&client, &draft_snapshot).await {
-                Ok(value) => {
-                    append_json_record(&records, "Import job run (backup)", &value);
-                    let mut next = (*draft).clone();
-                    next.import_job_public_id = value.import_job_public_id.to_string();
-                    draft.set(next);
-                    on_success_toast.emit("Prowlarr backup import started".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Import job run (backup)", error.clone());
-                    on_error_toast.emit(format!("Import job run (backup): {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Import job run (backup)",
+        "Import job run (backup): API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let draft = draft.clone();
+            let draft_snapshot = draft_snapshot.clone();
+            async move {
+                let client = api.client.clone();
+                match run_import_job_backup(&client, &draft_snapshot).await {
+                    Ok(value) => {
+                        append_json_record(&records, "Import job run (backup)", &value);
+                        let mut next = (*draft).clone();
+                        next.import_job_public_id = value.import_job_public_id.to_string();
+                        draft.set(next);
+                        on_success_toast.emit("Prowlarr backup import started".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Import job run (backup)", error.clone());
+                        on_error_toast.emit(format!("Import job run (backup): {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_fetch_import_status_callback(
@@ -1849,44 +1667,36 @@ fn build_fetch_import_status_callback(
     draft: UseStateHandle<IndexersDraft>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
     let draft_snapshot = (*draft).clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(&records, "Import job status", "API context is unavailable");
-            on_error_toast.emit("Import job status: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let busy = busy.clone();
-        let import_job = import_job.clone();
-        let records = records.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        let draft_snapshot = draft_snapshot.clone();
-        spawn_local(async move {
-            let client = api.client.clone();
-            match fetch_import_job_status(&client, &draft_snapshot).await {
-                Ok(value) => {
-                    append_json_record(&records, "Import job status", &value);
-                    import_job.set(ImportJobState {
-                        status: Some(value),
-                        results: (*import_job).results.clone(),
-                    });
-                    on_success_toast.emit("Import job status loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Import job status", error.clone());
-                    on_error_toast.emit(format!("Import job status: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Import job status",
+        "Import job status: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let import_job = import_job.clone();
+            let draft_snapshot = draft_snapshot.clone();
+            async move {
+                let client = api.client.clone();
+                match fetch_import_job_status(&client, &draft_snapshot).await {
+                    Ok(value) => {
+                        append_json_record(&records, "Import job status", &value);
+                        import_job.set(ImportJobState {
+                            status: Some(value),
+                            results: (*import_job).results.clone(),
+                        });
+                        on_success_toast.emit("Import job status loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Import job status", error.clone());
+                        on_error_toast.emit(format!("Import job status: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_fetch_import_results_callback(
@@ -1897,44 +1707,36 @@ fn build_fetch_import_results_callback(
     draft: UseStateHandle<IndexersDraft>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
     let draft_snapshot = (*draft).clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(&records, "Import job results", "API context is unavailable");
-            on_error_toast.emit("Import job results: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let busy = busy.clone();
-        let import_job = import_job.clone();
-        let records = records.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        let draft_snapshot = draft_snapshot.clone();
-        spawn_local(async move {
-            let client = api.client.clone();
-            match fetch_import_job_results(&client, &draft_snapshot).await {
-                Ok(value) => {
-                    append_json_record(&records, "Import job results", &value);
-                    import_job.set(ImportJobState {
-                        status: (*import_job).status.clone(),
-                        results: value.results,
-                    });
-                    on_success_toast.emit("Import job results loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Import job results", error.clone());
-                    on_error_toast.emit(format!("Import job results: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Import job results",
+        "Import job results: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let import_job = import_job.clone();
+            let draft_snapshot = draft_snapshot.clone();
+            async move {
+                let client = api.client.clone();
+                match fetch_import_job_results(&client, &draft_snapshot).await {
+                    Ok(value) => {
+                        append_json_record(&records, "Import job results", &value);
+                        import_job.set(ImportJobState {
+                            status: (*import_job).status.clone(),
+                            results: value.results,
+                        });
+                        on_success_toast.emit("Import job results loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Import job results", error.clone());
+                        on_error_toast.emit(format!("Import job results: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_fetch_source_conflicts_callback(
@@ -1945,43 +1747,35 @@ fn build_fetch_source_conflicts_callback(
     draft: UseStateHandle<IndexersDraft>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
     let draft_snapshot = (*draft).clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(&records, "Source conflicts", "API context is unavailable");
-            on_error_toast.emit("Source conflicts: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let busy = busy.clone();
-        let source_conflicts = source_conflicts.clone();
-        let records = records.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        let draft_snapshot = draft_snapshot.clone();
-        spawn_local(async move {
-            let client = api.client.clone();
-            match fetch_source_metadata_conflicts(&client, &draft_snapshot).await {
-                Ok(value) => {
-                    append_json_record(&records, "Source conflicts", &value);
-                    source_conflicts.set(SourceMetadataConflictsState {
-                        items: value.conflicts,
-                    });
-                    on_success_toast.emit("Source conflicts loaded".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Source conflicts", error.clone());
-                    on_error_toast.emit(format!("Source conflicts: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Source conflicts",
+        "Source conflicts: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let source_conflicts = source_conflicts.clone();
+            let draft_snapshot = draft_snapshot.clone();
+            async move {
+                let client = api.client.clone();
+                match fetch_source_metadata_conflicts(&client, &draft_snapshot).await {
+                    Ok(value) => {
+                        append_json_record(&records, "Source conflicts", &value);
+                        source_conflicts.set(SourceMetadataConflictsState {
+                            items: value.conflicts,
+                        });
+                        on_success_toast.emit("Source conflicts loaded".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Source conflicts", error.clone());
+                        on_error_toast.emit(format!("Source conflicts: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_resolve_source_conflict_callback(
@@ -1991,47 +1785,35 @@ fn build_resolve_source_conflict_callback(
     draft: UseStateHandle<IndexersDraft>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
     let draft_snapshot = (*draft).clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Source conflict resolve",
-                "API context is unavailable",
-            );
-            on_error_toast.emit("Source conflict resolve: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let busy = busy.clone();
-        let records = records.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        let draft_snapshot = draft_snapshot.clone();
-        spawn_local(async move {
-            let client = api.client.clone();
-            match resolve_source_metadata_conflict(&client, &draft_snapshot).await {
-                Ok(()) => {
-                    append_record(
-                        &records,
-                        "Source conflict resolve",
-                        "Conflict resolution submitted",
-                    );
-                    on_success_toast.emit("Source conflict resolved".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Source conflict resolve", error.clone());
-                    on_error_toast.emit(format!("Source conflict resolve: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Source conflict resolve",
+        "Source conflict resolve: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let draft_snapshot = draft_snapshot.clone();
+            async move {
+                let client = api.client.clone();
+                match resolve_source_metadata_conflict(&client, &draft_snapshot).await {
+                    Ok(()) => {
+                        append_record(
+                            &records,
+                            "Source conflict resolve",
+                            "Conflict resolution submitted",
+                        );
+                        on_success_toast.emit("Source conflict resolved".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Source conflict resolve", error.clone());
+                        on_error_toast.emit(format!("Source conflict resolve: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_reopen_source_conflict_callback(
@@ -2041,43 +1823,31 @@ fn build_reopen_source_conflict_callback(
     draft: UseStateHandle<IndexersDraft>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
     let draft_snapshot = (*draft).clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(
-                &records,
-                "Source conflict reopen",
-                "API context is unavailable",
-            );
-            on_error_toast.emit("Source conflict reopen: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let busy = busy.clone();
-        let records = records.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        let draft_snapshot = draft_snapshot.clone();
-        spawn_local(async move {
-            let client = api.client.clone();
-            match reopen_source_metadata_conflict(&client, &draft_snapshot).await {
-                Ok(()) => {
-                    append_record(&records, "Source conflict reopen", "Conflict reopened");
-                    on_success_toast.emit("Source conflict reopened".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Source conflict reopen", error.clone());
-                    on_error_toast.emit(format!("Source conflict reopen: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Source conflict reopen",
+        "Source conflict reopen: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let draft_snapshot = draft_snapshot.clone();
+            async move {
+                let client = api.client.clone();
+                match reopen_source_metadata_conflict(&client, &draft_snapshot).await {
+                    Ok(()) => {
+                        append_record(&records, "Source conflict reopen", "Conflict reopened");
+                        on_success_toast.emit("Source conflict reopened".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Source conflict reopen", error.clone());
+                        on_error_toast.emit(format!("Source conflict reopen: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_export_backup_callback(
@@ -2088,47 +1858,39 @@ fn build_export_backup_callback(
     records: UseStateHandle<Vec<OperationRecord>>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(&records, "Backup export", "API context is unavailable");
-            on_error_toast.emit("Backup export: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let busy = busy.clone();
-        let backup = backup.clone();
-        let draft = draft.clone();
-        let records = records.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        spawn_local(async move {
-            let client = api.client.clone();
-            match export_backup_snapshot(&client).await {
-                Ok(snapshot) => {
-                    append_json_record(&records, "Backup export", &snapshot);
-                    let mut next_draft = (*draft).clone();
-                    next_draft.backup_snapshot_payload =
-                        serde_json::to_string_pretty(&snapshot).unwrap_or_default();
-                    draft.set(next_draft);
-                    backup.set(BackupState {
-                        snapshot: Some(snapshot),
-                        unresolved_secret_bindings: Vec::new(),
-                    });
-                    on_success_toast.emit("Indexer backup exported".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "Backup export", error.clone());
-                    on_error_toast.emit(format!("Backup export: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "Backup export",
+        "Backup export: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let backup = backup.clone();
+            let draft = draft.clone();
+            async move {
+                let client = api.client.clone();
+                match export_backup_snapshot(&client).await {
+                    Ok(snapshot) => {
+                        append_json_record(&records, "Backup export", &snapshot);
+                        let mut next_draft = (*draft).clone();
+                        next_draft.backup_snapshot_payload =
+                            serde_json::to_string_pretty(&snapshot).unwrap_or_default();
+                        draft.set(next_draft);
+                        backup.set(BackupState {
+                            snapshot: Some(snapshot),
+                            unresolved_secret_bindings: Vec::new(),
+                        });
+                        on_success_toast.emit("Indexer backup exported".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "Backup export", error.clone());
+                        on_error_toast.emit(format!("Backup export: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 fn build_restore_backup_callback(
@@ -2195,50 +1957,43 @@ fn build_provision_app_sync_callback(
     records: UseStateHandle<Vec<OperationRecord>>,
     props: &IndexersPageProps,
 ) -> Callback<MouseEvent> {
-    let on_success_toast = props.on_success_toast.clone();
-    let on_error_toast = props.on_error_toast.clone();
-    Callback::from(move |_| {
-        let Some(api) = api.clone() else {
-            append_record(&records, "App sync", "API context is unavailable");
-            on_error_toast.emit("App sync: API context is unavailable".to_string());
-            return;
-        };
-        if *busy {
-            return;
-        }
-        busy.set(true);
-        let draft = draft.clone();
-        let app_sync = app_sync.clone();
-        let busy = busy.clone();
-        let records = records.clone();
-        let on_success_toast = on_success_toast.clone();
-        let on_error_toast = on_error_toast.clone();
-        spawn_local(async move {
-            let client = api.client.clone();
-            let draft_snapshot = (*draft).clone();
-            match provision_app_sync(&client, &draft_snapshot).await {
-                Ok(summary) => {
-                    append_json_record(&records, "App sync", &summary);
-                    let mut next = (*draft).clone();
-                    next.search_profile_public_id = summary.search_profile_public_id.to_string();
-                    next.torznab_search_profile_public_id =
-                        summary.search_profile_public_id.to_string();
-                    next.torznab_instance_public_id =
-                        summary.torznab_instance_public_id.to_string();
-                    draft.set(next);
-                    app_sync.set(AppSyncState {
-                        summary: Some(summary),
-                    });
-                    on_success_toast.emit("App sync provisioned".to_string());
-                }
-                Err(error) => {
-                    append_record(&records, "App sync", error.clone());
-                    on_error_toast.emit(format!("App sync: {error}"));
+    indexer_callback(
+        api,
+        busy,
+        records,
+        props,
+        "App sync",
+        "App sync: API context is unavailable",
+        move |api, records, on_success_toast, on_error_toast| {
+            let draft = draft.clone();
+            let app_sync = app_sync.clone();
+            async move {
+                let client = api.client.clone();
+                let draft_snapshot = (*draft).clone();
+                match provision_app_sync(&client, &draft_snapshot).await {
+                    Ok(summary) => {
+                        append_json_record(&records, "App sync", &summary);
+                        let mut next = (*draft).clone();
+                        next.search_profile_public_id =
+                            summary.search_profile_public_id.to_string();
+                        next.torznab_search_profile_public_id =
+                            summary.search_profile_public_id.to_string();
+                        next.torznab_instance_public_id =
+                            summary.torznab_instance_public_id.to_string();
+                        draft.set(next);
+                        app_sync.set(AppSyncState {
+                            summary: Some(summary),
+                        });
+                        on_success_toast.emit("App sync provisioned".to_string());
+                    }
+                    Err(error) => {
+                        append_record(&records, "App sync", error.clone());
+                        on_error_toast.emit(format!("App sync: {error}"));
+                    }
                 }
             }
-            busy.set(false);
-        });
-    })
+        },
+    )
 }
 
 #[function_component(IndexersPage)]

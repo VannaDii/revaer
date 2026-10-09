@@ -10,7 +10,7 @@ use axum::{
     response::Response,
 };
 use revaer_config::validate::{CidrEntry, canonicalize_cidr_entries, default_local_networks};
-use revaer_config::{AppAuthMode, AppMode};
+use revaer_config::{ApiKeyAuth, AppAuthMode, AppMode};
 use revaer_telemetry::record_app_mode;
 use tracing::{error, info, warn};
 
@@ -116,6 +116,15 @@ pub(crate) async fn require_api_key(
         return Err(ApiError::unauthorized("invalid API key"));
     };
 
+    run_authenticated_request(&state, auth, req, next).await
+}
+
+async fn run_authenticated_request(
+    state: &ApiState,
+    auth: ApiKeyAuth,
+    mut req: Request<axum::body::Body>,
+    next: Next,
+) -> Result<Response, ApiError> {
     let rate_snapshot = match state.enforce_rate_limit(&auth.key_id, auth.rate_limit.as_ref()) {
         Ok(snapshot) => snapshot,
         Err(err) => {
@@ -202,30 +211,7 @@ pub(crate) async fn require_factory_reset_auth(
             return Ok(next.run(req).await);
         };
 
-        let rate_snapshot = match state.enforce_rate_limit(&auth.key_id, auth.rate_limit.as_ref()) {
-            Ok(snapshot) => snapshot,
-            Err(err) => {
-                return Err(ApiError::too_many_requests(
-                    "API key rate limit exceeded; try again later",
-                )
-                .with_rate_limit_headers(err.limit, 0, Some(err.retry_after)));
-            }
-        };
-
-        req.extensions_mut().insert(AuthContext::ApiKey {
-            key_id: auth.key_id,
-        });
-
-        let mut response = next.run(req).await;
-        if let Some(snapshot) = rate_snapshot {
-            insert_rate_limit_headers(
-                response.headers_mut(),
-                snapshot.limit,
-                snapshot.remaining,
-                None,
-            );
-        }
-        return Ok(response);
+        return run_authenticated_request(&state, auth, req, next).await;
     }
 
     let has_api_keys = match state.config.has_api_keys().await {
