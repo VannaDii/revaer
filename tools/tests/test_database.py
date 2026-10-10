@@ -264,7 +264,7 @@ def test_managed_database_preserves_data_and_resets_only_when_requested(
     DatabaseStart.run(context)
     initial = context.tools.docker.database(database.name)
     assert initial is not None
-    assert (initial.directory / "pgdata/PG_VERSION").read_text().strip() == "16"
+    assert (initial.directory / "18/docker/PG_VERSION").read_text().strip() == "18"
     DatabaseStart.run(context)
     assert context.tools.docker.database(database.name) == initial
     DatabaseSeed.run(context)
@@ -310,6 +310,7 @@ def test_managed_database_requires_directory_container_and_server_ownership(
     context, database = managed_database
     DatabaseStart.run(context)
     other = replace(context, root=tmp_path / "another-checkout")
+    context.fs.write_bytes(other.root / BUILD_INPUTS, (context.root / BUILD_INPUTS).read_bytes())
     with pytest.raises(ToolingError, match="directory belongs to another checkout"):
         DatabaseStart.run(other)
     other = replace(
@@ -348,6 +349,8 @@ def test_caller_database_is_used_without_adopting_or_resetting_its_container(
     (migrations / "1_initial.sql").write_text(
         "CREATE TABLE caller_rows (value int);\nINSERT INTO caller_rows VALUES (42);\n"
     )
+    (tmp_path / ".github").mkdir()
+    (tmp_path / BUILD_INPUTS).write_bytes((Path(__file__).parents[2] / BUILD_INPUTS).read_bytes())
     context = make_context(Options())
     DatabaseStart.run(context)
     with pytest.raises(ToolingError, match="not managed by rv"):

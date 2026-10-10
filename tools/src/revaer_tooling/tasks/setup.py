@@ -29,7 +29,7 @@ class Setup(Task):
         context.tools.uv.check_lock()
         if packages:
             context.tools.apt.install(AptInstallArgs(packages))
-            if options.apt_profile == "media":
+            if options.apt_profile == "media" and context.tools.ffprobe.container is not None:
                 context.tools.ffprobe.prepare_container(
                     assignments(context.root, context.fs, BUILD_INPUTS)["ALPINE_RUNTIME_IMAGE"]
                 )
