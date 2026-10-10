@@ -46,7 +46,9 @@ def media_fixture(context: Context, paths: "RunPaths") -> Iterator[tuple["RunPat
     roots = directory / "roots"
     mounted = False
     try:
-        context.fs.create_disk_image(image, 1024 * 1024 * 1024)
+        # Leave the production 1 GiB reserve intact while real recovery tests
+        # create source, workspace and replacement media on the same filesystem.
+        context.fs.create_disk_image(image, 4 * 1024 * 1024 * 1024)
         context.tools.mkfs_ext4.image(image, context.host.uid, context.host.gid)
         context.fs.mkdir(roots)
         context.fs.directory_permissions(roots, context.host.uid, context.host.gid, 0o700)

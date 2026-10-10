@@ -31,6 +31,8 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
   its mounted directory as `REVAER_NATIVE_RECOVERY_ROOT` for native root tests.
   Preserve the private owned directory after an unmount failure; never remove
   caller roots or substitute catalog declarations for bootstrap attestation.
+  The disposable fixture has 4 GiB of capacity so normal media work can run
+  above the production 1 GiB free-space reserve; production limits stay intact.
 
 - The optional fixture-probe container is caller-selected at bootstrap. Setup
   provisions the existing approved Alpine build; cleanup verifies project,

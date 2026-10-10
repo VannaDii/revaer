@@ -46,7 +46,7 @@ def test_managed_media_fixture_cleanup_preserves_mount_failure(
         events.append("format")
         created.append(image.parent)
         assert image.stat().st_mode & 0o777 == 0o600
-        assert image.stat().st_size == 1024 * 1024 * 1024
+        assert image.stat().st_size > 1024 * 1024 * 1024
         if failure == "format":
             raise ToolingError("format failed")
 
