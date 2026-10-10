@@ -149,6 +149,9 @@ applyTo:
   Coverage.py's supported commands. Report every authored Python file with its
   full checkout-relative path, including never-imported files; retain the
   independent 90% tooling/launcher gate. Corrupt coverage inputs must fail.
+- Python and JavaScript coverage merges use the runner's phase selection for
+  the checkout's database lifecycle, including media missing-catalog phases.
+  Require every selected phase to pass in the same completed, unsharded run.
 - Browser source coverage parses all checkout JavaScript, including unused ES
   modules, through the official Tree-sitter Python bindings and grammar. Chromium
   V8 supplies every positive count, bound to exact source hashes and UTF-16
