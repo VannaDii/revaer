@@ -125,6 +125,7 @@ struct MediaJobRuntimeComponents {
 struct RuntimePreflightEvaluation {
     evaluation: JobPreflightEvaluation,
     desired: DesiredGraph,
+    target_stream_ids: BTreeMap<String, u32>,
     desired_target: Option<DesiredTargetSnapshot>,
     expected_container_metadata: Vec<MetadataEntry>,
     expected_chapters: Vec<ChapterInspection>,
@@ -133,6 +134,7 @@ struct RuntimePreflightEvaluation {
 
 struct PreflightReadyContext<'a> {
     desired: &'a DesiredGraph,
+    target_stream_ids: &'a BTreeMap<String, u32>,
     desired_target: Option<&'a DesiredTargetSnapshot>,
     expected_container_metadata: &'a [MetadataEntry],
     expected_chapters: &'a [ChapterInspection],
@@ -163,6 +165,7 @@ struct RuntimePreflightBuildInput {
 
 struct DesiredVerificationContext<'a> {
     desired: &'a DesiredGraph,
+    target_stream_ids: &'a BTreeMap<String, u32>,
     desired_target: Option<&'a DesiredTargetSnapshot>,
     expected_container_metadata: &'a [MetadataEntry],
     expected_chapters: &'a [ChapterInspection],
@@ -1008,6 +1011,7 @@ impl MediaJobRuntime {
         let RuntimePreflightEvaluation {
             evaluation,
             desired,
+            target_stream_ids,
             desired_target,
             expected_container_metadata,
             expected_chapters,
@@ -1040,6 +1044,7 @@ impl MediaJobRuntime {
                     *report,
                     PreflightReadyContext {
                         desired: &desired,
+                        target_stream_ids: &target_stream_ids,
                         desired_target: desired_target.as_ref(),
                         expected_container_metadata: &expected_container_metadata,
                         expected_chapters: &expected_chapters,
@@ -1093,6 +1098,7 @@ impl MediaJobRuntime {
     ) -> Result<TerminalWorkspaceState, MediaJobRuntimeError> {
         let verification_context = DesiredVerificationContext {
             desired: context.desired,
+            target_stream_ids: context.target_stream_ids,
             desired_target: context.desired_target,
             expected_container_metadata: context.expected_container_metadata,
             expected_chapters: context.expected_chapters,
@@ -1949,8 +1955,7 @@ impl MediaJobRuntime {
                 video_constraint_check_index(check_kind, check_index),
                 video_constraint_check_kind(check_kind),
                 inspection,
-                verification_context.desired,
-                verification_context.desired_target,
+                verification_context,
             )
             .await?;
             self.verify_audio_constraints_inspection(
@@ -1958,8 +1963,7 @@ impl MediaJobRuntime {
                 audio_constraint_check_index(check_kind, check_index),
                 audio_constraint_check_kind(check_kind),
                 inspection,
-                verification_context.desired,
-                verification_context.desired_target,
+                verification_context,
             )
             .await?;
             self.verify_container_metadata_inspection(
@@ -2021,10 +2025,9 @@ impl MediaJobRuntime {
         check_index: i32,
         check_kind: &'static str,
         inspection: &MediaInspection,
-        desired: &DesiredGraph,
-        desired_target: Option<&DesiredTargetSnapshot>,
+        context: &DesiredVerificationContext<'_>,
     ) -> Result<(), MediaJobRuntimeError> {
-        let verification = video_constraints_match_inspection(inspection, desired, desired_target);
+        let verification = video_constraints_match_inspection(inspection, context);
         self.complete_verification_check(
             job,
             check_index,
@@ -2046,11 +2049,10 @@ impl MediaJobRuntime {
         check_index: i32,
         check_kind: &'static str,
         inspection: &MediaInspection,
-        desired: &DesiredGraph,
-        desired_target: Option<&DesiredTargetSnapshot>,
+        context: &DesiredVerificationContext<'_>,
     ) -> Result<(), MediaJobRuntimeError> {
         let verification = self
-            .audio_constraints_match_inspection(inspection, desired, desired_target)
+            .audio_constraints_match_inspection(inspection, context)
             .await?;
         self.complete_verification_check(
             job,
@@ -2127,16 +2129,10 @@ impl MediaJobRuntime {
     async fn audio_constraints_match_inspection(
         &self,
         inspection: &MediaInspection,
-        desired: &DesiredGraph,
-        target: Option<&DesiredTargetSnapshot>,
+        context: &DesiredVerificationContext<'_>,
     ) -> Result<AudioConstraintVerification, MediaJobRuntimeError> {
-        audio_constraints_match_inspection(
-            inspection,
-            desired,
-            target,
-            Arc::clone(&self.audio_analyzer),
-        )
-        .await
+        audio_constraints_match_inspection(inspection, context, Arc::clone(&self.audio_analyzer))
+            .await
     }
 
     async fn persist_safety_verification(
@@ -3393,11 +3389,11 @@ fn video_policy_from_target_snapshot(
     mut policy: VideoTranscodePolicy,
     target: Option<&DesiredTargetSnapshot>,
     desired: &DesiredGraph,
+    target_stream_ids: &BTreeMap<String, u32>,
 ) -> Result<VideoTranscodePolicy, MediaJobRuntimeError> {
     let Some(target) = target else {
         return Ok(policy);
     };
-    let mut consumed_stream_ids = BTreeSet::new();
     for target_stream in &target.target.streams {
         if target_stream.kind != StreamKind::Video
             || !target_stream_has_video_constraints(target_stream)
@@ -3405,11 +3401,10 @@ fn video_policy_from_target_snapshot(
             continue;
         }
         let stream =
-            desired_target_stream_for_constraints(desired, target_stream, &consumed_stream_ids)
+            desired_target_stream_for_constraints(desired, target_stream, target_stream_ids)
                 .ok_or(MediaJobRuntimeError::InvalidDesiredGraph(
                     "media_job_target_constraint_stream_unmatched",
                 ))?;
-        consumed_stream_ids.insert(stream.stream_id);
         policy.stream_constraints.push(VideoStreamConstraints {
             stream_id: stream.stream_id,
             profile: target_stream.video_profile.clone(),
@@ -3421,7 +3416,6 @@ fn video_policy_from_target_snapshot(
             hdr_format: target_stream.hdr_format.clone(),
         });
     }
-    consumed_stream_ids.clear();
     for target_stream in &target.target.streams {
         if target_stream.kind != StreamKind::Audio
             || !target_stream_has_audio_constraints(target_stream)
@@ -3429,11 +3423,10 @@ fn video_policy_from_target_snapshot(
             continue;
         }
         let stream =
-            desired_target_stream_for_constraints(desired, target_stream, &consumed_stream_ids)
+            desired_target_stream_for_constraints(desired, target_stream, target_stream_ids)
                 .ok_or(MediaJobRuntimeError::InvalidDesiredGraph(
                     "media_job_target_constraint_stream_unmatched",
                 ))?;
-        consumed_stream_ids.insert(stream.stream_id);
         policy
             .audio_stream_constraints
             .push(AudioStreamConstraints {
@@ -3450,11 +3443,12 @@ fn video_policy_from_target_snapshot(
 fn desired_target_stream_for_constraints<'a>(
     desired: &'a DesiredGraph,
     target_stream: &TargetStream,
-    consumed_stream_ids: &BTreeSet<u32>,
+    target_stream_ids: &BTreeMap<String, u32>,
 ) -> Option<&'a MediaStream> {
+    let output_id = target_stream_ids.get(&target_stream.stream_key)?;
     desired.streams.iter().find(|stream| {
-        stream.kind == target_stream.kind
-            && !consumed_stream_ids.contains(&stream.stream_id)
+        stream.stream_id == *output_id
+            && stream.kind == target_stream.kind
             && stream
                 .codec
                 .trim()
@@ -3471,10 +3465,13 @@ struct VideoConstraintVerification {
 
 fn video_constraints_match_inspection(
     inspection: &MediaInspection,
-    desired: &DesiredGraph,
-    target: Option<&DesiredTargetSnapshot>,
+    context: &DesiredVerificationContext<'_>,
 ) -> VideoConstraintVerification {
-    let constraints = match expected_video_constraints(target, desired) {
+    let constraints = match expected_video_constraints(
+        context.desired_target,
+        context.desired,
+        context.target_stream_ids,
+    ) {
         Ok(constraints) => constraints,
         Err(mismatch) => return mismatch,
     };
@@ -3509,12 +3506,12 @@ fn video_constraints_match_inspection(
 fn expected_video_constraints(
     target: Option<&DesiredTargetSnapshot>,
     desired: &DesiredGraph,
+    target_stream_ids: &BTreeMap<String, u32>,
 ) -> Result<Vec<VideoStreamConstraints>, VideoConstraintVerification> {
     let Some(target) = target else {
         return Ok(Vec::new());
     };
     let mut constraints = Vec::new();
-    let mut consumed_stream_ids = BTreeSet::new();
     for target_stream in &target.target.streams {
         if target_stream.kind != StreamKind::Video
             || !target_stream_has_video_constraints(target_stream)
@@ -3522,11 +3519,10 @@ fn expected_video_constraints(
             continue;
         }
         let Some(stream) =
-            desired_target_stream_for_constraints(desired, target_stream, &consumed_stream_ids)
+            desired_target_stream_for_constraints(desired, target_stream, target_stream_ids)
         else {
             return Err(video_target_constraint_unmatched(target_stream));
         };
-        consumed_stream_ids.insert(stream.stream_id);
         constraints.push(VideoStreamConstraints {
             stream_id: stream.stream_id,
             profile: target_stream.video_profile.clone(),
@@ -3900,22 +3896,13 @@ fn compile_runtime_preflight(
         .map_err(|_| {
             MediaJobRuntimeError::InvalidDesiredGraph("media_job_desired_target_compile_failed")
         })?,
-        None => CompiledDesiredTarget {
-            graph: DesiredGraph {
-                output_path: input.output_path.clone(),
-                container_format: None,
-                stream_bindings: identity_stream_bindings(&source_graph.streams),
-                streams: source_graph.streams.clone(),
-            },
-            sidecar_embeddings: Vec::new(),
-            sidecar_outputs: Vec::new(),
-            sidecar_removals: Vec::new(),
-        },
+        None => preserved_source_target(source_graph, input.output_path.clone()),
     };
     let video_policy = video_policy_from_target_snapshot(
         input.base_video_policy,
         input.desired_target.as_ref(),
         &compiled.graph,
+        &compiled.primary_target_stream_ids,
     )?;
     let free_bytes = input
         .capacity_probe
@@ -3958,11 +3945,27 @@ fn compile_runtime_preflight(
     Ok(RuntimePreflightEvaluation {
         evaluation,
         desired: compiled.graph,
+        target_stream_ids: compiled.primary_target_stream_ids,
         desired_target: input.desired_target,
         expected_container_metadata,
         expected_chapters,
         planning_outcome,
     })
+}
+
+fn preserved_source_target(source: &MediaGraph, output_path: String) -> CompiledDesiredTarget {
+    CompiledDesiredTarget {
+        primary_target_stream_ids: BTreeMap::new(),
+        graph: DesiredGraph {
+            output_path,
+            container_format: None,
+            stream_bindings: identity_stream_bindings(&source.streams),
+            streams: source.streams.clone(),
+        },
+        sidecar_embeddings: Vec::new(),
+        sidecar_outputs: Vec::new(),
+        sidecar_removals: Vec::new(),
+    }
 }
 
 const fn target_stream_has_video_constraints(stream: &TargetStream) -> bool {
@@ -3984,11 +3987,14 @@ struct AudioConstraintVerification {
 
 async fn audio_constraints_match_inspection(
     inspection: &MediaInspection,
-    desired: &DesiredGraph,
-    target: Option<&DesiredTargetSnapshot>,
+    context: &DesiredVerificationContext<'_>,
     analyzer: Arc<RuntimeAudioAnalyzer>,
 ) -> Result<AudioConstraintVerification, MediaJobRuntimeError> {
-    let constraints = match expected_audio_constraints(target, desired) {
+    let constraints = match expected_audio_constraints(
+        context.desired_target,
+        context.desired,
+        context.target_stream_ids,
+    ) {
         Ok(constraints) => constraints,
         Err(mismatch) => return Ok(mismatch),
     };
@@ -4053,12 +4059,12 @@ async fn audio_constraints_match_inspection(
 fn expected_audio_constraints(
     target: Option<&DesiredTargetSnapshot>,
     desired: &DesiredGraph,
+    target_stream_ids: &BTreeMap<String, u32>,
 ) -> Result<Vec<AudioStreamConstraints>, AudioConstraintVerification> {
     let Some(target) = target else {
         return Ok(Vec::new());
     };
     let mut constraints = Vec::new();
-    let mut consumed_stream_ids = BTreeSet::new();
     for target_stream in &target.target.streams {
         if target_stream.kind != StreamKind::Audio
             || !target_stream_has_audio_constraints(target_stream)
@@ -4066,11 +4072,10 @@ fn expected_audio_constraints(
             continue;
         }
         let Some(stream) =
-            desired_target_stream_for_constraints(desired, target_stream, &consumed_stream_ids)
+            desired_target_stream_for_constraints(desired, target_stream, target_stream_ids)
         else {
             return Err(audio_target_constraint_unmatched(target_stream));
         };
-        consumed_stream_ids.insert(stream.stream_id);
         constraints.push(AudioStreamConstraints {
             stream_id: stream.stream_id,
             bitrate_bps: target_stream.audio_bitrate_bps,
@@ -5166,7 +5171,7 @@ mod tests {
         RejectedCandidatePlan,
     };
     use revaer_media_core::target::{
-        DesiredSidecarOutput, DesiredTarget, SidecarOutputSource, TargetStream,
+        DesiredSidecarOutput, DesiredTarget, LanguageToken, SidecarOutputSource, TargetStream,
         UnmatchedStreamPolicy,
     };
     use revaer_media_runtime::execute::{
@@ -5866,6 +5871,80 @@ mod tests {
     }
 
     #[test]
+    fn media_job_runtime_constraints_use_compiler_output_identity() -> anyhow::Result<()> {
+        for kind in [StreamKind::Video, StreamKind::Audio] {
+            for fanout in [false, true] {
+                let codec = if kind == StreamKind::Video {
+                    "hevc"
+                } else {
+                    "aac"
+                };
+                let mut source = video_graph("/tmp/source.mkv", codec);
+                source.streams[0].kind = kind;
+                source.streams[0].language = Some("eng".to_string());
+                if !fanout {
+                    let mut second = source.streams[0].clone();
+                    second.stream_id = 1;
+                    source.streams.push(second);
+                }
+                let mut missing = target_stream("absent", kind, codec);
+                missing.optional = true;
+                missing.language = Some(LanguageToken::parse("fra")?);
+                let mut first = target_stream("unconstrained", kind, codec);
+                let mut second = target_stream("constrained", kind, codec);
+                if fanout {
+                    first.source_binding_key = Some("shared".to_string());
+                    second.source_binding_key = Some("shared".to_string());
+                }
+                if kind == StreamKind::Video {
+                    second.video_profile = Some("main10".to_string());
+                } else {
+                    second.audio_sample_rate_hz = Some(48_000);
+                }
+                let mut snapshot = constrained_target_snapshot(first);
+                snapshot.target.streams.insert(0, missing);
+                snapshot.target.streams.push(second);
+                let compiled = super::compile_desired_target_with_sidecars_at(
+                    &source,
+                    "/tmp/output.mkv",
+                    "/tmp/output.mkv",
+                    &snapshot.target,
+                    UnmatchedStreamPolicy::Preserve,
+                    &[],
+                )?;
+                let ids = &compiled.primary_target_stream_ids;
+                assert!(!ids.contains_key("absent"));
+                let policy = video_policy_from_target_snapshot(
+                    video_policy_from_policy_intent(Some("general"))?,
+                    Some(&snapshot),
+                    &compiled.graph,
+                    ids,
+                )?;
+                if kind == StreamKind::Video {
+                    assert_eq!(policy.stream_constraints.len(), 1);
+                    assert_eq!(policy.stream_constraints[0].stream_id, 1);
+                    let verification =
+                        super::expected_video_constraints(Some(&snapshot), &compiled.graph, ids)
+                            .map_err(|_| anyhow::anyhow!("video constraint binding failed"))?;
+                    assert_eq!(verification[0].stream_id, 1);
+                } else {
+                    assert_eq!(policy.audio_stream_constraints.len(), 1);
+                    assert_eq!(policy.audio_stream_constraints[0].stream_id, 1);
+                    let verification =
+                        expected_audio_constraints(Some(&snapshot), &compiled.graph, ids)
+                            .map_err(|_| anyhow::anyhow!("audio constraint binding failed"))?;
+                    assert_eq!(verification[0].stream_id, 1);
+                }
+                assert_eq!(
+                    compiled.graph.stream_bindings[1].source_stream_id,
+                    Some(u32::from(!fanout))
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn video_policy_rejects_unmatched_target_constraint_stream() -> anyhow::Result<()> {
         let streams = video_graph("/tmp/source.mkv", "h264").streams;
         let desired = DesiredGraph {
@@ -5879,8 +5958,13 @@ mod tests {
         let snapshot = constrained_target_snapshot(stream);
         let base_policy = video_policy_from_policy_intent(Some("general"))?;
 
-        let error = video_policy_from_target_snapshot(base_policy, Some(&snapshot), &desired)
-            .expect_err("unmatched constrained target video stream should fail closed");
+        let error = video_policy_from_target_snapshot(
+            base_policy,
+            Some(&snapshot),
+            &desired,
+            &BTreeMap::new(),
+        )
+        .expect_err("unmatched constrained target video stream should fail closed");
 
         assert_eq!(error.code(), "media_job_target_constraint_stream_unmatched");
         Ok(())
@@ -5899,7 +5983,7 @@ mod tests {
         stream.audio_loudness_profile = Some("dialog-normalized".to_string());
         let snapshot = constrained_target_snapshot(stream);
 
-        let mismatch = expected_audio_constraints(Some(&snapshot), &desired)
+        let mismatch = expected_audio_constraints(Some(&snapshot), &desired, &BTreeMap::new())
             .expect_err("unmatched constrained target audio stream should fail closed");
 
         assert!(!mismatch.matched);

@@ -204,6 +204,8 @@ pub struct DesiredSidecarOutput {
 pub struct CompiledDesiredTarget {
     /// Desired primary media graph.
     pub graph: DesiredGraph,
+    /// Selected non-subtitle target keys mapped to their desired output identities.
+    pub primary_target_stream_ids: BTreeMap<String, u32>,
     /// Existing sidecars selected as embedded input streams.
     pub sidecar_embeddings: Vec<SidecarEmbedding>,
     /// Sidecar artifacts to copy or extract into the managed workspace.
@@ -663,6 +665,7 @@ pub fn compile_desired_target_with_sidecars_at(
             stream_bindings: state.desired_bindings,
             streams: state.desired_streams,
         },
+        primary_target_stream_ids: state.primary_target_stream_ids,
         sidecar_embeddings: state.embeddings,
         sidecar_outputs: state.outputs,
         sidecar_removals: state.removals.into_iter().collect(),
@@ -670,6 +673,7 @@ pub fn compile_desired_target_with_sidecars_at(
 }
 
 struct TargetCompilationState {
+    primary_target_stream_ids: BTreeMap<String, u32>,
     desired_streams: Vec<MediaStream>,
     desired_bindings: Vec<DesiredStreamBinding>,
     embeddings: Vec<SidecarEmbedding>,
@@ -681,6 +685,7 @@ struct TargetCompilationState {
 impl TargetCompilationState {
     fn new(stream_capacity: usize) -> Self {
         Self {
+            primary_target_stream_ids: BTreeMap::new(),
             desired_streams: Vec::with_capacity(stream_capacity),
             desired_bindings: Vec::with_capacity(stream_capacity),
             embeddings: Vec::new(),
@@ -699,10 +704,14 @@ fn compile_primary_stream(
 ) -> Result<(), TargetCompileError> {
     match source_bindings.select(source, target)? {
         Some(stream) => {
+            let output_id = state.next_output_id()?;
             state.push_stream(
-                apply_target_stream(stream, target, state.next_output_id()?),
+                apply_target_stream(stream, target, output_id),
                 Some(stream.stream_id),
             );
+            state
+                .primary_target_stream_ids
+                .insert(target.stream_key.clone(), output_id);
             Ok(())
         }
         None if target.optional => Ok(()),
