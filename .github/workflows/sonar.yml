@@ -68,6 +68,7 @@ jobs:
           REVAER_LOCAL_DB_USER: revaer
           REVAER_LOCAL_DB_PASSWORD: ${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}
           E2E_MANAGED_MEDIA_ROOTS: '1'
+          E2E_FS_ROOT: ''
           E2E_API_BASE_URL: http://localhost:7070
           E2E_BASE_URL: http://localhost:8080
           E2E_DB_ADMIN_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)
