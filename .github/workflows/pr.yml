@@ -253,7 +253,7 @@ jobs:
 
   media-conversion:
     name: Media Conversion Fixtures
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     needs: [fmt, lint, check, helm-lint, udeps, deny, audit, load-matrix, instruction-drift]
     env:
