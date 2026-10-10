@@ -1,6 +1,7 @@
 //! Serializable admission under exact association and retained-root fences.
 
 use sqlx::PgPool;
+use std::time::Duration;
 use uuid::Uuid;
 
 use super::jobs::EnqueuedMediaJobRow;
@@ -48,7 +49,8 @@ pub struct AssociationJobInput<'a> {
 ///
 /// # Errors
 /// Propagates stale fences, invalid input, privilege and transaction failures.
-/// Only definitive serialization/deadlock failures are retried, at most twice.
+/// Only definitive serialization/deadlock failures are retried, at most twice,
+/// with 50 ms and 100 ms waits so concurrent discovery can finish its write.
 pub async fn enqueue_association_job(
     pool: &PgPool,
     input: &AssociationJobInput<'_>,
@@ -61,6 +63,7 @@ pub async fn enqueue_association_job(
             && matches!(error.database_code().as_deref(), Some("40001" | "40P01"))
         {
             retries += 1;
+            tokio::time::sleep(Duration::from_millis(50 * retries)).await;
             continue;
         }
         return result;
