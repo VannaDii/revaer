@@ -309,7 +309,8 @@ applyTo:
 
 # Drift Control
 
-- Hosted media E2E selects `job.services.postgres.id` and its matching admin
+- Hosted test Postgres services publish `127.0.0.1:5432:5432` for the single-init
+  endpoint check. Media E2E selects `job.services.postgres.id` and its matching admin
   password. `E2E_MANAGED_MEDIA_ROOTS=1` gives dry-run API/browser scenarios an
   owned private Linux tmpfs catalog, validated by normal application bootstrap;
   clear the checked-in `E2E_FS_ROOT` default in those managed steps.

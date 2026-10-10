@@ -130,7 +130,7 @@ jobs:
         options: --shm-size=1g --health-cmd="pg_isready -U revaer -d revaer" --health-interval=10s --health-timeout=5s
           --health-retries=5
         ports:
-          - 5432:5432
+          - 127.0.0.1:5432:5432
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -245,7 +245,7 @@ jobs:
           POSTGRES_DB: revaer
         options: --shm-size=1g --health-cmd="pg_isready -U revaer -d revaer" --health-interval=10s --health-timeout=5s --health-retries=5
         ports:
-        - 5432:5432
+        - 127.0.0.1:5432:5432
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
@@ -274,7 +274,7 @@ jobs:
           POSTGRES_DB: revaer
         options: --shm-size=1g --health-cmd="pg_isready -U revaer -d revaer" --health-interval=10s --health-timeout=5s --health-retries=5
         ports:
-        - 5432:5432
+        - 127.0.0.1:5432:5432
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
@@ -343,7 +343,7 @@ jobs:
           --health-timeout=5s
           --health-retries=5
         ports:
-          - 5432:5432
+          - 127.0.0.1:5432:5432
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
@@ -394,7 +394,7 @@ jobs:
         options: --health-cmd="pg_isready -U revaer -d revaer" --health-interval=10s --health-timeout=5s --health-retries=5
           --shm-size=1g
         ports:
-          - 5432:5432
+          - 127.0.0.1:5432:5432
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - uses: ./.github/actions/setup-revaer
@@ -467,7 +467,7 @@ jobs:
         options: --shm-size=1g --health-cmd="pg_isready -U revaer -d revaer" --health-interval=10s --health-timeout=5s
           --health-retries=5
         ports:
-          - 5432:5432
+          - 127.0.0.1:5432:5432
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - uses: ./.github/actions/setup-revaer
