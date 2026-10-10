@@ -15,8 +15,10 @@ from revaer_tooling.errors import ToolingError
 from revaer_tooling.tasks.python_coverage import PythonCoverageMerge
 
 
-@pytest.fixture
-def coverage_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Context:
+@pytest.fixture(params=(False, True))
+def coverage_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> Context:
     source = Path(__file__).resolve().parents[2]
     package = tmp_path / "tools/src/revaer_tooling"
     package.mkdir(parents=True)
@@ -29,8 +31,13 @@ def coverage_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Context
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True, timeout=10)
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("E2E_PROJECTS", raising=False)
+    if request.param:
+        (tmp_path / "config").mkdir()
+        (tmp_path / "config/database-rebaseline.env").write_text(
+            "TRANSITION_PHASE=feature-development\n"
+        )
     context = make_context(Options())
-    phases = context.settings.e2e.phases()
+    phases = context.settings.e2e.phases(media=request.param)
     for phase in ("tooling", *phases):
         data = (
             tmp_path / ".coverage"

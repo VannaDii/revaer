@@ -34,7 +34,7 @@ UNUSED = (
 )
 
 
-@pytest.fixture(params=("classic", "module"))
+@pytest.fixture(params=("classic", "module", "media-classic", "media-module"))
 def measured(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
 ) -> Context:
@@ -42,8 +42,15 @@ def measured(
     (tmp_path / "tools/src/revaer_tooling").mkdir(parents=True)
     (tmp_path / "tools/src/revaer_tooling/cli.py").touch()
     (tmp_path / ".gitignore").write_text("coverage/\ntests/test-results/\n")
-    script_source = SOURCE + ("export {};\r\n" if request.param == "module" else "")
-    script_type = ' type="module"' if request.param == "module" else ""
+    media = request.param.startswith("media-")
+    if media:
+        (tmp_path / "config").mkdir()
+        (tmp_path / "config/database-rebaseline.env").write_text(
+            "TRANSITION_PHASE=feature-development\n"
+        )
+    module = request.param.endswith("module")
+    script_source = SOURCE + ("export {};\r\n" if module else "")
+    script_type = ' type="module"' if module else ""
     for name, source in (
         ("app.js", script_source),
         ("mirror.js", script_source),
@@ -91,7 +98,7 @@ def measured(
         json.dumps(
             {
                 "status": "passed",
-                "phases": dict.fromkeys(context.settings.e2e.phases(), "passed"),
+                "phases": dict.fromkeys(context.settings.e2e.phases(media=media), "passed"),
                 "shard": 1,
                 "total_shards": 1,
                 "browser_coverage": True,

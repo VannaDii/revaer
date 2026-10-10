@@ -5,6 +5,7 @@ from pathlib import Path
 
 from ..context import Context, TaskResult
 from ..e2e.coverage import verify_analysis_run
+from ..e2e.database import uses_single_init
 from ..e2e.javascript import Script, source_text
 from ..e2e.v8 import Location, line_counts, nonnegative, source_digest, source_lines, utf16_length
 from ..errors import ToolingError
@@ -126,7 +127,7 @@ class JavaScriptCoverageMerge(Task):
             summary = object_value(
                 decode(context.fs.read(paths.results / "python-e2e-summary.json"))
             )
-            expected = context.settings.e2e.phases()
+            expected = context.settings.e2e.phases(media=uses_single_init(context))
             verify_analysis_run(summary, expected, browser=True)
             baselines = tuple(sorted(paths.results.glob("javascript-baseline-*.json")))
             captures = tuple(
