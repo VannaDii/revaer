@@ -71,6 +71,8 @@
 
 ## 3) Quality Gates
 
+- Operator-approved Sonar policy: coverage requirements concern production code only. Keep the exact coverage-only exclusions enforced by `tools/src/revaer_tooling/policy/sonar.py`; all authored content remains in analysis and the zero-new-issues gate. No unresolved historical issue may remain in active production code, including the runtime SQL initializer and used vendored libraries. Only `TO_REVIEW` hotspots block; reviewed hotspots do not. Real browser records may have zero hits when no authored production JavaScript is executed. This specific coverage policy supersedes the blanket empty-coverage-filter language below; all other analysis restrictions remain in force.
+
 - All local and CI operations run through `rv` tasks. Workflows may install tools or stage artifacts, but build/test/lint/release gates must call `uv run --locked -- rv`.
 - Bootstrap once with `./setup.sh`; use the uv-managed `rv` CLI thereafter. The approved migration retires Just, Node tooling and shell automation except this root bootstrap.
 - Handoff requires:
