@@ -1,6 +1,7 @@
 """Tool adapters emit exact typed operations without shell interpretation."""
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -10,9 +11,11 @@ from revaer_tooling.external.base import ExternalTool
 from revaer_tooling.external.coverage import CargoLlvmCov
 from revaer_tooling.external.github import GitHub
 from revaer_tooling.external.media import Ffprobe
+from revaer_tooling.external.mount import MkfsExt4, Mount, Unmount
 from revaer_tooling.external.python import Python
 from revaer_tooling.external.release import ReleaseRepository, SemanticRelease
 from revaer_tooling.external.rust import Cargo, CargoArgs, CargoInstallArgs, CargoOperation
+from revaer_tooling.filesystem import FileSystem
 from revaer_tooling.process import Completed, Invocation, RunningProcess
 
 
@@ -27,6 +30,39 @@ class RecordingRunner:
     def run(self, invocation: Invocation) -> Completed:
         self.calls.append(invocation)
         return Completed(0, self.stdout)
+
+
+def test_ext4_fixture_preserves_private_image_and_explicit_mount_lifecycle(tmp_path: Path) -> None:
+    runner = RecordingRunner()
+    fs = FileSystem()
+    image = tmp_path / "media.ext4"
+    root = tmp_path / "roots"
+    fs.create_disk_image(image, 1024 * 1024)
+    root.mkdir(mode=0o700)
+    uid, gid = os.getuid(), os.getgid()
+    formatter = MkfsExt4(sys.executable, runner, tmp_path, {})
+    formatter.image(image, uid, gid)
+    assert runner.calls[-1].argv[1:] == ("-q", "-F", "-E", f"root_owner={uid}:{gid}", str(image))
+    Mount(sys.executable, runner, tmp_path, {}).temporary(root, image, uid, gid, None)
+    assert runner.calls[-1].argv[1:] == (
+        "-t",
+        "ext4",
+        "-o",
+        "loop,nodev,nosuid,noexec",
+        str(image),
+        str(root),
+    )
+    Unmount(sys.executable, runner, tmp_path, {}).temporary(root, None)
+    assert runner.calls[-1].argv[1:] == ("--", str(root))
+    image.chmod(0o644)
+    with pytest.raises(ToolingError, match="private owned backing file"):
+        formatter.image(image, uid, gid)
+    assert len(runner.calls) == 3
+    with pytest.raises(FileExistsError):
+        fs.create_disk_image(image, 1024)
+    assert image.stat().st_size == 1024 * 1024
+    with pytest.raises(ToolingError, match="positive"):
+        fs.create_disk_image(tmp_path / "invalid.ext4", 0)
 
 
 def test_container_ffprobe_reads_only_the_selected_checkout(tmp_path: Path) -> None:

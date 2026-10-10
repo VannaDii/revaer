@@ -28,13 +28,13 @@ def test_environment(context: Context) -> dict[str, str]:
 
 @contextmanager
 def native_test_environment(context: Context) -> Iterator[dict[str, str]]:
-    """Keep an explicitly managed disposable root mounted throughout Rust tests."""
+    """Keep an explicitly managed persistent root mounted throughout Rust tests."""
     from .e2e import RunPaths, media_fixture
 
     environment = test_environment(context)
     with media_fixture(context, RunPaths.for_context(context)) as (paths, catalog):
         if catalog is not None:
-            environment["REVAER_NATIVE_DISPOSABLE_ROOT"] = str(paths.filesystem)
+            environment["REVAER_NATIVE_RECOVERY_ROOT"] = str(paths.filesystem)
         yield environment
 
 

@@ -80,7 +80,7 @@ applyTo:
 ## Single-init E2E ownership
 
 - Hosted dry-run E2E may explicitly select `E2E_MANAGED_MEDIA_ROOTS=1` to own
-  private tmpfs roots and a disposable catalog. Keep real bootstrap attestation
+  private ext4 roots and a restart-persistent catalog. Keep real bootstrap attestation
   and missing-catalog scenarios; unmount only after all owned services stop.
   Caller-provided filesystem roots remain caller-owned.
 

@@ -42,19 +42,26 @@ def media_fixture(context: Context, paths: "RunPaths") -> Iterator[tuple["RunPat
     if context.host.system != "linux" or context.settings.e2e.filesystem_root is not None:
         raise ToolingError("Managed E2E media roots require Linux without a caller filesystem root")
     directory = context.fs.temporary_directory(context.host.home, "revaer-e2e-")
+    image = directory / "media.ext4"
+    roots = directory / "roots"
     mounted = False
     try:
+        context.fs.create_disk_image(image, 1024 * 1024 * 1024)
+        context.tools.mkfs_ext4.image(image, context.host.uid, context.host.gid)
+        context.fs.mkdir(roots)
+        context.fs.directory_permissions(roots, context.host.uid, context.host.gid, 0o700)
         context.tools.mount.temporary(
-            directory, context.host.uid, context.host.gid, context.tools.privilege
+            roots, image, context.host.uid, context.host.gid, context.tools.privilege
         )
         mounted = True
+        context.fs.directory_permissions(roots, context.host.uid, context.host.gid, 0o700)
         slots = []
         for key, name, kinds in (
             ("ui-source", "source", ["source", "output"]),
             ("ui-output", "output", ["output"]),
             ("ui-workspace", "workspace", ["workspace"]),
         ):
-            path = directory / name
+            path = roots / name
             context.fs.mkdir(path)
             context.fs.directory_permissions(path, context.host.uid, context.host.gid, 0o700)
             slots.append(
@@ -62,18 +69,18 @@ def media_fixture(context: Context, paths: "RunPaths") -> Iterator[tuple["RunPat
                     "key": key,
                     "path": str(path),
                     "allowed_kinds": kinds,
-                    "durability_class": "disposable",
-                    "durability_evidence": "none",
+                    "durability_class": "restart_persistent",
+                    "durability_evidence": "linux_dedicated_mount",
                     "sole_writer_class": "revaer_exclusive",
                     "sole_writer_evidence": "linux_dedicated_service",
                 }
             )
-        catalog = directory / "catalog.json"
+        catalog = roots / "catalog.json"
         context.fs.write(catalog, json.dumps({"format_version": 1, "slots": slots}), 0o600)
-        yield replace(paths, filesystem=directory), catalog
+        yield replace(paths, filesystem=roots), catalog
     finally:
         if mounted:
-            context.tools.unmount.temporary(directory, context.tools.privilege)
+            context.tools.unmount.temporary(roots, context.tools.privilege)
         context.fs.remove_owned(directory, context.host.home)
 
 

@@ -221,8 +221,7 @@ fn fixture() -> anyhow::Result<(tempfile::TempDir, RootCatalogLoad, OpenedRootCa
             (root, "restart_persistent", "linux_dedicated_mount")
         } else {
             (
-                std::env::var_os("REVAER_NATIVE_DISPOSABLE_ROOT")
-                    .or_else(|| std::env::var_os("HOME"))
+                std::env::var_os("HOME")
                     .ok_or_else(|| anyhow::anyhow!("private fixture HOME required"))?,
                 "disposable",
                 "none",

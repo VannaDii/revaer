@@ -27,7 +27,7 @@ from revaer_tooling.tasks import e2e
 from revaer_tooling.tasks.build import SyncAssets
 
 
-@pytest.mark.parametrize("failure", ("", "mount", "scenario", "unmount"))
+@pytest.mark.parametrize("failure", ("", "format", "mount", "scenario", "unmount"))
 def test_managed_media_fixture_cleanup_preserves_mount_failure(
     coordinator: tuple[Context, "Scenario"], monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
@@ -42,31 +42,41 @@ def test_managed_media_fixture_cleanup_preserves_mount_failure(
     events: list[str] = []
     created: list[Path] = []
 
-    def mount(path: Path, uid: int, gid: int, privilege: object) -> None:
+    def format_image(image: Path, uid: int, gid: int) -> None:
+        events.append("format")
+        created.append(image.parent)
+        assert image.stat().st_mode & 0o777 == 0o600
+        assert image.stat().st_size == 1024 * 1024 * 1024
+        if failure == "format":
+            raise ToolingError("format failed")
+
+    def mount(path: Path, image: Path, uid: int, gid: int, privilege: object) -> None:
         events.append("mount")
-        created.append(path)
+        assert path == created[0] / "roots"
+        assert image.parent == created[0]
         if failure == "mount":
             raise ToolingError("mount failed")
 
     def unmount(path: Path, privilege: object) -> None:
-        assert path == created[0]
+        assert path == created[0] / "roots"
         events.append("unmount")
         if failure == "unmount":
             raise ToolingError("unmount failed")
 
     monkeypatch.setattr(context.tools.mount, "temporary", mount)
+    monkeypatch.setattr(context.tools.mkfs_ext4, "image", format_image)
     monkeypatch.setattr(context.tools.unmount, "temporary", unmount)
 
     def run() -> None:
         with e2e.media_fixture(context, e2e.RunPaths.for_context(context)) as (paths, catalog):
             assert catalog is not None
-            assert paths.filesystem == created[0]
+            assert paths.filesystem == created[0] / "roots"
             assert catalog.stat().st_mode & 0o777 == 0o600
             document = json.loads(catalog.read_text())
             assert len(document["slots"]) == 3
             for slot in document["slots"]:
-                assert slot["durability_class"] == "disposable"
-                assert slot["durability_evidence"] == "none"
+                assert slot["durability_class"] == "restart_persistent"
+                assert slot["durability_evidence"] == "linux_dedicated_mount"
                 assert Path(slot["path"]).stat().st_mode & 0o777 == 0o700
             if failure == "scenario":
                 raise ToolingError("scenario failed")
@@ -76,7 +86,13 @@ def test_managed_media_fixture_cleanup_preserves_mount_failure(
             run()
     else:
         run()
-    assert events == (["mount"] if failure == "mount" else ["mount", "unmount"])
+    assert events == (
+        ["format"]
+        if failure == "format"
+        else ["format", "mount"]
+        if failure == "mount"
+        else ["format", "mount", "unmount"]
+    )
     assert created[0].exists() == (failure == "unmount")
 
 

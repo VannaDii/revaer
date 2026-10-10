@@ -353,7 +353,7 @@ jobs:
         timeout-minutes: 20
         with:
           apt-profile: db
-          apt-packages: libtorrent-rasterbar-dev pkg-config sccache libpq-dev postgresql-client ffmpeg
+          apt-packages: libtorrent-rasterbar-dev pkg-config sccache libpq-dev postgresql-client ffmpeg e2fsprogs
           cargo-tools: sqlx-cli
 
       - name: Single-init application fixtures
@@ -408,7 +408,7 @@ jobs:
         timeout-minutes: 20
         with:
           apt-profile: db
-          apt-packages: libtorrent-rasterbar-dev pkg-config sccache libpq-dev postgresql-client ffmpeg
+          apt-packages: libtorrent-rasterbar-dev pkg-config sccache libpq-dev postgresql-client ffmpeg e2fsprogs
           cargo-tools: sqlx-cli,trunk
           browsers: ''
       - name: API E2E coverage
@@ -482,7 +482,7 @@ jobs:
         timeout-minutes: 20
         with:
           apt-profile: db
-          apt-packages: libtorrent-rasterbar-dev pkg-config sccache libpq-dev postgresql-client ffmpeg
+          apt-packages: libtorrent-rasterbar-dev pkg-config sccache libpq-dev postgresql-client ffmpeg e2fsprogs
           cargo-tools: sqlx-cli,trunk
           browsers: chrome
       - name: UI E2E

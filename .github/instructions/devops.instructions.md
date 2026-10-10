@@ -311,13 +311,14 @@ applyTo:
 
 - Feature-matrix and API/browser E2E setup includes FFmpeg alongside database
   prerequisites because those jobs execute native media runtime scenarios.
-  Feature-matrix and Rust coverage also select the owned tmpfs fixture for
-  native disposable-root tests; a home-directory filesystem is not that proof.
+  Feature-matrix and Rust coverage also select the owned ext4 fixture for
+  native root tests; a home-directory filesystem is not that proof. Install
+  e2fsprogs for the private loop-backed image and retain it until unmount succeeds.
 
 - Hosted test Postgres services publish `127.0.0.1:5432:5432` for the single-init
   endpoint check. Media E2E selects `job.services.postgres.id` and its matching admin
   password. `E2E_MANAGED_MEDIA_ROOTS=1` gives dry-run API/browser scenarios an
-  owned private Linux tmpfs catalog, validated by normal application bootstrap;
+  owned private Linux ext4 catalog, validated by normal application bootstrap;
   clear the checked-in `E2E_FS_ROOT` default in those managed steps.
   Stop services before unmounting and removing those disposable roots.
 

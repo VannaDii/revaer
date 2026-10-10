@@ -24,7 +24,7 @@ from .external.github import GitHub
 from .external.http import Http
 from .external.images import Buildx, Trivy
 from .external.media import Ffmpeg, Ffprobe
-from .external.mount import Mount, Unmount
+from .external.mount import MkfsExt4, Mount, Unmount
 from .external.packages import Apk, Apt
 from .external.python import Python, Uv
 from .external.release import SemanticRelease
@@ -67,6 +67,7 @@ class Options:
 @dataclass(frozen=True)
 class Tools:
     mount: Mount
+    mkfs_ext4: MkfsExt4
     unmount: Unmount
     privilege: ExternalTool | None
     lifecycle_docker: LifecycleDocker

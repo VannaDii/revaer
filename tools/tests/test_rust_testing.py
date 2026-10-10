@@ -133,7 +133,7 @@ def test_native_fixture_lives_until_rust_tests_finish(
         source.read_text().replace(
             'assert_eq!(std::env::var("DATABASE_URL")?, "postgres://tests.invalid/application");',
             'assert_eq!(std::env::var("DATABASE_URL")?, "postgres://tests.invalid/application");'
-            '\nassert!(std::path::Path::new(&std::env::var("REVAER_NATIVE_DISPOSABLE_ROOT")?).exists());'
+            '\nassert!(std::path::Path::new(&std::env::var("REVAER_NATIVE_RECOVERY_ROOT")?).exists());'
             f'\nassert!(!{str(fail).lower()}, "fixture test failure");',
         )
     )
