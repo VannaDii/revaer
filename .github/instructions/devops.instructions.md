@@ -309,6 +309,9 @@ applyTo:
 
 # Drift Control
 
+- Feature-matrix and API/browser E2E setup includes FFmpeg alongside database
+  prerequisites because those jobs execute native media runtime scenarios.
+
 - Hosted test Postgres services publish `127.0.0.1:5432:5432` for the single-init
   endpoint check. Media E2E selects `job.services.postgres.id` and its matching admin
   password. `E2E_MANAGED_MEDIA_ROOTS=1` gives dry-run API/browser scenarios an
