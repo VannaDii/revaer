@@ -259,6 +259,20 @@ fn fixture() -> anyhow::Result<(tempfile::TempDir, RootCatalogLoad, OpenedRootCa
 
 #[test]
 fn native_proof_preserves_source_cleans_probes_and_retains_locks() -> anyhow::Result<()> {
+    if std::env::var_os("REVAER_NATIVE_ROOT_PROOF_CHILD").is_none() {
+        // Create this test's locks after spawning its isolated child, so other
+        // parallel tests cannot retain them through their own child processes.
+        let status = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "bootstrap::root_catalog::native::tests::native_proof_preserves_source_cleans_probes_and_retains_locks",
+                "--nocapture",
+            ])
+            .env("REVAER_NATIVE_ROOT_PROOF_CHILD", "1")
+            .status()?;
+        anyhow::ensure!(status.success(), "isolated native root test failed");
+        return Ok(());
+    }
     let (directory, source, roots) = fixture()?;
     let proof = prove(&source, &roots, &ProcRootMountSource)?;
     assert_eq!(
