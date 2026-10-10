@@ -52,6 +52,13 @@ Browser restarts retain the authenticated
 session and database without another reset. Setup and scenario logs live in
 separate phase subdirectories under `tests/logs`.
 
+Hosted dry-run API/browser jobs set `E2E_MANAGED_MEDIA_ROOTS=1`. The coordinator
+creates one private 256 MiB Linux tmpfs beneath the calling user's home, owns
+the source/output/workspace directories and disposable catalog, and passes it
+through normal bootstrap attestation. It stops services before unmounting and
+removing the fixture. A caller's `E2E_FS_ROOT` cannot be combined with this mode.
+Persistent replacement and restart recovery use the existing ext4 service test.
+
 API phases use one worker because they share mutable application configuration.
 UI workers are configurable. Keys pass to pytest through its environment, with
 redaction at the process boundary. Process logs are private files and reject

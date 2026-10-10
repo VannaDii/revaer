@@ -309,6 +309,11 @@ applyTo:
 
 # Drift Control
 
+- Hosted media E2E selects `job.services.postgres.id` and its matching admin
+  password. `E2E_MANAGED_MEDIA_ROOTS=1` gives dry-run API/browser scenarios an
+  owned private Linux tmpfs catalog, validated by normal application bootstrap;
+  stop services before unmounting and removing those disposable roots.
+
 - Database services use the approved PostgreSQL 18.6 image digest from
   `.github/build-inputs.env`; floating major-version tags are not suitable.
 - Fixture probing uses the pinned Alpine image and ARM64 FFmpeg 8.0.1-r1, whose full

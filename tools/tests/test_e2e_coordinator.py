@@ -27,6 +27,59 @@ from revaer_tooling.tasks import e2e
 from revaer_tooling.tasks.build import SyncAssets
 
 
+@pytest.mark.parametrize("failure", ("", "mount", "scenario", "unmount"))
+def test_managed_media_fixture_cleanup_preserves_mount_failure(
+    coordinator: tuple[Context, "Scenario"], monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    context, _ = coordinator
+    context = replace(
+        context,
+        host=replace(context.host, system="linux", home=context.root),
+        settings=replace(
+            context.settings, e2e=replace(context.settings.e2e, managed_media_roots=True)
+        ),
+    )
+    events: list[str] = []
+    created: list[Path] = []
+
+    def mount(path: Path, uid: int, gid: int, privilege: object) -> None:
+        events.append("mount")
+        created.append(path)
+        if failure == "mount":
+            raise ToolingError("mount failed")
+
+    def unmount(path: Path, privilege: object) -> None:
+        assert path == created[0]
+        events.append("unmount")
+        if failure == "unmount":
+            raise ToolingError("unmount failed")
+
+    monkeypatch.setattr(context.tools.mount, "temporary", mount)
+    monkeypatch.setattr(context.tools.unmount, "temporary", unmount)
+
+    def run() -> None:
+        with e2e.media_fixture(context, e2e.RunPaths.for_context(context)) as (paths, catalog):
+            assert catalog is not None
+            assert paths.filesystem == created[0]
+            assert catalog.stat().st_mode & 0o777 == 0o600
+            document = json.loads(catalog.read_text())
+            assert len(document["slots"]) == 3
+            for slot in document["slots"]:
+                assert slot["durability_class"] == "disposable"
+                assert slot["durability_evidence"] == "none"
+                assert Path(slot["path"]).stat().st_mode & 0o777 == 0o700
+            if failure == "scenario":
+                raise ToolingError("scenario failed")
+
+    if failure:
+        with pytest.raises(ToolingError, match=failure + " failed"):
+            run()
+    else:
+        run()
+    assert events == (["mount"] if failure == "mount" else ["mount", "unmount"])
+    assert created[0].exists() == (failure == "unmount")
+
+
 @dataclass
 class Scenario:
     failure: str = ""

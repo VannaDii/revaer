@@ -26,6 +26,10 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 
 # Architecture and errors
 
+- E2E's explicitly managed Linux roots use injected native mount/unmount tools.
+  Preserve the private owned directory after an unmount failure; never remove
+  caller roots or substitute catalog declarations for bootstrap attestation.
+
 - The optional fixture-probe container is caller-selected at bootstrap. Setup
   provisions the existing approved Alpine build; cleanup verifies project,
   purpose and read-only checkout ownership before removing that container.

@@ -64,6 +64,10 @@ jobs:
         run: uv run --locked -- rv script-coverage
       - name: Run Playwright with browser coverage
         env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+          REVAER_LOCAL_DB_USER: revaer
+          REVAER_LOCAL_DB_PASSWORD: ${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}
+          E2E_MANAGED_MEDIA_ROOTS: '1'
           E2E_API_BASE_URL: http://localhost:7070
           E2E_BASE_URL: http://localhost:8080
           E2E_DB_ADMIN_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)

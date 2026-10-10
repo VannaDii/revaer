@@ -33,6 +33,7 @@ class E2eSettings:
     admin_url: str | None = field(repr=False)
     database_prefix: str
     filesystem_root: Path | None
+    managed_media_roots: bool
     coverage_directory: Path | None
     skip_database_start: bool
     api_runner: str | None
@@ -174,6 +175,7 @@ def load_e2e_settings(environment: Mapping[str, str]) -> E2eSettings:
         or environment.get("DATABASE_URL"),
         database_prefix=prefix,
         filesystem_root=Path(fs_root) if fs_root else None,
+        managed_media_roots=boolean(environment, "E2E_MANAGED_MEDIA_ROOTS", False),
         coverage_directory=Path(coverage) if coverage else None,
         skip_database_start=boolean(environment, "E2E_SKIP_DB_START", False),
         api_runner=runner,
