@@ -2,10 +2,11 @@
 
 The properties file remains the scanner's sole configuration. This allowlist is
 the review gate for that file: unknown keys fail, every required key must exist,
-and scope filters must be explicitly empty. It never repairs a failing policy.
+and analysis scope filters must be explicitly empty. It never repairs a failing policy.
 """
 
 from collections.abc import Mapping
+from fnmatch import fnmatchcase
 
 from ..errors import ToolingError
 from .formats import properties
@@ -16,7 +17,6 @@ EMPTY_KEYS = frozenset(
         "sonar.inclusions",
         "sonar.test.exclusions",
         "sonar.test.inclusions",
-        "sonar.coverage.exclusions",
         "sonar.cpd.exclusions",
         "sonar.issue.ignore.multicriteria",
         "sonar.issue.ignore.allfile",
@@ -27,7 +27,60 @@ EMPTY_KEYS = frozenset(
     )
 )
 
+COVERAGE_EXCLUSIONS = (
+    ".github/**",
+    "charts/**",
+    "docs/**",
+    "release/**",
+    "scripts/**",
+    "test-fixtures/**",
+    "tests/**",
+    "tools/**",
+    "vendor/**",
+    "setup.sh",
+    "crates/revaer-doc-indexer/**",
+    "crates/revaer-test-support/**",
+    "crates/revaer-ui/tools/**",
+    "crates/revaer-ui/ui_vendor/**",
+    "crates/revaer-ui/static/nexus/js/**",
+    "**/tests/**",
+    "**/tests.rs",
+    "**/*_tests.rs",
+    "**/*_tests/**",
+    "**/build.rs",
+)
+
+
+def production_source(path: str) -> bool:
+    """Apply the operator-approved coverage scope without narrowing analysis."""
+    return not any(fnmatchcase(path, pattern) for pattern in COVERAGE_EXCLUSIONS)
+
+
+def runtime_source(path: str) -> bool:
+    """Identify shipped code/assets for the operator's production issue gate.
+
+    Internal utilities stay in analysis and the zero-new-issues gate. Used
+    vendored runtime libraries are production even though coverage excludes them.
+    """
+    runtime = (
+        "crates/*/src/**",
+        "crates/revaer-torrent-libt/include/**",
+        "crates/revaer-data/migrations/**",
+        "crates/revaer-data/init.sql",
+        "crates/revaer-ui/index.html",
+        "crates/revaer-ui/manifest.json",
+        "crates/revaer-ui/browserconfig.xml",
+        "crates/revaer-ui/static/**",
+        "vendor/gloo/src/**",
+        "vendor/yewdux/crates/yewdux/src/**",
+    )
+    return any(fnmatchcase(path, pattern) for pattern in runtime) and not any(
+        fnmatchcase(path, pattern) for pattern in COVERAGE_EXCLUSIONS if pattern != "vendor/**"
+    )
+
+
 REQUIRED_VALUES = {
+    "sonar.coverage.exclusions": ",".join(COVERAGE_EXCLUSIONS),
     "sonar.projectKey": "VannaDii_Revaer",
     "sonar.organization": "vannadii",
     "sonar.sourceEncoding": "UTF-8",

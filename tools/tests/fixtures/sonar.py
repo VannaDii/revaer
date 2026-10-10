@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from revaer_tooling.json_data import JsonObject
+from revaer_tooling.json_data import JsonObject, array_value
 from revaer_tooling.process import Completed, Invocation, ProcessRunner, RunningProcess
 
 
@@ -38,6 +38,7 @@ def result_records() -> dict[str, JsonObject]:
         },
         "quality-gate": {"projectStatus": {"status": "OK", "ignoredConditions": False}},
         "issues": {"total": 0},
+        "all-issues": {"total": 0, "issues": []},
         "hotspots": {"paging": {"total": 0}},
     }
 
@@ -87,6 +88,12 @@ def sonar_server(state: ApiState) -> Iterator[str]:
             )
             status = state.statuses.pop(0) if state.statuses else 200
             body = copy.deepcopy(state.records[endpoints[request.path]])
+            if request.path == "/api/issues/search" and parse_qs(request.query).get("ps") == [
+                "500"
+            ]:
+                body = copy.deepcopy(state.records["all-issues"])
+                page = int(parse_qs(request.query).get("p", ["1"])[0])
+                body["issues"] = array_value(body["issues"])[(page - 1) * 500 : page * 500]
             if request.path == "/api/ce/task" and state.pending_tasks:
                 state.pending_tasks -= 1
                 body = {

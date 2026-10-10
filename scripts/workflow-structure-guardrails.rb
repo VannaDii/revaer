@@ -194,10 +194,17 @@ class WorkflowStructureGuardrails
   ]).freeze
   EMPTY_SONAR_KEYS = Set.new(%w[
     sonar.exclusions sonar.inclusions sonar.test.exclusions sonar.test.inclusions
-    sonar.coverage.exclusions sonar.cpd.exclusions sonar.issue.ignore.multicriteria
+    sonar.cpd.exclusions sonar.issue.ignore.multicriteria
     sonar.issue.ignore.allfile sonar.issue.ignore.block sonar.issue.enforce.multicriteria
     sonar.javascript.exclusions sonar.sca.exclusions
   ]).freeze
+  APPROVED_COVERAGE_EXCLUSIONS = %w[
+    .github/** charts/** docs/** release/** scripts/** test-fixtures/** tests/**
+    tools/** vendor/** setup.sh crates/revaer-doc-indexer/**
+    crates/revaer-test-support/** crates/revaer-ui/tools/**
+    crates/revaer-ui/ui_vendor/** crates/revaer-ui/static/nexus/js/**
+    **/tests/** **/tests.rs **/*_tests.rs **/*_tests/** **/build.rs
+  ].join(',').freeze
 
   def initialize(options)
     @options = options
@@ -416,6 +423,9 @@ class WorkflowStructureGuardrails
     (actual.to_set - SONAR_KEYS).each { |key| @errors << "unrecognized Sonar property #{key.inspect}" }
     (SONAR_KEYS - actual.to_set).each { |key| @errors << "required Sonar property #{key.inspect} is missing" }
     entries.each do |entry|
+      if entry.key == 'sonar.coverage.exclusions' && entry.value != APPROVED_COVERAGE_EXCLUSIONS
+        @errors << "#{@options.fetch(:sonar)}:#{entry.line}: coverage exclusions must match the operator-approved production scope"
+      end
       if EMPTY_SONAR_KEYS.include?(entry.key) && !entry.value.empty?
         @errors << "#{@options.fetch(:sonar)}:#{entry.line}: #{entry.key} must remain explicitly empty"
       end

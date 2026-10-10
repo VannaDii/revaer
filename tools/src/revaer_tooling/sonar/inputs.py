@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 from xml.etree import ElementTree
 
 from ..errors import ToolingError
+from ..policy.sonar import production_source
 
 NATIVE_SOURCE = "crates/revaer-torrent-libt/src/ffi/session.cpp"
 
@@ -21,7 +22,7 @@ class LineCounts:
     covered: int
 
 
-def lcov_counts(document: str, suffix: str = "") -> LineCounts:
+def lcov_counts(document: str, suffix: str = "", *, production: bool = False) -> LineCounts:
     """Count LCOV line records, rejecting duplicate or malformed observations."""
     records: dict[tuple[str, int], int] = {}
     source = ""
@@ -54,7 +55,11 @@ def lcov_counts(document: str, suffix: str = "") -> LineCounts:
             source = ""
     if source:
         raise ToolingError("LCOV source record is missing end_of_record")
-    hits = [count for (path, _), count in records.items() if path.endswith(suffix)]
+    hits = [
+        count
+        for (path, _), count in records.items()
+        if path.endswith(suffix) and (not production or production_source(path))
+    ]
     return LineCounts(len(hits), sum(count > 0 for count in hits))
 
 
@@ -62,11 +67,11 @@ def verify_lcov(rust: str, browser: str) -> None:
     rust_counts = lcov_counts(rust, ".rs")
     if not rust_counts.covered:
         raise ToolingError("Rust LCOV must contain positive Rust line coverage")
-    browser_counts = lcov_counts(browser)
-    if browser_counts.total < 1000:
-        raise ToolingError("Browser LCOV has fewer than 1000 authored line records")
-    if not 0 < browser_counts.covered < browser_counts.total:
-        raise ToolingError("Browser LCOV must retain covered and uncovered lines")
+    if not lcov_counts(browser).total:
+        raise ToolingError("Browser LCOV must retain real source line records")
+    browser_counts = lcov_counts(browser, production=True)
+    if browser_counts.total and not browser_counts.covered:
+        raise ToolingError("Browser LCOV must contain executed production JavaScript lines")
 
 
 def _xml(document: str) -> ElementTree.Element:

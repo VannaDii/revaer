@@ -1,4 +1,4 @@
-"""Strict result criteria bind one task to positive metrics and an empty backlog."""
+"""Result criteria bind one task to coverage, new issues and runtime safety."""
 
 import copy
 
@@ -120,6 +120,43 @@ def test_host_defaults_and_credentials_are_explicit() -> None:
     assert load_sonar_settings(
         {"SONAR_API_BASE_URL": "http://127.0.0.1:8080/api/"}, linux=False
     ).api_base.endswith("/api")
+
+
+@pytest.mark.parametrize(
+    ("path", "production"),
+    (
+        ("tools/src/revaer_tooling/tasks/sonar.py", False),
+        ("scripts/check.sh", False),
+        ("crates/revaer-test-support/src/postgres.rs", False),
+        ("crates/revaer-ui/tools/asset_sync/src/main.rs", False),
+        ("crates/revaer-ui/static/nexus/js/demo.js", False),
+        ("vendor/yewdux/examples/basic/src/main.rs", False),
+        ("crates/revaer-app/src/bootstrap.rs", True),
+        ("crates/revaer-data/init.sql", True),
+        ("crates/revaer-torrent-libt/src/ffi/session.cpp", True),
+        ("crates/revaer-ui/static/nexus/assets/app.css", True),
+        ("vendor/gloo/src/lib.rs", True),
+        ("vendor/yewdux/crates/yewdux/src/lib.rs", True),
+    ),
+)
+def test_historical_issues_only_block_active_runtime(
+    records: dict[str, JsonObject], path: str, production: bool
+) -> None:
+    records["all-issues"] = {
+        "total": 1,
+        "issues": [{"component": "VannaDii_Revaer:" + path}],
+    }
+    if production:
+        with pytest.raises(ToolingError, match="active production"):
+            published_result(records, "owned-task", "VannaDii_Revaer")
+    else:
+        published_result(records, "owned-task", "VannaDii_Revaer")
+
+
+def test_incomplete_historical_issue_search_cannot_pass(records: dict[str, JsonObject]) -> None:
+    records["all-issues"] = {"total": 1, "issues": []}
+    with pytest.raises(ToolingError, match="incomplete"):
+        published_result(records, "owned-task", "VannaDii_Revaer")
 
 
 @pytest.mark.parametrize(

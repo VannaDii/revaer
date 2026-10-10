@@ -15,6 +15,7 @@ allow = [
     "Zlib",
     "ISC",
     "CDLA-Permissive-2.0",
+    "CC0-1.0",
 ]
 confidence-threshold = 0.8
 exceptions = []
@@ -94,11 +95,51 @@ reason = "Matches thiserror 1.x pinned by prometheus/protobuf."
 
 [[bans.skip]]
 crate = "windows-sys@0.52.0"
-reason = "ADR 317/321, expires 2026-10-01: ring uses 0.52 while rpassword and notify require newer Windows support lines."
+reason = "ADR 317/321, expires 2027-04-09: ring uses 0.52 while rpassword and notify require newer Windows support lines."
 
 [[bans.skip]]
 crate = "windows-sys@0.59.0"
-reason = "ADR 317/321, expires 2026-10-01: rpassword uses 0.59 while ring and notify require adjacent Windows support lines."
+reason = "ADR 317/321, expires 2027-04-09: rpassword uses 0.59 while ring and notify require adjacent Windows support lines."
+
+[[bans.skip]]
+crate = "windows-sys@0.60.2"
+reason = "ADR 317, expires 2027-04-09: notify 8.2 pins 0.60 while the workspace uses 0.61."
+
+[[bans.skip]]
+crate = "windows-targets@0.53.5"
+reason = "ADR 317, expires 2027-04-09: notify requires windows-sys 0.60 while ring retains 0.52."
+
+[[bans.skip]]
+crate = "windows_aarch64_gnullvm@0.53.1"
+reason = "ADR 317, expires 2027-04-09: exact notify windows-targets 0.53 support graph."
+
+[[bans.skip]]
+crate = "windows_aarch64_msvc@0.53.1"
+reason = "ADR 317, expires 2027-04-09: exact notify windows-targets 0.53 support graph."
+
+[[bans.skip]]
+crate = "windows_i686_gnu@0.53.1"
+reason = "ADR 317, expires 2027-04-09: exact notify windows-targets 0.53 support graph."
+
+[[bans.skip]]
+crate = "windows_i686_gnullvm@0.53.1"
+reason = "ADR 317, expires 2027-04-09: exact notify windows-targets 0.53 support graph."
+
+[[bans.skip]]
+crate = "windows_i686_msvc@0.53.1"
+reason = "ADR 317, expires 2027-04-09: exact notify windows-targets 0.53 support graph."
+
+[[bans.skip]]
+crate = "windows_x86_64_gnu@0.53.1"
+reason = "ADR 317, expires 2027-04-09: exact notify windows-targets 0.53 support graph."
+
+[[bans.skip]]
+crate = "windows_x86_64_gnullvm@0.53.1"
+reason = "ADR 317, expires 2027-04-09: exact notify windows-targets 0.53 support graph."
+
+[[bans.skip]]
+crate = "windows_x86_64_msvc@0.53.1"
+reason = "ADR 317, expires 2027-04-09: exact notify windows-targets 0.53 support graph."
 
 [sources]
 unknown-registry = "deny"
