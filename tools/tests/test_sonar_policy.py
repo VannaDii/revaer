@@ -77,7 +77,7 @@ def test_reviewed_configuration_and_all_sources_are_accepted(sonar: str) -> None
         ("sonar.sources", "crates"),
         ("sonar.scm.exclusions.disabled", "false"),
         ("sonar.scm.disabled", "true"),
-        ("sonar.scm.forceReloadAll", "false"),
+        ("sonar.scm.forceReloadAll", "true"),
         ("sonar.sensor.cache.project.enable", "false"),
         ("sonar.scanner.keepReport", "false"),
         ("sonar.scanner.excludeHiddenFiles", "true"),
