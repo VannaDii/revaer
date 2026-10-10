@@ -3896,18 +3896,7 @@ fn compile_runtime_preflight(
         .map_err(|_| {
             MediaJobRuntimeError::InvalidDesiredGraph("media_job_desired_target_compile_failed")
         })?,
-        None => CompiledDesiredTarget {
-            primary_target_stream_ids: BTreeMap::new(),
-            graph: DesiredGraph {
-                output_path: input.output_path.clone(),
-                container_format: None,
-                stream_bindings: identity_stream_bindings(&source_graph.streams),
-                streams: source_graph.streams.clone(),
-            },
-            sidecar_embeddings: Vec::new(),
-            sidecar_outputs: Vec::new(),
-            sidecar_removals: Vec::new(),
-        },
+        None => preserved_source_target(source_graph, input.output_path.clone()),
     };
     let video_policy = video_policy_from_target_snapshot(
         input.base_video_policy,
@@ -3962,6 +3951,21 @@ fn compile_runtime_preflight(
         expected_chapters,
         planning_outcome,
     })
+}
+
+fn preserved_source_target(source: &MediaGraph, output_path: String) -> CompiledDesiredTarget {
+    CompiledDesiredTarget {
+        primary_target_stream_ids: BTreeMap::new(),
+        graph: DesiredGraph {
+            output_path,
+            container_format: None,
+            stream_bindings: identity_stream_bindings(&source.streams),
+            streams: source.streams.clone(),
+        },
+        sidecar_embeddings: Vec::new(),
+        sidecar_outputs: Vec::new(),
+        sidecar_removals: Vec::new(),
+    }
 }
 
 const fn target_stream_has_video_constraints(stream: &TargetStream) -> bool {
