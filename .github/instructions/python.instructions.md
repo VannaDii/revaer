@@ -26,6 +26,16 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 
 # Architecture and errors
 
+- E2E's explicitly managed Linux roots use injected native mount/unmount tools.
+  Rust tests and coverage reuse that fixture when explicitly selected, passing
+  its mounted directory as `REVAER_NATIVE_RECOVERY_ROOT` for native root tests.
+  Preserve the private owned directory after an unmount failure; never remove
+  caller roots or substitute catalog declarations for bootstrap attestation.
+
+- The optional fixture-probe container is caller-selected at bootstrap. Setup
+  provisions the existing approved Alpine build; cleanup verifies project,
+  purpose and read-only checkout ownership before removing that container.
+
 - Keep the explicit CLI dictionary mapped to derived tasks' static
   `run(context)` methods. Internal steps stay ordinary calls unless useful as
   independent commands. Follow `tools/src/revaer_tooling/tasks/README.md`.

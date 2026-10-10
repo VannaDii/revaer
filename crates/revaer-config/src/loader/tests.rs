@@ -10,6 +10,61 @@ use std::net::IpAddr;
 use std::str::FromStr;
 use uuid::Uuid;
 
+#[tokio::test]
+async fn cancelled_configuration_change_keeps_background_jobs_and_reads_healthy() -> Result<()> {
+    use std::future::poll_fn;
+    use std::task::Poll;
+
+    let mut postgres = revaer_test_support::postgres::start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .test_before_acquire(false)
+        .connect(postgres.connection_string())
+        .await?;
+    let service = ConfigService {
+        pool,
+        database_url: postgres.connection_string().to_owned(),
+    };
+    let snapshot = service.snapshot().await?;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while service.pool.num_idle() != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await?;
+
+    let mut change = service.apply_changeset(
+        "tester",
+        "cancelled navigation",
+        SettingsChangeset::default(),
+    );
+    poll_fn(|context| {
+        assert!(change.as_mut().poll(context).is_pending());
+        Poll::Ready(())
+    })
+    .await;
+    assert_eq!(service.pool.num_idle(), 0);
+    drop(change);
+
+    let skipped =
+        match revaer_data::indexers::jobs::job_claim_next(&service.pool, "retention_purge").await {
+            Err(error) => error,
+            Ok(()) => revaer_data::indexers::jobs::job_claim_next(&service.pool, "retention_purge")
+                .await
+                .err()
+                .ok_or_else(|| anyhow!("a claimed background job must be skipped"))?,
+        };
+    assert_eq!(skipped.database_code().as_deref(), Some("P0001"));
+    let refreshed = service.snapshot().await?;
+    assert_eq!(refreshed.revision, snapshot.revision);
+    service.pool.close().await;
+    postgres.close()?;
+    Ok(())
+}
+
 fn sample_label_row(kind: &str) -> LabelPolicyRow {
     LabelPolicyRow {
         kind: kind.to_string(),

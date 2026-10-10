@@ -8,7 +8,7 @@ use sqlx::postgres::PgDatabaseError;
 pub enum BaselineReadReason {
     /// The injected runtime login is not a valid `PostgreSQL` role name.
     InvalidConfiguration,
-    /// The baseline does not identify `PostgreSQL` 16.14.
+    /// The baseline does not identify `PostgreSQL` 18.6.
     PostgresIdentityUnsupported,
     /// The baseline projection or its singleton state is malformed or absent.
     BaselineShapeInvalid,

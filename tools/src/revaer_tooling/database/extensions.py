@@ -107,7 +107,7 @@ class ExtensionProof:
         routines = [object_value(row) for row in array_value(stock.get("routines"))]
         self.check(
             "stock extension routine and callback inventory",
-            len(routines) == 40
+            len(routines) == 41
             and sum(row.get("internal_callback") is True for row in routines) == 2,
         )
         self.check(

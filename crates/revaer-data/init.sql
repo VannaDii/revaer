@@ -47693,7 +47693,7 @@ CREATE TABLE revaer_system.database_baseline (
     CONSTRAINT database_baseline_singleton CHECK (baseline_id = 1),
     CONSTRAINT database_baseline_contract_v1 CHECK (contract_version = 1),
     CONSTRAINT database_baseline_sha256_length CHECK (octet_length(init_sha256) = 32),
-    CONSTRAINT database_baseline_postgres_16_14 CHECK (postgres_version_num = 160014),
+    CONSTRAINT database_baseline_postgres_18_6 CHECK (postgres_version_num = 180006),
     CONSTRAINT database_baseline_owner_nonempty CHECK (length(schema_owner_role::text) BETWEEN 1 AND 63),
     CONSTRAINT database_baseline_runtime_nonempty CHECK (length(runtime_role::text) BETWEEN 1 AND 63),
     CONSTRAINT database_baseline_distinct_roles CHECK (schema_owner_role <> runtime_role)
@@ -48317,7 +48317,7 @@ BEGIN
     IF baseline.baseline_id IS DISTINCT FROM 1
        OR baseline.contract_version IS DISTINCT FROM 1
        OR octet_length(baseline.init_sha256) IS DISTINCT FROM 32
-       OR baseline.postgres_version_num IS DISTINCT FROM 160014
+       OR baseline.postgres_version_num IS DISTINCT FROM 180006
        OR baseline.schema_owner_role IS DISTINCT FROM current_user
        OR baseline.runtime_role IS NULL
        OR length(baseline.schema_owner_role::text) NOT BETWEEN 1 AND 63
@@ -48379,7 +48379,7 @@ BEGIN
     IF octet_length(init_sha256_input) IS DISTINCT FROM 32 THEN
         RAISE EXCEPTION USING MESSAGE = 'baseline_shape_invalid', DETAIL = 'baseline_shape_invalid', ERRCODE = 'P0001';
     END IF;
-    IF current_setting('server_version_num')::integer <> 160014 THEN
+    IF current_setting('server_version_num')::integer <> 180006 THEN
         RAISE EXCEPTION USING MESSAGE = 'postgres_identity_unsupported', DETAIL = 'postgres_identity_unsupported', ERRCODE = 'P0001';
     END IF;
     IF runtime_role_input IS NULL OR octet_length(runtime_role_input) NOT BETWEEN 1 AND 63 THEN

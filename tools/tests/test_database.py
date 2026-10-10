@@ -17,8 +17,10 @@ from urllib.parse import quote, urlsplit, urlunsplit
 import pytest
 from revaer_tooling.cli import make_context
 from revaer_tooling.context import Context, Options
+from revaer_tooling.database.contract import BUILD_INPUTS, PostgresPin, assignments
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.external.database import LibpqConnection
+from revaer_tooling.filesystem import FileSystem
 from revaer_tooling.tasks.database import (
     DatabaseMigrate,
     DatabaseReset,
@@ -63,7 +65,7 @@ def postgres() -> Iterator[PostgresFixture]:
             "--name",
             name,
             "--tmpfs",
-            "/var/lib/postgresql/data:rw,size=256m",
+            "/var/lib/postgresql:rw,size=256m",
             "--tmpfs",
             "/var/run/postgresql:rw,size=16m",
             "--tmpfs",
@@ -76,7 +78,9 @@ def postgres() -> Iterator[PostgresFixture]:
             "POSTGRES_PASSWORD",
             "--env",
             "POSTGRES_DB",
-            "postgres:16-alpine",
+            PostgresPin.load(
+                assignments(Path(__file__).parents[2], FileSystem(), BUILD_INPUTS)
+            ).image,
         ],
         env=environment,
         capture_output=True,
@@ -194,6 +198,8 @@ def managed_database(
     (tmp_path / "tools/src/revaer_tooling").mkdir(parents=True)
     (tmp_path / "tools/src/revaer_tooling/cli.py").touch()
     migrations = tmp_path / "crates/revaer-data/migrations"
+    (tmp_path / ".github").mkdir()
+    (tmp_path / BUILD_INPUTS).write_bytes((Path(__file__).parents[2] / BUILD_INPUTS).read_bytes())
     migrations.mkdir(parents=True)
     (migrations / "1_initial.sql").write_text(
         "CREATE TABLE fixture_rows (value integer PRIMARY KEY);\n"
@@ -258,7 +264,7 @@ def test_managed_database_preserves_data_and_resets_only_when_requested(
     DatabaseStart.run(context)
     initial = context.tools.docker.database(database.name)
     assert initial is not None
-    assert (initial.directory / "pgdata/PG_VERSION").read_text().strip() == "16"
+    assert (initial.directory / "18/docker/PG_VERSION").read_text().strip() == "18"
     DatabaseStart.run(context)
     assert context.tools.docker.database(database.name) == initial
     DatabaseSeed.run(context)
@@ -304,6 +310,7 @@ def test_managed_database_requires_directory_container_and_server_ownership(
     context, database = managed_database
     DatabaseStart.run(context)
     other = replace(context, root=tmp_path / "another-checkout")
+    context.fs.write_bytes(other.root / BUILD_INPUTS, (context.root / BUILD_INPUTS).read_bytes())
     with pytest.raises(ToolingError, match="directory belongs to another checkout"):
         DatabaseStart.run(other)
     other = replace(
@@ -342,6 +349,8 @@ def test_caller_database_is_used_without_adopting_or_resetting_its_container(
     (migrations / "1_initial.sql").write_text(
         "CREATE TABLE caller_rows (value int);\nINSERT INTO caller_rows VALUES (42);\n"
     )
+    (tmp_path / ".github").mkdir()
+    (tmp_path / BUILD_INPUTS).write_bytes((Path(__file__).parents[2] / BUILD_INPUTS).read_bytes())
     context = make_context(Options())
     DatabaseStart.run(context)
     with pytest.raises(ToolingError, match="not managed by rv"):

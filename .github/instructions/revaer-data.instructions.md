@@ -15,6 +15,10 @@ applyTo:
 
 # Database Rules
 
+- The operator-approved runtime database is PostgreSQL 18.6, pinned by digest
+  in `.github/build-inputs.env`. Sealing and read-only baseline verification
+  require that exact server release; retain restricted-owner/runtime checks.
+
 - Configuration bootstrap verifies the packaged baseline without applying
   migrations. Runtime stores construct from the verified caller-owned pool;
   their construction performs no database operations.

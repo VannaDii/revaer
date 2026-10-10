@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
 from ..context import Context, TaskResult
+from ..database.contract import BUILD_INPUTS, PostgresPin, assignments
 from ..e2e.database import uses_single_init
 from ..errors import ToolingError
 from ..external.docker import PostgresContainerArgs
@@ -67,6 +68,7 @@ def managed_options(context: Context, owner: str) -> PostgresContainerArgs:
         unquote(parsed.password),
         context.host.uid,
         context.host.gid,
+        PostgresPin.load(assignments(context.root, context.fs, BUILD_INPUTS)).image,
     )
 
 

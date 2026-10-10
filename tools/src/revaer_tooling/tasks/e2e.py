@@ -35,6 +35,56 @@ from .database import database_connection
 
 
 @contextmanager
+def media_fixture(context: Context, paths: "RunPaths") -> Iterator[tuple["RunPaths", Path | None]]:
+    if not context.settings.e2e.managed_media_roots:
+        yield paths, None
+        return
+    if context.host.system != "linux" or context.settings.e2e.filesystem_root is not None:
+        raise ToolingError("Managed E2E media roots require Linux without a caller filesystem root")
+    directory = context.fs.temporary_directory(context.host.home, "revaer-e2e-")
+    image = directory / "media.ext4"
+    roots = directory / "roots"
+    mounted = False
+    try:
+        context.fs.create_disk_image(image, 1024 * 1024 * 1024)
+        context.tools.mkfs_ext4.image(image, context.host.uid, context.host.gid)
+        context.fs.mkdir(roots)
+        context.fs.directory_permissions(roots, context.host.uid, context.host.gid, 0o700)
+        context.tools.mount.temporary(
+            roots, image, context.host.uid, context.host.gid, context.tools.privilege
+        )
+        mounted = True
+        context.fs.directory_permissions(roots, context.host.uid, context.host.gid, 0o700)
+        slots = []
+        for key, name, kinds in (
+            ("ui-source", "source", ["source", "output"]),
+            ("ui-output", "output", ["output"]),
+            ("ui-workspace", "workspace", ["workspace"]),
+        ):
+            path = roots / name
+            context.fs.mkdir(path)
+            context.fs.directory_permissions(path, context.host.uid, context.host.gid, 0o700)
+            slots.append(
+                {
+                    "key": key,
+                    "path": str(path),
+                    "allowed_kinds": kinds,
+                    "durability_class": "restart_persistent",
+                    "durability_evidence": "linux_dedicated_mount",
+                    "sole_writer_class": "revaer_exclusive",
+                    "sole_writer_evidence": "linux_dedicated_service",
+                }
+            )
+        catalog = roots / "catalog.json"
+        context.fs.write(catalog, json.dumps({"format_version": 1, "slots": slots}), 0o600)
+        yield replace(paths, filesystem=roots), catalog
+    finally:
+        if mounted:
+            context.tools.unmount.temporary(roots, context.tools.privilege)
+        context.fs.remove_owned(directory, context.host.home)
+
+
+@contextmanager
 def temporary_database(context: Context) -> Iterator[str]:
     if uses_single_init(context):
         with single_init_database(context) as url:
@@ -274,6 +324,7 @@ def run_media_phases(
     executable: ServingExecutable,
     database_url: str,
     outcomes: dict[str, str],
+    catalog: Path | None = None,
 ) -> None:
     """Join each old service before loading a different startup catalog.
 
@@ -324,7 +375,7 @@ def run_media_phases(
             executable,
             database_url,
             ui,
-            missing if phase.endswith("-missing-catalog") else None,
+            missing if phase.endswith("-missing-catalog") else catalog,
         ) as services:
             if session is None:
                 raise ToolingError("Media E2E authentication setup did not return a session")
@@ -346,7 +397,7 @@ def run_media_phases(
             run_phases(context, paths, (phase,), services, outcomes, session)
 
 
-def run_suite(context: Context, paths: RunPaths) -> None:
+def run_suite(context: Context, paths: RunPaths, catalog: Path | None = None) -> None:
     """Run while the calling task holds the checkout's E2E lock.
 
     Runbook keeps that same lock through artifact copying, so another invocation
@@ -375,7 +426,9 @@ def run_suite(context: Context, paths: RunPaths) -> None:
         context.fs.mkdir(paths.filesystem)
         with temporary_database(context) as database_url:
             if media:
-                run_media_phases(context, paths, phases, executable, database_url, outcomes)
+                run_media_phases(
+                    context, paths, phases, executable, database_url, outcomes, catalog
+                )
             else:
                 with running_services(
                     context, paths, executable, database_url, ui_required
@@ -391,8 +444,11 @@ class UiE2e(Task):
     def run(context: Context) -> TaskResult:
         paths = RunPaths.for_context(context)
         context.fs.mkdir(paths.runtime)
-        with context.fs.lock(paths.runtime / "e2e.lock"):
-            run_suite(context, paths)
+        with (
+            context.fs.lock(paths.runtime / "e2e.lock"),
+            media_fixture(context, paths) as (selected_paths, catalog),
+        ):
+            run_suite(context, selected_paths, catalog)
         return TaskResult("E2E phases passed; report: tests/playwright-report/index.html")
 
 

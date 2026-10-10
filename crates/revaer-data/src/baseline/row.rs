@@ -4,7 +4,7 @@ use sqlx::FromRow;
 use super::BaselineReadReason;
 
 const CONTRACT_VERSION: i16 = 1;
-const POSTGRES_VERSION_NUM: i32 = 160_014;
+const POSTGRES_VERSION_NUM: i32 = 180_006;
 
 #[derive(FromRow)]
 pub(super) struct BaselineRow {

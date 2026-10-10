@@ -24,6 +24,7 @@ class PostgresContainerArgs:
     password: str = field(repr=False)
     uid: int
     gid: int
+    image: str
 
 
 @dataclass(frozen=True)
@@ -70,7 +71,7 @@ class Docker(ExternalTool):
             mounts = [
                 mount
                 for mount in item["Mounts"]
-                if mount["Destination"] == "/var/lib/postgresql/data" and mount["Type"] == "bind"
+                if mount["Destination"] == "/var/lib/postgresql" and mount["Type"] == "bind"
             ]
             bindings = item["HostConfig"]["PortBindings"]["5432/tcp"]
             if (
@@ -105,7 +106,7 @@ class Docker(ExternalTool):
         # ownership record/lock without interfering with initdb's empty-dir rule.
         mount = io.StringIO()
         csv.writer(mount, lineterminator="").writerow(
-            ("type=bind", f"source={args.directory}", "target=/var/lib/postgresql/data")
+            ("type=bind", f"source={args.directory}", "target=/var/lib/postgresql")
         )
         result = self._invoke(
             (
@@ -135,8 +136,8 @@ class Docker(ExternalTool):
                 "--env",
                 "POSTGRES_DB=postgres",
                 "--env",
-                "PGDATA=/var/lib/postgresql/data/pgdata",
-                "postgres:16-alpine",
+                "PGDATA=/var/lib/postgresql/18/docker",
+                args.image,
                 "postgres",
                 "-c",
                 f"revaer.rv_owner={args.owner}",

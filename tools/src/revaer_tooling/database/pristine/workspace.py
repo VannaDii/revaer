@@ -13,7 +13,7 @@ from ..contract import BUILD_INPUTS, PostgresPin, assignments, owned_path
 from ..postgres import Connection
 from .snapshot import IDENTITY, Snapshot
 
-EXPECTED = "config/postgres-pristine-16.14.tsv"
+EXPECTED = "config/postgres-pristine-18.6.tsv"
 
 
 @dataclass(frozen=True)
@@ -24,8 +24,8 @@ class Workspace:
     @staticmethod
     def load(root: Path, fs: FileSystem) -> "Workspace":
         pin = PostgresPin.load(assignments(root, fs, BUILD_INPUTS))
-        if pin.version != "16.14":
-            raise ToolingError("Pristine PostgreSQL input must pin the approved 16.14 release")
+        if pin.version != "18.6":
+            raise ToolingError("Pristine PostgreSQL input must pin the approved 18.6 release")
         return Workspace(root, pin)
 
     @property
@@ -86,5 +86,5 @@ def provenance(
 
 
 def publish(workspace: Workspace, fs: FileSystem, source: bytes, evidence: JsonObject) -> None:
-    fs.write_bytes(workspace.output / "postgres-pristine-16.14.tsv", source, 0o600)
+    fs.write_bytes(workspace.output / "postgres-pristine-18.6.tsv", source, 0o600)
     fs.write(workspace.output / "provenance.json", json.dumps(evidence, indent=2) + "\n", 0o600)

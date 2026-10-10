@@ -261,6 +261,7 @@ class CleanFixtures(Task):
                     owned_path(context.root, item)
             for path in paths:
                 context.fs.remove_owned(path, context.root)
+        context.tools.ffprobe.remove_container()
         return TaskResult("Removed the selected checkout's acquired and derived fixtures")
 
 

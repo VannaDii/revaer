@@ -28,7 +28,7 @@ jobs:
       E2E_BROWSERS: chromium,firefox,webkit
     services:
       postgres:
-        image: postgres:16-alpine
+        image: docker.io/library/postgres@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
         env:
           POSTGRES_USER: revaer
           POSTGRES_PASSWORD: ${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}
@@ -36,7 +36,7 @@ jobs:
         options: --health-cmd="pg_isready -U revaer -d revaer" --health-interval=10s --health-timeout=5s --health-retries=5
           --shm-size=1g
         ports:
-          - 5432:5432
+          - 127.0.0.1:5432:5432
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -57,6 +57,9 @@ jobs:
           DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}
         run: uv run --locked -- rv db-migrate
       - name: Coverage
+        env:
+          E2E_MANAGED_MEDIA_ROOTS: '1'
+          E2E_FS_ROOT: ''
         run: uv run --locked -- rv cov
       - name: Python tooling coverage
         run: uv run --locked -- rv tooling-cov
@@ -64,6 +67,11 @@ jobs:
         run: uv run --locked -- rv script-coverage
       - name: Run Playwright with browser coverage
         env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+          REVAER_LOCAL_DB_USER: revaer
+          REVAER_LOCAL_DB_PASSWORD: ${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}
+          E2E_MANAGED_MEDIA_ROOTS: '1'
+          E2E_FS_ROOT: ''
           E2E_API_BASE_URL: http://localhost:7070
           E2E_BASE_URL: http://localhost:8080
           E2E_DB_ADMIN_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)

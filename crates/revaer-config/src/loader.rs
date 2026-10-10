@@ -17,7 +17,7 @@ use revaer_data::config::{
     SETTINGS_CHANNEL, SeedingToggleSet,
 };
 use sqlx::postgres::{PgConnectOptions, PgListener, PgNotification, PgPoolOptions};
-use sqlx::{Executor, Postgres, Transaction};
+use sqlx::{Connection, Executor, Postgres, Transaction};
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::time::Duration;
@@ -286,8 +286,14 @@ impl ConfigService {
     /// Returns an error if database access fails, token verification fails, or
     /// the token is expired or missing.
     pub async fn validate_setup_token(&self, token: &str) -> ConfigResult<()> {
-        let mut tx = self
+        let mut connection = self
             .pool
+            .acquire()
+            .await
+            .map_err(map_sqlx_err("config.validate_setup_token.begin"))?;
+        // A cancelled BEGIN must not return an untracked transaction to the pool.
+        connection.close_on_drop();
+        let mut tx = connection
             .begin()
             .await
             .map_err(map_sqlx_err("config.validate_setup_token.begin"))?;
@@ -597,8 +603,13 @@ impl SettingsFacade for ConfigService {
         _reason: &str,
         changeset: SettingsChangeset,
     ) -> Result<AppliedChanges> {
-        let mut tx = self
+        let mut connection = self
             .pool
+            .acquire()
+            .await
+            .map_err(map_sqlx_err("config.apply_changeset.begin"))?;
+        connection.close_on_drop();
+        let mut tx = connection
             .begin()
             .await
             .map_err(map_sqlx_err("config.apply_changeset.begin"))?;
@@ -705,8 +716,13 @@ impl SettingsFacade for ConfigService {
                 reason: "ttl exceeds supported range",
             })?;
 
-        let mut tx = self
+        let mut connection = self
             .pool
+            .acquire()
+            .await
+            .map_err(map_sqlx_err("config.issue_setup_token.begin"))?;
+        connection.close_on_drop();
+        let mut tx = connection
             .begin()
             .await
             .map_err(map_sqlx_err("config.issue_setup_token.begin"))?;
@@ -748,8 +764,13 @@ impl SettingsFacade for ConfigService {
     }
 
     async fn consume_setup_token(&self, token: &str) -> Result<()> {
-        let mut tx = self
+        let mut connection = self
             .pool
+            .acquire()
+            .await
+            .map_err(map_sqlx_err("config.consume_setup_token.begin"))?;
+        connection.close_on_drop();
+        let mut tx = connection
             .begin()
             .await
             .map_err(map_sqlx_err("config.consume_setup_token.begin"))?;

@@ -2,6 +2,43 @@ use super::*;
 
 const SNAPSHOT: &str = "10 1 8:1 / /base rw - ext4 /dev/disk rw\n11 1 8:1 /library /alias rw shared:2 future:3 - ext4 /dev/disk rw\n12 1 8:2 / /other rw - ext4 /dev/other rw\n";
 
+#[test]
+fn namespace_mounts_preserve_kernel_identity_and_bind_aliases() -> anyhow::Result<()> {
+    let topology = RootMountTopology::parse(concat!(
+        "34 1 8:1 / / rw - ext4 /dev/root rw\n",
+        "390 34 0:4 net:[4026532274] /run/docker/netns/one rw shared:333 - nsfs nsfs rw\n",
+        "391 34 0:4 net:[4026532274] /run/docker/netns/two rw - nsfs nsfs rw\n",
+        "392 34 0:4 net:[4026532275] /run/docker/netns/other rw - nsfs nsfs rw\n",
+    ))?;
+    let first = topology.resolve(390, (0, 4), Path::new("/run/docker/netns/one"))?;
+    let alias = topology.resolve(391, (0, 4), Path::new("/run/docker/netns/two"))?;
+    let other = topology.resolve(392, (0, 4), Path::new("/run/docker/netns/other"))?;
+    assert_eq!(first.filesystem_type(), "nsfs");
+    assert_eq!(first.path, Path::new("net:[4026532274]"));
+    assert_eq!(first.reject_overlap(&alias), Err(RootMountError::Overlap));
+    first.reject_overlap(&other)?;
+    for kind in ["cgroup", "ipc", "mnt", "pid", "time", "user", "uts"] {
+        decode_root(&format!("{kind}:[4026532274]"), "nsfs")?;
+    }
+    Ok(())
+}
+
+#[test]
+fn namespace_identity_does_not_relax_directory_path_validation() {
+    for input in [
+        "390 34 0:4 net:[4026532274] /run/netns rw - ext4 none rw",
+        "390 34 0:4 net:[4026532274] relative rw - nsfs nsfs rw",
+        "390 34 0:4 net:[0] /run/netns rw - nsfs nsfs rw",
+        "390 34 0:4 net:[01] /run/netns rw - nsfs nsfs rw",
+        "390 34 0:4 net:[+1] /run/netns rw - nsfs nsfs rw",
+        "390 34 0:4 net:[18446744073709551616] /run/netns rw - nsfs nsfs rw",
+        "390 34 0:4 other:[1] /run/netns rw - nsfs nsfs rw",
+        "390 34 0:4 net:[1]/../path /run/netns rw - nsfs nsfs rw",
+    ] {
+        assert!(RootMountTopology::parse(input).is_err());
+    }
+}
+
 fn compare_regions(left: &[MountLocation], right: &[MountLocation]) -> Result<(), RootMountError> {
     for first in left {
         for second in right {

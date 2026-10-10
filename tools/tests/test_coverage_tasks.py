@@ -5,6 +5,8 @@ import os
 import shutil
 import subprocess
 import tomllib
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 
@@ -12,6 +14,7 @@ import pytest
 from revaer_tooling.cli import make_context
 from revaer_tooling.context import Context, Options
 from revaer_tooling.errors import ToolingError
+from revaer_tooling.tasks import e2e
 from revaer_tooling.tasks.coverage import Coverage, CoverageReport, rust_line_gate
 
 
@@ -202,10 +205,31 @@ def test_rust_threshold_uses_counts_instead_of_rounded_percentages() -> None:
         rust_line_gate('{"data": []}', "example")
 
 
+@pytest.mark.parametrize("managed", (False, True))
 def test_production_worker_coverage_preserves_workspace_native_profiles(
     coverage_workspace: Context,
+    monkeypatch: pytest.MonkeyPatch,
+    managed: bool,
 ) -> None:
     root = coverage_workspace.root
+    mounted = root / "mounted"
+    mounted.mkdir()
+    context = replace(coverage_workspace, host=replace(coverage_workspace.host, system="linux"))
+    if managed:
+
+        @contextmanager
+        def fixture(selected: Context, paths: e2e.RunPaths) -> Iterator[tuple[e2e.RunPaths, Path]]:
+            yield replace(paths, filesystem=mounted), mounted / "catalog.json"
+
+        monkeypatch.setattr(e2e, "media_fixture", fixture)
+    else:
+        context = replace(
+            context,
+            settings=replace(
+                context.settings,
+                coverage=replace(context.settings.coverage, native_recovery_root=mounted),
+            ),
+        )
     app = root / "crates/revaer-app"
     (app / "src").mkdir(parents=True)
     (app / "Cargo.toml").write_text(
@@ -213,11 +237,20 @@ def test_production_worker_coverage_preserves_workspace_native_profiles(
     )
     (app / "src/lib.rs").write_text("""
 pub fn production_value() -> u32 { 4242 }
+pub fn recovery_value() -> u32 { 4243 }
 #[cfg(test)] mod media_job_runtime { mod tests {
     #[test] #[ignore = "production selection"]
     fn production_media_job_runtime_executes_and_persists_verified_replacement() {
         assert!(cfg!(feature = "extra"));
         assert_eq!(crate::production_value(), 4242);
+    }
+} }
+#[cfg(test)] mod bootstrap { mod service_recovery_tests {
+    #[test] #[ignore = "recovery selection"]
+    fn native_service_shutdown_resumes_active_ffmpeg() -> Result<(), Box<dyn std::error::Error>> {
+        assert!(std::path::Path::new(&std::env::var("REVAER_NATIVE_RECOVERY_ROOT")?).is_dir());
+        assert_eq!(crate::recovery_value(), 4243);
+        Ok(())
     }
 } }
 """)
@@ -227,7 +260,7 @@ pub fn production_value() -> u32 { 4242 }
         capture_output=True,
         timeout=30,
     )
-    Coverage.run(coverage_workspace)
+    Coverage.run(context)
     lcov = (root / "coverage/lcov.info").read_text()
     assert "src/fixture.cpp" in lcov
     assert "crates/pure/src/lib.rs" in lcov

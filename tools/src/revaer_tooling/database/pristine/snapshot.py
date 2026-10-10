@@ -13,7 +13,7 @@ IDENTITY: JsonObject = {
     "kind": "identity",
     "database": "<database>",
     "owner": "<database_owner>",
-    "server_version_num": "160014",
+    "server_version_num": "180006",
     "encoding": "UTF8",
     "collate": "C",
     "ctype": "C",
@@ -111,7 +111,7 @@ class Snapshot:
         catalogs = values[1:]
         if tuple(row.get("catalog") for row in catalogs) != tuple(self.spec.columns):
             raise ToolingError("Incomplete pristine catalog result")
-        output = ["#postgres-pristine\t16.14\t<database>\t<database_owner>\n"]
+        output = ["#postgres-pristine\t18.6\t<database>\t<database_owner>\n"]
         for record in catalogs:
             if record.get("kind") != "rows" or record.keys() != {"kind", "catalog", "rows"}:
                 raise ToolingError("Malformed pristine catalog rows")

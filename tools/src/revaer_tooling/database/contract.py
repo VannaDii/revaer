@@ -107,9 +107,9 @@ class PostgresPin:
         version = required(values, "POSTGRES_REBASELINE_VERSION")
         if not re.fullmatch(r"docker\.io/library/postgres@sha256:[0-9a-f]{64}", image):
             raise ToolingError("POSTGRES_REBASELINE_IMAGE must pin a fully qualified SHA-256 image")
-        if not re.fullmatch(r"16\.[0-9]+", version):
+        if not re.fullmatch(r"18\.[0-9]+", version):
             raise ToolingError(
-                "POSTGRES_REBASELINE_VERSION must pin an exact PostgreSQL 16 release"
+                "POSTGRES_REBASELINE_VERSION must pin an exact PostgreSQL 18 release"
             )
         return PostgresPin(image, version)
 

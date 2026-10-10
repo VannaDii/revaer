@@ -23,6 +23,7 @@ APT_PROFILES: dict[str, tuple[str, ...]] = {
     "media": ("ca-certificates", "curl", "ffmpeg"),
     "coverage": (
         *DATABASE_PACKAGES,
+        "e2fsprogs",
         "ffmpeg",
         "clang-19",
         "ca-certificates",

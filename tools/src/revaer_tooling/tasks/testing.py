@@ -5,6 +5,8 @@ database/CI lifecycle task, so targeted test runs do not replace a running serve
 """
 
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 from ..context import Context, TaskResult
 from ..errors import ToolingError
@@ -24,10 +26,23 @@ def test_environment(context: Context) -> dict[str, str]:
     }
 
 
+@contextmanager
+def native_test_environment(context: Context) -> Iterator[dict[str, str]]:
+    """Keep an explicitly managed persistent root mounted throughout Rust tests."""
+    from .e2e import RunPaths, media_fixture
+
+    environment = test_environment(context)
+    with media_fixture(context, RunPaths.for_context(context)) as (paths, catalog):
+        if catalog is not None:
+            environment["REVAER_NATIVE_RECOVERY_ROOT"] = str(paths.filesystem)
+        yield environment
+
+
 class Test(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
-        context.tools.cargo.execute(CargoArgs(CargoOperation.TEST), test_environment(context))
+        with native_test_environment(context) as environment:
+            context.tools.cargo.execute(CargoArgs(CargoOperation.TEST), environment)
         return TaskResult()
 
 
@@ -44,16 +59,17 @@ class TestNative(Task):
 class TestFeaturesMinimal(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
-        for package in ("revaer-api", "revaer-app"):
-            context.tools.cargo.execute(
-                CargoArgs(
-                    CargoOperation.TEST,
-                    (package,),
-                    all_features=False,
-                    no_default_features=True,
-                ),
-                test_environment(context),
-            )
+        with native_test_environment(context) as environment:
+            for package in ("revaer-api", "revaer-app"):
+                context.tools.cargo.execute(
+                    CargoArgs(
+                        CargoOperation.TEST,
+                        (package,),
+                        all_features=False,
+                        no_default_features=True,
+                    ),
+                    environment,
+                )
         return TaskResult()
 
 

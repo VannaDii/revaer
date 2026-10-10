@@ -37,6 +37,7 @@ from .external.github import GitHub
 from .external.http import Http, VisibleRedirects
 from .external.images import Buildx, Trivy
 from .external.media import Ffmpeg, Ffprobe
+from .external.mount import MkfsExt4, Mount, Unmount
 from .external.packages import Apk, Apt
 from .external.postgres import PostgresDocker
 from .external.python import Python, Uv
@@ -408,6 +409,10 @@ def make_context(options: Options) -> Context:
         "git", runner, root, env, installation_hint="install Git with your system package manager"
     )
     tools = Tools(
+        mount=Mount("mount", runner, root, env),
+        mkfs_ext4=MkfsExt4("mkfs.ext4", runner, root, env),
+        unmount=Unmount("umount", runner, root, env),
+        privilege=ExternalTool("sudo", runner, root, env) if host.uid != 0 else None,
         lifecycle_docker=LifecycleDocker("docker", runner, root, env),
         proof_databases=ProofDatabase(
             PostgresDocker("docker", runner, root, env),
@@ -422,7 +427,13 @@ def make_context(options: Options) -> Context:
         curl=Curl(environment.get("REVAER_FIXTURE_CURL_BIN") or "curl", runner, root, env),
         ffmpeg=Ffmpeg("ffmpeg", runner, root, env),
         ffprobe=Ffprobe(
-            environment.get("REVAER_FIXTURE_FFPROBE_BIN") or "ffprobe", runner, root, env
+            "docker"
+            if environment.get("REVAER_FIXTURE_FFPROBE_CONTAINER")
+            else environment.get("REVAER_FIXTURE_FFPROBE_BIN") or "ffprobe",
+            runner,
+            root,
+            env,
+            container=environment.get("REVAER_FIXTURE_FFPROBE_CONTAINER") or None,
         ),
         semantic_release=SemanticRelease("semantic-release", runner, root, env),
         helm=Helm(

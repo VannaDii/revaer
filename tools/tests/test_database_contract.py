@@ -33,7 +33,7 @@ def contract_root(tmp_path: Path) -> Path:
         tmp_path / BUILD_INPUTS,
         "POSTGRES_REBASELINE_IMAGE=docker.io/library/postgres@sha256:"
         + "a" * 64
-        + "\nPOSTGRES_REBASELINE_VERSION=16.14\nRUST_VERSION=1.96.0\n",
+        + "\nPOSTGRES_REBASELINE_VERSION=18.6\nRUST_VERSION=1.96.0\n",
     )
     fs.write(
         tmp_path / CONFIG,
@@ -63,7 +63,7 @@ def test_frozen_inputs_validate_without_rewriting_any_bytes(contract_root: Path)
     contract = load(contract_root)
     assert contract.freeze() == contract.review.corpus
     assert contract.review.phase is Phase.FREEZE
-    assert contract.postgres.version == "16.14"
+    assert contract.postgres.version == "18.6"
     assert contract.verify_candidate(contract.candidate()).count == 2
     assert before == {path: path.read_bytes() for path in before}
 
@@ -204,7 +204,7 @@ def test_output_parent_and_relative_traversal_rejection(contract_root: Path) -> 
 
 @pytest.mark.parametrize(
     "old,new",
-    (("16.14", "18.1"), ("16.14", "latest"), ("docker.io/library/postgres@sha256:", "postgres:")),
+    (("18.6", "16.14"), ("18.6", "latest"), ("docker.io/library/postgres@sha256:", "postgres:")),
 )
 def test_postgresql_inputs_require_the_reviewed_major_and_digest(
     contract_root: Path, old: str, new: str
