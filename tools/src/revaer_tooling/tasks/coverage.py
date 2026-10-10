@@ -130,7 +130,10 @@ class Coverage(Task):
 
     @staticmethod
     def collect(context: Context, database: dict[str, str]) -> TaskResult:
-        recovery_root = context.settings.coverage.native_recovery_root
+        recovery_root = (
+            database.get("REVAER_NATIVE_RECOVERY_ROOT")
+            or context.settings.coverage.native_recovery_root
+        )
         environment = {**coverage_environment(context), **database, "REVAER_NATIVE_IT": "1"}
         # A compile/test failure must not leave yesterday's reports looking like
         # this run's output. Raw profiles remain engine-owned diagnostic data.
