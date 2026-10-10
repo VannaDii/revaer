@@ -57,6 +57,9 @@ jobs:
           DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}
         run: uv run --locked -- rv db-migrate
       - name: Coverage
+        env:
+          E2E_MANAGED_MEDIA_ROOTS: '1'
+          E2E_FS_ROOT: ''
         run: uv run --locked -- rv cov
       - name: Python tooling coverage
         run: uv run --locked -- rv tooling-cov

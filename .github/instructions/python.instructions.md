@@ -27,6 +27,8 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 # Architecture and errors
 
 - E2E's explicitly managed Linux roots use injected native mount/unmount tools.
+  Rust tests and coverage reuse that fixture when explicitly selected, passing
+  its mounted directory as `REVAER_NATIVE_DISPOSABLE_ROOT` for native root tests.
   Preserve the private owned directory after an unmount failure; never remove
   caller roots or substitute catalog declarations for bootstrap attestation.
 

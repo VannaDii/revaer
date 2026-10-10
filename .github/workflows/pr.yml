@@ -149,6 +149,9 @@ jobs:
       - name: Single-init application fixtures
         run: uv run --locked -- rv ui-e2e-app-test
       - name: Coverage
+        env:
+          E2E_MANAGED_MEDIA_ROOTS: '1'
+          E2E_FS_ROOT: ''
         run: uv run --locked -- rv cov
       - name: Python tooling coverage
         run: uv run --locked -- rv tooling-cov
@@ -357,6 +360,9 @@ jobs:
         run: uv run --locked -- rv ui-e2e-app-test
 
       - name: Feature matrix tests (no default features)
+        env:
+          E2E_MANAGED_MEDIA_ROOTS: '1'
+          E2E_FS_ROOT: ''
         run: uv run --locked -- rv test-features-min
 
   api-e2e:

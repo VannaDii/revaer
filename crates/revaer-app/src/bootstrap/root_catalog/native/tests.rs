@@ -221,7 +221,8 @@ fn fixture() -> anyhow::Result<(tempfile::TempDir, RootCatalogLoad, OpenedRootCa
             (root, "restart_persistent", "linux_dedicated_mount")
         } else {
             (
-                std::env::var_os("HOME")
+                std::env::var_os("REVAER_NATIVE_DISPOSABLE_ROOT")
+                    .or_else(|| std::env::var_os("HOME"))
                     .ok_or_else(|| anyhow::anyhow!("private fixture HOME required"))?,
                 "disposable",
                 "none",
@@ -253,19 +254,7 @@ fn fixture() -> anyhow::Result<(tempfile::TempDir, RootCatalogLoad, OpenedRootCa
         uid,
     )?
     .load()?;
-    let snapshot = ProcRootMountSource.snapshot().map_err(|error| {
-        let invalid_record = std::fs::read_to_string("/proc/self/mountinfo").and_then(|input| {
-            input
-                .lines()
-                .find(|record| {
-                    revaer_media_runtime::root_catalog::RootMountTopology::parse(record).is_err()
-                })
-                .map(str::to_owned)
-                .ok_or_else(|| std::io::Error::other("no malformed individual mount record"))
-        });
-        anyhow::anyhow!("{error}; kernel record diagnostic: {invalid_record:?}")
-    })?;
-    let roots = OpenedRootCatalog::open(loaded.catalog(), uid, &snapshot)?;
+    let roots = OpenedRootCatalog::open(loaded.catalog(), uid, &ProcRootMountSource.snapshot()?)?;
     Ok((directory, loaded, roots))
 }
 

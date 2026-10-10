@@ -311,6 +311,8 @@ applyTo:
 
 - Feature-matrix and API/browser E2E setup includes FFmpeg alongside database
   prerequisites because those jobs execute native media runtime scenarios.
+  Feature-matrix and Rust coverage also select the owned tmpfs fixture for
+  native disposable-root tests; a home-directory filesystem is not that proof.
 
 - Hosted test Postgres services publish `127.0.0.1:5432:5432` for the single-init
   endpoint check. Media E2E selects `job.services.postgres.id` and its matching admin

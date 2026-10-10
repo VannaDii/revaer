@@ -174,7 +174,7 @@ fn parse_line(line: &str) -> Result<(u64, Mount), RootMountError> {
         id,
         Mount {
             device,
-            root: decode_path(fields[3])?,
+            root: decode_root(fields[3], filesystem)?,
             point: decode_path(fields[4])?,
             filesystem: filesystem.into(),
         },
@@ -192,6 +192,29 @@ fn identifier(value: &str) -> Result<u64, RootMountError> {
 
 fn device_part(value: &str) -> Result<u32, RootMountError> {
     u32::try_from(identifier(value)?).map_err(|_| RootMountError::Invalid)
+}
+
+fn decode_root(value: &str, filesystem: &str) -> Result<PathBuf, RootMountError> {
+    if filesystem != "nsfs" || value.starts_with('/') {
+        return decode_path(value);
+    }
+    // Namespace dentries have a kernel-generated identity such as net:[123],
+    // not a directory path. Retain it so bind aliases still compare equal.
+    let (kind, inode) = value
+        .strip_suffix(']')
+        .and_then(|value| value.split_once(":["))
+        .ok_or(RootMountError::Invalid)?;
+    if !matches!(
+        kind,
+        "cgroup" | "ipc" | "mnt" | "net" | "pid" | "time" | "user" | "uts"
+    ) || inode.is_empty()
+        || inode.starts_with('0')
+        || !inode.bytes().all(|byte| byte.is_ascii_digit())
+        || inode.parse::<u64>().is_err()
+    {
+        return Err(RootMountError::Invalid);
+    }
+    Ok(value.into())
 }
 
 fn decode_path(value: &str) -> Result<PathBuf, RootMountError> {

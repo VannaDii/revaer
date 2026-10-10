@@ -3,6 +3,8 @@
 import json
 import subprocess
 import tomllib
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 
@@ -11,6 +13,7 @@ from revaer_tooling.cli import make_context
 from revaer_tooling.context import Context, Options
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.external.rust import Cargo
+from revaer_tooling.tasks import e2e
 from revaer_tooling.tasks.testing import (
     LintRuntimeShutdown,
     TestMediaRecovery,
@@ -115,6 +118,41 @@ def test_variants_execute_the_required_packages_and_feature_sets(test_workspace:
     assert observations(test_workspace) == dict.fromkeys(
         ("revaer-api", "revaer-app"), "extended=false;native="
     )
+
+
+@pytest.mark.parametrize("fail", (False, True))
+def test_native_fixture_lives_until_rust_tests_finish(
+    test_workspace: Context, monkeypatch: pytest.MonkeyPatch, fail: bool
+) -> None:
+    mounted = test_workspace.root / "mounted"
+    mounted.mkdir()
+    catalog = mounted / "catalog.json"
+    catalog.touch()
+    source = test_workspace.root / "revaer-app/src/lib.rs"
+    source.write_text(
+        source.read_text().replace(
+            'assert_eq!(std::env::var("DATABASE_URL")?, "postgres://tests.invalid/application");',
+            'assert_eq!(std::env::var("DATABASE_URL")?, "postgres://tests.invalid/application");'
+            '\nassert!(std::path::Path::new(&std::env::var("REVAER_NATIVE_DISPOSABLE_ROOT")?).exists());'
+            f'\nassert!(!{str(fail).lower()}, "fixture test failure");',
+        )
+    )
+
+    @contextmanager
+    def fixture(context: Context, paths: e2e.RunPaths) -> Iterator[tuple[e2e.RunPaths, Path]]:
+        try:
+            yield replace(paths, filesystem=mounted), catalog
+        finally:
+            catalog.unlink()
+            mounted.rmdir()
+
+    monkeypatch.setattr(e2e, "media_fixture", fixture)
+    if fail:
+        with pytest.raises(ToolingError):
+            MinimalFeatures.run(test_workspace)
+    else:
+        MinimalFeatures.run(test_workspace)
+    assert not mounted.exists()
 
 
 def test_a_failed_rust_test_is_a_failed_task(test_workspace: Context) -> None:

@@ -8,7 +8,7 @@ from ..errors import ToolingError
 from ..external.coverage import CoverageFormat, CoverageReportArgs
 from ..json_data import array_value, decode, object_value, string_value
 from .base import Task
-from .testing import test_environment
+from .testing import native_test_environment
 
 
 def reset_reports(context: Context) -> None:
@@ -125,7 +125,12 @@ class Coverage(Task):
         recovery_root = context.settings.coverage.native_recovery_root
         if recovery_root is not None and context.host.system != "linux":
             raise ToolingError("Native media recovery coverage requires Linux")
-        database = test_environment(context)
+        with native_test_environment(context) as database:
+            return Coverage.collect(context, database)
+
+    @staticmethod
+    def collect(context: Context, database: dict[str, str]) -> TaskResult:
+        recovery_root = context.settings.coverage.native_recovery_root
         environment = {**coverage_environment(context), **database, "REVAER_NATIVE_IT": "1"}
         # A compile/test failure must not leave yesterday's reports looking like
         # this run's output. Raw profiles remain engine-owned diagnostic data.
