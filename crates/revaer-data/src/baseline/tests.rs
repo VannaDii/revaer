@@ -14,7 +14,7 @@ fn row() -> BaselineRow {
     BaselineRow {
         contract_version: 1,
         init_sha256: DIGEST.to_vec(),
-        postgres_version_num: 160_014,
+        postgres_version_num: 180_006,
         schema_owner_role: "fixture_owner".to_owned(),
         runtime_role: "fixture_runtime".to_owned(),
         sealed_at: DateTime::<Utc>::UNIX_EPOCH,
@@ -26,7 +26,7 @@ fn baseline_read_verifies_exact_identity_without_exposing_principals() -> anyhow
     let verified = verify(vec![row()], &DIGEST, "fixture_runtime")
         .map_err(|reason| anyhow::anyhow!(reason.code()))?;
     assert_eq!(verified.contract_version(), 1);
-    assert_eq!(verified.postgres_version_num(), 160_014);
+    assert_eq!(verified.postgres_version_num(), 180_006);
     assert_eq!(verified.init_sha256(), &DIGEST);
     assert_eq!(verified.sealed_at(), DateTime::<Utc>::UNIX_EPOCH);
     let debug = format!("{verified:?}");
@@ -81,7 +81,7 @@ fn baseline_read_requires_exact_digest_length_and_bytes() {
 
 #[test]
 fn baseline_read_rejects_other_postgres_versions() {
-    for postgres_version_num in [0, 150_014, 160_013, 160_015, 170_000] {
+    for postgres_version_num in [0, 160_014, 170_000, 180_005, 180_007, 190_000] {
         let mut invalid = row();
         invalid.postgres_version_num = postgres_version_num;
         assert_eq!(

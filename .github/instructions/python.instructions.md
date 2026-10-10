@@ -26,6 +26,10 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 
 # Architecture and errors
 
+- The optional fixture-probe container is caller-selected at bootstrap. Setup
+  provisions the existing approved Alpine build; cleanup verifies project,
+  purpose and read-only checkout ownership before removing that container.
+
 - Keep the explicit CLI dictionary mapped to derived tasks' static
   `run(context)` methods. Internal steps stay ordinary calls unless useful as
   independent commands. Follow `tools/src/revaer_tooling/tasks/README.md`.

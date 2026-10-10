@@ -9,6 +9,7 @@ from revaer_tooling.errors import ToolingError
 from revaer_tooling.external.base import ExternalTool
 from revaer_tooling.external.coverage import CargoLlvmCov
 from revaer_tooling.external.github import GitHub
+from revaer_tooling.external.media import Ffprobe
 from revaer_tooling.external.python import Python
 from revaer_tooling.external.release import ReleaseRepository, SemanticRelease
 from revaer_tooling.external.rust import Cargo, CargoArgs, CargoInstallArgs, CargoOperation
@@ -26,6 +27,17 @@ class RecordingRunner:
     def run(self, invocation: Invocation) -> Completed:
         self.calls.append(invocation)
         return Completed(0, self.stdout)
+
+
+def test_container_ffprobe_reads_only_the_selected_checkout(tmp_path: Path) -> None:
+    runner = RecordingRunner("ffprobe version 8.0.1\n")
+    tool = Ffprobe(sys.executable, runner, tmp_path, {}, container="revaer-fixture-ffprobe")
+    assert tool.report() == b"ffprobe version 8.0.1\n"
+    tool.streams(tmp_path / "test-fixtures/source/input.mkv")
+    assert runner.calls[-1].argv[-1] == "/workspace/test-fixtures/source/input.mkv"
+    assert runner.calls[-1].argv[1:4] == ("exec", "revaer-fixture-ffprobe", "ffprobe")
+    with pytest.raises(ToolingError, match="selected checkout"):
+        tool.streams(tmp_path.parent / "outside.mkv")
 
 
 @pytest.mark.parametrize("newline", ("\n", "\r\n"))

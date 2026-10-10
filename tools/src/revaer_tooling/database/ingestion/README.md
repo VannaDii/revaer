@@ -14,7 +14,7 @@ ownership/security metadata and triggers on the eighteen ingestion tables.
 Reference and final databases must be distinct. Previous inventory files are
 invalidated before collection and replacements have private permissions.
 
-The verifier requires PostgreSQL 16.14 and exactly the reviewed helper names.
+The verifier requires PostgreSQL 18.6 and exactly the reviewed helper names.
 Bodies and signatures must match except for the existing approved ingestion
 corrections and local variable-conflict directive. The reference must retain
 its original function setting; the final function must have only the directive.

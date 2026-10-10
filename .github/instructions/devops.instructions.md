@@ -309,6 +309,12 @@ applyTo:
 
 # Drift Control
 
+- Database services use the approved PostgreSQL 18.6 image digest from
+  `.github/build-inputs.env`; floating major-version tags are not suitable.
+- Fixture probing uses the pinned Alpine image and FFmpeg 8.0.1-r1, whose full
+  version report matches the existing approved F1 profile. Mount the checkout
+  read-only at `/workspace`, inject the named container, and remove it after use.
+
 - Any change to a workflow, release script, setup action, the `rv` registry, or `sonar-project.properties` must review the matching instruction file in the same change.
 - Revaer enforces that rule mechanically with `rv instruction-drift`, backed by the Python policy tasks. Keep the mapping in those tasks aligned with this file and `AGENTS.md`.
 - Keep `scripts/workflow-guardrails.sh` aligned with the live workflow policy when GitHub Actions pinning or shell-safety rules change.

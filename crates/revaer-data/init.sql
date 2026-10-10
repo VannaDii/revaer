@@ -48379,7 +48379,7 @@ BEGIN
     IF octet_length(init_sha256_input) IS DISTINCT FROM 32 THEN
         RAISE EXCEPTION USING MESSAGE = 'baseline_shape_invalid', DETAIL = 'baseline_shape_invalid', ERRCODE = 'P0001';
     END IF;
-    IF current_setting('server_version_num')::integer <> 160014 THEN
+    IF current_setting('server_version_num')::integer <> 180006 THEN
         RAISE EXCEPTION USING MESSAGE = 'postgres_identity_unsupported', DETAIL = 'postgres_identity_unsupported', ERRCODE = 'P0001';
     END IF;
     IF runtime_role_input IS NULL OR octet_length(runtime_role_input) NOT BETWEEN 1 AND 63 THEN

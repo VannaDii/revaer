@@ -422,7 +422,13 @@ def make_context(options: Options) -> Context:
         curl=Curl(environment.get("REVAER_FIXTURE_CURL_BIN") or "curl", runner, root, env),
         ffmpeg=Ffmpeg("ffmpeg", runner, root, env),
         ffprobe=Ffprobe(
-            environment.get("REVAER_FIXTURE_FFPROBE_BIN") or "ffprobe", runner, root, env
+            "docker"
+            if environment.get("REVAER_FIXTURE_FFPROBE_CONTAINER")
+            else environment.get("REVAER_FIXTURE_FFPROBE_BIN") or "ffprobe",
+            runner,
+            root,
+            env,
+            container=environment.get("REVAER_FIXTURE_FFPROBE_CONTAINER") or None,
         ),
         semantic_release=SemanticRelease("semantic-release", runner, root, env),
         helm=Helm(

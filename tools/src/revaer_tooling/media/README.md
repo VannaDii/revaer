@@ -117,6 +117,7 @@ report with positive pipeline, video and audio counts and zero failures.
 | `REVAER_FIXTURE_CONNECT_TIMEOUT_SECONDS` | `15` |
 | `REVAER_FIXTURE_DEADLINE_SECONDS` | `120` |
 | `REVAER_FIXTURE_CURL_BIN` / `REVAER_FIXTURE_FFPROBE_BIN` | `curl` / `ffprobe` |
+| `REVAER_FIXTURE_FFPROBE_CONTAINER` | Optional caller-provisioned approved ffprobe container; mount the selected checkout read-only at `/workspace`. |
 
 Paths can be absolute or checkout-relative; both must remain inside the selected
 checkout. Paths containing `..` or linked components fail. Acquisition,

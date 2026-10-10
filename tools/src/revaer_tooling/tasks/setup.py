@@ -4,6 +4,7 @@ from ..automation.files import write_values
 from ..bootstrap.install import install_kcov
 from ..bootstrap.selection import apt_selection, native_selection
 from ..context import Context, TaskResult
+from ..database.contract import BUILD_INPUTS, assignments
 from ..errors import ToolingError
 from ..external.packages import AptInstallArgs
 from ..sonar.install import install_scanner
@@ -28,6 +29,10 @@ class Setup(Task):
         context.tools.uv.check_lock()
         if packages:
             context.tools.apt.install(AptInstallArgs(packages))
+            if options.apt_profile == "media":
+                context.tools.ffprobe.prepare_container(
+                    assignments(context.root, context.fs, BUILD_INPUTS)["ALPINE_RUNTIME_IMAGE"]
+                )
             if "sccache" in packages and context.settings.workflow.environment is not None:
                 context.tools.sccache.verify()
                 cache = context.host.home / ".cache/sccache"

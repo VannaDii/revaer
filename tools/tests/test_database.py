@@ -17,8 +17,10 @@ from urllib.parse import quote, urlsplit, urlunsplit
 import pytest
 from revaer_tooling.cli import make_context
 from revaer_tooling.context import Context, Options
+from revaer_tooling.database.contract import BUILD_INPUTS, PostgresPin, assignments
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.external.database import LibpqConnection
+from revaer_tooling.filesystem import FileSystem
 from revaer_tooling.tasks.database import (
     DatabaseMigrate,
     DatabaseReset,
@@ -63,7 +65,7 @@ def postgres() -> Iterator[PostgresFixture]:
             "--name",
             name,
             "--tmpfs",
-            "/var/lib/postgresql/data:rw,size=256m",
+            "/var/lib/postgresql:rw,size=256m",
             "--tmpfs",
             "/var/run/postgresql:rw,size=16m",
             "--tmpfs",
@@ -76,7 +78,9 @@ def postgres() -> Iterator[PostgresFixture]:
             "POSTGRES_PASSWORD",
             "--env",
             "POSTGRES_DB",
-            "postgres:16-alpine",
+            PostgresPin.load(
+                assignments(Path(__file__).parents[2], FileSystem(), BUILD_INPUTS)
+            ).image,
         ],
         env=environment,
         capture_output=True,
@@ -194,6 +198,8 @@ def managed_database(
     (tmp_path / "tools/src/revaer_tooling").mkdir(parents=True)
     (tmp_path / "tools/src/revaer_tooling/cli.py").touch()
     migrations = tmp_path / "crates/revaer-data/migrations"
+    (tmp_path / ".github").mkdir()
+    (tmp_path / BUILD_INPUTS).write_bytes((Path(__file__).parents[2] / BUILD_INPUTS).read_bytes())
     migrations.mkdir(parents=True)
     (migrations / "1_initial.sql").write_text(
         "CREATE TABLE fixture_rows (value integer PRIMARY KEY);\n"

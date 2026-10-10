@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from revaer_tooling.cli import COMMANDS, make_context, parser
 from revaer_tooling.context import Context, Options
+from revaer_tooling.database.contract import BUILD_INPUTS, assignments
 from revaer_tooling.database.lifecycle_settings import LifecycleSettings
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.tasks.database_lifecycle import SCRIPTS, DatabaseTestDrop, DatabaseTestInit
@@ -43,7 +44,7 @@ def lifecycle_context(tmp_path: Path) -> Context:
     initializer.write_text(INITIALIZER)
     manifest = tmp_path / ".github/build-inputs.env"
     manifest.parent.mkdir()
-    manifest.write_text("POSTGRES_REBASELINE_IMAGE=postgres:16-alpine\n")
+    manifest.write_bytes((context.root / BUILD_INPUTS).read_bytes())
     settings = LifecycleSettings(
         "not-selected", "fixture", secrets.token_hex(24), secrets.token_hex(32)
     )
@@ -208,7 +209,10 @@ def test_existing_staging_directory_is_never_removed(
 ) -> None:
     context = selected(lifecycle_context, postgres)
     docker = context.tools.lifecycle_docker
-    container = docker.select(postgres.name, "postgres:16-alpine")
+    container = docker.select(
+        postgres.name,
+        assignments(context.root, context.fs, BUILD_INPUTS)["POSTGRES_REBASELINE_IMAGE"],
+    )
     directory = f"/tmp/{context.options.database_name}-init"
     docker.stage(container, directory)
     try:

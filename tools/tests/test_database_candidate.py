@@ -35,8 +35,8 @@ __all__ = ["contract_root"]
 
 DUMP = b"""-- PostgreSQL database dump
 \\restrict a123
--- Dumped from database version 16.14
--- Dumped by pg_dump version 16.14
+-- Dumped from database version 18.6
+-- Dumped by pg_dump version 18.6
 CREATE TABLE public.item (id bigint);
 CREATE FUNCTION revaer_config.factory_reset() RETURNS void
     LANGUAGE sql
@@ -65,7 +65,7 @@ class ProofSqlx(Sqlx):
 def builder(contract_root: Path) -> CandidateBuilder:
     fs = FileSystem()
     contract = Contract.load(contract_root, fs)
-    candidate = build_candidate(normalize_dump(DUMP, "16.14"), contract.review.corpus, contract)
+    candidate = build_candidate(normalize_dump(DUMP, "18.6"), contract.review.corpus, contract)
     contract = replace(
         contract,
         review=replace(
@@ -188,7 +188,7 @@ def test_assembly_prefix_is_applied_before_evidence_is_published(builder: Candid
         builder.contract, review=replace(builder.contract.review, phase=Phase.ASSEMBLY)
     )
     candidate = build_candidate(
-        normalize_dump(DUMP, "16.14"), builder.contract.review.corpus, builder.contract
+        normalize_dump(DUMP, "18.6"), builder.contract.review.corpus, builder.contract
     )
     first = Statements.parse(candidate).boundaries[0].byte_count
     prefix = candidate[:first]
@@ -205,18 +205,18 @@ def test_assembly_prefix_is_applied_before_evidence_is_published(builder: Candid
         DUMP.replace(b"CREATE TABLE public.item", b"CREATE TABLE public._sqlx_migrations"),
         DUMP + b"-- revaer_source\n",
         DUMP + b"-- revaer_rebaseline\n",
-        DUMP.replace(b"16.14", b"16.15"),
+        DUMP.replace(b"18.6", b"18.7"),
         DUMP.replace(b"factory_reset", b"other"),
     ),
 )
 def test_dump_metadata_and_source_identity_cannot_drift(source: bytes) -> None:
     with pytest.raises(ToolingError):
-        normalize_dump(source, "16.14")
+        normalize_dump(source, "18.6")
 
 
 def test_sqlx_table_name_inside_routine_is_not_mistaken_for_metadata() -> None:
     source = DUMP + b"-- caller inspects '_sqlx_migrations' by name\n"
-    assert b"'_sqlx_migrations'" in normalize_dump(source, "16.14")
+    assert b"'_sqlx_migrations'" in normalize_dump(source, "18.6")
 
 
 def test_static_freeze_and_finalization_commands_use_the_selected_checkout(

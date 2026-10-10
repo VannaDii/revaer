@@ -28,7 +28,7 @@ jobs:
       E2E_BROWSERS: chromium,firefox,webkit
     services:
       postgres:
-        image: postgres:16-alpine
+        image: docker.io/library/postgres@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
         env:
           POSTGRES_USER: revaer
           POSTGRES_PASSWORD: ${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}

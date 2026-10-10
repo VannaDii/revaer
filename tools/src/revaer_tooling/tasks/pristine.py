@@ -17,7 +17,7 @@ def run(context: Context, *, validate: bool) -> TaskResult:
     workspace = Workspace.load(context.root, context.fs)
     context.fs.mkdir(workspace.output)
     with context.fs.lock(workspace.output / ".operation.lock"):
-        for name in ("postgres-pristine-16.14.tsv", "provenance.json"):
+        for name in ("postgres-pristine-18.6.tsv", "provenance.json"):
             context.fs.remove_owned(workspace.output / name, context.root)
         spec = Specification.load(
             context.fs, Path(__file__).parents[1] / "database/pristine/spec.json"
