@@ -84,6 +84,13 @@
 
 ## 4) Maintainability Guardrails
 
+The operator-approved production-only coverage scope is the exact
+`sonar.coverage.exclusions` list enforced by
+`tools/src/revaer_tooling/policy/sonar.py`. Internal utilities, test sources and
+unused Nexus templates remain in analysis and complete coverage measurements;
+only production sources carry coverage requirements. A JavaScript inventory
+containing no production sources requires no fabricated execution counts.
+
 - Keep one canonical statement of each global rule. Root policy belongs here; scoped files should reference it and add path-specific details instead of repeating or rewording it inconsistently.
 - Any change to [the `rv` task registry](./tools/src/revaer_tooling/cli.py), workflow files, release scripts, lint posture, or [`sonar-project.properties`](./sonar-project.properties) must update the relevant instruction file in the same change.
 - Review the instruction set whenever crate layout, workflow layout, release flow, or quality gates change materially.

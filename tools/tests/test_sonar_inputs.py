@@ -23,14 +23,17 @@ def lcov(source: str, count: int, covered: int) -> str:
     )
 
 
-def test_executed_rust_and_browser_coverage_keep_the_existing_minimum() -> None:
+def test_coverage_requires_execution_of_production_sources_only() -> None:
     rust = lcov("crates/example/src/lib.rs", 2, 1)
-    browser = lcov("crates/example/static/app.js", 1000, 999)
+    browser = lcov("crates/example/static/app.js", 2, 1)
     assert lcov_counts(rust) == LineCounts(2, 1)
     verify_lcov(rust, browser)
-    for bad in (lcov("app.js", 999, 998), lcov("app.js", 1000, 0), lcov("app.js", 1000, 1000)):
-        with pytest.raises(ToolingError):
-            verify_lcov(rust, bad)
+    verify_lcov(rust, lcov("app.js", 2, 2))
+    verify_lcov(rust, lcov("docs/diagram.js", 2, 0))
+    with pytest.raises(ToolingError, match="real source line records"):
+        verify_lcov(rust, "")
+    with pytest.raises(ToolingError, match="production JavaScript"):
+        verify_lcov(rust, lcov("app.js", 2, 0))
     for bad in (lcov("app.rs", 2, 0), lcov("not-rust.cpp", 2, 2), ""):
         with pytest.raises(ToolingError, match="Rust"):
             verify_lcov(bad, browser)
