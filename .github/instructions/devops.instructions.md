@@ -354,8 +354,10 @@ Each job retains an explicit bounded timeout.
 
 PR coverage producers run independently on the exact submitted head: Rust/native,
 Python/bootstrap, anonymous/authenticated API, and the three-browser, three-shard
-matrix. At most two browser shards run concurrently. Preserve the existing
-Chromium required-check names. Keep producer artifacts separate when downloading;
+matrix. At most two browser shards run concurrently.
+Python tooling coverage requires full Git history for its existing historical
+blob fixtures; a shallow checkout cannot execute that suite.
+Preserve the existing Chromium required-check names. Keep producer artifacts separate when downloading;
 validate every completion summary and complete scenario partition before merging
 actual Python/V8 measurements. The native producer retains compiler commands and
 generated headers at paths valid in the scanner's matching Linux checkout/SDK.
