@@ -63,3 +63,6 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
   validated coverage measurements without a production percentage threshold,
   under the operator-approved production-only coverage requirement. Other crate
   thresholds and all workspace instrumentation remain unchanged.
+- Scanner extraction materializes upstream internal JRE license links from
+  regular archive members. Reject escaping, missing or chained targets and retain
+  expanded-byte limits, pinned archive hashes and signature verification.
