@@ -348,17 +348,29 @@ The ordinary PR gates (instruction drift, formatting, lint, check, audit, deny,
 unused dependencies, supply-chain aggregation and release build) invoke the
 locked `rv` CLI through the shared uv setup action. Select native tools through
 its supported inputs; retain each gate, dependency, condition and failure result.
-Setup has a 20-minute bound, and each job retains an explicit bounded timeout.
+Ordinary setup has a 20-minute bound; coverage prerequisites have a 40-minute
+bound because the full tooling suite requires cold native-tool installations.
+Each job retains an explicit bounded timeout.
 
-All PR jobs now use the shared setup inputs and locked Python executor. The
-scanner job owns coverage collection and analysis in one checkout, including
-measured root bootstrap coverage. Database URLs must match the isolated service.
-UI shards retain raw browser records, selection manifests and completion
-summaries; aggregation verifies those summaries before combined route coverage.
+PR coverage producers run independently on the exact submitted head: Rust/native,
+Python/bootstrap, anonymous/authenticated API, and the three-browser, three-shard
+matrix. At most two browser shards run concurrently. Preserve the existing
+Chromium required-check names. Keep producer artifacts separate when downloading;
+validate every completion summary and complete scenario partition before merging
+actual Python/V8 measurements. The native producer retains compiler commands and
+generated headers at paths valid in the scanner's matching Linux checkout/SDK.
+The scanner waits for all producers; UI route coverage waits only for API/browser
+execution. Both image and release packaging wait for every required quality gate.
+Database URLs must match each job's isolated service.
 
-Chart regression gates need both Helm and ORAS. Coverage jobs run the complete
-Python integration suite and therefore select all pinned Cargo tools plus Helm,
-ORAS, Trivy and the three browsers; a Python-only environment is insufficient.
+Chart regression gates need both Helm and ORAS. The Python coverage producer runs
+the complete integration suite and selects all pinned Cargo tools plus Helm,
+ORAS, Trivy and the three browsers. Other producers install only their consumed
+tools. Cargo download caches are shared; installed-tool caches include the exact
+tool selection and version/toolchain pins with native installation receipts.
+sccache uses separate rolling compiler-result caches and compatible restore keys;
+never reuse mutable build output as execution coverage or skip required tests.
+The Justfile's ci, ui-e2e and tooling-check aliases delegate to the locked rv tasks.
 
 The native integration job supplies its own disposable PostgreSQL service to the
 explicit test-database contract. Workflow report paths are positional CLI

@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from ..context import Context, TaskResult
-from ..e2e.coverage import verify_analysis_run
+from ..e2e.coverage import distributed_runs, verify_analysis_run
 from ..errors import ToolingError
 from ..external.python import PythonCoverageArgs
 from ..json_data import decode, object_value
@@ -22,14 +22,30 @@ def authored_python(context: Context) -> tuple[str, ...]:
 
 def coverage_inputs(context: Context) -> tuple[Path, ...]:
     """Select only the completed run's named phases, never glob stale phase data."""
+    expected = context.settings.e2e.phases()
+    distributed = distributed_runs(
+        context.fs, context.root, expected, context.options.expected_shards
+    )
+    if distributed:
+        inputs = (
+            context.root / "coverage/producers/tooling-coverage/.coverage",
+            *(
+                root / "coverage/e2e" / (phase + suffix) / ".coverage"
+                for root, phase, suffix in distributed
+            ),
+        )
+        return checked_inputs(inputs)
     path = context.root / "tests/test-results/python-e2e-summary.json"
     summary = object_value(decode(context.fs.read(path)))
-    expected = context.settings.e2e.phases()
     verify_analysis_run(summary, expected)
     inputs = (
         context.root / ".coverage",
         *(context.root / "coverage/e2e" / phase / ".coverage" for phase in expected),
     )
+    return checked_inputs(inputs)
+
+
+def checked_inputs(inputs: tuple[Path, ...]) -> tuple[Path, ...]:
     for item in inputs:
         if item.is_symlink() or not item.is_file() or item.stat().st_size == 0:
             raise ToolingError("Python execution coverage is missing or empty: " + str(item))

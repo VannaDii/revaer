@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,52 @@ UNUSED = (
     'import * as dependency from "https://example.invalid/never-fetch.mjs";\n'
     'throw new Error("inventory parsing must not execute this script");\n'
 )
+
+
+def test_distributed_merge_keeps_measured_chromium_captures(measured: Context) -> None:
+    context = replace(measured, options=replace(measured.options, expected_shards=1))
+    JavaScriptCoverageMerge.run(context)
+    expected = (context.root / "coverage/js-lcov.info").read_text()
+    results = context.root / "tests/test-results"
+    producers = context.root / "coverage/producers"
+    groups = (
+        ("api-e2e-coverage", ("api-none", "api-api-key")),
+        ("ui-e2e-chromium", ("ui-chromium",)),
+    )
+    for name, phases in groups:
+        target = producers / name / "tests/test-results"
+        target.mkdir(parents=True)
+        (target / "python-e2e-summary.json").write_text(
+            json.dumps(
+                {
+                    "status": "passed",
+                    "shard": 1,
+                    "total_shards": 1,
+                    "phases": dict.fromkeys(phases, "passed"),
+                    "browser_coverage": True,
+                }
+            )
+        )
+        for phase in phases:
+            (target / f"selection-{phase}-main.json").write_text(
+                json.dumps(
+                    {
+                        "phase": phase,
+                        "shard": 1,
+                        "total_shards": 1,
+                        "all": ["scenario"],
+                        "selected": ["scenario"],
+                    }
+                )
+            )
+            label = "ui" if phase.startswith("ui-") else "api"
+            (target / f"{label}-coverage-{phase}-main.json").write_text('["/observed"]')
+    chromium = producers / "ui-e2e-chromium/tests/test-results"
+    (results / "ui-chromium").rename(chromium / "ui-chromium")
+    for path in results.glob("javascript-baseline-*.json"):
+        path.rename(chromium / path.name)
+    JavaScriptCoverageMerge.run(context)
+    assert (context.root / "coverage/js-lcov.info").read_text() == expected
 
 
 @pytest.fixture(params=("classic", "module"))

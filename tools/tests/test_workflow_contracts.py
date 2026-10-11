@@ -76,11 +76,32 @@ def test_scanner_execution_and_merges_select_the_same_browser_phases(
     document = yaml_document((root / path).read_text(), path)
     job = mapping(mapping(document["jobs"])[job_name])
     shared = {key: str(value) for key, value in mapping(job["env"]).items()}
-    execution = mapping(named_steps(job)["Run Playwright with browser coverage"]["env"])
+    execution = mapping(named_steps(job).get("Run Playwright with browser coverage", {}).get("env"))
     selected = {**shared, **{key: str(value) for key, value in execution.items()}}
     expected = ("api-none", "api-api-key", "ui-chromium", "ui-firefox", "ui-webkit")
     assert load_e2e_settings(selected).phases() == expected
     assert load_e2e_settings(shared).phases() == expected
+
+
+def test_distributed_workflow_preserves_required_checks_and_rejects_missing_inputs(
+    fixture: Fixture,
+) -> None:
+    root = Path(__file__).parents[2]
+    path = ".github/workflows/pr.yml"
+    fixture.documents[path] = yaml_document((root / path).read_text(), path)
+    assert not scanner_workflow_findings(fixture.documents)
+    assert not required_check_findings(fixture.documents, fixture.contexts, False)
+    assert not image_workflow_findings(fixture.documents, fixture.matrix)
+    original = copy.deepcopy(fixture.documents[path])
+    for producer in ("rust-coverage", "tooling-coverage", "api-e2e", "ui-e2e"):
+        fixture.job("pr", producer)["if"] = "false"
+        assert scanner_workflow_findings(fixture.documents)
+        fixture.documents[path] = copy.deepcopy(original)
+    fixture.job("pr", "coverage")["needs"] = ["rust-coverage"]
+    assert scanner_workflow_findings(fixture.documents)
+    fixture.documents[path] = copy.deepcopy(original)
+    mapping(mapping(fixture.job("pr", "ui-e2e")["strategy"])["matrix"])["browser"] = ["chromium"]
+    assert required_check_findings(fixture.documents, fixture.contexts, False)
 
 
 def test_committed_media_job_preserves_required_conversion_contract(fixture: Fixture) -> None:

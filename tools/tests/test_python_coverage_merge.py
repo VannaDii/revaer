@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -129,3 +130,64 @@ def test_merge_cannot_read_while_either_producer_is_running(
     with context.fs.lock(context.root / lock), pytest.raises(ToolingError, match="holds"):
         PythonCoverageMerge.run(context)
     assert path.read_bytes() == previous
+
+
+def test_merge_combines_real_data_from_separate_producer_directories(
+    coverage_context: Context,
+) -> None:
+    context = replace(
+        coverage_context, options=replace(coverage_context.options, expected_shards=1)
+    )
+    producers = context.root / "coverage/producers"
+    tooling = producers / "tooling-coverage"
+    tooling.mkdir(parents=True)
+    shutil.move(context.root / ".coverage", tooling / ".coverage")
+    groups = (
+        ("api-e2e-coverage", ("api-none", "api-api-key")),
+        ("ui-e2e-chromium", ("ui-chromium",)),
+    )
+    for name, phases in groups:
+        directory = producers / name
+        results = directory / "tests/test-results"
+        results.mkdir(parents=True)
+        (results / "python-e2e-summary.json").write_text(
+            json.dumps(
+                {
+                    "status": "passed",
+                    "shard": 1,
+                    "total_shards": 1,
+                    "phases": dict.fromkeys(phases, "passed"),
+                    "browser_coverage": True,
+                }
+            )
+        )
+        for phase in phases:
+            coverage = directory / "coverage/e2e" / phase
+            coverage.mkdir(parents=True)
+            shutil.move(context.root / "coverage/e2e" / phase / ".coverage", coverage / ".coverage")
+            (results / f"selection-{phase}-main.json").write_text(
+                json.dumps(
+                    {
+                        "phase": phase,
+                        "shard": 1,
+                        "total_shards": 1,
+                        "all": ["scenario"],
+                        "selected": ["scenario"],
+                    }
+                )
+            )
+            label = "ui" if phase.startswith("ui-") else "api"
+            (results / f"{label}-coverage-{phase}-main.json").write_text('["/observed"]')
+    PythonCoverageMerge.run(context)
+    report = ElementTree.parse(context.root / "coverage/python.xml")
+    assert {
+        entry.attrib["filename"] for entry in report.findall("./packages/package/classes/class")
+    } == {
+        "tools/src/revaer_tooling/cli.py",
+        "tools/src/revaer_tooling/never.py",
+        "tests/cli.py",
+    }
+    (producers / "api-e2e-coverage/coverage/e2e/api-api-key/.coverage").write_text("corrupt")
+    with pytest.raises(ToolingError):
+        PythonCoverageMerge.run(context)
+    assert not (context.root / "coverage/python.xml").exists()

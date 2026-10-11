@@ -55,3 +55,7 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 - Run `rv tooling-check`, `rv tooling-cov` and `rv tooling-audit` as applicable
   to the change. Keep the full project acceptance gates and migration inventory
   current; Python checks alone do not complete a tooling migration.
+- Distributed coverage consumes separately downloaded producer artifacts. Use
+  the existing shard selection/completion validator before combining measurements;
+  reject missing phases, inconsistent partitions, corrupt databases and absent
+  Chromium captures. Keep the unsharded local/main scanner path functional.

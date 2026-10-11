@@ -311,8 +311,11 @@ validate:
     just db-start
     just fmt lint helm-lint instruction-drift check-assets udeps audit deny ui-build test test-features-min cov
 
-ci: validate
-    just build-release
+ci:
+    uv run --locked -- rv ci
+
+tooling-check:
+    uv run --locked -- rv tooling-check
 
 docker-build:
     set -a; source .github/build-inputs.env; set +a; \
@@ -378,38 +381,8 @@ api-test-client:
     npm --prefix tests run gen:api-client
     test -s tests/support/api/schema.ts
 
-ui-e2e: trunk-install
-    just api-test-client
-    if [ "${CI:-}" = "true" ] || { [ "$(uname -s)" = "Linux" ] && sudo -n true >/dev/null 2>&1; }; then \
-        cd tests && npx playwright install --with-deps; \
-    else \
-        cd tests && npx playwright install; \
-    fi
-    tests/node_modules/.bin/tsc --project tests/tsconfig.coverage.json
-    shard_arg=""; \
-    coverage_suffix=""; \
-    if [ -n "${PLAYWRIGHT_SHARD_INDEX:-}" ] && [ -n "${PLAYWRIGHT_SHARD_TOTAL:-}" ]; then \
-        shard_arg="--shard=${PLAYWRIGHT_SHARD_INDEX}/${PLAYWRIGHT_SHARD_TOTAL}"; \
-        coverage_suffix="-shard-${PLAYWRIGHT_SHARD_INDEX}"; \
-    fi; \
-    coverage_dir="coverage/js/playwright${coverage_suffix}"; \
-    state_key="$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")"; \
-    rm -rf "${coverage_dir}"; \
-    REVAER_E2E_STATE_KEY="${state_key}" \
-    E2E_ENV_DIR="${PWD}/tests" \
-    NODE_PATH="${PWD}/tests/node_modules" env -u NO_COLOR tests/node_modules/.bin/c8 \
-        --reporter=lcovonly \
-        --reports-dir "${coverage_dir}" \
-        --include 'target/js-coverage-tests/**/*.js' \
-        --exclude-after-remap=false \
-        tests/node_modules/.bin/playwright test \
-        --config target/js-coverage-tests/playwright.config.js \
-        ${shard_arg}; \
-    test -s "${coverage_dir}/lcov.info"; \
-    grep -q '^SF:tests/' "${coverage_dir}/lcov.info"; \
-    test "$(grep -c '^DA:' "${coverage_dir}/lcov.info")" -ge 1000; \
-    grep -Eq '^DA:[0-9]+,[1-9][0-9]*(,|$)' "${coverage_dir}/lcov.info"; \
-    grep -Eq '^DA:[0-9]+,0(,|$)' "${coverage_dir}/lcov.info"
+ui-e2e:
+    uv run --locked -- rv ui-e2e
 
 ui-e2e-coverage:
     node tests/scripts/check-e2e-coverage.js

@@ -67,6 +67,9 @@ class FileSystem:
     def mkdir(self, path: Path) -> None:
         path.mkdir(parents=True, exist_ok=True)
 
+    def temporary_directory(self, parent: Path, prefix: str) -> Path:
+        return Path(tempfile.mkdtemp(dir=parent, prefix=prefix))
+
     def directory_permissions(self, path: Path, uid: int, gid: int, mode: int) -> None:
         if path.is_symlink() or not path.is_dir():
             raise ToolingError(f"Directory permissions require a nonlinked directory: {path}")
