@@ -70,7 +70,10 @@ def test_one_invocation_redaction_and_complete_archive(
 ) -> None:
     context, runner = scanner_context
     assert SonarScan.run(context).message == "Authoritative Sonar task: owned-task"
-    assert [invocation.argv[1:] for invocation in runner.invocations] == [("--version",), ()]
+    assert [invocation.argv[1:] for invocation in runner.invocations] == [
+        ("--version",),
+        ("--debug",),
+    ]
     log = context.root / "artifacts/sonar/scanner.log"
     assert "private-scanner-fixture-token" not in log.read_text()
     assert "[redacted]" in log.read_text()

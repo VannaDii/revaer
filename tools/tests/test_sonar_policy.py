@@ -98,6 +98,7 @@ def test_reviewed_configuration_and_all_sources_are_accepted(sonar: str) -> None
     ("key", "value"),
     [
         ("sonar.exclusions", "**/*"),
+        ("sonar.exclusions", "scripts/tests/fixtures/workflow-guardrails/**"),
         ("sonar.coverage.exclusions", "tools/**"),
         ("sonar.inclusions", "crates/**"),
         ("sonar.tests", "tests"),

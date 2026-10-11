@@ -46,6 +46,11 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 
 # Documentation and verification
 
+- Native LLVM text reports use numbered source lines without macro expansion or
+  region subviews for scanner compatibility. Preserve coverage measurements and
+  expanded HTML diagnostics. Scanner debug logging must use the supported
+  `--debug` option, without command-line criteria overrides.
+
 - Browser startup regressions in `tools/tests/fixtures/browser_startup.py` exercise
   the shipped page helper in Chromium and WebKit. Keep delayed rendering and
   missing-control cases together; use the readiness contract in

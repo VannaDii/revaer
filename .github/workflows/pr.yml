@@ -206,6 +206,7 @@ jobs:
       contents: read
       pull-requests: read
     env:
+      PYTHONDONTWRITEBYTECODE: '1'
       SONAR_AUTH_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
       REVAER_REQUIRE_NATIVE_COVERAGE: '1'
       E2E_BROWSERS: chromium,firefox,webkit

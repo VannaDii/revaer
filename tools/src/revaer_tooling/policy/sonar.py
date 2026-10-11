@@ -13,7 +13,6 @@ from .formats import properties
 
 EMPTY_KEYS = frozenset(
     (
-        "sonar.exclusions",
         "sonar.inclusions",
         "sonar.test.exclusions",
         "sonar.test.inclusions",
@@ -57,6 +56,7 @@ def production_source(path: str) -> bool:
 
 
 REQUIRED_VALUES = {
+    "sonar.exclusions": "scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml",
     "sonar.coverage.exclusions": ",".join(COVERAGE_EXCLUSIONS),
     "sonar.projectKey": "VannaDii_Revaer",
     "sonar.organization": "vannadii",
