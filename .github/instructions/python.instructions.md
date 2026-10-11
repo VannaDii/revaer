@@ -59,3 +59,7 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
   the existing shard selection/completion validator before combining measurements;
   reject missing phases, inconsistent partitions, corrupt databases and absent
   Chromium captures. Keep the unsharded local/main scanner path functional.
+- The internal, dev-dependency-only `revaer-test-support` crate retains complete
+  validated coverage measurements without a production percentage threshold,
+  under the operator-approved production-only coverage requirement. Other crate
+  thresholds and all workspace instrumentation remain unchanged.

@@ -196,7 +196,10 @@ def test_rust_threshold_uses_counts_instead_of_rounded_percentages() -> None:
     with pytest.raises(ToolingError, match="below 90%"):
         rust_line_gate(report(89999), "example")
     assert "90.00%" in rust_line_gate(report(90000), "example")
+    assert "89.00%" in rust_line_gate(report(89000), "revaer-test-support")
     with pytest.raises(ToolingError, match="Invalid coverage line counts"):
         rust_line_gate(report(100001), "example")
     with pytest.raises(ToolingError, match="no line records"):
         rust_line_gate('{"data": []}', "example")
+    with pytest.raises(ToolingError, match="no line records"):
+        rust_line_gate('{"data": []}', "revaer-test-support")

@@ -157,6 +157,9 @@ same explicit disposable database selection as Rust tests; database provisioning
 is a separate lifecycle concern. The default is one build job and one test
 thread, with `CARGO_BUILD_JOBS` and `RUST_TEST_THREADS` overrides preserved.
 Cargo's negative CPU offsets and `default` job setting remain available.
+The internal `revaer-test-support` database fixture keeps its complete measured
+records but is exempt from the production percentage threshold; other crates
+retain the 90% Rust line minimum.
 
 The coverage adapter uses the pinned cargo-llvm-cov and the selected Rust
 compiler's `llvm-tools-preview` and `rust-src`. Set `CC`, `CXX`, `LLVM_COV`, and
