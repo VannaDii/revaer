@@ -26,6 +26,9 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 
 # Architecture and errors
 
+- Bootstrap coverage uses a private disposable pytest base directory and removes
+  it on success or failure, leaving other pytest sessions' directories intact.
+
 - E2E's explicitly managed Linux roots use injected native mount/unmount tools.
   Rust tests and coverage reuse that fixture when explicitly selected, passing
   its mounted directory as `REVAER_NATIVE_RECOVERY_ROOT` for native root tests.

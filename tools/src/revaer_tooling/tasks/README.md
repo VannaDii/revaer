@@ -122,7 +122,9 @@ separate command families in the migration inventory.
 ## Native scanner inputs
 
 `script-coverage` exercises the unchanged root bootstrap with the official uv
-installer and native kcov. Its [guide](../bootstrap/README.md) documents the
+installer and native kcov. Each invocation uses a private disposable pytest base
+directory, cleaned on success or failure without touching other pytest sessions.
+Its [guide](../bootstrap/README.md) documents the
 platform prerequisites, descriptor ownership, raw evidence and pending legacy
 acceptance-check correction.
 

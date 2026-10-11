@@ -18,10 +18,21 @@ class ScriptCoverage(Task):
             context.fs.remove_owned(cases, context.root)
             context.tools.bash.verify()
             context.tools.kcov.verify()
-            context.tools.python.pytest(
-                PytestArgs(("tools/tests/test_bootstrap.py::test_measured_uv_bootstrap",)),
-                env={"REVAER_BOOTSTRAP_COVERAGE_DIR": str(cases)},
-            )
+            temporary = context.fs.temporary_directory(output.parent, ".bootstrap-pytest-")
+            try:
+                # Keep this invocation out of earlier pytest sessions' cleanup pool.
+                context.tools.python.pytest(
+                    PytestArgs(
+                        (
+                            "tools/tests/test_bootstrap.py::test_measured_uv_bootstrap",
+                            "--basetemp",
+                            str(temporary),
+                        )
+                    ),
+                    env={"REVAER_BOOTSTRAP_COVERAGE_DIR": str(cases)},
+                )
+            finally:
+                context.fs.remove_owned(temporary, context.root)
             document = merge_records(context.fs, cases, (context.root / "setup.sh").read_bytes())
             verify_bootstrap_coverage(document)
             context.fs.write(output, document)
