@@ -32,7 +32,7 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 - PostgreSQL migrations must remain visible to generic text, secrets, and main-code analysis. Do not assign `.sql`, `.pgsql`, or `.plpgsql` to the PL/SQL analyzer; reserve `sonar.plsql.file.suffixes=.plsql` for actual PL/SQL.
 - Sonar property policy is enforced after Java-properties parsing. Escaped keys, leading-whitespace forms, continuations, duplicate logical keys, workflow overrides, and properties outside the exact reviewed allowlist are forbidden.
 - The operator-directed configuration sets `sonar.scm.forceReloadAll=false`.
-- Scanner verbose logging identifies malformed coverage records in the existing
+- Scanner `--debug` logging identifies malformed coverage records in the existing
   scanner log. It changes diagnostics only; scanner criteria remain canonical.
   Keep normal SCM analysis and complete checkout history; do not force a full
   blame reload for each scan.
