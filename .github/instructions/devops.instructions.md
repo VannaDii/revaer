@@ -370,6 +370,8 @@ tools. Cargo download caches are shared; installed-tool caches include the exact
 tool selection and version/toolchain pins with native installation receipts.
 sccache uses separate rolling compiler-result caches and compatible restore keys;
 never reuse mutable build output as execution coverage or skip required tests.
+Cache keys encode Cargo selections as fixed membership flags and browser matrix
+entries individually; comma-separated setup inputs are not valid cache keys.
 The Justfile's ci, ui-e2e and tooling-check aliases delegate to the locked rv tasks.
 
 The native integration job supplies its own disposable PostgreSQL service to the
