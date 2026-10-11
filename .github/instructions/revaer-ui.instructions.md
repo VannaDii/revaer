@@ -36,6 +36,10 @@ applyTo:
 # UI And E2E Maintenance
 
 - Keep selectors and test affordances stable. Update E2E fixtures deliberately when UI structure changes.
+- E2E navigation waits for the asynchronously rendered Navbar before checking
+  optional overlays. Dismiss visible auth prompts through Playwright's action
+  wait, then assert they are hidden; instantaneous button probes and repeated
+  speculative clicks cannot establish readiness. Retain existing timeout bounds.
 - Treat generated API clients and synchronized assets as generated artifacts; regenerate them intentionally and keep authored wrappers separate.
 - `asset_sync` must fail closed unless every required runtime SVG exists, runtime text is UTF-8, SVG files have a complete namespaced root envelope, and `crates/revaer-ui/static` contains no raster-extension assets.
 - `static/revaer-logo.svg` and `static/icons/app-icon.svg` must preserve the approved purple stylized-R composition and the `revaer-purple-gradient` and `revaer-r-silhouette` identifiers; do not substitute a wordmark, palette, or symbol during asset synchronization.

@@ -81,6 +81,16 @@ def run_browser(python: Python, settings: E2eSettings, browser: str = "chromium"
     return result
 
 
+@pytest.mark.parametrize("browser", ("chromium", "webkit"))
+def test_async_shell_and_overlay_startup(browser_project: Python, browser: str) -> None:
+    source = Path(__file__).parent / "fixtures/browser_startup.py"
+    shutil.copy2(source, browser_project.root / "tests/specs/ui/test_browser.py")
+    settings = load_e2e_settings(
+        {"E2E_RETRIES": "0", "E2E_TRACE": "off", "E2E_VIDEO": "off", "E2E_SCREENSHOT": "off"}
+    )
+    run_browser(browser_project, settings, browser)
+
+
 def test_browser_line_coverage_uses_the_shipped_pytest_fixture(browser_project: Python) -> None:
     source = Path(__file__).parent / "fixtures/browser_javascript.py"
     shutil.copy2(source, browser_project.root / "tests/specs/ui/test_browser.py")

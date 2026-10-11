@@ -46,6 +46,11 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 
 # Documentation and verification
 
+- Browser startup regressions in `tools/tests/fixtures/browser_startup.py` exercise
+  the shipped page helper in Chromium and WebKit. Keep delayed rendering and
+  missing-control cases together; use the readiness contract in
+  `revaer-ui.instructions.md` without changing application timeout defaults.
+
 - Keep a structured README for each substantial tooling package: purpose,
   commands/inputs, module responsibilities, failure/cleanup behavior and evidence.
   Comment non-obvious invariants and native protocol details at their implementation.
