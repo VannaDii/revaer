@@ -68,7 +68,7 @@ class SonarScanner(ExternalTool):
                 raise ToolingError(f"{name} cannot override sonar-project.properties")
         return self.runner.run(
             Invocation(
-                (str(self.locate()),),
+                (str(self.locate()), "--verbose"),
                 self.root,
                 {**self.environment, "SONAR_TOKEN": args.token},
                 log_path=args.log,

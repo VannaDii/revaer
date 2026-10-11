@@ -158,4 +158,13 @@ class CargoLlvmCov(ExternalTool):
                 str(args.output),
             )
         )
-        return self._invoke(tuple(command), env=environment)
+        report_environment = dict(environment)
+        if args.format == CoverageFormat.TEXT:
+            # Sonar consumes numbered source lines, not LLVM's macro subviews.
+            # Keep line/branch measurements; HTML retains expanded diagnostics.
+            flags = report_environment.get("LLVM_COV_FLAGS", "")
+            report_environment["LLVM_COV_FLAGS"] = (
+                flags + " -show-expansions=false -show-line-counts-or-regions=false"
+                " -show-line-counts=true"
+            ).strip()
+        return self._invoke(tuple(command), env=report_environment)

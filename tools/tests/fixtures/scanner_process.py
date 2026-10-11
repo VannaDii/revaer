@@ -10,8 +10,8 @@ def main() -> int:
     if "--version" in sys.argv:
         print("unrecognized scanner" if case == "bad-version" else "SonarScanner CLI 8.1.0.6389")
         return 0
-    if len(sys.argv) != 1:
-        raise ValueError("scanner fixture must receive no command-line overrides")
+    if sys.argv[1:] != ["--verbose"]:
+        raise ValueError("scanner fixture accepts verbose logging only, without criteria overrides")
     if case == "empty-log":
         return 0
     print("Scanner fixture received " + os.environ["SONAR_TOKEN"])

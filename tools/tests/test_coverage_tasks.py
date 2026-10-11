@@ -70,8 +70,10 @@ def coverage_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Conte
 """
     )
     (native / "src/fixture.cpp").write_text(
+        "#define POSITIVE(value) ((value) > 0)\n"
+        "#define INCREMENT(value) ((value) + 1)\n"
         'extern "C" int native_value(int input) noexcept {\n'
-        "    if (input > 0) return input + 1;\n"
+        "    if (input > 0) return POSITIVE(input) ? INCREMENT(input) : 0;\n"
         "    return 0;\n}\n"
     )
     (native / "src/lib.rs").write_text(
@@ -117,6 +119,10 @@ def test_native_and_rust_reports_preserve_other_producers_and_gate_each_crate(
     assert "crates/native/src/lib.rs" in report
     assert "crates/pure/src/lib.rs" in report
     assert "build.rs" in report
+    native_text = (output / "llvm-cov.txt").read_text()
+    assert "src/fixture.cpp" in native_text
+    assert "|    if (input > 0) return POSITIVE(input) ? INCREMENT(input) : 0;" in native_text
+    assert "  |  |" not in native_text
     assert "LLVM_PROFDATA_VERSION=" in (output / "toolchain.txt").read_text()
     assert {path.name for path in (output / "crates").iterdir()} == {"native.json", "pure.json"}
     summaries = json.loads((output / "crates/native.json").read_text())

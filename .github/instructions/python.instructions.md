@@ -26,6 +26,10 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 
 # Architecture and errors
 
+- Native text coverage sent to Sonar uses numbered source-line counts without
+  macro expansion or sub-line region displays. Preserve measured line/branch
+  counts, complete source scope and expanded HTML diagnostics.
+
 - Bootstrap coverage uses a private disposable pytest base directory and removes
   it on success or failure, leaving other pytest sessions' directories intact.
 

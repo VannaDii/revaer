@@ -2,7 +2,7 @@
 
 The properties file remains the scanner's sole configuration. This allowlist is
 the review gate for that file: unknown keys fail, every required key must exist,
-and analysis scope filters must be explicitly empty. It never repairs a failing policy.
+and analysis scope filters must match the reviewed values. It never repairs a failing policy.
 """
 
 from collections.abc import Mapping
@@ -13,7 +13,6 @@ from .formats import properties
 
 EMPTY_KEYS = frozenset(
     (
-        "sonar.exclusions",
         "sonar.inclusions",
         "sonar.test.exclusions",
         "sonar.test.inclusions",
@@ -80,6 +79,7 @@ def runtime_source(path: str) -> bool:
 
 
 REQUIRED_VALUES = {
+    "sonar.exclusions": "scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml",
     "sonar.coverage.exclusions": ",".join(COVERAGE_EXCLUSIONS),
     "sonar.projectKey": "VannaDii_Revaer",
     "sonar.organization": "vannadii",
