@@ -84,6 +84,15 @@
 
 ## 4) Maintainability Guardrails
 
+- The operator approved `sonar.scm.forceReloadAll=false` for this CI repair.
+  Complete Git history, enabled SCM analysis and missing-blame validation remain
+  required; this exact consent does not authorize other analysis relaxations.
+- The operator approved routing every measured tracked Rust source to Sonar's
+  Rust LCOV importer while retaining the complete original workspace LCOV,
+  native LLVM text, JSON and HTML. Preserve all instrumentation, measurements
+  and thresholds; dependency/generated/native records are omitted only from
+  this Rust-specific importer input, never from the complete reports.
+
 The operator-approved production-only coverage scope is the exact
 `sonar.coverage.exclusions` list enforced by
 `tools/src/revaer_tooling/policy/sonar.py`. Internal utilities, test sources and

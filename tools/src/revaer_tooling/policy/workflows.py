@@ -181,6 +181,19 @@ class WorkflowPolicy:
             return
         if command[:5] == ["uv", "run", "--locked", "--", "rv"]:
             command = command[4:]
+        elif command[:6] == ["uv", "run", "--locked", "--no-build", "--", "rv"]:
+            command = command[5:]
+        elif command[:8] == [
+            "uv",
+            "run",
+            "--locked",
+            "--no-build",
+            "--no-binary-package",
+            "python-semantic-release",
+            "--",
+            "rv",
+        ]:
+            command = command[7:]
         if command and command[0] in ("rv", ".venv/bin/rv"):
             if len(command) > 1 and (
                 command[1] in self.commands or " ".join(command[1:3]) in self.commands

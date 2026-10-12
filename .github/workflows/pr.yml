@@ -139,7 +139,7 @@ jobs:
       - name: Run migrations
         env:
           DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}
-        run: uv run --locked -- rv db-migrate
+        run: uv run --locked --no-build --no-binary-package python-semantic-release -- rv db-migrate
       - name: Coverage
         run: uv run --locked -- rv cov
       - name: Build native compile database
@@ -150,6 +150,7 @@ jobs:
           name: rust-native-coverage
           path: |
             coverage/lcov.info
+            coverage/workspace-lcov.info
             coverage/llvm-cov.txt
             coverage/compile_commands.json
             coverage/cxxbridge/include/rust/cxx.h
@@ -280,6 +281,7 @@ jobs:
           name: sonar-coverage
           path: |
             coverage/lcov.info
+            coverage/workspace-lcov.info
             coverage/llvm-cov.txt
             coverage/js-lcov.info
             coverage/script-coverage.xml
@@ -419,7 +421,7 @@ jobs:
       - name: Run migrations
         env:
           DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}
-        run: uv run --locked -- rv db-migrate
+        run: uv run --locked --no-build --no-binary-package python-semantic-release -- rv db-migrate
 
       - name: Feature matrix tests (no default features)
         run: uv run --locked -- rv test-features-min

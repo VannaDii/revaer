@@ -1,6 +1,7 @@
 """Collect complete Rust/native coverage and retain reports on a threshold failure."""
 
 import tomllib
+from pathlib import Path
 
 from ..context import Context, TaskResult
 from ..errors import ToolingError
@@ -15,7 +16,7 @@ def reset_reports(context: Context) -> None:
     output = context.root / "coverage"
     if output.is_symlink():
         raise ToolingError("Coverage output directory must not be a symlink")
-    for name in ("lcov.info", "llvm-cov.txt", "html", "crates"):
+    for name in ("lcov.info", "workspace-lcov.info", "llvm-cov.txt", "html", "crates"):
         context.fs.remove_owned(output / name, context.root)
     context.fs.mkdir(output / "crates")
 
@@ -55,8 +56,8 @@ def coverage_environment(context: Context) -> dict[str, str]:
 def rust_line_gate(document: str, package: str) -> str:
     """Preserve the original Rust gate using the engine's unrounded line counts.
 
-    This does not remove C++ or other files from the JSON, LCOV, text, or HTML
-    evidence. Before native instrumentation was added, this gate measured Rust.
+    JSON, native text and HTML retain complete measurements. Sonar's Rust LCOV
+    input contains authored Rust; its native sensor consumes the native text.
     """
     report = object_value(decode(document))
     count = covered = 0
@@ -78,6 +79,32 @@ def rust_line_gate(document: str, package: str) -> str:
     if package != "revaer-test-support" and covered * 100 < count * 90:
         raise ToolingError(summary + " is below 90%")
     return summary
+
+
+def rust_lcov(document: str, root: Path, tracked: tuple[str, ...]) -> str:
+    """Route measured authored Rust records to the Rust-only scanner sensor.
+
+    LLVM also exports native, dependency and generated records. Those are not
+    indexed authored Rust inputs. Preserve their measurements in text/HTML and
+    package JSON, rather than sending them to an incompatible language sensor.
+    """
+    sources = {root / name for name in tracked if name.endswith(".rs")}
+    selected: list[str] = []
+    for record in document.split("end_of_record"):
+        lines = record.strip().splitlines()
+        filenames = [line[3:] for line in lines if line.startswith("SF:")]
+        if not lines:
+            continue
+        if len(filenames) != 1:
+            raise ToolingError("LLVM coverage record must identify exactly one source")
+        source = Path(filenames[0])
+        if not source.is_absolute():
+            source = root / source
+        if source in sources:
+            selected.extend((*lines, "end_of_record"))
+    if not selected:
+        raise ToolingError("LLVM coverage has no authored Rust records")
+    return "\n".join(selected) + "\n"
 
 
 class CoverageReport(Task):
@@ -106,14 +133,16 @@ class CoverageReport(Task):
             except ToolingError as error:
                 failures.append(f"{package}: {error}")
         for format, destination in (
-            (CoverageFormat.LCOV, output / "lcov.info"),
+            (CoverageFormat.LCOV, output / "workspace-lcov.info"),
             (CoverageFormat.TEXT, output / "llvm-cov.txt"),
             (CoverageFormat.HTML, output),
         ):
             context.tools.cargo_llvm_cov.report(
                 CoverageReportArgs(format, destination), environment
             )
-        lcov = context.fs.read(output / "lcov.info")
+        lcov = context.fs.read(output / "workspace-lcov.info")
+        lcov = rust_lcov(lcov, context.root, context.tools.git.files())
+        context.fs.write(output / "lcov.info", lcov)
         if not any(line.startswith("SF:") for line in lcov.splitlines()) or not any(
             line.startswith("DA:") for line in lcov.splitlines()
         ):

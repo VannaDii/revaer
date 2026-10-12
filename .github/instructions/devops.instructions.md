@@ -282,9 +282,20 @@ applyTo:
 # Credentials And Test Infrastructure
 
 - CI-only credentials may be ephemeral only when they are clearly scoped to isolated test infrastructure, such as throwaway Postgres service containers. Derive those credentials from the isolated workflow run context; do not commit credential-shaped literal passwords even for disposable services.
+- Legacy Just recipes require an injected database URL. Database startup and
+  seeding delegate to the credential-safe `rv` tasks; never restore shared
+  password defaults or credential logging. Workflow migration invocations use
+  `uv run --locked --no-build` after setup has synchronized the locked environment.
+  Its only source-build exception is the existing archive/hash-pinned
+  `python-semantic-release`, named with `--no-binary-package`; never broaden it.
 - Ephemeral test credentials must never be reused as application secrets, committed runtime credentials, or user-facing examples.
 - `rv cov` must pass its resolved test database URL to both database startup and the coverage process in the same task context so database-backed tests cannot silently lose their configured endpoint. It must instrument linked first-party C/C++ through a Clang version compatible with rustc's LLVM tools, retain Rust-only package thresholds, emit both Rust LCOV and native LLVM reports, with the scanner workflow separately running `rv script-coverage`. Script coverage uses the exact source-built and archive-hash-verified `kcov` revision pinned in the canonical setup action for the retained root Bash bootstrap, and converts those real execution records to Sonar's generic format; omitted or unexecuted executable shell lines must remain uncovered. Disposable test databases must be dropped with forced session cleanup, and local-only host fallback must remain bounded to `localhost` and `127.0.0.1` inputs.
 - Sonar coverage jobs must fetch complete Git history and exercise authored Rust and native C/C++ code in one `rv cov` run so the scanner can resolve the main-branch baseline and import both retained reports.
+- The Rust sensor's LCOV input contains every measured tracked Rust source.
+  Native/dependency/generated measurements remain in complete JSON, HTML and
+  LLVM text reports; native analysis consumes LLVM text, not Rust LCOV.
+  Retain the complete engine LCOV as `coverage/workspace-lcov.info` alongside
+  the Rust-specific scanner input, including in existing coverage uploads.
 - PostgreSQL service containers used by pull-request, Sonar, and managed local validation must reserve 1 GiB of shared memory so concurrent isolated-schema migrations cannot exhaust Docker's 64 MiB default. `rv db-start` must recreate its named managed container when the configured allocation is smaller.
 - Do not log secrets or secret-like values. Mask or omit them.
 - Keep Helm registry credentials (`HELM_API_KEY_ID`, `HELM_API_KEY_SECRET`) separate from chart-signing material (`HELM_GPG_PRIVATE`, `HELM_GPG_PUBLIC`). Publishing jobs may use registry credentials only when consuming an already-packaged chart artifact.

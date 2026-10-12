@@ -31,7 +31,9 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 - Revaer versions its complete strict Sonar scope in `sonar-project.properties`. Keep every authored tracked top-level entry in main-code scope and use only the committed empty `.sonar-test-scope` sentinel for `sonar.tests`. The operator-approved source exclusion is exactly `scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml`, an intentionally malformed functional fixture; all other source, test, duplication, JavaScript, SCA, and issue-scope filters remain explicitly empty. Apply the operator-approved production-only coverage scope from root `AGENTS.md`; do not otherwise narrow analysis or security scope.
 - PostgreSQL migrations must remain visible to generic text, secrets, and main-code analysis. Do not assign `.sql`, `.pgsql`, or `.plpgsql` to the PL/SQL analyzer; reserve `sonar.plsql.file.suffixes=.plsql` for actual PL/SQL.
 - Sonar property policy is enforced after Java-properties parsing. Escaped keys, leading-whitespace forms, continuations, duplicate logical keys, workflow overrides, and properties outside the exact reviewed allowlist are forbidden.
-- The operator-directed configuration sets `sonar.scm.forceReloadAll=false`.
+- The operator explicitly reaffirmed `sonar.scm.forceReloadAll=false` in this
+  CI repair. Keep complete history, SCM analysis and the missing-blame gate;
+  do not force a full reload or disable SCM to avoid warnings.
 - Scanner debug logging (`--debug`) identifies malformed coverage records in the existing
   scanner log. It changes diagnostics only; scanner criteria remain canonical.
   Keep normal SCM analysis and complete checkout history; do not force a full

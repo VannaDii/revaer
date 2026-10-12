@@ -50,6 +50,9 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
   region subviews for scanner compatibility. Preserve coverage measurements and
   expanded HTML diagnostics. Scanner debug logging must use the supported
   `--debug` option, without command-line criteria overrides.
+- Route authored tracked Rust LCOV records to the Rust sensor; retain native,
+  dependency and generated measurements in the complete JSON, text and HTML
+  reports. Never modify counts or discard uncovered authored Rust lines.
 
 - Browser startup regressions in `tools/tests/fixtures/browser_startup.py` exercise
   the shipped page helper in Chromium and WebKit. Keep delayed rendering and

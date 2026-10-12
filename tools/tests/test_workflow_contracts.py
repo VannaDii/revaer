@@ -354,6 +354,14 @@ def test_required_dependency_graph_and_exact_udeps_pin(fixture: Fixture) -> None
 
 def test_command_matching_requires_a_complete_invocation() -> None:
     assert runs({"run": "uv run --locked -- rv ci"}, "ci")
+    assert runs({"run": "uv run --locked --no-build -- rv db-migrate"}, "db-migrate")
+    assert runs(
+        {
+            "run": "uv run --locked --no-build --no-binary-package "
+            "python-semantic-release -- rv db-migrate"
+        },
+        "db-migrate",
+    )
     assert runs({"run": ".venv/bin/rv ci"}, "ci")
     assert not runs({}, "ci")
     assert not runs({"run": "rv ci 'unclosed"}, "ci")
