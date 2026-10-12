@@ -234,7 +234,14 @@ def test_rust_sensor_retains_tracked_source_path_aliases(tmp_path: Path, absolut
     measured = "DA:1,0\nDA:2,7\nBRDA:2,0,0,7\nend_of_record\n"
     document = "SF:" + source + "\n" + measured
     expected = "crates/example/tests/unit.rs"
-    normalized = str(tmp_path / expected) if absolute else expected
-    assert rust_lcov(document, tmp_path, (expected,)) == "SF:" + normalized + "\n" + measured
+    assert rust_lcov(document, tmp_path, (expected,)) == document
     with pytest.raises(ToolingError, match="no authored Rust"):
         rust_lcov(document, tmp_path, ())
+
+
+def test_rust_sensor_keeps_separately_compiled_source_records(tmp_path: Path) -> None:
+    name = "crates/example/build_support.rs"
+    alias = "crates/example/tests/../build_support.rs"
+    direct = "SF:" + name + "\nDA:1,0\nDA:2,3\nend_of_record\n"
+    included = "SF:" + alias + "\nDA:1,7\nDA:2,2\nend_of_record\n"
+    assert rust_lcov(direct + included, tmp_path, (name,)) == direct + included

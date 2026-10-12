@@ -87,3 +87,5 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
   operator qualification settings must not change the controlled fixture data.
 - Composite qualification must enter through the same uv dotenv-loading boundary
   as standalone E2E before constructing its task context.
+- Rust coverage routing normalizes paths only for tracked-source membership;
+  retain LLVM's distinct compilation-unit paths and their complete measurements.

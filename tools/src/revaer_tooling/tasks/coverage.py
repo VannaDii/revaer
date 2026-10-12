@@ -105,7 +105,7 @@ def rust_lcov(document: str, root: Path, tracked: tuple[str, ...]) -> str:
         if not source.is_absolute():
             source = root / source
         if source in sources:
-            lines = ["SF:" + filename if line.startswith("SF:") else line for line in lines]
+            # Keep separately compiled units' original paths and measurements.
             selected.extend((*lines, "end_of_record"))
     if not selected:
         raise ToolingError("LLVM coverage has no authored Rust records")
