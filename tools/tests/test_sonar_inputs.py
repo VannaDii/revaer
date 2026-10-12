@@ -51,6 +51,17 @@ def test_rust_scanner_input_rejects_invalid_authored_branches(tmp_path: Path, br
         rust_sonar_lcov(document, tmp_path, (name,))
 
 
+@pytest.mark.parametrize("absolute", [False, True])
+def test_rust_scanner_input_normalizes_tracked_source_paths(tmp_path: Path, absolute: bool) -> None:
+    source = "crates/revaer-data/src/../tests/unit/config_src_tests.rs"
+    name = "crates/revaer-data/tests/unit/config_src_tests.rs"
+    path = str(tmp_path / source) if absolute else source
+    document = lcov(path, 2, 1)
+    assert rust_sonar_lcov(document, tmp_path, (name,)) == lcov(name, 2, 1)
+    with pytest.raises(ToolingError, match="untracked checkout source"):
+        rust_sonar_lcov(document, tmp_path, ())
+
+
 def test_rust_scanner_input_rejects_untracked_checkout_sources(tmp_path: Path) -> None:
     with pytest.raises(ToolingError, match="untracked checkout source"):
         rust_sonar_lcov(lcov("crates/example/src/lib.rs", 1, 1), tmp_path, ())

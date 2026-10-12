@@ -5,6 +5,7 @@ requirements. Python replaces the retired Ruby/Node tooling coverage producer;
 every authored Python file must have an unambiguous checkout-relative record.
 """
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -32,7 +33,7 @@ def rust_sonar_lcov(document: str, root: Path, tracked: tuple[str, ...]) -> str:
     for line in document.splitlines():
         if line.startswith("SF:"):
             path = Path(line[3:])
-            absolute = path if path.is_absolute() else root / path
+            absolute = Path(os.path.normpath(path if path.is_absolute() else root / path))
             source = absolute.relative_to(root).as_posix() if absolute.is_relative_to(root) else ""
             if (
                 source.endswith(".rs")
