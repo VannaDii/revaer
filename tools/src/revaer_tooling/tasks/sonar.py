@@ -154,7 +154,15 @@ class SonarScan(Task):
                 "version"
             ]
             context.tools.sonar_scanner.verify(version)
-            context.tools.sonar_scanner.scan(ScanArgs(log, settings.scanner_token))
+            context.tools.sonar_scanner.scan(
+                ScanArgs(
+                    log,
+                    settings.scanner_token,
+                    settings.pull_request,
+                    settings.base_ref,
+                    settings.head_ref,
+                )
+            )
             _require_nonempty(log)
             normalized = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", context.fs.read(log))
             if "WARN" in normalized:

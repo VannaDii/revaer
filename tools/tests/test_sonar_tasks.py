@@ -53,6 +53,7 @@ def scanner_context(
         + "\n"
     )
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SONAR_PULL_REQUEST", raising=False)
     monkeypatch.setenv("SONAR_TOKEN", "private-scanner-fixture-token")
     monkeypatch.setenv("SONAR_API_RETRY_ATTEMPTS", "2")
     monkeypatch.setenv("SONAR_API_RETRY_DELAY_SECONDS", "0")
@@ -101,6 +102,39 @@ def test_direct_scan_checks_scope_and_invalidates_old_evidence(
     assert len(runner.invocations) == calls
     assert not (context.root / ".scannerwork/report-task.txt").exists()
     assert not (context.root / ".scannerwork/scanner-report.tar.xz").exists()
+
+
+def test_local_scan_uses_exact_pull_request_identity(
+    scanner_context: tuple[Context, ScannerFixtureRunner],
+) -> None:
+    context, runner = scanner_context
+    scanner = context.tools.sonar_scanner
+    active = SonarScanner(
+        scanner.name,
+        runner,
+        context.root,
+        {**scanner.environment, "RV_TEST_SCANNER_CASE": "pull-request"},
+    )
+    context = replace(
+        context,
+        settings=replace(
+            context.settings,
+            sonar=replace(
+                context.settings.sonar,
+                pull_request="272",
+                base_ref="main",
+                head_ref="ci/balanced-coverage",
+            ),
+        ),
+        tools=replace(context.tools, sonar_scanner=active),
+    )
+    SonarScan.run(context)
+    assert runner.invocations[-1].argv[1:] == (
+        "--debug",
+        "-Dsonar.pullrequest.key=272",
+        "-Dsonar.pullrequest.base=main",
+        "-Dsonar.pullrequest.branch=ci/balanced-coverage",
+    )
 
 
 @pytest.mark.parametrize("case", ("untracked", "nonempty", "nested", "symlink"))
@@ -206,12 +240,14 @@ def test_result_queries_exact_analysis_and_correct_backlog_scope(
         if endpoint == "/api/qualitygates/project_status":
             assert query == {"analysisId": ["owned-analysis"]}
         elif endpoint in ("/api/issues/search", "/api/hotspots/search"):
-            assert "status" not in query and "statuses" not in query
+            assert "status" not in query
+            assert "statuses" not in query
             if pull_request:
                 assert query["pullRequest"] == [pull_request]
                 assert query["inNewCodePeriod"] == ["true"]
             else:
-                assert "pullRequest" not in query and "inNewCodePeriod" not in query
+                assert "pullRequest" not in query
+                assert "inNewCodePeriod" not in query
     evidence = context.root / "artifacts/sonar/api"
     assert {path.stem for path in evidence.glob("*.json")} == set(state.records)
     for name, record in state.records.items():
@@ -230,8 +266,10 @@ def test_failing_result_retains_final_evidence_and_never_hides_hotspots(
     context.fs.write(evidence / "issues.json", '{"total":0}')
     state = ApiState()
     state.records["hotspots"] = {"paging": {"total": 1}, "hotspots": [{"status": "REVIEWED"}]}
-    with sonar_server(state) as url, pytest.raises(ToolingError, match="current hotspots"):
-        SonarVerifyResult.run(connect(context, url))
+    with sonar_server(state) as url:
+        connected = connect(context, url)
+        with pytest.raises(ToolingError, match="current hotspots"):
+            SonarVerifyResult.run(connected)
     assert json.loads((evidence / "hotspots.json").read_text()) == state.records["hotspots"]
     assert (evidence / "notes.txt").read_text() == "other evidence"
 

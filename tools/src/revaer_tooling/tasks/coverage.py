@@ -1,5 +1,6 @@
 """Collect complete Rust/native coverage and retain reports on a threshold failure."""
 
+import os
 import tomllib
 from pathlib import Path
 
@@ -10,13 +11,15 @@ from ..json_data import array_value, decode, object_value, string_value
 from .base import Task
 from .testing import test_environment
 
+WORKSPACE_LCOV = "workspace-lcov.info"
+
 
 def reset_reports(context: Context) -> None:
     """Invalidate only our reports before collecting or regenerating evidence."""
     output = context.root / "coverage"
     if output.is_symlink():
         raise ToolingError("Coverage output directory must not be a symlink")
-    for name in ("lcov.info", "workspace-lcov.info", "llvm-cov.txt", "html", "crates"):
+    for name in ("lcov.info", WORKSPACE_LCOV, "llvm-cov.txt", "html", "crates"):
         context.fs.remove_owned(output / name, context.root)
     context.fs.mkdir(output / "crates")
 
@@ -97,10 +100,12 @@ def rust_lcov(document: str, root: Path, tracked: tuple[str, ...]) -> str:
             continue
         if len(filenames) != 1:
             raise ToolingError("LLVM coverage record must identify exactly one source")
-        source = Path(filenames[0])
+        filename = os.path.normpath(filenames[0])
+        source = Path(filename)
         if not source.is_absolute():
             source = root / source
         if source in sources:
+            lines = ["SF:" + filename if line.startswith("SF:") else line for line in lines]
             selected.extend((*lines, "end_of_record"))
     if not selected:
         raise ToolingError("LLVM coverage has no authored Rust records")
@@ -133,14 +138,14 @@ class CoverageReport(Task):
             except ToolingError as error:
                 failures.append(f"{package}: {error}")
         for format, destination in (
-            (CoverageFormat.LCOV, output / "workspace-lcov.info"),
+            (CoverageFormat.LCOV, output / WORKSPACE_LCOV),
             (CoverageFormat.TEXT, output / "llvm-cov.txt"),
             (CoverageFormat.HTML, output),
         ):
             context.tools.cargo_llvm_cov.report(
                 CoverageReportArgs(format, destination), environment
             )
-        lcov = context.fs.read(output / "workspace-lcov.info")
+        lcov = context.fs.read(output / WORKSPACE_LCOV)
         lcov = rust_lcov(lcov, context.root, context.tools.git.files())
         context.fs.write(output / "lcov.info", lcov)
         if not any(line.startswith("SF:") for line in lcov.splitlines()) or not any(

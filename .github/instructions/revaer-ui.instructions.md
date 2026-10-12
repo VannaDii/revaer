@@ -87,3 +87,7 @@ applyTo:
   filters with one test thread, then the `bootstrap` integration binary, under
   default features. Require an explicit disposable test endpoint and positive
   passing execution in every group; do not count empty filter matches as coverage.
+
+- Distributed coverage validates each producer’s completion summary and required
+  Chromium line capture before exposing its phase inputs; keep this validation
+  independent of browser startup and preserve every existing shard check.

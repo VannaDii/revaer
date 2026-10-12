@@ -314,6 +314,9 @@ validate:
 ci:
     uv run --locked -- rv ci
 
+ci-qualify:
+    PYTHONDONTWRITEBYTECODE=1 uv run --locked -- rv ci-qualify
+
 tooling-check:
     uv run --locked -- rv tooling-check
 

@@ -11,6 +11,9 @@ from .contracts import Contract, runs, workflow
 from .formats import Document
 from .workflows import mapping, needs, steps
 
+DOWNLOAD_API_COVERAGE = "Download API E2E coverage"
+VERIFY_UI_COVERAGE = "Verify all UI E2E shard coverage inputs"
+
 AUDITED_CONTEXTS = (
     "Check Lint",
     "Check Coverage",
@@ -245,7 +248,7 @@ def _ui_coverage(policy: Contract) -> None:
         "UI E2E Coverage must wait for API, every UI shard, feature, native, and coverage gates",
     )
     downloads = {
-        "Download API E2E coverage": "api-e2e-coverage",
+        DOWNLOAD_API_COVERAGE: "api-e2e-coverage",
         **{
             f"Download E2E coverage shard {shard}": f"ui-e2e-coverage-shard-{shard}"
             for shard in (1, 2, 3)
@@ -260,12 +263,12 @@ def _ui_coverage(policy: Contract) -> None:
             },
             f"UI E2E Coverage must download the exact artifact {artifact}",
         )
-    verification = policy.step(aggregate, "Verify all UI E2E shard coverage inputs")
+    verification = policy.step(aggregate, VERIFY_UI_COVERAGE)
     policy.require(
         runs(verification, "ui-e2e-shard-coverage"),
         "UI E2E Coverage must prove nonempty records from all three shards",
     )
-    policy.order(aggregate, (*downloads, "Verify all UI E2E shard coverage inputs"))
+    policy.order(aggregate, (*downloads, VERIFY_UI_COVERAGE))
 
 
 def _distributed_ui_coverage(policy: Contract) -> None:
@@ -319,7 +322,7 @@ def _distributed_ui_coverage(policy: Contract) -> None:
     )
     for name, options in (
         (
-            "Download API E2E coverage",
+            DOWNLOAD_API_COVERAGE,
             {"name": "api-e2e-coverage", "path": "coverage/producers/api-e2e-coverage"},
         ),
         (
@@ -333,7 +336,7 @@ def _distributed_ui_coverage(policy: Contract) -> None:
         )
     policy.require(
         runs(
-            policy.step(aggregate, "Verify all UI E2E shard coverage inputs"),
+            policy.step(aggregate, VERIFY_UI_COVERAGE),
             "ui-e2e-shard-coverage",
         ),
         "every browser partition must be verified before route coverage",
@@ -341,9 +344,9 @@ def _distributed_ui_coverage(policy: Contract) -> None:
     policy.order(
         aggregate,
         (
-            "Download API E2E coverage",
+            DOWNLOAD_API_COVERAGE,
             "Download browser execution inputs",
-            "Verify all UI E2E shard coverage inputs",
+            VERIFY_UI_COVERAGE,
             "UI E2E coverage",
         ),
     )

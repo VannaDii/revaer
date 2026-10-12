@@ -11,13 +11,18 @@ from .contracts import Contract, runs, workflow
 from .formats import Document
 from .workflows import mapping, needs, steps
 
+PYTHON_COVERAGE_STEP = "Python tooling coverage"
+BROWSER_COVERAGE_STEP = "Run Playwright with browser coverage"
+NATIVE_DATABASE_STEP = "Build native compile database"
+SCRIPT_COVERAGE_PATH = "coverage/script-coverage.xml"
+
 SCANNER_STEPS = {
     "Coverage": "cov",
-    "Python tooling coverage": "tooling-cov",
-    "Run Playwright with browser coverage": "ui-e2e",
+    PYTHON_COVERAGE_STEP: "tooling-cov",
+    BROWSER_COVERAGE_STEP: "ui-e2e",
     "Merge Python coverage inputs": "python-coverage-merge",
     "Merge browser coverage inputs": "js-coverage-merge",
-    "Build native compile database": "sonar-compile-db",
+    NATIVE_DATABASE_STEP: "sonar-compile-db",
     "Verify Sonar analysis inputs": "sonar-verify-inputs",
     "Prepare Sonar source inputs": "sonar-prepare-sources",
     "Prepare exact Sonar SCM context": "sonar-prepare-scm",
@@ -30,7 +35,7 @@ COVERAGE_PATHS = (
     "coverage/llvm-cov.txt",
     "coverage/js-lcov.info",
     "coverage/python.xml",
-    "coverage/script-coverage.xml",
+    SCRIPT_COVERAGE_PATH,
     "coverage/compile_commands.json",
     "coverage/cxxbridge/include/rust/cxx.h",
     "coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h",
@@ -82,9 +87,9 @@ def scanner_workflow_findings(documents: Mapping[str, Document]) -> list[str]:
         )
         producer_steps = (
             "Coverage",
-            "Python tooling coverage",
-            "Run Playwright with browser coverage",
-            "Build native compile database",
+            PYTHON_COVERAGE_STEP,
+            BROWSER_COVERAGE_STEP,
+            NATIVE_DATABASE_STEP,
         )
         scanner_steps = {
             key: value
@@ -94,9 +99,7 @@ def scanner_workflow_findings(documents: Mapping[str, Document]) -> list[str]:
         if distributed:
             _distributed_producers(policy)
         else:
-            browser_environment = mapping(
-                policy.step(job, "Run Playwright with browser coverage").get("env")
-            )
+            browser_environment = mapping(policy.step(job, BROWSER_COVERAGE_STEP).get("env"))
             policy.require(
                 browser_environment.get("E2E_BROWSER_COVERAGE") == "1",
                 "Sonar browser execution must collect precise Chromium coverage",
@@ -181,11 +184,11 @@ def _distributed_producers(policy: Contract) -> None:
         "native producer must require native coverage",
     )
     for job, commands in (
-        (native, {"Coverage": "cov", "Build native compile database": "sonar-compile-db"}),
+        (native, {"Coverage": "cov", NATIVE_DATABASE_STEP: "sonar-compile-db"}),
         (
             policy.job("tooling-coverage"),
             {
-                "Python tooling coverage": "tooling-cov",
+                PYTHON_COVERAGE_STEP: "tooling-cov",
                 "Bootstrap execution coverage": "script-coverage",
             },
         ),
@@ -202,15 +205,14 @@ def _distributed_producers(policy: Contract) -> None:
         tuple(
             path
             for path in COVERAGE_PATHS
-            if path
-            not in ("coverage/js-lcov.info", "coverage/python.xml", "coverage/script-coverage.xml")
+            if path not in ("coverage/js-lcov.info", "coverage/python.xml", SCRIPT_COVERAGE_PATH)
         ),
     )
     tooling = policy.step(policy.job("tooling-coverage"), "Upload tooling execution inputs")
     policy.paths(tooling, (".coverage",))
     policy.paths(
         policy.step(policy.job("tooling-coverage"), "Upload bootstrap execution input"),
-        ("coverage/script-coverage.xml",),
+        (SCRIPT_COVERAGE_PATH,),
     )
     policy.require(
         mapping(tooling.get("with")).get("include-hidden-files") == "true",

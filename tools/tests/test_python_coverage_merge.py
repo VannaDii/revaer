@@ -29,7 +29,8 @@ def coverage_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Context
     shutil.copy2(source / "tools/coverage-report.toml", tmp_path / "tools/coverage-report.toml")
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True, timeout=10)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("E2E_PROJECTS", raising=False)
+    monkeypatch.setenv("E2E_BROWSERS", "chromium")
+    monkeypatch.setenv("E2E_PLAYWRIGHT_PROJECTS", "api-none,api-api-key,ui-chromium")
     context = make_context(Options())
     phases = context.settings.e2e.phases()
     for phase in ("tooling", *phases):
@@ -135,7 +136,7 @@ def test_merge_cannot_read_while_either_producer_is_running(
 def test_merge_combines_real_data_from_separate_producer_directories(
     coverage_context: Context,
 ) -> None:
-    context = replace(
+    context: Context = replace(
         coverage_context, options=replace(coverage_context.options, expected_shards=1)
     )
     producers = context.root / "coverage/producers"

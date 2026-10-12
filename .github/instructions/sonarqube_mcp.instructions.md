@@ -71,3 +71,7 @@ coverage setup profile, and one `rv sonar-scan` invocation. Produce bootstrap
 and Python coverage explicitly, merge completed E2E coverage, and retain both
 coverage and complete scanner evidence even when a gate fails. Update the
 complete source and YAML inventories when files change; do not narrow scope.
+
+Local PR qualification supplies only explicit pull-request identity (key, base,
+head branch) to the scanner; quality criteria remain exclusively in
+`sonar-project.properties`. Local analysis must never default to the main branch.

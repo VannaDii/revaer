@@ -75,6 +75,9 @@
 - Handoff requires:
   - `rv ci`
   - `rv ui-e2e`
+- Before pushing a PR snapshot, `just ci-qualify` must also pass the complete
+  local API/browser coverage and strict Sonar scan/published-result sequence.
+  `just ci` alone does not qualify the hosted analysis gates.
 - [the `rv` task registry](./tools/src/revaer_tooling/cli.py) is the canonical command surface for build, lint, test, coverage, release, docs, and local dev loops.
 - [`ci.yml`](./.github/workflows/ci.yml), [`pr.yml`](./.github/workflows/pr.yml), and [`sonar.yml`](./.github/workflows/sonar.yml) must stay aligned with the `rv` registry and this policy.
 - Sonar analysis scope and first-party signal shaping are versioned in [`sonar-project.properties`](./sonar-project.properties). `sonar.sources` must enumerate every authored tracked top-level repository entry so all authored content remains in main-code scope without treating the untracked `.git` object database as source. `sonar.tests` must point only to the committed empty `.sonar-test-scope` sentinel: this disables Sonar's path heuristic, prevents `docs` and `tests` paths from silently skipping secrets analysis, and keeps every authored test under main-code rules and coverage. Strict empty scope filters are intentional scanner-side overrides of any project-side narrowing. Rust coverage must exercise the complete workspace with all features, Python coverage must come from executed tooling and E2E code, browser JavaScript coverage must come from Playwright execution, and all coverage streams must retain real source and line records, and Sonar must publish positive coverage and lines-to-cover metrics.
@@ -132,3 +135,7 @@ no other analysis exclusions are authorized by this exception.
   - whether drift was found
   - which contradictions or stale references were removed
 - Update [`docs/adr/index.md`](./docs/adr/index.md) and [`docs/SUMMARY.md`](./docs/SUMMARY.md) in the same change that adds the ADR.
+
+Local PR qualification supplies only explicit pull-request identity (key, base,
+head branch) to the scanner; quality criteria remain exclusively in
+`sonar-project.properties`. Local analysis must never default to the main branch.

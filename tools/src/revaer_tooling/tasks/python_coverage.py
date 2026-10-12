@@ -11,6 +11,8 @@ from ..sonar.inputs import verify_python_coverage
 from .base import Task
 from .e2e import RunPaths
 
+COVERAGE_DATABASE = ".coverage"
+
 
 def authored_python(context: Context) -> tuple[str, ...]:
     return tuple(
@@ -30,7 +32,7 @@ def coverage_inputs(context: Context) -> tuple[Path, ...]:
         inputs = (
             context.root / "coverage/producers/tooling-coverage/.coverage",
             *(
-                root / "coverage/e2e" / (phase + suffix) / ".coverage"
+                root / "coverage/e2e" / (phase + suffix) / COVERAGE_DATABASE
                 for root, phase, suffix in distributed
             ),
         )
@@ -39,8 +41,8 @@ def coverage_inputs(context: Context) -> tuple[Path, ...]:
     summary = object_value(decode(context.fs.read(path)))
     verify_analysis_run(summary, expected)
     inputs = (
-        context.root / ".coverage",
-        *(context.root / "coverage/e2e" / phase / ".coverage" for phase in expected),
+        context.root / COVERAGE_DATABASE,
+        *(context.root / "coverage/e2e" / phase / COVERAGE_DATABASE for phase in expected),
     )
     return checked_inputs(inputs)
 
@@ -67,7 +69,7 @@ class PythonCoverageMerge(Task):
             context.fs.lock(paths.runtime / "e2e.lock"),
             context.fs.lock(output / ".python-coverage.lock"),
         ):
-            for name in (".coverage", "python.xml", "python.lcov"):
+            for name in (COVERAGE_DATABASE, "python.xml", "python.lcov"):
                 context.fs.remove_owned(output / name, context.root)
             inputs = coverage_inputs(context)
             sources = authored_python(context)

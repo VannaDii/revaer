@@ -172,8 +172,9 @@ def test_distributed_browser_partitions_keep_each_producer_separate(distributed:
         / "python-e2e-summary-shard-2.json"
     )
     summary.unlink()
+    filesystem = FileSystem()
     with pytest.raises(ToolingError, match="completion summary"):
-        distributed_runs(FileSystem(), distributed, phases, 3)
+        distributed_runs(filesystem, distributed, phases, 3)
 
 
 @pytest.mark.parametrize("case", ("failed", "partition", "no-line-coverage"))
@@ -185,14 +186,14 @@ def test_distributed_coverage_rejects_incomplete_runs(distributed: Path, case: s
         else "python-e2e-summary-shard-1.json"
     )
     record = json.loads(path.read_text())
-    record.update(
-        {"status": "failed"}
-        if case == "failed"
-        else {"selected": ["test_b"]}
-        if case == "partition"
-        else {"browser_coverage": False}
-    )
+    if case == "failed":
+        record.update({"status": "failed"})
+    elif case == "partition":
+        record.update({"selected": ["test_b"]})
+    else:
+        record.update({"browser_coverage": False})
     path.write_text(json.dumps(record))
     phases = ("api-none", "api-api-key", "ui-chromium", "ui-firefox", "ui-webkit")
+    filesystem = FileSystem()
     with pytest.raises(ToolingError):
-        distributed_runs(FileSystem(), distributed, phases, 3)
+        distributed_runs(filesystem, distributed, phases, 3)

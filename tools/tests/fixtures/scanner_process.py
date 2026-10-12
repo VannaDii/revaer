@@ -10,7 +10,16 @@ def main() -> int:
     if "--version" in sys.argv:
         print("unrecognized scanner" if case == "bad-version" else "SonarScanner CLI 8.1.0.6389")
         return 0
-    if sys.argv[1:] != ["--debug"]:
+    arguments = ["--debug"]
+    if case == "pull-request":
+        arguments.extend(
+            (
+                "-Dsonar.pullrequest.key=272",
+                "-Dsonar.pullrequest.base=main",
+                "-Dsonar.pullrequest.branch=ci/balanced-coverage",
+            )
+        )
+    if sys.argv[1:] != arguments:
         raise ValueError("scanner fixture accepts debug logging only, without criteria overrides")
     if case == "empty-log":
         return 0

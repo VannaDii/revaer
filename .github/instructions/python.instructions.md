@@ -79,3 +79,11 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 - Scanner extraction materializes upstream internal JRE license links from
   regular archive members. Reject escaping, missing or chained targets and retain
   expanded-byte limits, pinned archive hashes and signature verification.
+
+- Keep distributed producer validation in focused functions, share repeated coverage
+  paths and workflow step names as constants, and keep regression assertions and
+  expected-failure calls individually scoped.
+- Fixtures must supply their own browser phase selection and Sonar PR identity;
+  operator qualification settings must not change the controlled fixture data.
+- Composite qualification must enter through the same uv dotenv-loading boundary
+  as standalone E2E before constructing its task context.

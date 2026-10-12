@@ -5,6 +5,8 @@ from playwright.sync_api import Page, Route, TimeoutError, expect
 
 from tests.pages.app_shell import AppShell
 
+HTML_CONTENT_TYPE = "text/html"
+
 
 @pytest.mark.parametrize("missing", ("shell", "dismiss"))
 def test_missing_startup_controls_still_fail(page: Page, app: AppShell, missing: str) -> None:
@@ -15,7 +17,7 @@ def test_missing_startup_controls_still_fail(page: Page, app: AppShell, missing:
                 '<nav aria-label="Navbar">Ready</nav>'
                 '<div class="auth-overlay" style="min-height:100px">Authentication</div>'
             )
-        route.fulfill(content_type="text/html", body=body)
+        route.fulfill(content_type=HTML_CONTENT_TYPE, body=body)
 
     page.set_default_timeout(100)
     page.route("**/*", serve)
@@ -26,7 +28,7 @@ def test_missing_startup_controls_still_fail(page: Page, app: AppShell, missing:
 def test_shell_startup_precedes_overlay_handling(page: Page, app: AppShell) -> None:
     def serve(route: Route) -> None:
         route.fulfill(
-            content_type="text/html",
+            content_type=HTML_CONTENT_TYPE,
             body="""<script>
             setTimeout(() => {
                 document.body.innerHTML = '<nav aria-label="Navbar">Ready</nav>';
@@ -45,7 +47,7 @@ def test_shell_startup_precedes_overlay_handling(page: Page, app: AppShell) -> N
 def test_overlay_controls_can_finish_rendering(page: Page, app: AppShell) -> None:
     def serve(route: Route) -> None:
         route.fulfill(
-            content_type="text/html",
+            content_type=HTML_CONTENT_TYPE,
             body="""<nav aria-label="Navbar">Ready</nav>
             <div class="auth-overlay" role="dialog" style="min-height:100px">Authentication</div>
             <script>

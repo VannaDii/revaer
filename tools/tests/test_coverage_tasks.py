@@ -225,3 +225,16 @@ def test_rust_sensor_input_retains_uncovered_lines_and_routes_native_separately(
         rust_lcov(native + dependency, tmp_path, ("src/lib.rs",))
     with pytest.raises(ToolingError, match="exactly one source"):
         rust_lcov("DA:1,1\nend_of_record", tmp_path, ("src/lib.rs",))
+
+
+@pytest.mark.parametrize("absolute", (False, True))
+def test_rust_sensor_retains_tracked_source_path_aliases(tmp_path: Path, absolute: bool) -> None:
+    name = "crates/example/src/../tests/unit.rs"
+    source = str(tmp_path / name) if absolute else name
+    measured = "DA:1,0\nDA:2,7\nBRDA:2,0,0,7\nend_of_record\n"
+    document = "SF:" + source + "\n" + measured
+    expected = "crates/example/tests/unit.rs"
+    normalized = str(tmp_path / expected) if absolute else expected
+    assert rust_lcov(document, tmp_path, (expected,)) == "SF:" + normalized + "\n" + measured
+    with pytest.raises(ToolingError, match="no authored Rust"):
+        rust_lcov(document, tmp_path, ())

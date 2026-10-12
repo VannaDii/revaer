@@ -36,7 +36,7 @@ UNUSED = (
 
 
 def test_distributed_merge_keeps_measured_chromium_captures(measured: Context) -> None:
-    context = replace(measured, options=replace(measured.options, expected_shards=1))
+    context: Context = replace(measured, options=replace(measured.options, expected_shards=1))
     JavaScriptCoverageMerge.run(context)
     expected = (context.root / "coverage/js-lcov.info").read_text()
     results = context.root / "tests/test-results"
@@ -99,6 +99,8 @@ def measured(
         (tmp_path / name).write_bytes(source.encode())
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("E2E_BROWSER_COVERAGE", "1")
+    monkeypatch.setenv("E2E_BROWSERS", "chromium")
+    monkeypatch.setenv("E2E_PLAYWRIGHT_PROJECTS", "api-none,api-api-key,ui-chromium")
     context = make_context(Options())
     results = tmp_path / "tests/test-results"
 

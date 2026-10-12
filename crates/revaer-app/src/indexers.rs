@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::to_string as to_json_string;
-use serde_yaml::Value as YamlValue;
+use serde_norway::Value as YamlValue;
 use tracing::{Instrument, info_span};
 use uuid::Uuid;
 
@@ -3434,7 +3434,7 @@ fn parse_cardigann_definition_import(
         ));
     }
 
-    let document: CardigannDefinitionDocument = serde_yaml::from_str(trimmed_payload)
+    let document: CardigannDefinitionDocument = serde_norway::from_str(trimmed_payload)
         .map_err(|_| invalid_indexer_definition_error("cardigann_yaml_invalid"))?;
     let upstream_slug = normalize_cardigann_slug(&document.id)?;
     let display_name = normalize_cardigann_display_name(&document.name)?;
