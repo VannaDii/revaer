@@ -22,6 +22,50 @@ class LineCounts:
     covered: int
 
 
+def rust_sonar_lcov(document: str, root: Path, tracked: tuple[str, ...]) -> str:
+    """Adapt complete LLVM records to Sonar without changing authored measurements."""
+    lcov_counts(document)
+    inventory = {name for name in tracked if name.endswith(".rs")}
+    output: list[str] = []
+    record: list[str] = []
+    source = ""
+    for line in document.splitlines():
+        if line.startswith("SF:"):
+            path = Path(line[3:])
+            absolute = path if path.is_absolute() else root / path
+            source = absolute.relative_to(root).as_posix() if absolute.is_relative_to(root) else ""
+            if (
+                source.endswith(".rs")
+                and source not in inventory
+                and not source.startswith("target/")
+            ):
+                raise ToolingError("Rust LCOV contains an untracked checkout source: " + source)
+            record = ["SF:" + source]
+        elif line == "end_of_record":
+            if source in inventory:
+                output.extend((*record, line))
+            record = []
+            source = ""
+        elif source in inventory:
+            if line.startswith("BRDA:"):
+                fields = line[5:].split(",")
+                if (
+                    len(fields) != 4
+                    or not all(value.isdecimal() for value in fields[:3])
+                    or not (fields[3].isdecimal() or fields[3] == "-")
+                ):
+                    raise ToolingError("Rust LCOV contains an invalid branch record")
+                # LCOV's unexecuted-block marker means zero hits. Keep the
+                # branch and its uncovered denominator for Sonar's integer parser.
+                if fields[3] == "-":
+                    line = "BRDA:" + ",".join((*fields[:3], "0"))
+            record.append(line)
+    result = "\n".join(output) + "\n"
+    if not lcov_counts(result, ".rs").covered:
+        raise ToolingError("Sonar Rust LCOV must retain executed authored Rust records")
+    return result
+
+
 def lcov_counts(document: str, suffix: str = "", *, production: bool = False) -> LineCounts:
     """Count LCOV line records, rejecting duplicate or malformed observations."""
     records: dict[tuple[str, int], int] = {}

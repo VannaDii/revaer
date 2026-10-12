@@ -206,6 +206,7 @@ jobs:
           name: sonar-coverage
           path: |
             coverage/lcov.info
+            coverage/rust-sonar-lcov.info
             coverage/llvm-cov.txt
             coverage/js-lcov.info
             coverage/script-coverage.xml

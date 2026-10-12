@@ -16,7 +16,7 @@ def reset_reports(context: Context) -> None:
     output = context.root / "coverage"
     if output.is_symlink():
         raise ToolingError("Coverage output directory must not be a symlink")
-    for name in ("lcov.info", "llvm-cov.txt", "html", "crates"):
+    for name in ("lcov.info", "rust-sonar-lcov.info", "llvm-cov.txt", "html", "crates"):
         context.fs.remove_owned(output / name, context.root)
     context.fs.mkdir(output / "crates")
 

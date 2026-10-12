@@ -270,7 +270,7 @@
               "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
               "with": {
                 "name": "sonar-coverage",
-                "path": "coverage/lcov.info\ncoverage/llvm-cov.txt\ncoverage/js-lcov.info\ncoverage/script-coverage.xml\ncoverage/compile_commands.json\ncoverage/cxxbridge/include/rust/cxx.h\ncoverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h\n\ncoverage/python.xml\n",
+                "path": "coverage/lcov.info\ncoverage/rust-sonar-lcov.info\ncoverage/llvm-cov.txt\ncoverage/js-lcov.info\ncoverage/script-coverage.xml\ncoverage/compile_commands.json\ncoverage/cxxbridge/include/rust/cxx.h\ncoverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h\n\ncoverage/python.xml\n",
                 "if-no-files-found": "error"
               }
             },
@@ -1027,7 +1027,7 @@
               "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
               "with": {
                 "name": "sonar-coverage",
-                "path": "coverage/lcov.info\ncoverage/llvm-cov.txt\ncoverage/js-lcov.info\ncoverage/script-coverage.xml\ncoverage/compile_commands.json\ncoverage/cxxbridge/include/rust/cxx.h\ncoverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h\n\ncoverage/python.xml\n",
+                "path": "coverage/lcov.info\ncoverage/rust-sonar-lcov.info\ncoverage/llvm-cov.txt\ncoverage/js-lcov.info\ncoverage/script-coverage.xml\ncoverage/compile_commands.json\ncoverage/cxxbridge/include/rust/cxx.h\ncoverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h\n\ncoverage/python.xml\n",
                 "if-no-files-found": "error"
               }
             },

@@ -27,6 +27,7 @@ SCANNER_STEPS = {
 }
 COVERAGE_PATHS = (
     "coverage/lcov.info",
+    "coverage/rust-sonar-lcov.info",
     "coverage/llvm-cov.txt",
     "coverage/js-lcov.info",
     "coverage/python.xml",

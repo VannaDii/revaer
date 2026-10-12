@@ -115,7 +115,7 @@ REQUIRED_VALUES = {
     "sonar.sca.nugetNoResolve": "false",
     "sonar.sca.cfamily": "true",
     "sonar.rust.clippy.enabled": "true",
-    "sonar.rust.lcov.reportPaths": "coverage/lcov.info",
+    "sonar.rust.lcov.reportPaths": "coverage/rust-sonar-lcov.info",
     "sonar.javascript.lcov.reportPaths": "coverage/js-lcov.info",
     "sonar.python.coverage.reportPaths": "coverage/python.xml",
     "sonar.python.version": "3.13",

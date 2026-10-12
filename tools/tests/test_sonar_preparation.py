@@ -25,6 +25,10 @@ def preparation_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Cont
     context = make_context(Options())
     coverage = tmp_path / "coverage"
     (coverage / "lcov.info").write_text("SF:crates/sample/src/lib.rs\nDA:1,1\nend_of_record\n")
+    rust = tmp_path / "crates/sample/src/lib.rs"
+    rust.parent.mkdir(parents=True)
+    rust.write_text("pub fn sample() {}\n")
+    subprocess.run(["git", "add", str(rust)], check=True, capture_output=True, timeout=10)
     (coverage / "js-lcov.info").write_text(
         "SF:crates/ui/static/app.js\n"
         + "".join(f"DA:{number},{int(number != 1000)}\n" for number in range(1, 1001))

@@ -8,6 +8,7 @@ from revaer_tooling.sonar.inputs import (
     NATIVE_SOURCE,
     LineCounts,
     lcov_counts,
+    rust_sonar_lcov,
     verify_bootstrap_coverage,
     verify_lcov,
     verify_native_coverage,
@@ -21,6 +22,40 @@ def lcov(source: str, count: int, covered: int) -> str:
         + "".join(f"DA:{number},{int(number <= covered)}\n" for number in range(1, count + 1))
         + "end_of_record\n"
     )
+
+
+def test_rust_scanner_input_preserves_authored_measurements(tmp_path: Path) -> None:
+    name = "crates/example/src/lib.rs"
+    authored = lcov(str(tmp_path / name), 2, 1).replace(
+        "end_of_record", "BRDA:2,0,0,-\nBRDA:2,0,1,7\nBRF:2\nBRH:1\nend_of_record"
+    )
+    full = (
+        authored
+        + lcov("/registry/dependency.rs", 2, 2)
+        + lcov(str(tmp_path / "target/generated.rs"), 2, 2)
+        + lcov("crates/native/session.cpp", 2, 2)
+    )
+    adapted = rust_sonar_lcov(full, tmp_path, (name, "crates/native/session.cpp"))
+    assert adapted == authored.replace(str(tmp_path / name), name).replace(
+        "BRDA:2,0,0,-", "BRDA:2,0,0,0"
+    )
+    assert lcov_counts(adapted) == lcov_counts(authored)
+    assert "BRDA:2,0,0,-" in full
+
+
+@pytest.mark.parametrize("branch", ["BRDA:1,0,0,bad", "BRDA:1,0,-,0", "BRDA:1,0,0"])
+def test_rust_scanner_input_rejects_invalid_authored_branches(tmp_path: Path, branch: str) -> None:
+    name = "crates/example/src/lib.rs"
+    document = lcov(name, 1, 1).replace("end_of_record", branch + "\nend_of_record")
+    with pytest.raises(ToolingError, match="invalid branch"):
+        rust_sonar_lcov(document, tmp_path, (name,))
+
+
+def test_rust_scanner_input_rejects_untracked_checkout_sources(tmp_path: Path) -> None:
+    with pytest.raises(ToolingError, match="untracked checkout source"):
+        rust_sonar_lcov(lcov("crates/example/src/lib.rs", 1, 1), tmp_path, ())
+    with pytest.raises(ToolingError, match="executed authored Rust"):
+        rust_sonar_lcov(lcov("/registry/dependency.rs", 1, 1), tmp_path, ())
 
 
 def test_coverage_requires_execution_of_production_sources_only() -> None:
