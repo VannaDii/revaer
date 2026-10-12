@@ -38,6 +38,13 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
   scanner log. It changes diagnostics only; scanner criteria remain canonical.
   Keep normal SCM analysis and complete checkout history; do not force a full
   blame reload for each scan.
+- Remove untracked Python bytecode beside authored Python sources before scanning;
+  disabling future bytecode writes does not remove caches from earlier runs.
+- Reject a stale local target branch that shadows the exact event base. Use an
+  independent checkout for local analysis rather than rewriting shared branch refs.
+- The root operator-approved Rust input merge combines measured counters for the
+  same physical source; preserve uncovered locations and the complete original
+  compilation records. Do not drop a duplicate measurement to satisfy the importer.
 - `sonar.coverageReportPaths` must consume the generic report emitted by `rv script-coverage`. That report must come from the exact archive-hash-verified `kcov` revision installed by the canonical setup action for the retained root `setup.sh`, retain uncovered executable lines, and enforce the approved bootstrap allowance above.
 - Follow the repo-wide external action versioning rule in `.github/instructions/devops.instructions.md` when editing `.github/workflows/sonar.yml`. Do not restate a conflicting Sonar-only pinning rule here.
 - Revaer uses Sonar as a strict merge-control signal on pull requests. Require scanner-side waiting, retained task/report evidence, and API verification of that same analysis.

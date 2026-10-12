@@ -83,6 +83,7 @@ def test_source_preparation_retains_reports_and_never_deletes_authored_content(
 ) -> None:
     context = preparation_context
     paths = (
+        "tools/src/revaer_tooling/__pycache__/cli.cpython-313.pyc",
         "tests/node_modules/package/index.js",
         "release/node_modules/package/index.js",
         "tests/support/api/schema.ts",

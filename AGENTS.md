@@ -95,6 +95,11 @@
   native LLVM text, JSON and HTML. Preserve all instrumentation, measurements
   and thresholds; dependency/generated/native records are omitted only from
   this Rust-specific importer input, never from the complete reports.
+- The operator approved merging measured compilation records for the same
+  physical Rust source into one importer record. Sum measured counters, retain
+  uncovered locations and recompute summaries; keep the original separate
+  records in complete LLVM, JSON and HTML reports. Instrumentation and thresholds
+  remain unchanged.
 
 The operator-approved production-only coverage scope is the exact
 `sonar.coverage.exclusions` list enforced by

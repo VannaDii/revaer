@@ -87,5 +87,10 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
   operator qualification settings must not change the controlled fixture data.
 - Composite qualification must enter through the same uv dotenv-loading boundary
   as standalone E2E before constructing its task context.
-- Rust coverage routing normalizes paths only for tracked-source membership;
-  retain LLVM's distinct compilation-unit paths and their complete measurements.
+- Rust coverage routing normalizes paths for tracked-source membership and merges
+  same-source compilation records using their measured counters. Retain separate
+  compilation records in the complete engine reports; follow root operator consent.
+- Sonar source preparation removes untracked Python bytecode caches beside authored
+  Python files, including caches left by earlier runs; refuse tracked content and links.
+- Exact SCM preparation must reject a stale local target branch that would shadow
+  the fetched event base. Preserve shared worktrees; qualify in an independent checkout.

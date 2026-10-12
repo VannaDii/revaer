@@ -8,6 +8,7 @@ from ..context import Context, TaskResult
 from ..errors import ToolingError
 from ..external.coverage import CoverageFormat, CoverageReportArgs
 from ..json_data import array_value, decode, object_value, string_value
+from ..sonar.lcov import merge_compilations
 from .base import Task
 from .testing import test_environment
 
@@ -92,7 +93,7 @@ def rust_lcov(document: str, root: Path, tracked: tuple[str, ...]) -> str:
     package JSON, rather than sending them to an incompatible language sensor.
     """
     sources = {root / name for name in tracked if name.endswith(".rs")}
-    selected: list[str] = []
+    compilations: dict[Path, list[list[str]]] = {}
     for record in document.split("end_of_record"):
         lines = record.strip().splitlines()
         filenames = [line[3:] for line in lines if line.startswith("SF:")]
@@ -105,10 +106,13 @@ def rust_lcov(document: str, root: Path, tracked: tuple[str, ...]) -> str:
         if not source.is_absolute():
             source = root / source
         if source in sources:
-            # Keep separately compiled units' original paths and measurements.
-            selected.extend((*lines, "end_of_record"))
-    if not selected:
+            compilations.setdefault(source, []).append(lines)
+    if not compilations:
         raise ToolingError("LLVM coverage has no authored Rust records")
+    selected: list[str] = []
+    for source, records in compilations.items():
+        lines = records[0] if len(records) == 1 else merge_compilations(str(source), records)
+        selected.extend((*lines, "end_of_record"))
     return "\n".join(selected) + "\n"
 
 

@@ -239,9 +239,12 @@ def test_rust_sensor_retains_tracked_source_path_aliases(tmp_path: Path, absolut
         rust_lcov(document, tmp_path, ())
 
 
-def test_rust_sensor_keeps_separately_compiled_source_records(tmp_path: Path) -> None:
+def test_rust_sensor_merges_separately_compiled_source_measurements(tmp_path: Path) -> None:
     name = "crates/example/build_support.rs"
     alias = "crates/example/tests/../build_support.rs"
     direct = "SF:" + name + "\nDA:1,0\nDA:2,3\nend_of_record\n"
     included = "SF:" + alias + "\nDA:1,7\nDA:2,2\nend_of_record\n"
-    assert rust_lcov(direct + included, tmp_path, (name,)) == direct + included
+    merged = rust_lcov(direct + included, tmp_path, (name,))
+    assert merged.count("SF:") == 1
+    assert "DA:1,7\nDA:2,5\n" in merged
+    assert "LF:2\nLH:2\n" in merged
