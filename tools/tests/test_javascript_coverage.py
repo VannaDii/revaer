@@ -2,7 +2,6 @@
 
 import json
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -36,8 +35,17 @@ UNUSED = (
 
 
 def test_distributed_merge_keeps_measured_chromium_captures(measured: Context) -> None:
-    context = replace(measured, options=replace(measured.options, expected_shards=1))
-    assert isinstance(context, Context)
+    context = Context(
+        root=measured.root,
+        settings=measured.settings,
+        options=Options(expected_shards=1),
+        tools=measured.tools,
+        fs=measured.fs,
+        emit=measured.emit,
+        host=measured.host,
+        invoked_at=measured.invoked_at,
+        command_names=measured.command_names,
+    )
     JavaScriptCoverageMerge.run(context)
     expected = (context.root / "coverage/js-lcov.info").read_text()
     results = context.root / "tests/test-results"

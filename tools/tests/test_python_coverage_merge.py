@@ -5,7 +5,6 @@ import os
 import shutil
 import subprocess
 import sys
-from dataclasses import replace
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -136,10 +135,17 @@ def test_merge_cannot_read_while_either_producer_is_running(
 def test_merge_combines_real_data_from_separate_producer_directories(
     coverage_context: Context,
 ) -> None:
-    context = replace(
-        coverage_context, options=replace(coverage_context.options, expected_shards=1)
+    context = Context(
+        root=coverage_context.root,
+        settings=coverage_context.settings,
+        options=Options(expected_shards=1),
+        tools=coverage_context.tools,
+        fs=coverage_context.fs,
+        emit=coverage_context.emit,
+        host=coverage_context.host,
+        invoked_at=coverage_context.invoked_at,
+        command_names=coverage_context.command_names,
     )
-    assert isinstance(context, Context)
     producers = context.root / "coverage/producers"
     tooling = producers / "tooling-coverage"
     tooling.mkdir(parents=True)
