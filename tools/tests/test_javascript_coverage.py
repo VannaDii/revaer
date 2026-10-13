@@ -94,6 +94,11 @@ def test_distributed_merge_keeps_measured_chromium_captures(measured: Context) -
         path.rename(chromium / path.name)
     JavaScriptCoverageMerge.run(context)
     assert (context.root / "coverage/js-lcov.info").read_text() == expected
+    required = producers / "api-e2e-coverage/tests/test-results/api-coverage-api-none-main.json"
+    required.unlink()
+    with pytest.raises(ToolingError, match="nonempty api-none coverage"):
+        JavaScriptCoverageMerge.run(context)
+    assert not (context.root / "coverage/js-lcov.info").exists()
 
 
 @pytest.fixture(params=("classic", "module", "media-classic", "media-module"))

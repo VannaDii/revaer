@@ -131,6 +131,8 @@ applyTo:
 - Distributed coverage retains every selected producer and shard. Media API
   producers include both missing-catalog phases alongside anonymous/authenticated
   phases; merging must verify their complete selections and route coverage.
+  Assign records to their complete declared phase names, so missing-catalog
+  prefixes cannot satisfy or invalidate a different phase's evidence.
 - Sonar input verification derives `coverage/rust-sonar-lcov.info` from the complete
   LCOV report using the tracked Rust inventory and zero-hit unexecuted branches,
   as explicitly approved by the operator. Both workflows retain the complete
