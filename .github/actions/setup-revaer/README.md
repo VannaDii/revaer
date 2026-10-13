@@ -58,6 +58,11 @@ Cargo owns installed-package receipts, version replacement and feature tracking.
 Matching installations are retained. Kcov/scanner caches are verified before reuse;
 a cache hit cannot substitute for archive identity or required analyzer inputs.
 
+Cargo downloads are shared across jobs. Installed-tool caches include the selected
+packages, version manifest and Rust toolchain, including Cargo's native receipts.
+sccache has a separate rolling cache keyed by the build inputs and producer, with
+compatible cross-job restore keys. Cache hits never replace tests or coverage.
+
 The setup and output-file regression suite includes a real Debian container using
 Astral's official uv image. Its apt changes belong only to that disposable
 container. Hosted workflow execution and full application acceptance remain

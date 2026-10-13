@@ -21,6 +21,33 @@ INVENTORY = (
 SENTINEL = {".gitkeep": b""}
 
 
+@pytest.mark.parametrize(
+    "path",
+    (
+        "docs/mermaid-init.js",
+        "tools/src/revaer_tooling/cli.py",
+        "crates/revaer-ui/static/nexus/js/app.js",
+        "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/js/app.js",
+        "crates/revaer-app/src/bootstrap/service_recovery_tests/operator.rs",
+    ),
+)
+def test_nonproduction_paths_do_not_affect_coverage(path: str) -> None:
+    assert not production_source(path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "crates/revaer-ui/src/app.rs",
+        "crates/revaer-ui/static/runtime.js",
+        "crates/revaer-app/src/bootstrap/service.rs",
+        "crates/revaer-torrent-libt/src/ffi/session.cpp",
+    ),
+)
+def test_production_paths_retain_coverage_requirements(path: str) -> None:
+    assert production_source(path)
+
+
 @pytest.fixture
 def sonar() -> str:
     # Start from the actual configuration, retaining every reviewed property.

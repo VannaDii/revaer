@@ -3,7 +3,7 @@
 //! # Design
 //! - Runs lightweight scheduled indexer maintenance jobs from the application process.
 //! - Keeps infrastructure injected via a backend trait so tests stay host-only and deterministic.
-//! - Treats stable claim errors like `job_not_due` as skips while surfacing unexpected failures.
+//! - Treats explicit non-claim outcomes as skips while surfacing unexpected failures.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -12,11 +12,11 @@ use async_trait::async_trait;
 use revaer_config::ConfigService;
 use revaer_data::DataError;
 use revaer_data::indexers::jobs::{
-    job_claim_next, job_run_base_score_refresh_recent, job_run_canonical_backfill_best_source,
-    job_run_canonical_prune_low_confidence, job_run_connectivity_profile_refresh,
-    job_run_policy_snapshot_gc, job_run_policy_snapshot_refcount_repair,
-    job_run_rate_limit_state_purge, job_run_reputation_rollup, job_run_retention_purge,
-    job_run_rss_subscription_backfill,
+    JobClaimOutcome, job_claim_next, job_run_base_score_refresh_recent,
+    job_run_canonical_backfill_best_source, job_run_canonical_prune_low_confidence,
+    job_run_connectivity_profile_refresh, job_run_policy_snapshot_gc,
+    job_run_policy_snapshot_refcount_repair, job_run_rate_limit_state_purge,
+    job_run_reputation_rollup, job_run_retention_purge, job_run_rss_subscription_backfill,
 };
 use revaer_telemetry::Metrics;
 use tokio::task::JoinHandle;
@@ -24,7 +24,6 @@ use tokio::time::{MissedTickBehavior, interval};
 use tracing::{info, warn};
 
 const DEFAULT_TICK_INTERVAL: Duration = Duration::from_secs(1);
-const CLAIM_SKIP_CODE: &str = "P0001";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum JobKind {
@@ -95,7 +94,7 @@ impl JobKind {
 
 #[async_trait]
 trait IndexerJobBackend: Send + Sync {
-    async fn claim_next(&self, job_key: &'static str) -> Result<(), DataError>;
+    async fn claim_next(&self, job_key: &'static str) -> Result<JobClaimOutcome, DataError>;
     async fn run_job(&self, job: JobKind) -> Result<(), DataError>;
 }
 
@@ -111,7 +110,7 @@ impl StoredProcIndexerJobBackend {
 
 #[async_trait]
 impl IndexerJobBackend for StoredProcIndexerJobBackend {
-    async fn claim_next(&self, job_key: &'static str) -> Result<(), DataError> {
+    async fn claim_next(&self, job_key: &'static str) -> Result<JobClaimOutcome, DataError> {
         job_claim_next(self.config.pool(), job_key).await
     }
 
@@ -208,8 +207,8 @@ impl IndexerRuntime {
         let job_key = job.job_key();
 
         match self.backend.claim_next(job_key).await {
-            Ok(()) => {}
-            Err(error) if is_skip_claim_error(&error) => {
+            Ok(JobClaimOutcome::Claimed) => {}
+            Ok(JobClaimOutcome::NotDue | JobClaimOutcome::Disabled | JobClaimOutcome::Locked) => {
                 self.record_job_outcome(operation, "skipped", started.elapsed());
                 return;
             }
@@ -255,17 +254,6 @@ impl IndexerRuntime {
     }
 }
 
-fn is_skip_claim_error(error: &DataError) -> bool {
-    if error.database_code().as_deref() != Some(CLAIM_SKIP_CODE) {
-        return false;
-    }
-
-    matches!(
-        error.database_detail(),
-        Some("job_not_due" | "job_locked" | "job_disabled")
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,14 +269,14 @@ mod tests {
     }
 
     struct FakeIndexerJobBackend {
-        claim_results: Mutex<VecDeque<Result<(), DataError>>>,
+        claim_results: Mutex<VecDeque<Result<JobClaimOutcome, DataError>>>,
         run_results: Mutex<VecDeque<Result<(), DataError>>>,
         calls: Mutex<Vec<BackendCall>>,
     }
 
     impl FakeIndexerJobBackend {
         fn new(
-            claim_results: Vec<Result<(), DataError>>,
+            claim_results: Vec<Result<JobClaimOutcome, DataError>>,
             run_results: Vec<Result<(), DataError>>,
         ) -> Self {
             Self {
@@ -308,7 +296,7 @@ mod tests {
 
     #[async_trait]
     impl IndexerJobBackend for FakeIndexerJobBackend {
-        async fn claim_next(&self, job_key: &'static str) -> Result<(), DataError> {
+        async fn claim_next(&self, job_key: &'static str) -> Result<JobClaimOutcome, DataError> {
             if let Ok(mut calls) = self.calls.lock() {
                 calls.push(BackendCall::Claim(job_key));
             }
@@ -316,7 +304,7 @@ mod tests {
                 .lock()
                 .ok()
                 .and_then(|mut queue| queue.pop_front())
-                .unwrap_or(Ok(()))
+                .unwrap_or(Ok(JobClaimOutcome::Claimed))
         }
 
         async fn run_job(&self, job: JobKind) -> Result<(), DataError> {
@@ -329,30 +317,6 @@ mod tests {
                 .and_then(|mut queue| queue.pop_front())
                 .unwrap_or(Ok(()))
         }
-    }
-
-    fn job_not_due_error() -> DataError {
-        DataError::JobFailed {
-            operation: "job claim next",
-            job_key: "retention_purge",
-            error_code: Some(CLAIM_SKIP_CODE.to_string()),
-            error_detail: Some("job_not_due".to_string()),
-        }
-    }
-
-    #[test]
-    fn skip_claim_errors_are_classified() {
-        assert!(is_skip_claim_error(&job_not_due_error()));
-        assert!(!is_skip_claim_error(&DataError::JobFailed {
-            operation: "job claim next",
-            job_key: "retention_purge",
-            error_code: Some(CLAIM_SKIP_CODE.to_string()),
-            error_detail: Some("job_not_found".to_string()),
-        }));
-        assert!(!is_skip_claim_error(&DataError::QueryFailed {
-            operation: "job claim next",
-            source: sqlx::Error::RowNotFound,
-        }));
     }
 
     #[test]
@@ -383,7 +347,7 @@ mod tests {
     #[tokio::test]
     async fn runtime_skips_not_due_jobs_without_running_them() -> anyhow::Result<()> {
         let backend = Arc::new(FakeIndexerJobBackend::new(
-            vec![Err(job_not_due_error())],
+            vec![Ok(JobClaimOutcome::NotDue)],
             Vec::new(),
         ));
         let runtime =
@@ -397,7 +361,10 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_runs_claimed_jobs() -> anyhow::Result<()> {
-        let backend = Arc::new(FakeIndexerJobBackend::new(vec![Ok(())], vec![Ok(())]));
+        let backend = Arc::new(FakeIndexerJobBackend::new(
+            vec![Ok(JobClaimOutcome::Claimed)],
+            vec![Ok(())],
+        ));
         let runtime =
             IndexerRuntime::with_backend(backend.clone(), Metrics::new()?, Duration::from_secs(1));
 
@@ -417,7 +384,7 @@ mod tests {
     async fn runtime_run_tick_processes_every_job_and_records_success_metrics() -> anyhow::Result<()>
     {
         let backend = Arc::new(FakeIndexerJobBackend::new(
-            std::iter::repeat_with(|| Ok(()))
+            std::iter::repeat_with(|| Ok(JobClaimOutcome::Claimed))
                 .take(JobKind::ALL.len())
                 .collect(),
             std::iter::repeat_with(|| Ok(()))
@@ -451,7 +418,7 @@ mod tests {
     #[tokio::test]
     async fn runtime_continues_after_job_failures() -> anyhow::Result<()> {
         let backend = Arc::new(FakeIndexerJobBackend::new(
-            vec![Ok(()), Ok(())],
+            vec![Ok(JobClaimOutcome::Claimed), Ok(JobClaimOutcome::Claimed)],
             vec![
                 Err(DataError::JobFailed {
                     operation: "job run retention purge",
@@ -512,7 +479,7 @@ mod tests {
     #[tokio::test]
     async fn spawned_runtime_starts_ticks_before_abort() -> anyhow::Result<()> {
         let backend = Arc::new(FakeIndexerJobBackend::new(
-            std::iter::repeat_with(|| Err(job_not_due_error()))
+            std::iter::repeat_with(|| Ok(JobClaimOutcome::NotDue))
                 .take(JobKind::ALL.len() * 4)
                 .collect(),
             Vec::new(),

@@ -21,6 +21,7 @@ pub mod error;
 pub mod indexers;
 pub mod media;
 pub mod runtime;
+pub mod transaction;
 
 pub use error::{DataError, Result as DataResult};
 pub use runtime::RuntimeStore;

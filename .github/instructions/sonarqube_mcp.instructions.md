@@ -31,19 +31,37 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 - Revaer versions its complete strict Sonar scope in `sonar-project.properties`. Keep every authored tracked top-level entry in main-code scope and use only the committed empty `.sonar-test-scope` sentinel for `sonar.tests`. The operator-approved source exclusion is exactly `scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml`, an intentionally malformed functional fixture; all other source, test, duplication, JavaScript, SCA, and issue-scope filters remain explicitly empty. Apply the operator-approved production-only coverage scope from root `AGENTS.md`; do not otherwise narrow analysis or security scope.
 - PostgreSQL migrations must remain visible to generic text, secrets, and main-code analysis. Do not assign `.sql`, `.pgsql`, or `.plpgsql` to the PL/SQL analyzer; reserve `sonar.plsql.file.suffixes=.plsql` for actual PL/SQL.
 - Sonar property policy is enforced after Java-properties parsing. Escaped keys, leading-whitespace forms, continuations, duplicate logical keys, workflow overrides, and properties outside the exact reviewed allowlist are forbidden.
-- The operator-directed configuration sets `sonar.scm.forceReloadAll=false`.
-- Scanner `--debug` logging identifies malformed coverage records in the existing
+- The operator explicitly reaffirmed `sonar.scm.forceReloadAll=false` in this
+  CI repair. Keep complete history, SCM analysis and the missing-blame gate;
+  do not force a full reload or disable SCM to avoid warnings.
+- Scanner debug logging (`--debug`) identifies malformed coverage records in the existing
   scanner log. It changes diagnostics only; scanner criteria remain canonical.
   Keep normal SCM analysis and complete checkout history; do not force a full
   blame reload for each scan.
+- PR and main scanner jobs disable Python bytecode writes for every CLI process.
+  Remove untracked prior-run bytecode beside authored Python sources before scanning;
+  the environment setting does not remove caches from earlier runs. Verify the
+  separate prepare/SCM/scan commands with the same environment locally.
+- Remove untracked UI build output after browser measurement and before scanning;
+  refuse tracked content rather than treating generated WASM as authored text.
+- Reject a stale local target branch that shadows the exact event base. Use an
+  independent checkout for local analysis rather than rewriting shared branch refs.
+- The root operator-approved Rust input merge combines measured counters for the
+  same physical source; preserve uncovered locations and the complete original
+  compilation records. Do not drop a duplicate measurement to satisfy the importer.
 - `sonar.coverageReportPaths` must consume the generic report emitted by `rv script-coverage`. That report must come from the exact archive-hash-verified `kcov` revision installed by the canonical setup action for the retained root `setup.sh`, retain uncovered executable lines, and enforce the approved bootstrap allowance above.
 - Follow the repo-wide external action versioning rule in `.github/instructions/devops.instructions.md` when editing `.github/workflows/sonar.yml`. Do not restate a conflicting Sonar-only pinning rule here.
 - Revaer uses Sonar as a strict merge-control signal on pull requests. Require scanner-side waiting, retained task/report evidence, and API verification of that same analysis.
 - The operator-approved Rust scanner input is `coverage/rust-sonar-lcov.info`: retain every tracked Rust source record from the complete LLVM report and translate unexecuted `BRDA` markers to zero hits without removing branches. Third-party and untracked generated records remain in the complete original `coverage/lcov.info` and native reports. Preserve all thresholds and authored analysis scope; reject untracked checkout Rust sources outside generated `target/` output.
+- ADR 592 records the operator-approved main post-scan contract: use the
+  supported `sinceLeakPeriod=true` API query and require zero new unresolved
+  issues and zero new hotspots. PR checks still require zero current issues and
+  hotspots in that PR. Do not filter hotspot dispositions or change scanner
+  scope, server criteria, coverage thresholds, or warning failures.
 - Treat zero published coverage, a missing Rust LCOV report, a missing native LLVM coverage report, or unavailable SCM baseline data as a failed analysis even when Sonar reports a green quality gate.
 - Pull-request and main-branch scans must receive the same complete Rust, native, browser JavaScript, Python, and root Bash bootstrap coverage inputs and must retain the scanner report as uploaded evidence after post-scan verification.
 - Use pull-request-specific quality-gate checks when the user asks whether a PR is blocked.
-- Check zero new unresolved issues, zero unresolved historical issues in active production code, and zero `TO_REVIEW` hotspots. Fetch the complete unresolved issue backlog with pagination. PR queries use explicit PR scope; main new-issue queries use `sinceLeakPeriod`. Historical internal utility issues and reviewed hotspots do not block the production gate.
+- Check zero new unresolved issues, zero unresolved historical issues in active production code, and zero hotspots in the PR or main new-code scope. Fetch the complete unresolved issue backlog with pagination. PR queries use explicit PR scope; main new-issue queries use `sinceLeakPeriod`. Historical internal utility issues and reviewed hotspots do not block the production gate.
 - Preserve real browser LCOV records even when the application executes no authored production JavaScript. Require execution when production JavaScript exists; do not manufacture hits or require an arbitrary number of lines.
 
 # Noise And Scope
@@ -71,3 +89,7 @@ coverage setup profile, and one `rv sonar-scan` invocation. Produce bootstrap
 and Python coverage explicitly, merge completed E2E coverage, and retain both
 coverage and complete scanner evidence even when a gate fails. Update the
 complete source and YAML inventories when files change; do not narrow scope.
+
+Local PR qualification supplies only explicit pull-request identity (key, base,
+head branch) to the scanner; quality criteria remain exclusively in
+`sonar-project.properties`. Local analysis must never default to the main branch.

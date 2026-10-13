@@ -454,6 +454,8 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     #[cfg(feature = "libtorrent")]
     stop_runtime_task(fsops_worker, "fsops").await;
 
+    // Await transaction owners that outlive a cancelled API request before runtime shutdown.
+    config.pool().close().await;
     serve_result.map_err(|err| AppError::api_server("api_server.serve", err))?;
     info!("API server shutdown complete");
     Ok(())

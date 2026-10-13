@@ -158,7 +158,8 @@
             "REVAER_TEST_DATABASE_URL": "${{ vars.REVAER_DATABASE_URL}}",
             "DATABASE_URL": "${{ vars.REVAER_DATABASE_URL}}",
             "SONAR_AUTH_TOKEN": "${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}",
-            "REVAER_REQUIRE_NATIVE_COVERAGE": "1"
+            "REVAER_REQUIRE_NATIVE_COVERAGE": "1",
+            "PYTHONDONTWRITEBYTECODE": "1"
           },
           "services": {
             "postgres": {
@@ -916,7 +917,8 @@
             "REVAER_TEST_DATABASE_URL": "${{ vars.REVAER_DATABASE_URL }}",
             "DATABASE_URL": "${{ vars.REVAER_DATABASE_URL }}",
             "SONAR_AUTH_TOKEN": "${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}",
-            "REVAER_REQUIRE_NATIVE_COVERAGE": "1"
+            "REVAER_REQUIRE_NATIVE_COVERAGE": "1",
+            "PYTHONDONTWRITEBYTECODE": "1"
           },
           "services": {
             "postgres": {

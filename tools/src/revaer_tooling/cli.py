@@ -153,7 +153,7 @@ from .tasks.native import SonarCompileDatabase
 from .tasks.policy import InstructionDrift, Lint, Policy
 from .tasks.pristine import PristineGenerate, PristineTest, PristineValidate
 from .tasks.python_coverage import PythonCoverageMerge
-from .tasks.quality import CargoLock, Ci, Lock, Validate
+from .tasks.quality import CargoLock, Ci, CiQualify, Lock, Validate
 from .tasks.release import ReleasePreview, ReleasePublish, ReleaseResume
 from .tasks.setup import Doctor, Setup
 from .tasks.sonar import (
@@ -216,6 +216,7 @@ COMMANDS: dict[str, Callable[[Context], TaskResult]] = {
     "instruction-drift": InstructionDrift.run,
     "validate": Validate.run,
     "ci": Ci.run,
+    "ci-qualify": CiQualify.run,
     "lock": Lock.run,
     "release-lock": Lock.run,
     "release preview": ReleasePreview.run,
@@ -306,7 +307,7 @@ COMMANDS: dict[str, Callable[[Context], TaskResult]] = {
 }
 
 E2E_ENVIRONMENT_TASKS = frozenset(
-    ("ui-e2e", "runbook", "python-coverage-merge", "js-coverage-merge")
+    ("ci-qualify", "ui-e2e", "runbook", "python-coverage-merge", "js-coverage-merge")
 )
 
 

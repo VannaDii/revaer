@@ -26,6 +26,7 @@ class SonarSettings:
     base_sha: str
     base_ref: str
     head_sha: str
+    head_ref: str
     pull_request: str
     native_required: bool
     install_root: Path | None
@@ -82,6 +83,7 @@ def load_sonar_settings(environment: Mapping[str, str], *, linux: bool) -> Sonar
         base_sha=environment.get("SONAR_BASE_SHA") or "",
         base_ref=environment.get("SONAR_BASE_REF") or "",
         head_sha=environment.get("SONAR_HEAD_SHA") or "",
+        head_ref=environment.get("SONAR_HEAD_REF") or "",
         pull_request=environment.get("SONAR_PULL_REQUEST") or "",
         native_required=required == "1",
         install_root=Path(environment["SONAR_SCANNER_INSTALL_ROOT"])

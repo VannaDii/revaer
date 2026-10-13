@@ -9,6 +9,18 @@ Consolidate authored development and CI tooling in Python and replace Just and N
 
 ## Design notes
 
+### Main Sonar result contract
+
+On 2026-10-13 the operator approved checking new issues rather than the historical
+main backlog. This is a permanent contract change with no expiry. Main's
+post-scan issue and hotspot queries use SonarCloud's supported
+`sinceLeakPeriod=true` parameter and require zero new unresolved issues and zero
+new hotspots. PR queries retain every current issue and hotspot in that PR.
+The unsupported `inNewCodePeriod` parameter is removed. Scanner scope, server
+criteria, coverage thresholds, warning failures and exact-analysis verification
+remain unchanged. Historical main debt remains open and is not accepted,
+suppressed or reclassified by this decision.
+
 The `rv` CLI maps command strings to static `Task.run(context)` methods. Typed
 external-tool classes verify executables and construct argument arrays through an
 injected process runner. Settings and command options are immutable; environment

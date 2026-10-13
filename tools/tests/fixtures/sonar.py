@@ -65,6 +65,7 @@ class ScannerFixtureRunner:
 @dataclass
 class ApiState:
     records: dict[str, JsonObject] = field(default_factory=result_records)
+    backlog_records: dict[str, JsonObject] = field(default_factory=dict)
     statuses: list[int] = field(default_factory=list)
     requests: list[tuple[str, dict[str, list[str]], str]] = field(default_factory=list)
     pending_tasks: int = 0
@@ -83,11 +84,18 @@ def sonar_server(state: ApiState) -> Iterator[str]:
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             request = urlsplit(self.path)
-            state.requests.append(
-                (request.path, parse_qs(request.query), self.headers.get("Authorization", ""))
-            )
+            query = parse_qs(request.query)
+            state.requests.append((request.path, query, self.headers.get("Authorization", "")))
             status = state.statuses.pop(0) if state.statuses else 200
-            body = copy.deepcopy(state.records[endpoints[request.path]])
+            name = endpoints[request.path]
+            records = (
+                state.backlog_records
+                if name in state.backlog_records
+                and query.get("sinceLeakPeriod") != ["true"]
+                and "pullRequest" not in query
+                else state.records
+            )
+            body = copy.deepcopy(records[name])
             if request.path == "/api/issues/search" and parse_qs(request.query).get("ps") == [
                 "500"
             ]:

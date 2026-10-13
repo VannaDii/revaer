@@ -192,12 +192,12 @@
     {
       "id": "chromium-bear-1280x720-av-frag-mp4",
       "path": "test-fixtures/chromium/bear-1280x720_av_frag.mp4",
-      "encoding": "raw",
+      "encoding": "base64",
       "sha256": "affc4ce6c872f9d4160a92a7b959523b3cac2d171e89177e4cd211e55f756175",
       "minimumBytes": 764465,
       "maximumBytes": 764465,
       "urls": [
-        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-1280x720-av_frag.mp4"
+        "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-1280x720-av_frag.mp4?format=TEXT"
       ]
     },
     {

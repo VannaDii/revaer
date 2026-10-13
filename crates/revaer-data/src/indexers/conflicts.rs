@@ -88,14 +88,15 @@ pub async fn source_metadata_conflict_resolve(
     resolution: &str,
     resolution_note: Option<&str>,
 ) -> Result<()> {
-    sqlx::query(CONFLICT_RESOLVE_CALL)
-        .bind(actor_user_public_id)
-        .bind(conflict_id)
-        .bind(resolution)
-        .bind(resolution_note)
-        .execute(pool)
-        .await
-        .map_err(try_op("source metadata conflict resolve"))?;
+    try_op("source metadata conflict resolve", || {
+        sqlx::query(CONFLICT_RESOLVE_CALL)
+            .bind(actor_user_public_id)
+            .bind(conflict_id)
+            .bind(resolution)
+            .bind(resolution_note)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -110,13 +111,14 @@ pub async fn source_metadata_conflict_reopen(
     conflict_id: i64,
     resolution_note: Option<&str>,
 ) -> Result<()> {
-    sqlx::query(CONFLICT_REOPEN_CALL)
-        .bind(actor_user_public_id)
-        .bind(conflict_id)
-        .bind(resolution_note)
-        .execute(pool)
-        .await
-        .map_err(try_op("source metadata conflict reopen"))?;
+    try_op("source metadata conflict reopen", || {
+        sqlx::query(CONFLICT_REOPEN_CALL)
+            .bind(actor_user_public_id)
+            .bind(conflict_id)
+            .bind(resolution_note)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -134,16 +136,17 @@ pub async fn log_source_metadata_conflict(
     incoming_value: Option<&str>,
     observed_at: Option<DateTime<Utc>>,
 ) -> Result<()> {
-    sqlx::query(CONFLICT_LOG_CALL)
-        .bind(canonical_torrent_source_id)
-        .bind(indexer_instance_id)
-        .bind(conflict_type)
-        .bind(existing_value)
-        .bind(incoming_value)
-        .bind(observed_at)
-        .execute(pool)
-        .await
-        .map_err(try_op("source metadata conflict log"))?;
+    try_op("source metadata conflict log", || {
+        sqlx::query(CONFLICT_LOG_CALL)
+            .bind(canonical_torrent_source_id)
+            .bind(indexer_instance_id)
+            .bind(conflict_type)
+            .bind(existing_value)
+            .bind(incoming_value)
+            .bind(observed_at)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -158,13 +161,14 @@ pub async fn source_metadata_conflict_list(
     include_resolved: Option<bool>,
     limit: Option<i32>,
 ) -> Result<Vec<SourceMetadataConflictRow>> {
-    sqlx::query_as(CONFLICT_LIST_CALL)
-        .bind(actor_user_public_id)
-        .bind(include_resolved)
-        .bind(limit)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("source metadata conflict list"))
+    try_op("source metadata conflict list", || {
+        sqlx::query_as(CONFLICT_LIST_CALL)
+            .bind(actor_user_public_id)
+            .bind(include_resolved)
+            .bind(limit)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

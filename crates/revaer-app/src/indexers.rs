@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::to_string as to_json_string;
-use serde_yaml::Value as YamlValue;
+use serde_norway::Value as YamlValue;
 use tracing::{Instrument, info_span};
 use uuid::Uuid;
 
@@ -687,35 +687,70 @@ impl IndexerFacade for IndexerService {
         let summary = self
             .run_operation(
                 "indexer.definition_import_cardigann",
-                async {
-                    let mut tx = self.config.pool().begin().await?;
-                    let _definition = indexer_definition_import_cardigann_begin(
-                        &mut tx,
-                        actor_user_public_id,
-                        &prepared.upstream_slug,
-                        &prepared.display_name,
-                        &prepared.canonical_definition_text,
-                        is_deprecated.unwrap_or(false),
-                    )
-                    .await?;
-                    for field in &prepared.fields {
-                        let field_import = field.to_data_import();
-                        indexer_definition_import_cardigann_field(
-                            &mut tx,
-                            actor_user_public_id,
-                            &prepared.upstream_slug,
-                            &field_import,
-                        )
-                        .await?;
+                {
+                    let pool = self.config.pool().clone();
+                    async move {
+                        tokio::spawn(async move {
+                            let mut connection = pool.acquire().await?;
+                            let completed = async {
+                                let mut tx =
+                                    revaer_data::transaction::begin_transaction(&mut connection)
+                                        .await?;
+                                let result = async {
+                                    let _definition = indexer_definition_import_cardigann_begin(
+                                        &mut tx,
+                                        actor_user_public_id,
+                                        &prepared.upstream_slug,
+                                        &prepared.display_name,
+                                        &prepared.canonical_definition_text,
+                                        is_deprecated.unwrap_or(false),
+                                    )
+                                    .await?;
+                                    for field in &prepared.fields {
+                                        let field_import = field.to_data_import();
+                                        indexer_definition_import_cardigann_field(
+                                            &mut tx,
+                                            actor_user_public_id,
+                                            &prepared.upstream_slug,
+                                            &field_import,
+                                        )
+                                        .await?;
+                                    }
+                                    let summary = indexer_definition_import_cardigann_complete(
+                                        &mut tx,
+                                        actor_user_public_id,
+                                        &prepared.upstream_slug,
+                                    )
+                                    .await?;
+                                    Ok(summary)
+                                }
+                                .await;
+                                revaer_data::transaction::finish_transaction(tx, result).await
+                            }
+                            .await;
+                            if matches!(
+                                &completed,
+                                Err(DataError::RollbackFailed { .. }
+                                    | DataError::QueryFailed {
+                                        operation: "transaction begin",
+                                        ..
+                                    })
+                            ) && let Err(source) = connection.close().await
+                                && let Err(original) = completed
+                            {
+                                return Err(DataError::RollbackFailed {
+                                    original: Box::new(original),
+                                    cleanup: Box::new(DataError::from(source)),
+                                });
+                            }
+                            completed
+                        })
+                        .await
+                        .map_err(|source| DataError::BoundaryFailed {
+                            operation: "indexer import transaction worker",
+                            source: Box::new(source),
+                        })?
                     }
-                    let summary = indexer_definition_import_cardigann_complete(
-                        &mut tx,
-                        actor_user_public_id,
-                        &prepared.upstream_slug,
-                    )
-                    .await?;
-                    tx.commit().await.map_err(DataError::from)?;
-                    Ok(summary)
                 }
                 .instrument(span),
                 |error| map_indexer_definition_error("indexer_definition_import_cardigann", error),
@@ -3434,7 +3469,7 @@ fn parse_cardigann_definition_import(
         ));
     }
 
-    let document: CardigannDefinitionDocument = serde_yaml::from_str(trimmed_payload)
+    let document: CardigannDefinitionDocument = serde_norway::from_str(trimmed_payload)
         .map_err(|_| invalid_indexer_definition_error("cardigann_yaml_invalid"))?;
     let upstream_slug = normalize_cardigann_slug(&document.id)?;
     let display_name = normalize_cardigann_display_name(&document.name)?;

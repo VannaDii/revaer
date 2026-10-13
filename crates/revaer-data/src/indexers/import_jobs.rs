@@ -187,15 +187,16 @@ pub async fn import_job_create(
     target_search_profile_public_id: Option<Uuid>,
     target_torznab_instance_public_id: Option<Uuid>,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(IMPORT_JOB_CREATE_CALL)
-        .bind(actor_user_public_id)
-        .bind(source)
-        .bind(is_dry_run)
-        .bind(target_search_profile_public_id)
-        .bind(target_torznab_instance_public_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("import job create"))
+    try_op("import job create", || {
+        sqlx::query_scalar(IMPORT_JOB_CREATE_CALL)
+            .bind(actor_user_public_id)
+            .bind(source)
+            .bind(is_dry_run)
+            .bind(target_search_profile_public_id)
+            .bind(target_torznab_instance_public_id)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Mark an import job as running for the Prowlarr API path.
@@ -209,13 +210,14 @@ pub async fn import_job_run_prowlarr_api(
     prowlarr_url: &str,
     prowlarr_api_key_secret_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(IMPORT_JOB_RUN_PROWLARR_API_CALL)
-        .bind(import_job_public_id)
-        .bind(prowlarr_url)
-        .bind(prowlarr_api_key_secret_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("import job run prowlarr api"))?;
+    try_op("import job run prowlarr api", || {
+        sqlx::query(IMPORT_JOB_RUN_PROWLARR_API_CALL)
+            .bind(import_job_public_id)
+            .bind(prowlarr_url)
+            .bind(prowlarr_api_key_secret_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -229,12 +231,13 @@ pub async fn import_job_run_prowlarr_backup(
     import_job_public_id: Uuid,
     backup_blob_ref: &str,
 ) -> Result<()> {
-    sqlx::query(IMPORT_JOB_RUN_PROWLARR_BACKUP_CALL)
-        .bind(import_job_public_id)
-        .bind(backup_blob_ref)
-        .execute(pool)
-        .await
-        .map_err(try_op("import job run prowlarr backup"))?;
+    try_op("import job run prowlarr backup", || {
+        sqlx::query(IMPORT_JOB_RUN_PROWLARR_BACKUP_CALL)
+            .bind(import_job_public_id)
+            .bind(backup_blob_ref)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -247,11 +250,12 @@ pub async fn import_job_get_status(
     pool: &PgPool,
     import_job_public_id: Uuid,
 ) -> Result<ImportJobStatusRow> {
-    sqlx::query_as(IMPORT_JOB_GET_STATUS_CALL)
-        .bind(import_job_public_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("import job get status"))
+    try_op("import job get status", || {
+        sqlx::query_as(IMPORT_JOB_GET_STATUS_CALL)
+            .bind(import_job_public_id)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// List results for an import job.
@@ -263,11 +267,12 @@ pub async fn import_job_list_results(
     pool: &PgPool,
     import_job_public_id: Uuid,
 ) -> Result<Vec<ImportJobResultRow>> {
-    sqlx::query_as(IMPORT_JOB_LIST_RESULTS_CALL)
-        .bind(import_job_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("import job list results"))
+    try_op("import job list results", || {
+        sqlx::query_as(IMPORT_JOB_LIST_RESULTS_CALL)
+            .bind(import_job_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Claim the next running import job for runtime processing.
@@ -276,10 +281,10 @@ pub async fn import_job_list_results(
 ///
 /// Returns an error if the stored procedure fails.
 pub async fn import_job_worker_claim_next(pool: &PgPool) -> Result<Option<ClaimedImportJobRow>> {
-    sqlx::query_as(IMPORT_JOB_WORKER_CLAIM_NEXT_CALL)
-        .fetch_optional(pool)
-        .await
-        .map_err(try_op("import job worker claim next"))
+    try_op("import job worker claim next", || {
+        sqlx::query_as(IMPORT_JOB_WORKER_CLAIM_NEXT_CALL).fetch_optional(pool)
+    })
+    .await
 }
 
 /// Record an import result row for a running import job.
@@ -291,17 +296,18 @@ pub async fn import_job_worker_record_result(
     pool: &PgPool,
     input: &ImportJobWorkerResultInput<'_>,
 ) -> Result<()> {
-    sqlx::query(IMPORT_JOB_WORKER_RECORD_RESULT_CALL)
-        .bind(input.import_job_public_id)
-        .bind(input.prowlarr_identifier)
-        .bind(input.status)
-        .bind(input.detail)
-        .bind(input.resolved_is_enabled)
-        .bind(input.resolved_priority)
-        .bind(input.missing_secret_fields)
-        .execute(pool)
-        .await
-        .map_err(try_op("import job worker record result"))?;
+    try_op("import job worker record result", || {
+        sqlx::query(IMPORT_JOB_WORKER_RECORD_RESULT_CALL)
+            .bind(input.import_job_public_id)
+            .bind(input.prowlarr_identifier)
+            .bind(input.status)
+            .bind(input.detail)
+            .bind(input.resolved_is_enabled)
+            .bind(input.resolved_priority)
+            .bind(input.missing_secret_fields)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -316,13 +322,14 @@ pub async fn import_job_worker_mark_terminal(
     status: &str,
     error_detail: Option<&str>,
 ) -> Result<()> {
-    sqlx::query(IMPORT_JOB_WORKER_MARK_TERMINAL_CALL)
-        .bind(import_job_public_id)
-        .bind(status)
-        .bind(error_detail)
-        .execute(pool)
-        .await
-        .map_err(try_op("import job worker mark terminal"))?;
+    try_op("import job worker mark terminal", || {
+        sqlx::query(IMPORT_JOB_WORKER_MARK_TERMINAL_CALL)
+            .bind(import_job_public_id)
+            .bind(status)
+            .bind(error_detail)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 

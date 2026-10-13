@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-15T12:47:40.994358+00:00",
+  "generated": "2026-10-13T22:38:52.141333+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -3126,6 +3126,16 @@
       "href": "/adr/template/"
     },
     {
+      "id": "api/contract",
+      "title": "HTTP API contract",
+      "summary": "[openapi.json](openapi.json) describes the HTTP contract. The API embeds this document and serves it at /docs/openapi.json. The existing Rust export command serializes the embedded document; it does not infer schemas from Rust structs.",
+      "tags": [
+        "corrections-found-during-the-python-migration",
+        "maintaining-the-document"
+      ],
+      "href": "/api/contract/"
+    },
+    {
       "id": "api/guides/bootstrap",
       "title": "Bootstrap & Workflow Lifecycle",
       "summary": "This guide explains how the Revaer application stitches configuration, orchestration, and observability components together once the binary starts.",
@@ -3215,16 +3225,6 @@
         "summary"
       ],
       "href": "/api/openapi-gaps/"
-    },
-    {
-      "id": "api/readme",
-      "title": "HTTP API contract",
-      "summary": "[openapi.json](openapi.json) describes the HTTP contract. The API embeds this document and serves it at /docs/openapi.json. The existing Rust export command serializes the embedded document; it does not infer schemas from Rust structs.",
-      "tags": [
-        "corrections-found-during-the-python-migration",
-        "maintaining-the-document"
-      ],
-      "href": "/api/readme/"
     },
     {
       "id": "index",

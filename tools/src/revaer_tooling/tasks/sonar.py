@@ -128,6 +128,16 @@ class SonarPrepareSources(Task):
             for path in (context.root / directory).rglob("__pycache__")
         )
         tracked = context.tools.git.files()
+        # Disabling bytecode writes does not remove caches from earlier runs.
+        # Inspect only authored Python directories; never traverse tool runtimes.
+        caches = {
+            path.relative_to(context.root).as_posix()
+            for name in tracked
+            if name.endswith(".py")
+            for path in ((context.root / name).parent / "__pycache__",)
+            if path.exists() or path.is_symlink()
+        }
+        names = (*names, *sorted(caches))
         for name in names:
             if any(path == name or path.startswith(name + "/") for path in tracked):
                 raise ToolingError(
@@ -166,8 +176,15 @@ class SonarScan(Task):
                 "version"
             ]
             context.tools.sonar_scanner.verify(version)
-            SonarPrepareSources.prepare(context)
-            context.tools.sonar_scanner.scan(ScanArgs(log, settings.scanner_token))
+            context.tools.sonar_scanner.scan(
+                ScanArgs(
+                    log,
+                    settings.scanner_token,
+                    settings.pull_request,
+                    settings.base_ref,
+                    settings.head_ref,
+                )
+            )
             _require_nonempty(log)
             normalized = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", context.fs.read(log))
             if "WARN" in normalized:
@@ -239,6 +256,8 @@ def _fetch_result(context: Context, identifier: str, records: dict[str, JsonObje
         },
     )
     records["quality-gate"] = api.get("qualitygates/project_status", {"analysisId": analysis})
+    # PR endpoints already select the submitted PR's issues. Main uses the
+    # operator-approved new-code period through SonarCloud's supported API.
     new_code = {} if settings.pull_request else {"sinceLeakPeriod": "true"}
     records["issues"] = api.get(
         ISSUES_SEARCH,
@@ -251,12 +270,14 @@ def _fetch_result(context: Context, identifier: str, records: dict[str, JsonObje
         },
     )
     records["all-issues"] = _fetch_all_issues(context)
+    # Deliberately omit a hotspot status filter. Every hotspot in the selected
+    # PR or main new-code period must satisfy the existing zero-hotspot gate.
     records["hotspots"] = api.get(
         "hotspots/search",
         {
             **scope,
             "projectKey": settings.project_key,
-            "status": "TO_REVIEW",
+            **new_code,
             "ps": "1",
         },
     )

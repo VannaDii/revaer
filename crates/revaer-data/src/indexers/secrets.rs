@@ -96,13 +96,14 @@ pub async fn secret_create(
     secret_type: &str,
     plaintext_value: &str,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(SECRET_CREATE_CALL)
-        .bind(actor_user_public_id)
-        .bind(secret_type)
-        .bind(plaintext_value)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("secret create"))
+    try_op("secret create", || {
+        sqlx::query_scalar(SECRET_CREATE_CALL)
+            .bind(actor_user_public_id)
+            .bind(secret_type)
+            .bind(plaintext_value)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Rotate an existing secret.
@@ -116,13 +117,14 @@ pub async fn secret_rotate(
     secret_public_id: Uuid,
     plaintext_value: &str,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(SECRET_ROTATE_CALL)
-        .bind(actor_user_public_id)
-        .bind(secret_public_id)
-        .bind(plaintext_value)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("secret rotate"))
+    try_op("secret rotate", || {
+        sqlx::query_scalar(SECRET_ROTATE_CALL)
+            .bind(actor_user_public_id)
+            .bind(secret_public_id)
+            .bind(plaintext_value)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Revoke an existing secret.
@@ -135,12 +137,13 @@ pub async fn secret_revoke(
     actor_user_public_id: Uuid,
     secret_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(SECRET_REVOKE_CALL)
-        .bind(actor_user_public_id)
-        .bind(secret_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("secret revoke"))?;
+    try_op("secret revoke", || {
+        sqlx::query(SECRET_REVOKE_CALL)
+            .bind(actor_user_public_id)
+            .bind(secret_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -153,11 +156,12 @@ pub async fn secret_metadata_list(
     pool: &PgPool,
     actor_user_public_id: Uuid,
 ) -> Result<Vec<SecretMetadataRow>> {
-    sqlx::query_as(SECRET_METADATA_LIST_CALL)
-        .bind(actor_user_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("secret metadata list"))
+    try_op("secret metadata list", || {
+        sqlx::query_as(SECRET_METADATA_LIST_CALL)
+            .bind(actor_user_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Read encrypted secret payload data.
@@ -170,17 +174,18 @@ pub async fn secret_read(
     actor_user_public_id: Option<Uuid>,
     secret_public_id: Uuid,
 ) -> Result<SecretCipherRow> {
-    let row = sqlx::query(SECRET_READ_CALL)
-        .bind(actor_user_public_id)
-        .bind(secret_public_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("secret read"))?;
+    let row = try_op("secret read", || {
+        sqlx::query(SECRET_READ_CALL)
+            .bind(actor_user_public_id)
+            .bind(secret_public_id)
+            .fetch_one(pool)
+    })
+    .await?;
 
     Ok(SecretCipherRow {
-        secret_type: row.try_get("secret_type").map_err(try_op("secret read"))?,
-        cipher_text: row.try_get("cipher_text").map_err(try_op("secret read"))?,
-        key_id: row.try_get("key_id").map_err(try_op("secret read"))?,
+        secret_type: try_op("secret read", || async { row.try_get("secret_type") }).await?,
+        cipher_text: try_op("secret read", || async { row.try_get("cipher_text") }).await?,
+        key_id: try_op("secret read", || async { row.try_get("key_id") }).await?,
     })
 }
 

@@ -2814,6 +2814,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sqlx",
+ "sqlx-core",
  "tokio",
  "tracing",
  "uuid",
@@ -2935,7 +2936,9 @@ name = "revaer-test-support"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "revaer-config",
  "sqlx",
+ "sqlx-core",
  "tokio",
  "url",
 ]

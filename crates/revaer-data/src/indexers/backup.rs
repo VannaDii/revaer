@@ -216,11 +216,12 @@ pub async fn indexer_backup_export_tag_list(
     pool: &PgPool,
     actor_user_public_id: Uuid,
 ) -> Result<Vec<BackupTagRow>> {
-    sqlx::query_as(TAG_LIST_CALL)
-        .bind(actor_user_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("indexer backup export tag list"))
+    try_op("indexer backup export tag list", || {
+        sqlx::query_as(TAG_LIST_CALL)
+            .bind(actor_user_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// List exportable rate-limit policies.
@@ -232,11 +233,12 @@ pub async fn indexer_backup_export_rate_limit_policy_list(
     pool: &PgPool,
     actor_user_public_id: Uuid,
 ) -> Result<Vec<BackupRateLimitPolicyRow>> {
-    sqlx::query_as(RATE_LIMIT_LIST_CALL)
-        .bind(actor_user_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("indexer backup export rate limit list"))
+    try_op("indexer backup export rate limit list", || {
+        sqlx::query_as(RATE_LIMIT_LIST_CALL)
+            .bind(actor_user_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// List exportable routing policies in flattened form.
@@ -248,11 +250,12 @@ pub async fn indexer_backup_export_routing_policy_list(
     pool: &PgPool,
     actor_user_public_id: Uuid,
 ) -> Result<Vec<BackupRoutingPolicyRow>> {
-    sqlx::query_as(ROUTING_LIST_CALL)
-        .bind(actor_user_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("indexer backup export routing list"))
+    try_op("indexer backup export routing list", || {
+        sqlx::query_as(ROUTING_LIST_CALL)
+            .bind(actor_user_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// List exportable indexer instances in flattened form.
@@ -264,11 +267,12 @@ pub async fn indexer_backup_export_indexer_instance_list(
     pool: &PgPool,
     actor_user_public_id: Uuid,
 ) -> Result<Vec<BackupIndexerInstanceRow>> {
-    sqlx::query_as(INSTANCE_LIST_CALL)
-        .bind(actor_user_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("indexer backup export instance list"))
+    try_op("indexer backup export instance list", || {
+        sqlx::query_as(INSTANCE_LIST_CALL)
+            .bind(actor_user_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

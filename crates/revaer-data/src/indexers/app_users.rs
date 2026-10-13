@@ -35,12 +35,13 @@ const APP_USER_VERIFY_CALL: &str = r"
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn app_user_create(pool: &PgPool, email: &str, display_name: &str) -> Result<Uuid> {
-    sqlx::query_scalar(APP_USER_CREATE_CALL)
-        .bind(email)
-        .bind(display_name)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("app user create"))
+    try_op("app user create", || {
+        sqlx::query_scalar(APP_USER_CREATE_CALL)
+            .bind(email)
+            .bind(display_name)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Update an app user's display name.
@@ -53,12 +54,13 @@ pub async fn app_user_update(
     user_public_id: Uuid,
     display_name: &str,
 ) -> Result<()> {
-    sqlx::query(APP_USER_UPDATE_CALL)
-        .bind(user_public_id)
-        .bind(display_name)
-        .execute(pool)
-        .await
-        .map_err(try_op("app user update"))?;
+    try_op("app user update", || {
+        sqlx::query(APP_USER_UPDATE_CALL)
+            .bind(user_public_id)
+            .bind(display_name)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -68,11 +70,12 @@ pub async fn app_user_update(
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn app_user_verify_email(pool: &PgPool, user_public_id: Uuid) -> Result<()> {
-    sqlx::query(APP_USER_VERIFY_CALL)
-        .bind(user_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("app user verify email"))?;
+    try_op("app user verify email", || {
+        sqlx::query(APP_USER_VERIFY_CALL)
+            .bind(user_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 

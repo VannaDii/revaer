@@ -150,12 +150,13 @@ pub async fn rss_subscription_get(
     actor_user_public_id: Uuid,
     indexer_instance_public_id: Uuid,
 ) -> Result<RssSubscriptionRow> {
-    sqlx::query_as(RSS_SUBSCRIPTION_GET_CALL)
-        .bind(actor_user_public_id)
-        .bind(indexer_instance_public_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("rss subscription get"))
+    try_op("rss subscription get", || {
+        sqlx::query_as(RSS_SUBSCRIPTION_GET_CALL)
+            .bind(actor_user_public_id)
+            .bind(indexer_instance_public_id)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// List recent RSS items seen for an indexer instance.
@@ -169,13 +170,14 @@ pub async fn rss_item_seen_list(
     indexer_instance_public_id: Uuid,
     limit: Option<i32>,
 ) -> Result<Vec<RssSeenItemRow>> {
-    sqlx::query_as(RSS_ITEM_SEEN_LIST_CALL)
-        .bind(actor_user_public_id)
-        .bind(indexer_instance_public_id)
-        .bind(limit)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("rss item seen list"))
+    try_op("rss item seen list", || {
+        sqlx::query_as(RSS_ITEM_SEEN_LIST_CALL)
+            .bind(actor_user_public_id)
+            .bind(indexer_instance_public_id)
+            .bind(limit)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Mark an RSS item as seen for an indexer instance.
@@ -187,16 +189,17 @@ pub async fn rss_item_seen_mark(
     pool: &PgPool,
     input: &RssSeenMarkInput<'_>,
 ) -> Result<RssSeenMarkRow> {
-    sqlx::query_as(RSS_ITEM_SEEN_MARK_CALL)
-        .bind(input.actor_user_public_id)
-        .bind(input.indexer_instance_public_id)
-        .bind(input.item_guid)
-        .bind(input.infohash_v1)
-        .bind(input.infohash_v2)
-        .bind(input.magnet_hash)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("rss item seen mark"))
+    try_op("rss item seen mark", || {
+        sqlx::query_as(RSS_ITEM_SEEN_MARK_CALL)
+            .bind(input.actor_user_public_id)
+            .bind(input.indexer_instance_public_id)
+            .bind(input.item_guid)
+            .bind(input.infohash_v1)
+            .bind(input.infohash_v2)
+            .bind(input.magnet_hash)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

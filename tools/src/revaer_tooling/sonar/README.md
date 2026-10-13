@@ -121,11 +121,15 @@ the parser inventory check; full application coverage acceptance is still pendin
 
 Result verification resolves `ceTaskId` to its exact analysis ID and checks that
 analysis's quality gate. It requires positive coverage and lines-to-cover,
-`ignoredConditions=false`, zero unresolved issues, and zero current hotspots.
-No hotspot status filter hides reviewed or acknowledged hotspots.
+`ignoredConditions=false`, zero unresolved issues, and zero hotspots in the
+selected scope. No hotspot status filter hides reviewed or acknowledged hotspots
+within that scope.
 
-Set `SONAR_PULL_REQUEST` for PR/new-code scope; its absence checks the main
-backlog. Authentication prefers `SONAR_AUTH_TOKEN` for API reads, then
+Set `SONAR_PULL_REQUEST` to check every current issue and hotspot in that PR.
+Without it, the operator-approved main check uses SonarCloud's supported
+`sinceLeakPeriod=true` query for new issues and hotspots; historical main backlog
+is outside this check. This permanent contract is recorded in ADR 592.
+Authentication prefers `SONAR_AUTH_TOKEN` for API reads, then
 `SONAR_TOKEN`. API retries cover connection failures, HTTP 429, and HTTP 5xx;
 result retries cover publication lag. Retry counts and delays retain their
 `SONAR_API_RETRY_*` and `SONAR_RESULT_RETRY_*` overrides.

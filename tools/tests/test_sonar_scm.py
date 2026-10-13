@@ -92,6 +92,21 @@ def test_wrong_event_identity_fails_and_invalidates_old_success(
     assert not (context.root / "artifacts/sonar/scm-evidence.txt").exists()
 
 
+def test_stale_local_target_cannot_shadow_exact_remote_base(
+    scm_context: tuple[Context, str],
+) -> None:
+    context, _ = scm_context
+    SonarPrepareScm.run(context)
+    root = context.root
+    head = context.settings.sonar.head_sha
+    git(root, "branch", "main", head)
+    with pytest.raises(ToolingError, match="shadows the exact Sonar base"):
+        SonarPrepareScm.run(context)
+    assert git(root, "rev-parse", "main") == head
+    assert git(root, "rev-parse", "HEAD") == head
+    assert not (root / "artifacts/sonar/scm-evidence.txt").exists()
+
+
 @pytest.mark.parametrize(
     "base,branch,head",
     (

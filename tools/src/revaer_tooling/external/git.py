@@ -182,6 +182,12 @@ class Git(ExternalTool):
             raise ToolingError(
                 "Exact Sonar base is not an ancestor of HEAD; restack onto the event base"
             )
+        local_base = self._optional_revision("refs/heads/" + args.branch)
+        if local_base is not None and local_base != args.base:
+            raise ToolingError(
+                "Local target branch shadows the exact Sonar base; use an independent "
+                "checkout with the target branch aligned, preserving other worktrees"
+            )
         self._remove_empty_shallow_marker()
         count = self._invoke(("rev-list", "--count", "--all"), capture=True).stdout.strip()
         if not count.isdecimal() or int(count) < 1:

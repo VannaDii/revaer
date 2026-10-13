@@ -171,14 +171,15 @@ pub async fn policy_set_create(
     scope: &str,
     enabled: Option<bool>,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(POLICY_SET_CREATE_CALL)
-        .bind(actor_user_public_id)
-        .bind(display_name)
-        .bind(scope)
-        .bind(enabled)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("policy set create"))
+    try_op("policy set create", || {
+        sqlx::query_scalar(POLICY_SET_CREATE_CALL)
+            .bind(actor_user_public_id)
+            .bind(display_name)
+            .bind(scope)
+            .bind(enabled)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Update a policy set.
@@ -192,13 +193,14 @@ pub async fn policy_set_update(
     policy_set_public_id: Uuid,
     display_name: Option<&str>,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(POLICY_SET_UPDATE_CALL)
-        .bind(actor_user_public_id)
-        .bind(policy_set_public_id)
-        .bind(display_name)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("policy set update"))
+    try_op("policy set update", || {
+        sqlx::query_scalar(POLICY_SET_UPDATE_CALL)
+            .bind(actor_user_public_id)
+            .bind(policy_set_public_id)
+            .bind(display_name)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Enable a policy set.
@@ -211,12 +213,13 @@ pub async fn policy_set_enable(
     actor_user_public_id: Uuid,
     policy_set_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(POLICY_SET_ENABLE_CALL)
-        .bind(actor_user_public_id)
-        .bind(policy_set_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("policy set enable"))?;
+    try_op("policy set enable", || {
+        sqlx::query(POLICY_SET_ENABLE_CALL)
+            .bind(actor_user_public_id)
+            .bind(policy_set_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -230,12 +233,13 @@ pub async fn policy_set_disable(
     actor_user_public_id: Uuid,
     policy_set_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(POLICY_SET_DISABLE_CALL)
-        .bind(actor_user_public_id)
-        .bind(policy_set_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("policy set disable"))?;
+    try_op("policy set disable", || {
+        sqlx::query(POLICY_SET_DISABLE_CALL)
+            .bind(actor_user_public_id)
+            .bind(policy_set_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -249,12 +253,13 @@ pub async fn policy_set_reorder(
     actor_user_public_id: Uuid,
     ordered_policy_set_public_ids: &[Uuid],
 ) -> Result<()> {
-    sqlx::query(POLICY_SET_REORDER_CALL)
-        .bind(actor_user_public_id)
-        .bind(ordered_policy_set_public_ids)
-        .execute(pool)
-        .await
-        .map_err(try_op("policy set reorder"))?;
+    try_op("policy set reorder", || {
+        sqlx::query(POLICY_SET_REORDER_CALL)
+            .bind(actor_user_public_id)
+            .bind(ordered_policy_set_public_ids)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -313,25 +318,26 @@ pub struct PolicyRuleCreateInput<'a> {
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn policy_rule_create(pool: &PgPool, input: &PolicyRuleCreateInput<'_>) -> Result<Uuid> {
-    sqlx::query_scalar(POLICY_RULE_CREATE_CALL)
-        .bind(input.actor_user_public_id)
-        .bind(input.policy_set_public_id)
-        .bind(input.rule_type)
-        .bind(input.match_field)
-        .bind(input.match_operator)
-        .bind(input.sort_order)
-        .bind(input.match_value_text)
-        .bind(input.match_value_int)
-        .bind(input.match_value_uuid)
-        .bind(input.value_set_items)
-        .bind(input.action)
-        .bind(input.severity)
-        .bind(input.is_case_insensitive)
-        .bind(input.rationale)
-        .bind(input.expires_at)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("policy rule create"))
+    try_op("policy rule create", || {
+        sqlx::query_scalar(POLICY_RULE_CREATE_CALL)
+            .bind(input.actor_user_public_id)
+            .bind(input.policy_set_public_id)
+            .bind(input.rule_type)
+            .bind(input.match_field)
+            .bind(input.match_operator)
+            .bind(input.sort_order)
+            .bind(input.match_value_text)
+            .bind(input.match_value_int)
+            .bind(input.match_value_uuid)
+            .bind(input.value_set_items)
+            .bind(input.action)
+            .bind(input.severity)
+            .bind(input.is_case_insensitive)
+            .bind(input.rationale)
+            .bind(input.expires_at)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Disable a policy rule.
@@ -344,12 +350,13 @@ pub async fn policy_rule_disable(
     actor_user_public_id: Uuid,
     policy_rule_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(POLICY_RULE_DISABLE_CALL)
-        .bind(actor_user_public_id)
-        .bind(policy_rule_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("policy rule disable"))?;
+    try_op("policy rule disable", || {
+        sqlx::query(POLICY_RULE_DISABLE_CALL)
+            .bind(actor_user_public_id)
+            .bind(policy_rule_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -363,12 +370,13 @@ pub async fn policy_rule_enable(
     actor_user_public_id: Uuid,
     policy_rule_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(POLICY_RULE_ENABLE_CALL)
-        .bind(actor_user_public_id)
-        .bind(policy_rule_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("policy rule enable"))?;
+    try_op("policy rule enable", || {
+        sqlx::query(POLICY_RULE_ENABLE_CALL)
+            .bind(actor_user_public_id)
+            .bind(policy_rule_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -383,13 +391,14 @@ pub async fn policy_rule_reorder(
     policy_set_public_id: Uuid,
     ordered_rule_public_ids: &[Uuid],
 ) -> Result<()> {
-    sqlx::query(POLICY_RULE_REORDER_CALL)
-        .bind(actor_user_public_id)
-        .bind(policy_set_public_id)
-        .bind(ordered_rule_public_ids)
-        .execute(pool)
-        .await
-        .map_err(try_op("policy rule reorder"))?;
+    try_op("policy rule reorder", || {
+        sqlx::query(POLICY_RULE_REORDER_CALL)
+            .bind(actor_user_public_id)
+            .bind(policy_set_public_id)
+            .bind(ordered_rule_public_ids)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -402,11 +411,12 @@ pub async fn policy_set_rule_list(
     pool: &PgPool,
     actor_user_public_id: Uuid,
 ) -> Result<Vec<PolicySetRuleListRow>> {
-    sqlx::query_as(POLICY_SET_RULE_LIST_CALL)
-        .bind(actor_user_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("policy set rule list"))
+    try_op("policy set rule list", || {
+        sqlx::query_as(POLICY_SET_RULE_LIST_CALL)
+            .bind(actor_user_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

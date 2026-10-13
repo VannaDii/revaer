@@ -61,23 +61,24 @@ pub async fn indexer_cf_state_get(
     actor_user_public_id: Uuid,
     indexer_instance_public_id: Uuid,
 ) -> Result<IndexerCfStateRow> {
-    let record = sqlx::query_as::<
-        _,
-        (
-            String,
-            chrono::DateTime<chrono::Utc>,
-            Option<chrono::DateTime<chrono::Utc>>,
-            Option<chrono::DateTime<chrono::Utc>>,
-            Option<i32>,
-            i32,
-            Option<String>,
-        ),
-    >(INDEXER_CF_STATE_GET_CALL)
-    .bind(actor_user_public_id)
-    .bind(indexer_instance_public_id)
-    .fetch_one(pool)
-    .await
-    .map_err(try_op("indexer cf state get"))?;
+    let record = try_op("indexer cf state get", || {
+        sqlx::query_as::<
+            _,
+            (
+                String,
+                chrono::DateTime<chrono::Utc>,
+                Option<chrono::DateTime<chrono::Utc>>,
+                Option<chrono::DateTime<chrono::Utc>>,
+                Option<i32>,
+                i32,
+                Option<String>,
+            ),
+        >(INDEXER_CF_STATE_GET_CALL)
+        .bind(actor_user_public_id)
+        .bind(indexer_instance_public_id)
+        .fetch_one(pool)
+    })
+    .await?;
 
     Ok(IndexerCfStateRow {
         state: record.0,
@@ -101,13 +102,14 @@ pub async fn indexer_cf_state_reset(
     indexer_instance_public_id: Uuid,
     reason: &str,
 ) -> Result<()> {
-    sqlx::query(INDEXER_CF_STATE_RESET_CALL)
-        .bind(actor_user_public_id)
-        .bind(indexer_instance_public_id)
-        .bind(reason)
-        .execute(pool)
-        .await
-        .map_err(try_op("indexer cf state reset"))?;
+    try_op("indexer cf state reset", || {
+        sqlx::query(INDEXER_CF_STATE_RESET_CALL)
+            .bind(actor_user_public_id)
+            .bind(indexer_instance_public_id)
+            .bind(reason)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 

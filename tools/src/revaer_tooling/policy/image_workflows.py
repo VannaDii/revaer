@@ -83,6 +83,7 @@ def image_workflow_findings(documents: Mapping[str, Document], matrix: JsonObjec
         needs(caller)
         == (
             "ui-e2e",
+            *(("ui-e2e-coverage",) if "rust-coverage" in mapping(pr.document.get("jobs")) else ()),
             "feature-matrix",
             "native-it",
             "media-conversion",

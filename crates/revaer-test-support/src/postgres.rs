@@ -7,8 +7,30 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use sqlx::{Connection, postgres::PgConnection};
+use sqlx::Connection;
+use sqlx::postgres::{PgConnection, PgPoolOptions, PgTransactionManager};
+use sqlx::{AssertSqlSafe, raw_sql};
+use sqlx_core::transaction::TransactionManager;
 use url::{Position, Url, form_urlencoded};
+
+async fn finish_fixture_transaction(
+    mut transaction: sqlx::Transaction<'_, sqlx::Postgres>,
+    result: std::result::Result<(), sqlx::Error>,
+) -> Result<()> {
+    let completed = match result {
+        Ok(()) => PgTransactionManager::commit(transaction.as_mut()).await,
+        Err(error) => Err(error),
+    };
+    match completed {
+        Ok(()) => Ok(()),
+        Err(original) => match PgTransactionManager::rollback(transaction.as_mut()).await {
+            Ok(()) => Err(original.into()),
+            Err(cleanup) => Err(anyhow::anyhow!(
+                "{original}; fixture rollback failed: {cleanup}"
+            )),
+        },
+    }
+}
 
 const TEST_DATABASE_URL_IS_REQUIRED: &str = "test database url is required";
 
@@ -45,32 +67,73 @@ impl TestDatabase {
             !self.closed && self.runtime_roles,
             "fixture is not initialized"
         );
-        let mut url = Url::parse(&self.admin_url)?;
-        url.set_path(&self.database);
-        let mut connection = PgConnection::connect(url.as_str()).await?;
-        let database: String = sqlx::query_scalar("SELECT current_database()")
-            .fetch_one(&mut connection)
-            .await?;
-        anyhow::ensure!(
-            database == self.database,
-            "fixture reached another database"
-        );
-        let mut transaction = connection.begin().await?;
-        for (name, value) in parameters {
+        for (name, _) in parameters {
             anyhow::ensure!(
                 name.starts_with("revaer_test."),
                 "invalid fixture parameter"
             );
-            sqlx::query("SELECT set_config($1, $2, true)")
-                .bind(name)
-                .bind(value)
-                .execute(&mut *transaction)
-                .await?;
         }
-        sqlx::raw_sql(script).execute(&mut *transaction).await?;
-        transaction.commit().await?;
-        connection.close().await?;
-        Ok(())
+        let mut connection = self.admin_connection().await?;
+        let completed = async {
+            let mut transaction = connection.begin().await?;
+            let applied = async {
+                for (name, value) in parameters {
+                    sqlx::query("SELECT set_config($1, $2, true)")
+                        .bind(name)
+                        .bind(value)
+                        .execute(&mut *transaction)
+                        .await?;
+                }
+                sqlx::raw_sql(script).execute(&mut *transaction).await?;
+                Ok::<(), sqlx::Error>(())
+            }
+            .await;
+            finish_fixture_transaction(transaction, applied).await
+        }
+        .await;
+        let closed = connection.close().await;
+        match (completed, closed) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(original), Ok(())) => Err(original),
+            (Ok(()), Err(cleanup)) => Err(cleanup.into()),
+            (Err(original), Err(cleanup)) => Err(anyhow::anyhow!(
+                "{original}; fixture connection close failed: {cleanup}"
+            )),
+        }
+    }
+
+    /// Open a control connection to this owned initialized database for fixture setup.
+    ///
+    /// The application continues to use the restricted runtime login.
+    ///
+    /// # Errors
+    /// Rejects closed or uninitialized fixtures and reports connection or identity failures.
+    pub async fn admin_connection(&self) -> Result<PgConnection> {
+        anyhow::ensure!(
+            !self.closed && self.runtime_roles,
+            "fixture is not initialized"
+        );
+        let mut url = Url::parse(&self.admin_url)?;
+        url.set_path(&self.database);
+        let mut connection = PgConnection::connect(url.as_str()).await?;
+        let identity = sqlx::query_scalar::<_, String>("SELECT current_database()")
+            .fetch_one(&mut connection)
+            .await;
+        match identity {
+            Ok(database) if database == self.database => Ok(connection),
+            result => {
+                let original = match result {
+                    Ok(_) => anyhow::anyhow!("fixture reached another database"),
+                    Err(error) => error.into(),
+                };
+                match connection.close().await {
+                    Ok(()) => Err(original),
+                    Err(cleanup) => Err(anyhow::anyhow!(
+                        "{original}; fixture connection close failed: {cleanup}"
+                    )),
+                }
+            }
+        }
     }
 
     #[doc = "Connection string that can be passed to `sqlx` or other Postgres clients."]
@@ -117,18 +180,34 @@ impl TestDatabase {
         let password: String = sqlx::query_scalar("SELECT gen_random_uuid()::text")
             .fetch_one(&mut admin)
             .await?;
-        let mut transaction = admin.begin().await?;
-        sqlx::query("SELECT set_config('revaer_test.fixture_password', $1, true)")
-            .bind(&password)
-            .execute(&mut *transaction)
-            .await?;
-        sqlx::raw_sql(include_str!(
-            "../../../scripts/tests/database-runtime-fixture-roles.sql"
-        ))
-        .execute(&mut *transaction)
-        .await?;
-        transaction.commit().await?;
+        // Retain role cleanup ownership even if commit reports an uncertain outcome.
         self.runtime_roles = true;
+        let completed = async {
+            let mut transaction = admin.begin().await?;
+            let prepared = async {
+                sqlx::query("SELECT set_config('revaer_test.fixture_password', $1, true)")
+                    .bind(&password)
+                    .execute(&mut *transaction)
+                    .await?;
+                sqlx::raw_sql(include_str!(
+                    "../../../scripts/tests/database-runtime-fixture-roles.sql"
+                ))
+                .execute(&mut *transaction)
+                .await?;
+                Ok::<(), sqlx::Error>(())
+            }
+            .await;
+            finish_fixture_transaction(transaction, prepared).await
+        }
+        .await;
+        if let Err(original) = completed {
+            if let Err(cleanup) = admin.close().await {
+                return Err(anyhow::anyhow!(
+                    "{original}; fixture connection close failed: {cleanup}"
+                ));
+            }
+            return Err(original);
+        }
         let owner_name = format!("{}_owner", self.database);
         let runtime_name = format!("{}_runtime", self.database);
         let mut owner_url = Url::parse(&self.connection_string)?;
@@ -139,13 +218,26 @@ impl TestDatabase {
             .set_password(Some(&password))
             .map_err(|()| anyhow::anyhow!("invalid owner password field"))?;
         let mut owner = PgConnection::connect(owner_url.as_str()).await?;
+        let completed = async {
         let mut transaction = owner.begin().await?;
+        let initialized = async {
         sqlx::raw_sql(sqlx::AssertSqlSafe(init))
             .execute(&mut *transaction)
             .await?;
         sqlx::query("SELECT * FROM revaer_system.seal_database_baseline_v1(1::smallint, sha256(convert_to($1, 'UTF8')), $2)")
             .bind(init).bind(&runtime_name).execute(&mut *transaction).await?;
-        transaction.commit().await?;
+            Ok::<(), sqlx::Error>(())
+        }.await;
+        finish_fixture_transaction(transaction, initialized).await
+        }.await;
+        if let Err(original) = completed {
+            if let Err(cleanup) = owner.close().await {
+                return Err(anyhow::anyhow!(
+                    "{original}; fixture connection close failed: {cleanup}"
+                ));
+            }
+            return Err(original);
+        }
         owner.close().await?;
         sqlx::raw_sql(include_str!(
             "../../../scripts/tests/database-runtime-fixture-owner-disable.sql"

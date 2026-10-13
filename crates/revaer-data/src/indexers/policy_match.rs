@@ -61,15 +61,16 @@ pub async fn policy_text_match(
     value_set_id: Option<i64>,
     is_case_insensitive: bool,
 ) -> Result<bool> {
-    sqlx::query_scalar(POLICY_TEXT_MATCH_CALL)
-        .bind(candidate)
-        .bind(match_operator)
-        .bind(match_value_text)
-        .bind(value_set_id)
-        .bind(is_case_insensitive)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("policy text match"))
+    try_op("policy text match", || {
+        sqlx::query_scalar(POLICY_TEXT_MATCH_CALL)
+            .bind(candidate)
+            .bind(match_operator)
+            .bind(match_value_text)
+            .bind(value_set_id)
+            .bind(is_case_insensitive)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Evaluate a UUID policy match.
@@ -84,14 +85,15 @@ pub async fn policy_uuid_match(
     match_value_uuid: Option<Uuid>,
     value_set_id: Option<i64>,
 ) -> Result<bool> {
-    sqlx::query_scalar(POLICY_UUID_MATCH_CALL)
-        .bind(candidate)
-        .bind(match_operator)
-        .bind(match_value_uuid)
-        .bind(value_set_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("policy uuid match"))
+    try_op("policy uuid match", || {
+        sqlx::query_scalar(POLICY_UUID_MATCH_CALL)
+            .bind(candidate)
+            .bind(match_operator)
+            .bind(match_value_uuid)
+            .bind(value_set_id)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Evaluate an integer policy match.
@@ -106,14 +108,15 @@ pub async fn policy_int_match(
     match_value_int: Option<i32>,
     value_set_id: Option<i64>,
 ) -> Result<bool> {
-    sqlx::query_scalar(POLICY_INT_MATCH_CALL)
-        .bind(candidate)
-        .bind(match_operator)
-        .bind(match_value_int)
-        .bind(value_set_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("policy int match"))
+    try_op("policy int match", || {
+        sqlx::query_scalar(POLICY_INT_MATCH_CALL)
+            .bind(candidate)
+            .bind(match_operator)
+            .bind(match_value_int)
+            .bind(value_set_id)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Evaluate a release-group policy match.
@@ -130,16 +133,17 @@ pub async fn policy_release_group_match(
     value_set_id: Option<i64>,
     is_case_insensitive: bool,
 ) -> Result<bool> {
-    sqlx::query_scalar(POLICY_RELEASE_GROUP_MATCH_CALL)
-        .bind(canonical_torrent_id)
-        .bind(release_group_token)
-        .bind(match_operator)
-        .bind(match_value_text)
-        .bind(value_set_id)
-        .bind(is_case_insensitive)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("policy release group match"))
+    try_op("policy release group match", || {
+        sqlx::query_scalar(POLICY_RELEASE_GROUP_MATCH_CALL)
+            .bind(canonical_torrent_id)
+            .bind(release_group_token)
+            .bind(match_operator)
+            .bind(match_value_text)
+            .bind(value_set_id)
+            .bind(is_case_insensitive)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

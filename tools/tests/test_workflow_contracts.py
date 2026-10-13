@@ -77,11 +77,32 @@ def test_scanner_execution_and_merges_select_the_same_browser_phases(
     document = yaml_document((root / path).read_text(), path)
     job = mapping(mapping(document["jobs"])[job_name])
     shared = {key: str(value) for key, value in mapping(job["env"]).items()}
-    execution = mapping(named_steps(job)["Run Playwright with browser coverage"]["env"])
+    execution = mapping(named_steps(job).get("Run Playwright with browser coverage", {}).get("env"))
     selected = {**shared, **{key: str(value) for key, value in execution.items()}}
     expected = ("api-none", "api-api-key", "ui-chromium", "ui-firefox", "ui-webkit")
     assert load_e2e_settings(selected).phases() == expected
     assert load_e2e_settings(shared).phases() == expected
+
+
+def test_distributed_workflow_preserves_required_checks_and_rejects_missing_inputs(
+    fixture: Fixture,
+) -> None:
+    root = Path(__file__).parents[2]
+    path = ".github/workflows/pr.yml"
+    fixture.documents[path] = yaml_document((root / path).read_text(), path)
+    assert not scanner_workflow_findings(fixture.documents)
+    assert not required_check_findings(fixture.documents, fixture.contexts, False)
+    assert not image_workflow_findings(fixture.documents, fixture.matrix)
+    original = copy.deepcopy(fixture.documents[path])
+    for producer in ("rust-coverage", "tooling-coverage", "api-e2e", "ui-e2e"):
+        fixture.job("pr", producer)["if"] = "false"
+        assert scanner_workflow_findings(fixture.documents)
+        fixture.documents[path] = copy.deepcopy(original)
+    fixture.job("pr", "coverage")["needs"] = ["rust-coverage"]
+    assert scanner_workflow_findings(fixture.documents)
+    fixture.documents[path] = copy.deepcopy(original)
+    mapping(mapping(fixture.job("pr", "ui-e2e")["strategy"])["matrix"])["browser"] = ["chromium"]
+    assert required_check_findings(fixture.documents, fixture.contexts, False)
 
 
 def test_committed_media_job_preserves_required_conversion_contract(fixture: Fixture) -> None:
@@ -166,6 +187,22 @@ def test_scanner_rejects_missing_duplicate_and_reordered_execution(fixture: Fixt
     job["steps"] = []
     assert scanner_workflow_findings(fixture.documents)
     assert scanner_workflow_findings({})
+
+
+@pytest.mark.parametrize(("workflow", "job_name"), (("pr", "coverage"), ("sonar", "sonar")))
+@pytest.mark.parametrize("value", (None, "0"))
+def test_scanner_requires_canonical_bytecode_environment(
+    fixture: Fixture, workflow: str, job_name: str, value: str | None
+) -> None:
+    environment = mapping(fixture.job(workflow, job_name)["env"])
+    if value is None:
+        environment.pop("PYTHONDONTWRITEBYTECODE")
+    else:
+        environment["PYTHONDONTWRITEBYTECODE"] = value
+    assert any(
+        "PYTHONDONTWRITEBYTECODE=1" in error
+        for error in scanner_workflow_findings(fixture.documents)
+    )
 
 
 def test_exact_sonar_checkout_toolchain_and_main_result_scope(fixture: Fixture) -> None:
@@ -334,6 +371,14 @@ def test_required_dependency_graph_and_exact_udeps_pin(fixture: Fixture) -> None
 
 def test_command_matching_requires_a_complete_invocation() -> None:
     assert runs({"run": "uv run --locked -- rv ci"}, "ci")
+    assert runs({"run": "uv run --locked --no-build -- rv db-migrate"}, "db-migrate")
+    assert runs(
+        {
+            "run": "uv run --locked --no-build --no-binary-package "
+            "python-semantic-release -- rv db-migrate"
+        },
+        "db-migrate",
+    )
     assert runs({"run": ".venv/bin/rv ci"}, "ci")
     assert not runs({}, "ci")
     assert not runs({"run": "rv ci 'unclosed"}, "ci")

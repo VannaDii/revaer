@@ -238,11 +238,12 @@ pub struct SecretCipherRow {
 ///
 /// Returns an error if the database call fails.
 pub async fn rss_poll_claim(pool: &PgPool, limit: i32) -> Result<Vec<RssPollClaimRow>> {
-    sqlx::query_as(RSS_POLL_CLAIM_CALL)
-        .bind(limit)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("rss poll claim"))
+    try_op("rss poll claim", || {
+        sqlx::query_as(RSS_POLL_CLAIM_CALL)
+            .bind(limit)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Apply the outcome of an RSS poll attempt.
@@ -254,29 +255,30 @@ pub async fn rss_poll_apply(
     pool: &PgPool,
     input: &RssPollApplyInput<'_>,
 ) -> Result<RssPollApplyResult> {
-    sqlx::query_as(RSS_POLL_APPLY_CALL)
-        .bind(input.rss_subscription_id)
-        .bind(input.correlation_id)
-        .bind(input.retry_seq)
-        .bind(input.started_at)
-        .bind(input.finished_at)
-        .bind(input.outcome)
-        .bind(input.error_class)
-        .bind(input.http_status)
-        .bind(input.latency_ms)
-        .bind(input.parse_ok)
-        .bind(input.result_count)
-        .bind(input.via_mitigation)
-        .bind(input.rate_limit_denied_scope)
-        .bind(input.cf_detected)
-        .bind(input.cf_retryable)
-        .bind(input.item_guid)
-        .bind(input.infohash_v1)
-        .bind(input.infohash_v2)
-        .bind(input.magnet_hash)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("rss poll apply"))
+    try_op("rss poll apply", || {
+        sqlx::query_as(RSS_POLL_APPLY_CALL)
+            .bind(input.rss_subscription_id)
+            .bind(input.correlation_id)
+            .bind(input.retry_seq)
+            .bind(input.started_at)
+            .bind(input.finished_at)
+            .bind(input.outcome)
+            .bind(input.error_class)
+            .bind(input.http_status)
+            .bind(input.latency_ms)
+            .bind(input.parse_ok)
+            .bind(input.result_count)
+            .bind(input.via_mitigation)
+            .bind(input.rate_limit_denied_scope)
+            .bind(input.cf_detected)
+            .bind(input.cf_retryable)
+            .bind(input.item_guid)
+            .bind(input.infohash_v1)
+            .bind(input.infohash_v2)
+            .bind(input.magnet_hash)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Prepare an indexer instance for executor testing.
@@ -289,12 +291,13 @@ pub async fn indexer_instance_test_prepare(
     actor_user_public_id: Option<Uuid>,
     indexer_instance_public_id: Uuid,
 ) -> Result<IndexerTestPrepareRow> {
-    sqlx::query_as(INDEXER_TEST_PREPARE_CALL)
-        .bind(actor_user_public_id)
-        .bind(indexer_instance_public_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("indexer test prepare"))
+    try_op("indexer test prepare", || {
+        sqlx::query_as(INDEXER_TEST_PREPARE_CALL)
+            .bind(actor_user_public_id)
+            .bind(indexer_instance_public_id)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Input payload for finalizing an indexer test run.
@@ -325,17 +328,18 @@ pub async fn indexer_instance_test_finalize(
     pool: &PgPool,
     input: &IndexerTestFinalizeInput<'_>,
 ) -> Result<IndexerTestFinalizeRow> {
-    sqlx::query_as(INDEXER_TEST_FINALIZE_CALL)
-        .bind(input.actor_user_public_id)
-        .bind(input.indexer_instance_public_id)
-        .bind(input.ok)
-        .bind(input.error_class)
-        .bind(input.error_code)
-        .bind(input.detail)
-        .bind(input.result_count)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("indexer test finalize"))
+    try_op("indexer test finalize", || {
+        sqlx::query_as(INDEXER_TEST_FINALIZE_CALL)
+            .bind(input.actor_user_public_id)
+            .bind(input.indexer_instance_public_id)
+            .bind(input.ok)
+            .bind(input.error_class)
+            .bind(input.error_code)
+            .bind(input.detail)
+            .bind(input.result_count)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Read encrypted secret payloads for executor use.
@@ -348,12 +352,13 @@ pub async fn secret_read(
     actor_user_public_id: Option<Uuid>,
     secret_public_id: Uuid,
 ) -> Result<SecretCipherRow> {
-    sqlx::query_as(SECRET_READ_CALL)
-        .bind(actor_user_public_id)
-        .bind(secret_public_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("secret read"))
+    try_op("secret read", || {
+        sqlx::query_as(SECRET_READ_CALL)
+            .bind(actor_user_public_id)
+            .bind(secret_public_id)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

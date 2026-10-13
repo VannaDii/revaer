@@ -74,12 +74,13 @@ pub async fn canonical_merge_by_infohash(
     infohash_v2: Option<&str>,
     infohash_v1: Option<&str>,
 ) -> Result<()> {
-    sqlx::query(CANONICAL_MERGE_BY_INFOHASH_CALL)
-        .bind(infohash_v2)
-        .bind(infohash_v1)
-        .execute(pool)
-        .await
-        .map_err(try_op("canonical merge by infohash"))?;
+    try_op("canonical merge by infohash", || {
+        sqlx::query(CANONICAL_MERGE_BY_INFOHASH_CALL)
+            .bind(infohash_v2)
+            .bind(infohash_v1)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -93,12 +94,13 @@ pub async fn canonical_recompute_best_source(
     canonical_torrent_public_id: Uuid,
     scoring_context: Option<&str>,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(CANONICAL_RECOMPUTE_BEST_SOURCE_CALL)
-        .bind(canonical_torrent_public_id)
-        .bind(scoring_context)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("canonical recompute best source"))
+    try_op("canonical recompute best source", || {
+        sqlx::query_scalar(CANONICAL_RECOMPUTE_BEST_SOURCE_CALL)
+            .bind(canonical_torrent_public_id)
+            .bind(scoring_context)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Prune low-confidence canonical entries.
@@ -107,10 +109,10 @@ pub async fn canonical_recompute_best_source(
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn canonical_prune_low_confidence(pool: &PgPool) -> Result<()> {
-    sqlx::query(CANONICAL_PRUNE_LOW_CONFIDENCE_CALL)
-        .execute(pool)
-        .await
-        .map_err(try_op("canonical prune low confidence"))?;
+    try_op("canonical prune low confidence", || {
+        sqlx::query(CANONICAL_PRUNE_LOW_CONFIDENCE_CALL).execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -123,19 +125,20 @@ pub async fn canonical_disambiguation_rule_create(
     pool: &PgPool,
     input: &CanonicalDisambiguationRuleCreateInput<'_>,
 ) -> Result<()> {
-    sqlx::query(CANONICAL_DISAMBIGUATION_RULE_CREATE_CALL)
-        .bind(input.actor_user_public_id)
-        .bind(input.rule_type)
-        .bind(input.identity_left_type)
-        .bind(input.identity_left_value_text)
-        .bind(input.identity_left_value_uuid)
-        .bind(input.identity_right_type)
-        .bind(input.identity_right_value_text)
-        .bind(input.identity_right_value_uuid)
-        .bind(input.reason)
-        .execute(pool)
-        .await
-        .map_err(try_op("canonical disambiguation rule create"))?;
+    try_op("canonical disambiguation rule create", || {
+        sqlx::query(CANONICAL_DISAMBIGUATION_RULE_CREATE_CALL)
+            .bind(input.actor_user_public_id)
+            .bind(input.rule_type)
+            .bind(input.identity_left_type)
+            .bind(input.identity_left_value_text)
+            .bind(input.identity_left_value_uuid)
+            .bind(input.identity_right_type)
+            .bind(input.identity_right_value_text)
+            .bind(input.identity_right_value_uuid)
+            .bind(input.reason)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 

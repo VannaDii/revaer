@@ -28,6 +28,9 @@ type Endpoint = Literal[
 class ScanArgs:
     log: Path
     token: str = field(repr=False)
+    pull_request: str = ""
+    base_ref: str = ""
+    head_ref: str = ""
 
 
 class SonarScanner(ExternalTool):
@@ -66,9 +69,18 @@ class SonarScanner(ExternalTool):
                 r"-D\s*(?:sonar\.|project\.settings|project\.home)", self.environment.get(name, "")
             ):
                 raise ToolingError(f"{name} cannot override sonar-project.properties")
+        identity: tuple[str, ...] = ()
+        if args.pull_request:
+            if not args.pull_request.isdecimal() or not args.base_ref or not args.head_ref:
+                raise ToolingError("Local PR scan requires an exact key, base and head branch")
+            identity = (
+                "-Dsonar.pullrequest.key=" + args.pull_request,
+                "-Dsonar.pullrequest.base=" + args.base_ref,
+                "-Dsonar.pullrequest.branch=" + args.head_ref,
+            )
         return self.runner.run(
             Invocation(
-                (str(self.locate()), "--debug"),
+                (str(self.locate()), "--debug", *identity),
                 self.root,
                 {**self.environment, "SONAR_TOKEN": args.token},
                 log_path=args.log,
