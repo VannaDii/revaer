@@ -9,6 +9,8 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
+from secrets import token_urlsafe
+from urllib.parse import quote
 
 import pytest
 from revaer_tooling.cli import make_context
@@ -99,8 +101,10 @@ def test_ci_holds_connection_until_gates_finish_and_never_builds_after_failure(
 
 
 def test_database_selection_preserves_options_and_encodes_the_name() -> None:
-    assert with_database("postgresql://user:p%40ss@[::1]/old?sslmode=require", "new/name") == (
-        "postgresql://user:p%40ss@[::1]/new%2Fname?sslmode=require"
+    password = quote(token_urlsafe(24) + "@", safe="")
+    server = f"postgresql://user:{password}@[::1]/"
+    assert with_database(server + "old?sslmode=require", "new/name") == (
+        server + "new%2Fname?sslmode=require"
     )
 
 

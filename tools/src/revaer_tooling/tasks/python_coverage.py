@@ -12,6 +12,7 @@ from .base import Task
 from .e2e import RunPaths
 
 COVERAGE_DATABASE = ".coverage"
+PYTHON_XML = "python.xml"
 
 
 def authored_python(context: Context) -> tuple[str, ...]:
@@ -69,7 +70,7 @@ class PythonCoverageMerge(Task):
             context.fs.lock(paths.runtime / "e2e.lock"),
             context.fs.lock(output / ".python-coverage.lock"),
         ):
-            for name in (COVERAGE_DATABASE, "python.xml", "python.lcov"):
+            for name in (COVERAGE_DATABASE, PYTHON_XML, "python.lcov"):
                 context.fs.remove_owned(output / name, context.root)
             inputs = coverage_inputs(context)
             sources = authored_python(context)
@@ -77,13 +78,11 @@ class PythonCoverageMerge(Task):
                 raise ToolingError("Python coverage requires authored source files")
             try:
                 context.tools.python.merge_coverage(PythonCoverageArgs(inputs, sources, output))
-                verify_python_coverage(
-                    context.fs.read(output / "python.xml"), context.root, sources
-                )
+                verify_python_coverage(context.fs.read(output / PYTHON_XML), context.root, sources)
             except BaseException:
                 # Keep raw databases for diagnosis; a partial XML/LCOV pair
                 # must not look like a completed analysis report on the next run.
-                for name in ("python.xml", "python.lcov"):
+                for name in (PYTHON_XML, "python.lcov"):
                     context.fs.remove_owned(output / name, context.root)
                 raise
         return TaskResult("Merged tooling and API/browser Python coverage: coverage/python.xml")

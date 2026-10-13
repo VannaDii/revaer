@@ -136,9 +136,10 @@ def test_merge_cannot_read_while_either_producer_is_running(
 def test_merge_combines_real_data_from_separate_producer_directories(
     coverage_context: Context,
 ) -> None:
-    context: Context = replace(
+    context = replace(
         coverage_context, options=replace(coverage_context.options, expected_shards=1)
     )
+    assert isinstance(context, Context)
     producers = context.root / "coverage/producers"
     tooling = producers / "tooling-coverage"
     tooling.mkdir(parents=True)

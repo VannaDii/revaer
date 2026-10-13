@@ -52,6 +52,12 @@ def _functions(records: list[list[str]]) -> tuple[dict[str, str], dict[str, int]
     return definitions, hits
 
 
+def _branch_count(previous: int | None, value: str) -> int | None:
+    if value == "-":
+        return previous
+    return (previous or 0) + _count(value)
+
+
 def _branches(records: list[list[str]]) -> dict[tuple[str, str, str], int | None]:
     observations: dict[tuple[str, str, str], int | None] = {}
     for record in records:
@@ -63,11 +69,7 @@ def _branches(records: list[list[str]]) -> dict[tuple[str, str, str], int | None
                 raise ToolingError("LLVM branch coverage record is malformed")
             number, block, branch, count = fields
             key = number, block, branch
-            previous = observations.get(key)
-            hits = None if count == "-" else _count(count)
-            observations[key] = (
-                None if previous is None and hits is None else (previous or 0) + (hits or 0)
-            )
+            observations[key] = _branch_count(observations.get(key), count)
     return observations
 
 

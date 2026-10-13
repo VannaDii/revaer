@@ -40,6 +40,8 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
   blame reload for each scan.
 - Remove untracked Python bytecode beside authored Python sources before scanning;
   disabling future bytecode writes does not remove caches from earlier runs.
+- Remove untracked UI build output after browser measurement and before scanning;
+  refuse tracked content rather than treating generated WASM as authored text.
 - Reject a stale local target branch that shadows the exact event base. Use an
   independent checkout for local analysis rather than rewriting shared branch refs.
 - The root operator-approved Rust input merge combines measured counters for the

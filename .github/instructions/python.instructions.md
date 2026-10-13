@@ -92,5 +92,7 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
   compilation records in the complete engine reports; follow root operator consent.
 - Sonar source preparation removes untracked Python bytecode caches beside authored
   Python files, including caches left by earlier runs; refuse tracked content and links.
+- Coverage fixtures assert the actual Context type after copying options, and URL
+  fixtures generate credentials at runtime while retaining percent-encoding cases.
 - Exact SCM preparation must reject a stale local target branch that would shadow
   the fetched event base. Preserve shared worktrees; qualify in an independent checkout.

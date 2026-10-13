@@ -36,7 +36,8 @@ UNUSED = (
 
 
 def test_distributed_merge_keeps_measured_chromium_captures(measured: Context) -> None:
-    context: Context = replace(measured, options=replace(measured.options, expected_shards=1))
+    context = replace(measured, options=replace(measured.options, expected_shards=1))
+    assert isinstance(context, Context)
     JavaScriptCoverageMerge.run(context)
     expected = (context.root / "coverage/js-lcov.info").read_text()
     results = context.root / "tests/test-results"
