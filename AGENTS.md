@@ -75,6 +75,9 @@
 - Handoff requires:
   - `rv ci`
   - `rv ui-e2e`
+- Before pushing a PR snapshot, `just ci-qualify` must also pass the complete
+  local API/browser coverage and strict Sonar scan/published-result sequence.
+  `just ci` alone does not qualify the hosted analysis gates.
 - [the `rv` task registry](./tools/src/revaer_tooling/cli.py) is the canonical command surface for build, lint, test, coverage, release, docs, and local dev loops.
 - [`ci.yml`](./.github/workflows/ci.yml), [`pr.yml`](./.github/workflows/pr.yml), and [`sonar.yml`](./.github/workflows/sonar.yml) must stay aligned with the `rv` registry and this policy.
 - Sonar analysis scope and first-party signal shaping are versioned in [`sonar-project.properties`](./sonar-project.properties). `sonar.sources` must enumerate every authored tracked top-level repository entry so all authored content remains in main-code scope without treating the untracked `.git` object database as source. `sonar.tests` must point only to the committed empty `.sonar-test-scope` sentinel: this disables Sonar's path heuristic, prevents `docs` and `tests` paths from silently skipping secrets analysis, and keeps every authored test under main-code rules and coverage. Strict empty scope filters are intentional scanner-side overrides of any project-side narrowing. Rust coverage must exercise the complete workspace with all features, Python coverage must come from executed tooling and E2E code, browser JavaScript coverage must come from Playwright execution, and all coverage streams must retain real source and line records, and Sonar must publish positive coverage and lines-to-cover metrics.
@@ -83,6 +86,32 @@
 ---
 
 ## 4) Maintainability Guardrails
+
+- The operator approved `sonar.scm.forceReloadAll=false` for this CI repair.
+  Complete Git history, enabled SCM analysis and missing-blame validation remain
+  required; this exact consent does not authorize other analysis relaxations.
+- The operator approved routing every measured tracked Rust source to Sonar's
+  Rust LCOV importer while retaining the complete original workspace LCOV,
+  native LLVM text, JSON and HTML. Preserve all instrumentation, measurements
+  and thresholds; dependency/generated/native records are omitted only from
+  this Rust-specific importer input, never from the complete reports.
+- The operator approved merging measured compilation records for the same
+  physical Rust source into one importer record. Sum measured counters, retain
+  uncovered locations and recompute summaries; keep the original separate
+  records in complete LLVM, JSON and HTML reports. Instrumentation and thresholds
+  remain unchanged.
+
+The operator-approved production-only coverage scope is the exact
+`sonar.coverage.exclusions` list enforced by
+`tools/src/revaer_tooling/policy/sonar.py`. Internal utilities, test sources and
+unused Nexus templates remain in analysis and complete coverage measurements;
+only production sources carry coverage requirements. A JavaScript inventory
+containing no production sources requires no fabricated execution counts.
+
+The operator-approved exception to empty Sonar source exclusions is exactly
+`scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml`, the intentionally
+malformed YAML functional fixture. Keep the fixture and its functional tests;
+no other analysis exclusions are authorized by this exception.
 
 - Keep one canonical statement of each global rule. Root policy belongs here; scoped files should reference it and add path-specific details instead of repeating or rewording it inconsistently.
 - Any change to [the `rv` task registry](./tools/src/revaer_tooling/cli.py), workflow files, release scripts, lint posture, or [`sonar-project.properties`](./sonar-project.properties) must update the relevant instruction file in the same change.
@@ -111,3 +140,7 @@
   - whether drift was found
   - which contradictions or stale references were removed
 - Update [`docs/adr/index.md`](./docs/adr/index.md) and [`docs/SUMMARY.md`](./docs/SUMMARY.md) in the same change that adds the ADR.
+
+Local PR qualification supplies only explicit pull-request identity (key, base,
+head branch) to the scanner; quality criteria remain exclusively in
+`sonar-project.properties`. Local analysis must never default to the main branch.

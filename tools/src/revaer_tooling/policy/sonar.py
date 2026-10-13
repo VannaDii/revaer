@@ -2,21 +2,20 @@
 
 The properties file remains the scanner's sole configuration. This allowlist is
 the review gate for that file: unknown keys fail, every required key must exist,
-and scope filters must be explicitly empty. It never repairs a failing policy.
+and scope filters must match the reviewed values. It never repairs a failing policy.
 """
 
 from collections.abc import Mapping
+from fnmatch import fnmatchcase
 
 from ..errors import ToolingError
 from .formats import properties
 
 EMPTY_KEYS = frozenset(
     (
-        "sonar.exclusions",
         "sonar.inclusions",
         "sonar.test.exclusions",
         "sonar.test.inclusions",
-        "sonar.coverage.exclusions",
         "sonar.cpd.exclusions",
         "sonar.issue.ignore.multicriteria",
         "sonar.issue.ignore.allfile",
@@ -27,7 +26,38 @@ EMPTY_KEYS = frozenset(
     )
 )
 
+COVERAGE_EXCLUSIONS = (
+    ".github/**",
+    "charts/**",
+    "docs/**",
+    "release/**",
+    "scripts/**",
+    "test-fixtures/**",
+    "tests/**",
+    "tools/**",
+    "vendor/**",
+    "setup.sh",
+    "crates/revaer-doc-indexer/**",
+    "crates/revaer-test-support/**",
+    "crates/revaer-ui/tools/**",
+    "crates/revaer-ui/ui_vendor/**",
+    "crates/revaer-ui/static/nexus/js/**",
+    "**/tests/**",
+    "**/tests.rs",
+    "**/*_tests.rs",
+    "**/*_tests/**",
+    "**/build.rs",
+)
+
+
+def production_source(path: str) -> bool:
+    """Apply the operator-approved coverage scope without narrowing analysis."""
+    return not any(fnmatchcase(path, pattern) for pattern in COVERAGE_EXCLUSIONS)
+
+
 REQUIRED_VALUES = {
+    "sonar.exclusions": "scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml",
+    "sonar.coverage.exclusions": ",".join(COVERAGE_EXCLUSIONS),
     "sonar.projectKey": "VannaDii_Revaer",
     "sonar.organization": "vannadii",
     "sonar.sourceEncoding": "UTF-8",
@@ -45,7 +75,7 @@ REQUIRED_VALUES = {
     "sonar.scm.exclusions.disabled": "true",
     "sonar.scm.disabled": "false",
     "sonar.scm.provider": "git",
-    "sonar.scm.forceReloadAll": "true",
+    "sonar.scm.forceReloadAll": "false",
     "sonar.sensor.cache.project.enable": "true",
     "sonar.scanner.keepReport": "true",
     "sonar.tests": ".sonar-test-scope",

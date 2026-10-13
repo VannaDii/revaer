@@ -28,9 +28,25 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
   and require positive execution. This supersedes the covered-and-uncovered
   requirement below only for that bootstrap; other inputs retain their gates.
 
-- Revaer versions its complete strict Sonar scope in `sonar-project.properties`. Keep every authored tracked top-level entry in main-code scope, use only the committed empty `.sonar-test-scope` sentinel for `sonar.tests`, and keep source, test, coverage, duplication, JavaScript, SCA, and issue-scope filters explicitly empty.
+- Revaer versions its complete strict Sonar scope in `sonar-project.properties`. Keep every authored tracked top-level entry in main-code scope and use only the committed empty `.sonar-test-scope` sentinel for `sonar.tests`. The operator-approved source exclusion is exactly `scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml`, an intentionally malformed functional fixture; all other source, test, duplication, JavaScript, SCA, and issue-scope filters remain explicitly empty. Apply the operator-approved production-only coverage scope from root `AGENTS.md`; do not otherwise narrow analysis or security scope.
 - PostgreSQL migrations must remain visible to generic text, secrets, and main-code analysis. Do not assign `.sql`, `.pgsql`, or `.plpgsql` to the PL/SQL analyzer; reserve `sonar.plsql.file.suffixes=.plsql` for actual PL/SQL.
 - Sonar property policy is enforced after Java-properties parsing. Escaped keys, leading-whitespace forms, continuations, duplicate logical keys, workflow overrides, and properties outside the exact reviewed allowlist are forbidden.
+- The operator explicitly reaffirmed `sonar.scm.forceReloadAll=false` in this
+  CI repair. Keep complete history, SCM analysis and the missing-blame gate;
+  do not force a full reload or disable SCM to avoid warnings.
+- Scanner debug logging (`--debug`) identifies malformed coverage records in the existing
+  scanner log. It changes diagnostics only; scanner criteria remain canonical.
+  Keep normal SCM analysis and complete checkout history; do not force a full
+  blame reload for each scan.
+- Remove untracked Python bytecode beside authored Python sources before scanning;
+  disabling future bytecode writes does not remove caches from earlier runs.
+- Remove untracked UI build output after browser measurement and before scanning;
+  refuse tracked content rather than treating generated WASM as authored text.
+- Reject a stale local target branch that shadows the exact event base. Use an
+  independent checkout for local analysis rather than rewriting shared branch refs.
+- The root operator-approved Rust input merge combines measured counters for the
+  same physical source; preserve uncovered locations and the complete original
+  compilation records. Do not drop a duplicate measurement to satisfy the importer.
 - `sonar.coverageReportPaths` must consume the generic report emitted by `rv script-coverage`. That report must come from the exact archive-hash-verified `kcov` revision installed by the canonical setup action for the retained root `setup.sh`, retain uncovered executable lines, and enforce the approved bootstrap allowance above.
 - Follow the repo-wide external action versioning rule in `.github/instructions/devops.instructions.md` when editing `.github/workflows/sonar.yml`. Do not restate a conflicting Sonar-only pinning rule here.
 - Revaer uses Sonar as a strict merge-control signal on pull requests. Require scanner-side waiting, retained task/report evidence, and API verification of that same analysis.
@@ -64,3 +80,7 @@ coverage setup profile, and one `rv sonar-scan` invocation. Produce bootstrap
 and Python coverage explicitly, merge completed E2E coverage, and retain both
 coverage and complete scanner evidence even when a gate fails. Update the
 complete source and YAML inventories when files change; do not narrow scope.
+
+Local PR qualification supplies only explicit pull-request identity (key, base,
+head branch) to the scanner; quality criteria remain exclusively in
+`sonar-project.properties`. Local analysis must never default to the main branch.

@@ -28,7 +28,8 @@ def coverage_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Context
     shutil.copy2(source / "tools/coverage-report.toml", tmp_path / "tools/coverage-report.toml")
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True, timeout=10)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("E2E_PROJECTS", raising=False)
+    monkeypatch.setenv("E2E_BROWSERS", "chromium")
+    monkeypatch.setenv("E2E_PLAYWRIGHT_PROJECTS", "api-none,api-api-key,ui-chromium")
     context = make_context(Options())
     phases = context.settings.e2e.phases()
     for phase in ("tooling", *phases):
@@ -129,3 +130,72 @@ def test_merge_cannot_read_while_either_producer_is_running(
     with context.fs.lock(context.root / lock), pytest.raises(ToolingError, match="holds"):
         PythonCoverageMerge.run(context)
     assert path.read_bytes() == previous
+
+
+def test_merge_combines_real_data_from_separate_producer_directories(
+    coverage_context: Context,
+) -> None:
+    context = Context(
+        root=coverage_context.root,
+        settings=coverage_context.settings,
+        options=Options(expected_shards=1),
+        tools=coverage_context.tools,
+        fs=coverage_context.fs,
+        emit=coverage_context.emit,
+        host=coverage_context.host,
+        invoked_at=coverage_context.invoked_at,
+        command_names=coverage_context.command_names,
+    )
+    producers = context.root / "coverage/producers"
+    tooling = producers / "tooling-coverage"
+    tooling.mkdir(parents=True)
+    shutil.move(context.root / ".coverage", tooling / ".coverage")
+    groups = (
+        ("api-e2e-coverage", ("api-none", "api-api-key")),
+        ("ui-e2e-chromium", ("ui-chromium",)),
+    )
+    for name, phases in groups:
+        directory = producers / name
+        results = directory / "tests/test-results"
+        results.mkdir(parents=True)
+        (results / "python-e2e-summary.json").write_text(
+            json.dumps(
+                {
+                    "status": "passed",
+                    "shard": 1,
+                    "total_shards": 1,
+                    "phases": dict.fromkeys(phases, "passed"),
+                    "browser_coverage": True,
+                }
+            )
+        )
+        for phase in phases:
+            coverage = directory / "coverage/e2e" / phase
+            coverage.mkdir(parents=True)
+            shutil.move(context.root / "coverage/e2e" / phase / ".coverage", coverage / ".coverage")
+            (results / f"selection-{phase}-main.json").write_text(
+                json.dumps(
+                    {
+                        "phase": phase,
+                        "shard": 1,
+                        "total_shards": 1,
+                        "all": ["scenario"],
+                        "selected": ["scenario"],
+                    }
+                )
+            )
+            label = "ui" if phase.startswith("ui-") else "api"
+            (results / f"{label}-coverage-{phase}-main.json").write_text('["/observed"]')
+    PythonCoverageMerge.run(context)
+    report = ElementTree.parse(context.root / "coverage/python.xml")
+    assert {
+        entry.attrib["filename"] for entry in report.findall("./packages/package/classes/class")
+    } == {
+        "tools/src/revaer_tooling/cli.py",
+        "tools/src/revaer_tooling/never.py",
+        "tests/cli.py",
+    }
+    (producers / "api-e2e-coverage/coverage/e2e/api-api-key/.coverage").write_text("corrupt")
+    with pytest.raises(ToolingError):
+        PythonCoverageMerge.run(context)
+    assert not (context.root / "coverage/python.xml").exists()

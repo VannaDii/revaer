@@ -103,15 +103,26 @@ class SonarPrepareSources(Task):
     def run(context: Context) -> TaskResult:
         # These generated mirrors sit under scanned source directories. Removing
         # them preserves authored scope without configuring scanner exclusions.
-        names = (
+        names: tuple[str, ...] = (
             "tests/node_modules",
             "release/node_modules",
             "tests/support/api/schema.ts",
             "crates/revaer-ui/dist-serve",
+            "crates/revaer-ui/dist",
             "tests/test-results",
             "tests/playwright-report",
         )
         tracked = context.tools.git.files()
+        # Disabling bytecode writes does not remove caches from earlier runs.
+        # Inspect only authored Python directories; never traverse tool runtimes.
+        caches = {
+            path.relative_to(context.root).as_posix()
+            for name in tracked
+            if name.endswith(".py")
+            for path in ((context.root / name).parent / "__pycache__",)
+            if path.exists() or path.is_symlink()
+        }
+        names = (*names, *sorted(caches))
         for name in names:
             if any(path == name or path.startswith(name + "/") for path in tracked):
                 raise ToolingError(
@@ -154,7 +165,15 @@ class SonarScan(Task):
                 "version"
             ]
             context.tools.sonar_scanner.verify(version)
-            context.tools.sonar_scanner.scan(ScanArgs(log, settings.scanner_token))
+            context.tools.sonar_scanner.scan(
+                ScanArgs(
+                    log,
+                    settings.scanner_token,
+                    settings.pull_request,
+                    settings.base_ref,
+                    settings.head_ref,
+                )
+            )
             _require_nonempty(log)
             normalized = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", context.fs.read(log))
             if "WARN" in normalized:

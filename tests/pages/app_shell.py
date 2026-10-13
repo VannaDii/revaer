@@ -30,8 +30,12 @@ class AppShell:
     def goto(self, path: str = "/") -> None:
         self.page.goto(path, wait_until="domcontentloaded")
         self.record_route(path)
+        # DOMContentLoaded precedes the asynchronous Wasm shell render. Use
+        # Playwright's existing action bound before inspecting optional overlays.
+        navbar = self.page.get_by_role("navigation", name="Navbar")
+        navbar.wait_for(state="visible")
         self.dismiss_overlays()
-        expect(self.page.get_by_role("navigation", name="Navbar")).to_be_visible()
+        expect(navbar).to_be_visible()
 
     def navigate(self, label: str) -> None:
         self.dismiss_overlays()
@@ -52,13 +56,7 @@ class AppShell:
         overlay = self.page.locator(".auth-overlay")
         if not overlay.is_visible():
             return
-        dismiss = overlay.get_by_role("button", name="Dismiss").last
-        if dismiss.is_visible():
-            dismiss.click()
-        if overlay.is_visible():
-            icon = overlay.locator('button.btn-circle[aria-label="Dismiss"]')
-            if icon.is_visible():
-                icon.click()
-        if overlay.is_visible() and dismiss.is_visible():
-            dismiss.click()
+        # A visible container does not establish that its controls are ready.
+        # click waits for the final matching action to become actionable.
+        overlay.get_by_role("button", name="Dismiss").last.click()
         expect(overlay).to_be_hidden()

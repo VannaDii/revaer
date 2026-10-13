@@ -22,6 +22,18 @@ def runs(step: Document, *arguments: str) -> bool:
         return False
     if command[:4] == ["uv", "run", "--locked", "--"]:
         command = command[4:]
+    elif command[:5] == ["uv", "run", "--locked", "--no-build", "--"]:
+        command = command[5:]
+    elif command[:7] == [
+        "uv",
+        "run",
+        "--locked",
+        "--no-build",
+        "--no-binary-package",
+        "python-semantic-release",
+        "--",
+    ]:
+        command = command[7:]
     return command in (["rv", *arguments], [".venv/bin/rv", *arguments])
 
 

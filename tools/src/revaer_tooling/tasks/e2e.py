@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 from ..context import Context, TaskResult
 from ..e2e.api import ApiClient, ApiSchema, ApiSession, configure_auth
-from ..e2e.coverage import RouteCoverage, required_api_operations, verify_routes
+from ..e2e.coverage import RouteCoverage, distributed_runs, required_api_operations, verify_routes
 from ..e2e.database import single_init_database, uses_single_init
 from ..e2e.shards import verify_shards
 from ..errors import ToolingError
@@ -316,6 +316,14 @@ class UiE2eCoverage(Task):
         directory = context.settings.e2e.coverage_directory or context.root / "tests/test-results"
         if not directory.is_absolute():
             directory = context.root / directory
+        if (context.root / "coverage/producers").is_dir():
+            distributed_runs(
+                context.fs,
+                context.root,
+                context.settings.e2e.phases(),
+                context.options.expected_shards,
+            )
+            directory = context.root / "coverage/producers"
         required = required_api_operations(context.fs.read(context.root / "docs/api/openapi.json"))
         verify_routes(context.fs, directory, "API", required)
         configuration = defaults(context).get("ui")
@@ -333,6 +341,10 @@ class UiE2eCoverage(Task):
 class UiE2eShardCoverage(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
+        if distributed_runs(
+            context.fs, context.root, context.settings.e2e.phases(), context.options.expected_shards
+        ):
+            return TaskResult("Every browser shard and API phase completed its expected scenarios")
         directory = context.settings.e2e.coverage_directory or context.root / "tests/test-results"
         if not directory.is_absolute():
             directory = context.root / directory

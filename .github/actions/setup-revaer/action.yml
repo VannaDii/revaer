@@ -52,13 +52,22 @@ runs:
       shell: bash
       run: uv sync --locked
 
-    - name: Cache Rust artifacts and installed tools
+    - name: Cache Cargo downloads
       if: inputs.cargo-cache == 'true'
       uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-downloads-${{ hashFiles('Cargo.lock', 'tools/versions.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-cargo-downloads-
+
+    - name: Cache pinned Cargo tools
+      if: inputs.cargo-cache == 'true' && inputs.cargo-tools != ''
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: |
           ~/.cargo/.crates.toml
           ~/.cargo/.crates2.json
           ~/.cargo/bin/cargo-audit
@@ -71,10 +80,17 @@ runs:
           ~/.cargo/bin/mdbook
           ~/.cargo/bin/mdbook-mermaid
           ~/.cargo/bin/lychee
-          ~/.cache/sccache
-        key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ github.job }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/versions.toml', '.github/build-inputs.env') }}
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-tools-${{ format('{0}-{1}-{2}-{3}-{4}-{5}-{6}-{7}-{8}', contains(inputs.cargo-tools, 'cargo-audit'), contains(inputs.cargo-tools, 'cargo-deny'), contains(inputs.cargo-tools, 'cargo-llvm-cov'), contains(inputs.cargo-tools, 'cargo-udeps'), contains(inputs.cargo-tools, 'sqlx-cli'), contains(inputs.cargo-tools, 'trunk'), contains(inputs.cargo-tools, 'mdbook'), contains(inputs.cargo-tools, 'mdbook-mermaid'), contains(inputs.cargo-tools, 'lychee')) }}-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
+
+    - name: Cache compiler results
+      if: inputs.cargo-cache == 'true'
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.cache/sccache
+        key: ${{ runner.os }}-${{ runner.arch }}-sccache-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.github/build-inputs.env') }}-${{ github.job }}-${{ matrix.browser || 'none' }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          ${{ runner.os }}-${{ runner.arch }}-cargo-${{ github.job }}-
+          ${{ runner.os }}-${{ runner.arch }}-sccache-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.github/build-inputs.env') }}-${{ github.job }}-${{ matrix.browser || 'none' }}-
+          ${{ runner.os }}-${{ runner.arch }}-sccache-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.github/build-inputs.env') }}-
 
     - name: Install Helm
       if: inputs.helm == 'true'

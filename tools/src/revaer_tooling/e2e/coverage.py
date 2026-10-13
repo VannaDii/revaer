@@ -7,8 +7,63 @@ from pathlib import Path
 from ..errors import ToolingError
 from ..filesystem import FileSystem
 from ..json_data import JsonObject, array_value, decode, object_value, string_value
+from .shards import verify_shards
 
 API_METHODS = frozenset(("get", "post", "put", "patch", "delete"))
+
+
+def distributed_runs(
+    filesystem: FileSystem, root: Path, expected: tuple[str, ...], total: int
+) -> tuple[tuple[Path, str, str], ...]:
+    """Validate each producer before exposing its named execution inputs.
+
+    Actions downloads artifacts from this workflow run into separate directories;
+    keeping them separate prevents summaries or V8 captures overwriting a shard.
+    The existing partition validator still proves every scenario was selected.
+    """
+    producers = root / "coverage/producers"
+    if producers.is_symlink():
+        raise ToolingError("Coverage producers must not be a symlink")
+    if not producers.is_dir():
+        return ()
+    api_phases = tuple(phase for phase in expected if phase.startswith("api-"))
+    browsers = tuple(phase for phase in expected if phase.startswith("ui-"))
+    if api_phases != ("api-none", "api-api-key") or not browsers:
+        raise ToolingError(
+            "Distributed analysis requires anonymous, authenticated and browser phases"
+        )
+    result: list[tuple[Path, str, str]] = []
+    groups: list[tuple[str, tuple[str, ...], int]] = [("api-e2e-coverage", api_phases, 1)]
+    groups.extend(("ui-e2e-" + phase.removeprefix("ui-"), (phase,), total) for phase in browsers)
+    for name, phases, count in groups:
+        directories = {
+            index: producers / (name + f"-shard-{index}" if count > 1 else name)
+            for index in range(1, count + 1)
+        }
+        verify_shards(
+            filesystem,
+            producers,
+            phases,
+            count,
+            {index: path / "tests/test-results" for index, path in directories.items()},
+        )
+        for index, path in directories.items():
+            verify_producer(filesystem, path, phases, suffix=f"-shard-{index}" if count > 1 else "")
+            suffix = f"-shard-{index}" if count > 1 else ""
+            result.extend((path, phase, suffix) for phase in phases)
+    return tuple(result)
+
+
+def verify_producer(
+    filesystem: FileSystem, path: Path, phases: tuple[str, ...], *, suffix: str
+) -> None:
+    if path.is_symlink():
+        raise ToolingError("Coverage producer must not be a symlink")
+    summary = object_value(
+        decode(filesystem.read(path / f"tests/test-results/python-e2e-summary{suffix}.json"))
+    )
+    if "ui-chromium" in phases and summary.get("browser_coverage") is not True:
+        raise ToolingError("Chromium shards must collect browser line coverage")
 
 
 def verify_analysis_run(
@@ -61,7 +116,7 @@ def required_api_operations(document: str) -> set[str]:
 def verify_routes(
     filesystem: FileSystem, directory: Path, label: str, required: Iterable[str]
 ) -> None:
-    files = sorted(directory.glob(f"{label.lower()}-coverage-*.json"))
+    files = sorted(directory.rglob(f"{label.lower()}-coverage-*.json"))
     if not files:
         raise ToolingError(f"{label} coverage files were not produced")
     observed = {

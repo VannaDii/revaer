@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from revaer_tooling.e2e.coverage import distributed_runs
 from revaer_tooling.e2e.shards import verify_shards
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.filesystem import FileSystem
@@ -113,3 +114,86 @@ def test_setup_requests_cannot_replace_api_test_evidence(evidence: Path) -> None
     path.rename(path.with_name("api-coverage-api-none-shard-1-setup.json"))
     with pytest.raises(ToolingError, match="nonempty api-none"):
         verify_shards(FileSystem(), evidence, PHASES, 3)
+
+
+@pytest.fixture
+def distributed(tmp_path: Path) -> Path:
+    groups: list[tuple[str, tuple[str, ...], int]] = [
+        ("api-e2e-coverage", ("api-none", "api-api-key"), 1)
+    ]
+    groups.extend(
+        (f"ui-e2e-{browser}", (f"ui-{browser}",), 3)
+        for browser in ("chromium", "firefox", "webkit")
+    )
+    for name, phases, total in groups:
+        for index in range(1, total + 1):
+            suffix = f"-shard-{index}" if total > 1 else ""
+            results = tmp_path / "coverage/producers" / (name + suffix) / "tests/test-results"
+            results.mkdir(parents=True)
+            (results / f"python-e2e-summary{suffix}.json").write_text(
+                json.dumps(
+                    {
+                        "status": "passed",
+                        "shard": index,
+                        "total_shards": total,
+                        "phases": dict.fromkeys(phases, "passed"),
+                        "browser_coverage": "ui-chromium" in phases,
+                    }
+                )
+            )
+            for phase in phases:
+                universe = ["test_a", "test_b", "test_c"]
+                (results / f"selection-{phase}{suffix}-main.json").write_text(
+                    json.dumps(
+                        {
+                            "phase": phase,
+                            "shard": index,
+                            "total_shards": total,
+                            "all": universe,
+                            "selected": universe[index - 1 :: total],
+                        }
+                    )
+                )
+                label = "ui" if phase.startswith("ui-") else "api"
+                (results / f"{label}-coverage-{phase}{suffix}-main.json").write_text(
+                    '["/observed"]'
+                )
+    return tmp_path
+
+
+def test_distributed_browser_partitions_keep_each_producer_separate(distributed: Path) -> None:
+    phases = ("api-none", "api-api-key", "ui-chromium", "ui-firefox", "ui-webkit")
+    inputs = distributed_runs(FileSystem(), distributed, phases, 3)
+    assert len(inputs) == 11
+    assert len({root for root, _, _ in inputs}) == 10
+    summary = (
+        distributed
+        / "coverage/producers/ui-e2e-webkit-shard-2/tests/test-results"
+        / "python-e2e-summary-shard-2.json"
+    )
+    summary.unlink()
+    filesystem = FileSystem()
+    with pytest.raises(ToolingError, match="completion summary"):
+        distributed_runs(filesystem, distributed, phases, 3)
+
+
+@pytest.mark.parametrize("case", ("failed", "partition", "no-line-coverage"))
+def test_distributed_coverage_rejects_incomplete_runs(distributed: Path, case: str) -> None:
+    results = distributed / "coverage/producers/ui-e2e-chromium-shard-1/tests/test-results"
+    path = results / (
+        "selection-ui-chromium-shard-1-main.json"
+        if case == "partition"
+        else "python-e2e-summary-shard-1.json"
+    )
+    record = json.loads(path.read_text())
+    if case == "failed":
+        record.update({"status": "failed"})
+    elif case == "partition":
+        record.update({"selected": ["test_b"]})
+    else:
+        record.update({"browser_coverage": False})
+    path.write_text(json.dumps(record))
+    phases = ("api-none", "api-api-key", "ui-chromium", "ui-firefox", "ui-webkit")
+    filesystem = FileSystem()
+    with pytest.raises(ToolingError):
+        distributed_runs(filesystem, distributed, phases, 3)

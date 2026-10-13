@@ -10,8 +10,10 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from ..context import Context, TaskResult
+from ..errors import ToolingError
 from ..external.database import with_database
 from .base import Task
+from .bootstrap import ScriptCoverage
 from .build import (
     Audit,
     BuildRelease,
@@ -25,7 +27,19 @@ from .build import (
 from .charts import HelmLint
 from .coverage import Coverage
 from .database import DatabaseStart, database_connection
+from .e2e import UiE2e, UiE2eCoverage
+from .javascript_coverage import JavaScriptCoverageMerge
+from .native import SonarCompileDatabase
 from .policy import InstructionDrift, Lint
+from .python_coverage import PythonCoverageMerge
+from .sonar import (
+    SonarPackageReport,
+    SonarPrepareScm,
+    SonarPrepareSources,
+    SonarScan,
+    SonarVerifyInputs,
+    SonarVerifyResult,
+)
 from .testing import Test, TestFeaturesMinimal
 
 VALIDATION_STEPS: dict[str, Callable[[Context], TaskResult]] = {
@@ -80,3 +94,55 @@ class Lock(Task):
     def run(context: Context) -> TaskResult:
         context.tools.uv.lock()
         return TaskResult("Project dependencies locked with uv")
+
+
+class CiQualify(Task):
+    """Run complete local qualification before pushing a pull-request snapshot."""
+
+    @staticmethod
+    def run(context: Context) -> TaskResult:
+        sonar = context.settings.sonar
+        if (
+            not sonar.scanner_token
+            or not sonar.auth_token
+            or not sonar.pull_request
+            or not sonar.head_ref
+        ):
+            raise ToolingError("ci-qualify requires Sonar credentials and SONAR_PULL_REQUEST")
+        if not sonar.native_required:
+            raise ToolingError("ci-qualify requires REVAER_REQUIRE_NATIVE_COVERAGE=1")
+        e2e = context.settings.e2e
+        if (
+            e2e.shard_total != 1
+            or e2e.retries != 0
+            or not e2e.browser_coverage
+            or set(e2e.phases())
+            != {"api-none", "api-api-key", "ui-chromium", "ui-firefox", "ui-webkit"}
+        ):
+            raise ToolingError(
+                "ci-qualify requires all API/browser phases, coverage and no retries"
+            )
+        if (context.root / "coverage/producers").exists():
+            raise ToolingError(
+                "ci-qualify requires local inputs, not downloaded producer artifacts"
+            )
+        context.tools.kcov.verify()
+        SonarPrepareScm.run(context)
+        for execute in (
+            Ci.run,
+            UiE2e.run,
+            UiE2eCoverage.run,
+            ScriptCoverage.run,
+            PythonCoverageMerge.run,
+            JavaScriptCoverageMerge.run,
+            SonarCompileDatabase.run,
+            SonarVerifyInputs.run,
+            SonarPrepareSources.run,
+            SonarScan.run,
+            SonarPackageReport.run,
+            SonarVerifyResult.run,
+        ):
+            result = execute(context)
+            if result.message:
+                context.emit(result.message)
+        return TaskResult("Complete local CI, API/browser coverage and Sonar qualification passed")

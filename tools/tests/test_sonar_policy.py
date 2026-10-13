@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from revaer_tooling.policy.advisories import advisory_findings
-from revaer_tooling.policy.sonar import SBOM_PATH, sonar_findings
+from revaer_tooling.policy.sonar import SBOM_PATH, production_source, sonar_findings
 
 INVENTORY = (
     ".github/workflows/ci.yml",
@@ -19,6 +19,33 @@ INVENTORY = (
     SBOM_PATH,
 )
 SENTINEL = {".gitkeep": b""}
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "docs/mermaid-init.js",
+        "tools/src/revaer_tooling/cli.py",
+        "crates/revaer-ui/static/nexus/js/app.js",
+        "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/js/app.js",
+        "crates/revaer-app/src/bootstrap/service_recovery_tests/operator.rs",
+    ),
+)
+def test_nonproduction_paths_do_not_affect_coverage(path: str) -> None:
+    assert not production_source(path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "crates/revaer-ui/src/app.rs",
+        "crates/revaer-ui/static/runtime.js",
+        "crates/revaer-app/src/bootstrap/service.rs",
+        "crates/revaer-torrent-libt/src/ffi/session.cpp",
+    ),
+)
+def test_production_paths_retain_coverage_requirements(path: str) -> None:
+    assert production_source(path)
 
 
 @pytest.fixture
@@ -71,13 +98,14 @@ def test_reviewed_configuration_and_all_sources_are_accepted(sonar: str) -> None
     ("key", "value"),
     [
         ("sonar.exclusions", "**/*"),
+        ("sonar.exclusions", "scripts/tests/fixtures/workflow-guardrails/**"),
         ("sonar.coverage.exclusions", "tools/**"),
         ("sonar.inclusions", "crates/**"),
         ("sonar.tests", "tests"),
         ("sonar.sources", "crates"),
         ("sonar.scm.exclusions.disabled", "false"),
         ("sonar.scm.disabled", "true"),
-        ("sonar.scm.forceReloadAll", "false"),
+        ("sonar.scm.forceReloadAll", "true"),
         ("sonar.sensor.cache.project.enable", "false"),
         ("sonar.scanner.keepReport", "false"),
         ("sonar.scanner.excludeHiddenFiles", "true"),

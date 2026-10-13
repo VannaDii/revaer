@@ -96,8 +96,8 @@ jobs:
       - name: Helm lint
         run: uv run --locked -- rv helm-lint
 
-  coverage:
-    name: Check Coverage
+  rust-coverage:
+    name: Rust and Native Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 180
     needs:
@@ -110,16 +110,11 @@ jobs:
       - audit
       - load-matrix
       - instruction-drift
-    permissions:
-      contents: read
-      pull-requests: read
     env:
       REVAER_TEST_DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)
         }}@localhost:5432/revaer
       DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer
-      SONAR_AUTH_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
       REVAER_REQUIRE_NATIVE_COVERAGE: '1'
-      E2E_BROWSERS: chromium,firefox,webkit
     services:
       postgres:
         image: postgres:16-alpine
@@ -137,40 +132,126 @@ jobs:
           fetch-depth: '0'
           ref: ${{ github.event.pull_request.head.sha }}
       - uses: ./.github/actions/setup-revaer
-        timeout-minutes: 20
+        timeout-minutes: 40
         with:
           apt-profile: coverage
-          sonar-scanner: 'true'
+          cargo-tools: cargo-llvm-cov,sqlx-cli
+      - name: Run migrations
+        env:
+          DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}
+        run: uv run --locked --no-build --no-binary-package python-semantic-release -- rv db-migrate
+      - name: Coverage
+        run: uv run --locked -- rv cov
+      - name: Build native compile database
+        run: uv run --locked -- rv sonar-compile-db
+      - name: Upload Rust and native inputs
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: rust-native-coverage
+          path: |
+            coverage/lcov.info
+            coverage/workspace-lcov.info
+            coverage/llvm-cov.txt
+            coverage/compile_commands.json
+            coverage/cxxbridge/include/rust/cxx.h
+            coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h
+          if-no-files-found: error
+          overwrite: true
+
+  tooling-coverage:
+    name: Python and Bootstrap Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    needs: [fmt, lint, check, helm-lint, udeps, deny, audit, load-matrix, instruction-drift]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 40
+        with:
+          apt-profile: coverage
           cargo-tools: cargo-audit,cargo-deny,cargo-llvm-cov,cargo-udeps,sqlx-cli,trunk,mdbook,mdbook-mermaid,lychee
           helm: 'true'
           oras: 'true'
           trivy: 'true'
           browsers: chromium,firefox,webkit
-      - name: Run migrations
-        env:
-          DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}
-        run: uv run --locked -- rv db-migrate
-      - name: Coverage
-        run: uv run --locked -- rv cov
       - name: Python tooling coverage
         run: uv run --locked -- rv tooling-cov
       - name: Bootstrap execution coverage
         run: uv run --locked -- rv script-coverage
-      - name: Run Playwright with browser coverage
-        env:
-          E2E_API_BASE_URL: http://localhost:7070
-          E2E_BASE_URL: http://localhost:8080
-          E2E_DB_ADMIN_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)
-            }}@localhost:5432/postgres
-          E2E_SKIP_DB_START: '1'
-          E2E_BROWSER_COVERAGE: '1'
-        run: uv run --locked -- rv ui-e2e
+      - name: Upload tooling execution inputs
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: tooling-coverage
+          path: .coverage
+          include-hidden-files: true
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Upload bootstrap execution input
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: bootstrap-coverage
+          path: coverage/script-coverage.xml
+          if-no-files-found: error
+          overwrite: true
+
+  coverage:
+    name: Check Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: [rust-coverage, tooling-coverage, api-e2e, ui-e2e]
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      SONAR_AUTH_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
+      REVAER_REQUIRE_NATIVE_COVERAGE: '1'
+      E2E_BROWSERS: chromium,firefox,webkit
+      E2E_BROWSER_COVERAGE: '1'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: '0'
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: ./.github/actions/setup-revaer
+        timeout-minutes: 20
+        with:
+          apt-profile: base
+          apt-packages: libtorrent-rasterbar-dev pkg-config sccache clang-19 gnupg openssl
+          sonar-scanner: 'true'
+      - name: Download Rust and native inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: rust-native-coverage
+          path: coverage
+      - name: Download tooling execution inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: tooling-coverage
+          path: coverage/producers/tooling-coverage
+      - name: Download API execution inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: api-e2e-coverage
+          path: coverage/producers/api-e2e-coverage
+      - name: Download bootstrap execution input
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: bootstrap-coverage
+          path: coverage
+      - name: Download browser execution inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: ui-e2e-*-shard-*
+          path: coverage/producers
       - name: Merge Python coverage inputs
         run: uv run --locked -- rv python-coverage-merge
       - name: Merge browser coverage inputs
         run: uv run --locked -- rv js-coverage-merge
-      - name: Build native compile database
-        run: uv run --locked -- rv sonar-compile-db
       - name: Verify Sonar analysis inputs
         run: uv run --locked -- rv sonar-verify-inputs
       - name: Prepare Sonar source inputs
@@ -200,6 +281,7 @@ jobs:
           name: sonar-coverage
           path: |
             coverage/lcov.info
+            coverage/workspace-lcov.info
             coverage/llvm-cov.txt
             coverage/js-lcov.info
             coverage/script-coverage.xml
@@ -339,7 +421,7 @@ jobs:
       - name: Run migrations
         env:
           DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}
-        run: uv run --locked -- rv db-migrate
+        run: uv run --locked --no-build --no-binary-package python-semantic-release -- rv db-migrate
 
       - name: Feature matrix tests (no default features)
         run: uv run --locked -- rv test-features-min
@@ -362,7 +444,8 @@ jobs:
       E2E_API_BASE_URL: http://localhost:7070
       E2E_BASE_URL: http://localhost:8080
       E2E_COVERAGE_REQUIRE_UI: '0'
-      E2E_PLAYWRIGHT_PROJECTS: api-api-key
+      E2E_PLAYWRIGHT_PROJECTS: api-none,api-api-key
+      E2E_PLAYWRIGHT_NO_DEPS: '1'
       E2E_SKIP_DB_START: '1'
       E2E_VIDEO: 'off'
       REVAER_TEST_DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)
@@ -383,11 +466,13 @@ jobs:
           - 5432:5432
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: ./.github/actions/setup-revaer
         timeout-minutes: 20
         with:
           apt-profile: db
-          cargo-tools: sqlx-cli,trunk
+          cargo-tools: sqlx-cli
           browsers: ''
       - name: API E2E coverage
         run: uv run --locked -- rv ui-e2e
@@ -396,16 +481,25 @@ jobs:
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: api-e2e-coverage
-          path: tests/test-results/api-coverage-*.json
+          path: |
+            tests/test-results/api-coverage-*.json
+            tests/test-results/python-e2e-summary.json
+            tests/test-results/selection-*.json
+            coverage/e2e/api-none/.coverage
+            coverage/e2e/api-api-key/.coverage
+          include-hidden-files: true
           if-no-files-found: error
+          overwrite: true
 
   ui-e2e:
-    name: UI E2E (shard ${{ matrix.shard }}/3)
+    name: ${{ matrix.browser == 'chromium' && 'UI E2E' || format('UI E2E {0}', matrix.browser) }} (shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
+        browser: [chromium, firefox, webkit]
         shard:
           - 1
           - 2
@@ -423,12 +517,12 @@ jobs:
     env:
       E2E_API_BASE_URL: http://localhost:7070
       E2E_BASE_URL: http://localhost:8080
-      E2E_BROWSER_CHANNEL: chrome
       E2E_COVERAGE_REQUIRE_API: '0'
       E2E_DB_ADMIN_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)
         }}@localhost:5432/postgres
       E2E_PLAYWRIGHT_NO_DEPS: '1'
-      E2E_PLAYWRIGHT_PROJECTS: ui-chromium
+      E2E_BROWSERS: ${{ matrix.browser }}
+      E2E_PLAYWRIGHT_PROJECTS: ui-${{ matrix.browser }}
       E2E_SKIP_DB_START: '1'
       REVAER_TEST_DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)
         }}@localhost:5432/revaer
@@ -436,7 +530,7 @@ jobs:
       E2E_VIDEO: 'off'
       PLAYWRIGHT_SHARD_INDEX: ${{ matrix.shard }}
       PLAYWRIGHT_SHARD_TOTAL: '3'
-      E2E_BROWSER_COVERAGE: '1'
+      E2E_BROWSER_COVERAGE: ${{ matrix.browser == 'chromium' && '1' || '0' }}
     services:
       postgres:
         image: postgres:16-alpine
@@ -450,41 +544,32 @@ jobs:
           - 5432:5432
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: ./.github/actions/setup-revaer
         timeout-minutes: 20
         with:
           apt-profile: db
           cargo-tools: sqlx-cli,trunk
-          browsers: chrome
+          browsers: ${{ matrix.browser }}
       - name: UI E2E
         run: uv run --locked -- rv ui-e2e
       - name: Upload E2E coverage
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: ui-e2e-coverage-shard-${{ matrix.shard }}
+          name: ui-e2e-${{ matrix.browser }}-shard-${{ matrix.shard }}
           path: |
             tests/test-results/api-coverage-*.json
             tests/test-results/ui-coverage-*.json
-          if-no-files-found: error
-      - name: Upload E2E line coverage
-        if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
-        with:
-          name: ui-e2e-line-coverage-shard-${{ matrix.shard }}
-          path: |
             tests/test-results/javascript-baseline-*.json
-            tests/test-results/ui-chromium/*/javascript-page-*.json
-          if-no-files-found: error
-      - name: Upload E2E shard completion
-        if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
-        with:
-          name: ui-e2e-completion-shard-${{ matrix.shard }}
-          path: |
+            tests/test-results/ui-*-shard-*/*/javascript-page-*.json
             tests/test-results/python-e2e-summary-shard-*.json
             tests/test-results/selection-*-shard-*.json
+            coverage/e2e/ui-*-shard-*/.coverage
+          include-hidden-files: true
           if-no-files-found: error
+          overwrite: true
 
   ui-e2e-coverage:
     name: UI E2E Coverage
@@ -493,11 +578,13 @@ jobs:
     needs:
       - api-e2e
       - ui-e2e
-      - feature-matrix
-      - native-it
-      - coverage
+    env:
+      E2E_BROWSERS: chromium,firefox,webkit
+      E2E_BROWSER_COVERAGE: '1'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: ./.github/actions/setup-revaer
         timeout-minutes: 20
         with:
@@ -507,42 +594,14 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: api-e2e-coverage
-          path: tests/test-results
-      - name: Download E2E coverage shard 1
+          path: coverage/producers/api-e2e-coverage
+      - name: Download browser execution inputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: ui-e2e-coverage-shard-1
-          path: tests/test-results
-      - name: Download E2E coverage shard 2
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: ui-e2e-coverage-shard-2
-          path: tests/test-results
-      - name: Download E2E coverage shard 3
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: ui-e2e-coverage-shard-3
-          path: tests/test-results
-      - name: Download E2E completion shard 1
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: ui-e2e-completion-shard-1
-          path: tests/test-results
-      - name: Download E2E completion shard 2
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: ui-e2e-completion-shard-2
-          path: tests/test-results
-      - name: Download E2E completion shard 3
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: ui-e2e-completion-shard-3
-          path: tests/test-results
+          pattern: ui-e2e-*-shard-*
+          path: coverage/producers
       - name: Verify all UI E2E shard coverage inputs
         run: uv run --locked -- rv ui-e2e-shard-coverage
-        env:
-          E2E_PLAYWRIGHT_PROJECTS: ui-chromium
-          E2E_PLAYWRIGHT_NO_DEPS: '1'
       - name: UI E2E coverage
         run: uv run --locked -- rv ui-e2e-coverage
 
@@ -572,7 +631,7 @@ jobs:
 
   build-pr-images:
     name: Images
-    needs: [ui-e2e, feature-matrix, native-it, media-conversion, coverage, supply-chain, load-matrix]
+    needs: [ui-e2e, ui-e2e-coverage, feature-matrix, native-it, media-conversion, coverage, supply-chain, load-matrix]
     if: github.event.pull_request.head.repo.fork == false
     uses: ./.github/workflows/build-images.yml
     permissions:
@@ -678,7 +737,7 @@ jobs:
     name: Build Release
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    needs: [ui-e2e, feature-matrix, native-it, media-conversion, coverage]
+    needs: [ui-e2e, ui-e2e-coverage, feature-matrix, native-it, media-conversion, coverage, supply-chain]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer

@@ -3,13 +3,16 @@
 from pathlib import Path
 
 from ..context import Context, TaskResult
-from ..e2e.coverage import verify_analysis_run
+from ..e2e.coverage import distributed_runs, verify_analysis_run
 from ..errors import ToolingError
 from ..external.python import PythonCoverageArgs
 from ..json_data import decode, object_value
 from ..sonar.inputs import verify_python_coverage
 from .base import Task
 from .e2e import RunPaths
+
+COVERAGE_DATABASE = ".coverage"
+PYTHON_XML = "python.xml"
 
 
 def authored_python(context: Context) -> tuple[str, ...]:
@@ -22,14 +25,30 @@ def authored_python(context: Context) -> tuple[str, ...]:
 
 def coverage_inputs(context: Context) -> tuple[Path, ...]:
     """Select only the completed run's named phases, never glob stale phase data."""
+    expected = context.settings.e2e.phases()
+    distributed = distributed_runs(
+        context.fs, context.root, expected, context.options.expected_shards
+    )
+    if distributed:
+        inputs = (
+            context.root / "coverage/producers/tooling-coverage/.coverage",
+            *(
+                root / "coverage/e2e" / (phase + suffix) / COVERAGE_DATABASE
+                for root, phase, suffix in distributed
+            ),
+        )
+        return checked_inputs(inputs)
     path = context.root / "tests/test-results/python-e2e-summary.json"
     summary = object_value(decode(context.fs.read(path)))
-    expected = context.settings.e2e.phases()
     verify_analysis_run(summary, expected)
     inputs = (
-        context.root / ".coverage",
-        *(context.root / "coverage/e2e" / phase / ".coverage" for phase in expected),
+        context.root / COVERAGE_DATABASE,
+        *(context.root / "coverage/e2e" / phase / COVERAGE_DATABASE for phase in expected),
     )
+    return checked_inputs(inputs)
+
+
+def checked_inputs(inputs: tuple[Path, ...]) -> tuple[Path, ...]:
     for item in inputs:
         if item.is_symlink() or not item.is_file() or item.stat().st_size == 0:
             raise ToolingError("Python execution coverage is missing or empty: " + str(item))
@@ -51,7 +70,7 @@ class PythonCoverageMerge(Task):
             context.fs.lock(paths.runtime / "e2e.lock"),
             context.fs.lock(output / ".python-coverage.lock"),
         ):
-            for name in (".coverage", "python.xml", "python.lcov"):
+            for name in (COVERAGE_DATABASE, PYTHON_XML, "python.lcov"):
                 context.fs.remove_owned(output / name, context.root)
             inputs = coverage_inputs(context)
             sources = authored_python(context)
@@ -59,13 +78,11 @@ class PythonCoverageMerge(Task):
                 raise ToolingError("Python coverage requires authored source files")
             try:
                 context.tools.python.merge_coverage(PythonCoverageArgs(inputs, sources, output))
-                verify_python_coverage(
-                    context.fs.read(output / "python.xml"), context.root, sources
-                )
+                verify_python_coverage(context.fs.read(output / PYTHON_XML), context.root, sources)
             except BaseException:
                 # Keep raw databases for diagnosis; a partial XML/LCOV pair
                 # must not look like a completed analysis report on the next run.
-                for name in ("python.xml", "python.lcov"):
+                for name in (PYTHON_XML, "python.lcov"):
                     context.fs.remove_owned(output / name, context.root)
                 raise
         return TaskResult("Merged tooling and API/browser Python coverage: coverage/python.xml")

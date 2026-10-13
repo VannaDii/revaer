@@ -34,6 +34,62 @@ UNUSED = (
 )
 
 
+def test_distributed_merge_keeps_measured_chromium_captures(measured: Context) -> None:
+    context = Context(
+        root=measured.root,
+        settings=measured.settings,
+        options=Options(expected_shards=1),
+        tools=measured.tools,
+        fs=measured.fs,
+        emit=measured.emit,
+        host=measured.host,
+        invoked_at=measured.invoked_at,
+        command_names=measured.command_names,
+    )
+    JavaScriptCoverageMerge.run(context)
+    expected = (context.root / "coverage/js-lcov.info").read_text()
+    results = context.root / "tests/test-results"
+    producers = context.root / "coverage/producers"
+    groups = (
+        ("api-e2e-coverage", ("api-none", "api-api-key")),
+        ("ui-e2e-chromium", ("ui-chromium",)),
+    )
+    for name, phases in groups:
+        target = producers / name / "tests/test-results"
+        target.mkdir(parents=True)
+        (target / "python-e2e-summary.json").write_text(
+            json.dumps(
+                {
+                    "status": "passed",
+                    "shard": 1,
+                    "total_shards": 1,
+                    "phases": dict.fromkeys(phases, "passed"),
+                    "browser_coverage": True,
+                }
+            )
+        )
+        for phase in phases:
+            (target / f"selection-{phase}-main.json").write_text(
+                json.dumps(
+                    {
+                        "phase": phase,
+                        "shard": 1,
+                        "total_shards": 1,
+                        "all": ["scenario"],
+                        "selected": ["scenario"],
+                    }
+                )
+            )
+            label = "ui" if phase.startswith("ui-") else "api"
+            (target / f"{label}-coverage-{phase}-main.json").write_text('["/observed"]')
+    chromium = producers / "ui-e2e-chromium/tests/test-results"
+    (results / "ui-chromium").rename(chromium / "ui-chromium")
+    for path in results.glob("javascript-baseline-*.json"):
+        path.rename(chromium / path.name)
+    JavaScriptCoverageMerge.run(context)
+    assert (context.root / "coverage/js-lcov.info").read_text() == expected
+
+
 @pytest.fixture(params=("classic", "module"))
 def measured(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
@@ -52,6 +108,8 @@ def measured(
         (tmp_path / name).write_bytes(source.encode())
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("E2E_BROWSER_COVERAGE", "1")
+    monkeypatch.setenv("E2E_BROWSERS", "chromium")
+    monkeypatch.setenv("E2E_PLAYWRIGHT_PROJECTS", "api-none,api-api-key,ui-chromium")
     context = make_context(Options())
     results = tmp_path / "tests/test-results"
 
@@ -184,6 +242,32 @@ def test_early_closed_script_page_fails_and_retains_partial_evidence(tmp_path: P
         with pytest.raises(ToolingError, match="before closing"):
             capture.finish()
     assert json.loads(path.read_text())["complete"] is False
+
+
+def test_nonproduction_only_inventory_needs_no_fabricated_execution(measured: Context) -> None:
+    results = measured.root / "tests/test-results"
+    for path in (results / "ui-chromium").glob("*/javascript-page-*.json"):
+        record = json.loads(path.read_text())
+        for capture in record["captures"]:
+            for function in capture["functions"]:
+                for span in function["ranges"]:
+                    span["count"] = 0
+        path.write_text(json.dumps(record))
+    with pytest.raises(ToolingError, match="production locations"):
+        JavaScriptCoverageMerge.run(measured)
+    documentation = measured.root / "docs"
+    documentation.mkdir()
+    for name in ("app.js", "mirror.js", "unused.js"):
+        (measured.root / name).rename(documentation / name)
+    syntax = JavaScriptSyntax(Parser(Language(tree_sitter_javascript.language())))
+    scripts = parse_inventory(
+        syntax, measured.root, ("docs/app.js", "docs/mirror.js", "docs/unused.js")
+    )
+    write_inventory(measured.fs, results / "javascript-baseline-main.json", scripts)
+    JavaScriptCoverageMerge.run(measured)
+    lines = lcov_lines((measured.root / "coverage/js-lcov.info").read_text())
+    assert lines
+    assert all(count == 0 for source in lines.values() for count in source.values())
 
 
 def test_invalid_script_does_not_turn_into_a_zero_coverage_success(tmp_path: Path) -> None:

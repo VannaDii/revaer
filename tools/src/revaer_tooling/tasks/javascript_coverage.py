@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from ..context import Context, TaskResult
-from ..e2e.coverage import verify_analysis_run
+from ..e2e.coverage import distributed_runs, verify_analysis_run
 from ..e2e.javascript import Script, source_text
 from ..e2e.v8 import Location, line_counts, nonnegative, source_digest, source_lines, utf16_length
 from ..errors import ToolingError
@@ -123,14 +123,33 @@ class JavaScriptCoverageMerge(Task):
         target = context.root / "coverage/js-lcov.info"
         with context.fs.lock(paths.runtime / "e2e.lock"):
             context.fs.remove_owned(target, context.root)
-            summary = object_value(
-                decode(context.fs.read(paths.results / "python-e2e-summary.json"))
-            )
             expected = context.settings.e2e.phases()
-            verify_analysis_run(summary, expected, browser=True)
-            baselines = tuple(sorted(paths.results.glob("javascript-baseline-*.json")))
+            distributed = distributed_runs(
+                context.fs, context.root, expected, context.options.expected_shards
+            )
+            if distributed:
+                chromium = tuple(
+                    (root / "tests/test-results", suffix)
+                    for root, phase, suffix in distributed
+                    if phase == "ui-chromium"
+                )
+            else:
+                summary = object_value(
+                    decode(context.fs.read(paths.results / "python-e2e-summary.json"))
+                )
+                verify_analysis_run(summary, expected, browser=True)
+                chromium = ((paths.results, ""),)
+            baselines = tuple(
+                path
+                for root, _ in chromium
+                for path in sorted(root.glob("javascript-baseline-*.json"))
+            )
             captures = tuple(
-                sorted((paths.results / "ui-chromium").glob("*/javascript-page-*.json"))
+                path
+                for root, suffix in chromium
+                for path in sorted(
+                    (root / ("ui-chromium" + suffix)).glob("*/javascript-page-*.json")
+                )
             )
             if not baselines or not captures:
                 raise ToolingError(
@@ -141,7 +160,8 @@ class JavaScriptCoverageMerge(Task):
             if any(read_inventory(context, path, sources) != scripts for path in baselines[1:]):
                 raise ToolingError("Chromium workers disagree on JavaScript source locations")
             document = merge_captures(context, captures, scripts)
-            if not lcov_counts(document).covered:
-                raise ToolingError("JavaScript coverage contains no executed authored locations")
+            counts = lcov_counts(document, production=True)
+            if counts.total and not counts.covered:
+                raise ToolingError("JavaScript coverage contains no executed production locations")
             context.fs.write(target, document)
         return TaskResult("Merged syntax locations and browser execution: coverage/js-lcov.info")

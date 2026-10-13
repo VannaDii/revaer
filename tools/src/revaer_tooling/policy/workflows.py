@@ -142,11 +142,12 @@ class WorkflowPolicy:
                 if self.path.startswith(".github/workflows/") and not prepared:
                     self.error(label, "run requires an earlier unconditional setup-revaer step")
                 self.validate_run(label, step["run"])
-            if (
-                step.get("uses") == "./.github/actions/setup-revaer"
-                and step.get("timeout-minutes") != "20"
-            ):
-                self.error(label, "setup-revaer requires timeout-minutes: 20")
+            if step.get("uses") == "./.github/actions/setup-revaer" and step.get(
+                "timeout-minutes"
+            ) != ("40" if mapping(step.get("with")).get("apt-profile") == "coverage" else "20"):
+                self.error(
+                    label, "setup-revaer requires 20 minutes, or 40 for coverage prerequisites"
+                )
 
     def validate_uses(self, owner: str, value: Value) -> None:
         if not isinstance(value, str) or not (
@@ -180,6 +181,19 @@ class WorkflowPolicy:
             return
         if command[:5] == ["uv", "run", "--locked", "--", "rv"]:
             command = command[4:]
+        elif command[:6] == ["uv", "run", "--locked", "--no-build", "--", "rv"]:
+            command = command[5:]
+        elif command[:8] == [
+            "uv",
+            "run",
+            "--locked",
+            "--no-build",
+            "--no-binary-package",
+            "python-semantic-release",
+            "--",
+            "rv",
+        ]:
+            command = command[7:]
         if command and command[0] in ("rv", ".venv/bin/rv"):
             if len(command) > 1 and (
                 command[1] in self.commands or " ".join(command[1:3]) in self.commands

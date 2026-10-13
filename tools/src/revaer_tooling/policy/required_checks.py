@@ -11,6 +11,9 @@ from .contracts import Contract, runs, workflow
 from .formats import Document
 from .workflows import mapping, needs, steps
 
+DOWNLOAD_API_COVERAGE = "Download API E2E coverage"
+VERIFY_UI_COVERAGE = "Verify all UI E2E shard coverage inputs"
+
 AUDITED_CONTEXTS = (
     "Check Lint",
     "Check Coverage",
@@ -35,6 +38,11 @@ AUDITED_CONTEXTS = (
     "Build Release",
 )
 
+UI_MATRIX_NAME = (
+    "${{ matrix.browser == 'chromium' && 'UI E2E' || format('UI E2E {0}', matrix.browser) }}"
+    " (shard ${{ matrix.shard }}/3)"
+)
+
 
 def required_check_findings(
     documents: Mapping[str, Document],
@@ -54,14 +62,26 @@ def required_check_findings(
         name = job.get("name")
         if not isinstance(name, str) or "uses" in job:
             continue
-        if name == "UI E2E (shard ${{ matrix.shard }}/3)":
+        if name in ("UI E2E (shard ${{ matrix.shard }}/3)", UI_MATRIX_NAME):
             shards = mapping(mapping(job.get("strategy")).get("matrix")).get("shard")
             policy.require(shards == ["1", "2", "3"], "UI E2E must emit exactly shards 1, 2, and 3")
             if shards == ["1", "2", "3"]:
                 emitted.update(f"UI E2E (shard {shard}/3)" for shard in (1, 2, 3))
+            if name == UI_MATRIX_NAME:
+                strategy = mapping(job.get("strategy"))
+                policy.require(
+                    mapping(strategy.get("matrix")).get("browser")
+                    == ["chromium", "firefox", "webkit"]
+                    and strategy.get("max-parallel") == "2"
+                    and strategy.get("fail-fast") == "false",
+                    "browser matrix must retain three browsers and shards with two concurrent jobs",
+                )
         else:
             emitted.add(name)
-        if name in AUDITED_CONTEXTS or name == "UI E2E (shard ${{ matrix.shard }}/3)":
+        if name in AUDITED_CONTEXTS or name in (
+            "UI E2E (shard ${{ matrix.shard }}/3)",
+            UI_MATRIX_NAME,
+        ):
             expected = name == "Supply Chain Checks" and job.get("if") == "always()"
             policy.require(
                 "if" not in job or expected,
@@ -193,6 +213,9 @@ def _udeps(policy: Contract) -> None:
 
 
 def _ui_coverage(policy: Contract) -> None:
+    if "rust-coverage" in mapping(policy.document.get("jobs")):
+        _distributed_ui_coverage(policy)
+        return
     shards = policy.job("ui-e2e")
     upload = policy.step(shards, "Upload E2E coverage")
     policy.require(
@@ -225,7 +248,7 @@ def _ui_coverage(policy: Contract) -> None:
         "UI E2E Coverage must wait for API, every UI shard, feature, native, and coverage gates",
     )
     downloads = {
-        "Download API E2E coverage": "api-e2e-coverage",
+        DOWNLOAD_API_COVERAGE: "api-e2e-coverage",
         **{
             f"Download E2E coverage shard {shard}": f"ui-e2e-coverage-shard-{shard}"
             for shard in (1, 2, 3)
@@ -240,9 +263,90 @@ def _ui_coverage(policy: Contract) -> None:
             },
             f"UI E2E Coverage must download the exact artifact {artifact}",
         )
-    verification = policy.step(aggregate, "Verify all UI E2E shard coverage inputs")
+    verification = policy.step(aggregate, VERIFY_UI_COVERAGE)
     policy.require(
         runs(verification, "ui-e2e-shard-coverage"),
         "UI E2E Coverage must prove nonempty records from all three shards",
     )
-    policy.order(aggregate, (*downloads, "Verify all UI E2E shard coverage inputs"))
+    policy.order(aggregate, (*downloads, VERIFY_UI_COVERAGE))
+
+
+def _distributed_ui_coverage(policy: Contract) -> None:
+    ui = policy.job("ui-e2e")
+    environment = mapping(ui.get("env"))
+    policy.require(
+        environment.get("E2E_PLAYWRIGHT_PROJECTS") == "ui-${{ matrix.browser }}"
+        and environment.get("E2E_BROWSERS") == "${{ matrix.browser }}"
+        and environment.get("E2E_PLAYWRIGHT_NO_DEPS") == "1"
+        and environment.get("E2E_BROWSER_COVERAGE")
+        == "${{ matrix.browser == 'chromium' && '1' || '0' }}",
+        "every browser shard must execute its selected browser with Chromium line coverage",
+    )
+    api = policy.job("api-e2e")
+    policy.require(
+        mapping(api.get("env")).get("E2E_PLAYWRIGHT_PROJECTS") == "api-none,api-api-key",
+        "API producer must execute anonymous and authenticated phases",
+    )
+    for job, name, paths in (
+        (
+            ui,
+            "Upload E2E coverage",
+            (
+                "tests/test-results/python-e2e-summary-shard-*.json",
+                "tests/test-results/selection-*-shard-*.json",
+                "coverage/e2e/ui-*-shard-*/.coverage",
+            ),
+        ),
+        (
+            api,
+            "Upload API E2E coverage",
+            (
+                "tests/test-results/python-e2e-summary.json",
+                "tests/test-results/selection-*.json",
+                "coverage/e2e/api-none/.coverage",
+                "coverage/e2e/api-api-key/.coverage",
+            ),
+        ),
+    ):
+        upload = policy.step(job, name)
+        policy.paths(upload, paths)
+        policy.require(
+            upload.get("if") == "always()"
+            and mapping(upload.get("with")).get("include-hidden-files") == "true",
+            "API/browser execution inputs must retain summaries, selections and raw coverage",
+        )
+    aggregate = policy.job("ui-e2e-coverage")
+    policy.require(
+        set(needs(aggregate)) == {"api-e2e", "ui-e2e"},
+        "UI coverage must wait for both execution producers",
+    )
+    for name, options in (
+        (
+            DOWNLOAD_API_COVERAGE,
+            {"name": "api-e2e-coverage", "path": "coverage/producers/api-e2e-coverage"},
+        ),
+        (
+            "Download browser execution inputs",
+            {"pattern": "ui-e2e-*-shard-*", "path": "coverage/producers"},
+        ),
+    ):
+        policy.require(
+            policy.step(aggregate, name).get("with") == options,
+            "UI coverage must download current producer inputs without overwriting shards",
+        )
+    policy.require(
+        runs(
+            policy.step(aggregate, VERIFY_UI_COVERAGE),
+            "ui-e2e-shard-coverage",
+        ),
+        "every browser partition must be verified before route coverage",
+    )
+    policy.order(
+        aggregate,
+        (
+            DOWNLOAD_API_COVERAGE,
+            "Download browser execution inputs",
+            VERIFY_UI_COVERAGE,
+            "UI E2E coverage",
+        ),
+    )
