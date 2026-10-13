@@ -227,7 +227,14 @@ def test_result_queries_exact_analysis_and_correct_backlog_scope(
 ) -> None:
     context, _ = scanner_context
     SonarScan.run(context)
-    state = ApiState(statuses=[429], pending_tasks=2)
+    state = ApiState(
+        statuses=[429],
+        pending_tasks=2,
+        backlog_records={
+            "issues": {"total": 2},
+            "hotspots": {"paging": {"total": 1}, "hotspots": [{"status": "REVIEWED"}]},
+        },
+    )
     with sonar_server(state) as url:
         context = connect(context, url, pull_request=pull_request)
         result = SonarVerifyResult.run(context)
@@ -242,12 +249,13 @@ def test_result_queries_exact_analysis_and_correct_backlog_scope(
         elif endpoint in ("/api/issues/search", "/api/hotspots/search"):
             assert "status" not in query
             assert "statuses" not in query
+            assert "inNewCodePeriod" not in query
             if pull_request:
                 assert query["pullRequest"] == [pull_request]
-                assert query["inNewCodePeriod"] == ["true"]
+                assert "sinceLeakPeriod" not in query
             else:
                 assert "pullRequest" not in query
-                assert "inNewCodePeriod" not in query
+                assert query["sinceLeakPeriod"] == ["true"]
     evidence = context.root / "artifacts/sonar/api"
     assert {path.stem for path in evidence.glob("*.json")} == set(state.records)
     for name, record in state.records.items():

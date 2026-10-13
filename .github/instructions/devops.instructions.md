@@ -32,6 +32,8 @@ applyTo:
 - The accepted Python migration is recorded in `docs/adr/592-python-tooling.md`.
   Keep existing gates in place until their `rv` replacements have demonstrated
   parity; do not confuse the new tooling checks with completion of project CI.
+- The main Sonar result query follows ADR 592's approved new-code contract;
+  retain the PR's complete current-issue scope and all other strict gates.
 - Changed-line commands count the complete exact-commit diff against the selected
   reviewed limit. Preserve ASSET-1's exact inventory, original blobs, committed
   implementation/decision checks and fresh complete provider history. It remains

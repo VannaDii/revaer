@@ -245,7 +245,9 @@ def _fetch_result(context: Context, identifier: str, records: dict[str, JsonObje
         },
     )
     records["quality-gate"] = api.get("qualitygates/project_status", {"analysisId": analysis})
-    new_code = {"inNewCodePeriod": "true"} if settings.pull_request else {}
+    # PR endpoints already select the submitted PR's issues. Main uses the
+    # operator-approved new-code period through SonarCloud's supported API.
+    new_code = {} if settings.pull_request else {"sinceLeakPeriod": "true"}
     records["issues"] = api.get(
         "issues/search",
         {
@@ -256,8 +258,8 @@ def _fetch_result(context: Context, identifier: str, records: dict[str, JsonObje
             "ps": "1",
         },
     )
-    # Deliberately omit a hotspot status filter. A reviewed or acknowledged
-    # hotspot is still a current hotspot under the repository's strict gate.
+    # Deliberately omit a hotspot status filter. Every hotspot in the selected
+    # PR or main new-code period must satisfy the existing zero-hotspot gate.
     records["hotspots"] = api.get(
         "hotspots/search",
         {

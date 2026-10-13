@@ -50,6 +50,11 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 - `sonar.coverageReportPaths` must consume the generic report emitted by `rv script-coverage`. That report must come from the exact archive-hash-verified `kcov` revision installed by the canonical setup action for the retained root `setup.sh`, retain uncovered executable lines, and enforce the approved bootstrap allowance above.
 - Follow the repo-wide external action versioning rule in `.github/instructions/devops.instructions.md` when editing `.github/workflows/sonar.yml`. Do not restate a conflicting Sonar-only pinning rule here.
 - Revaer uses Sonar as a strict merge-control signal on pull requests. Require scanner-side waiting, retained task/report evidence, and API verification of that same analysis.
+- ADR 592 records the operator-approved main post-scan contract: use the
+  supported `sinceLeakPeriod=true` API query and require zero new unresolved
+  issues and zero new hotspots. PR checks still require zero current issues and
+  hotspots in that PR. Do not filter hotspot dispositions or change scanner
+  scope, server criteria, coverage thresholds, or warning failures.
 - Treat zero published coverage, a missing Rust LCOV report, a missing native LLVM coverage report, or unavailable SCM baseline data as a failed analysis even when Sonar reports a green quality gate.
 - Pull-request and main-branch scans must receive the same complete Rust, native, browser JavaScript, Python, and root Bash bootstrap coverage inputs and must retain the scanner report as uploaded evidence after post-scan verification.
 - Use pull-request-specific quality-gate checks when the user asks whether a PR is blocked.
