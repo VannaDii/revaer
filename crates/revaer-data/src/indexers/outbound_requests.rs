@@ -86,29 +86,30 @@ pub async fn outbound_request_log_write(
     pool: &PgPool,
     input: &OutboundRequestLogInput<'_>,
 ) -> Result<()> {
-    sqlx::query(OUTBOUND_REQUEST_LOG_WRITE_CALL)
-        .bind(input.indexer_instance_public_id)
-        .bind(input.routing_policy_public_id)
-        .bind(input.search_request_public_id)
-        .bind(input.request_type)
-        .bind(input.correlation_id)
-        .bind(input.retry_seq)
-        .bind(input.started_at)
-        .bind(input.finished_at)
-        .bind(input.outcome)
-        .bind(input.via_mitigation)
-        .bind(input.rate_limit_denied_scope)
-        .bind(input.error_class)
-        .bind(input.http_status)
-        .bind(input.latency_ms)
-        .bind(input.parse_ok)
-        .bind(input.result_count)
-        .bind(input.cf_detected)
-        .bind(input.page_number)
-        .bind(input.page_cursor_key)
-        .execute(pool)
-        .await
-        .map_err(try_op("outbound request log write"))?;
+    try_op("outbound request log write", || {
+        sqlx::query(OUTBOUND_REQUEST_LOG_WRITE_CALL)
+            .bind(input.indexer_instance_public_id)
+            .bind(input.routing_policy_public_id)
+            .bind(input.search_request_public_id)
+            .bind(input.request_type)
+            .bind(input.correlation_id)
+            .bind(input.retry_seq)
+            .bind(input.started_at)
+            .bind(input.finished_at)
+            .bind(input.outcome)
+            .bind(input.via_mitigation)
+            .bind(input.rate_limit_denied_scope)
+            .bind(input.error_class)
+            .bind(input.http_status)
+            .bind(input.latency_ms)
+            .bind(input.parse_ok)
+            .bind(input.result_count)
+            .bind(input.cf_detected)
+            .bind(input.page_number)
+            .bind(input.page_cursor_key)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 

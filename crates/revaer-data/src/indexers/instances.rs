@@ -103,16 +103,17 @@ pub async fn indexer_instance_create(
     trust_tier_key: Option<&str>,
     routing_policy_public_id: Option<Uuid>,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(INDEXER_INSTANCE_CREATE_CALL)
-        .bind(actor_user_public_id)
-        .bind(indexer_definition_upstream_slug)
-        .bind(display_name)
-        .bind(priority)
-        .bind(trust_tier_key)
-        .bind(routing_policy_public_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("indexer instance create"))
+    try_op("indexer instance create", || {
+        sqlx::query_scalar(INDEXER_INSTANCE_CREATE_CALL)
+            .bind(actor_user_public_id)
+            .bind(indexer_definition_upstream_slug)
+            .bind(display_name)
+            .bind(priority)
+            .bind(trust_tier_key)
+            .bind(routing_policy_public_id)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Input payload for updating an indexer instance.
@@ -149,20 +150,21 @@ pub async fn indexer_instance_update(
     pool: &PgPool,
     input: &IndexerInstanceUpdateInput<'_>,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(INDEXER_INSTANCE_UPDATE_CALL)
-        .bind(input.actor_user_public_id)
-        .bind(input.indexer_instance_public_id)
-        .bind(input.display_name)
-        .bind(input.priority)
-        .bind(input.trust_tier_key)
-        .bind(input.routing_policy_public_id)
-        .bind(input.is_enabled)
-        .bind(input.enable_rss)
-        .bind(input.enable_automatic_search)
-        .bind(input.enable_interactive_search)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("indexer instance update"))
+    try_op("indexer instance update", || {
+        sqlx::query_scalar(INDEXER_INSTANCE_UPDATE_CALL)
+            .bind(input.actor_user_public_id)
+            .bind(input.indexer_instance_public_id)
+            .bind(input.display_name)
+            .bind(input.priority)
+            .bind(input.trust_tier_key)
+            .bind(input.routing_policy_public_id)
+            .bind(input.is_enabled)
+            .bind(input.enable_rss)
+            .bind(input.enable_automatic_search)
+            .bind(input.enable_interactive_search)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Enable or update an RSS subscription for an indexer.
@@ -177,14 +179,15 @@ pub async fn rss_subscription_set(
     is_enabled: bool,
     interval_seconds: Option<i32>,
 ) -> Result<()> {
-    sqlx::query(RSS_SUBSCRIPTION_SET_CALL)
-        .bind(actor_user_public_id)
-        .bind(indexer_instance_public_id)
-        .bind(is_enabled)
-        .bind(interval_seconds)
-        .execute(pool)
-        .await
-        .map_err(try_op("rss subscription set"))?;
+    try_op("rss subscription set", || {
+        sqlx::query(RSS_SUBSCRIPTION_SET_CALL)
+            .bind(actor_user_public_id)
+            .bind(indexer_instance_public_id)
+            .bind(is_enabled)
+            .bind(interval_seconds)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -198,12 +201,13 @@ pub async fn rss_subscription_disable(
     actor_user_public_id: Uuid,
     indexer_instance_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(RSS_SUBSCRIPTION_DISABLE_CALL)
-        .bind(actor_user_public_id)
-        .bind(indexer_instance_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("rss subscription disable"))?;
+    try_op("rss subscription disable", || {
+        sqlx::query(RSS_SUBSCRIPTION_DISABLE_CALL)
+            .bind(actor_user_public_id)
+            .bind(indexer_instance_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -218,13 +222,14 @@ pub async fn indexer_instance_set_media_domains(
     indexer_instance_public_id: Uuid,
     media_domain_keys: &[String],
 ) -> Result<()> {
-    sqlx::query(INDEXER_INSTANCE_MEDIA_DOMAINS_CALL)
-        .bind(actor_user_public_id)
-        .bind(indexer_instance_public_id)
-        .bind(media_domain_keys)
-        .execute(pool)
-        .await
-        .map_err(try_op("indexer instance set media domains"))?;
+    try_op("indexer instance set media domains", || {
+        sqlx::query(INDEXER_INSTANCE_MEDIA_DOMAINS_CALL)
+            .bind(actor_user_public_id)
+            .bind(indexer_instance_public_id)
+            .bind(media_domain_keys)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -240,14 +245,15 @@ pub async fn indexer_instance_set_tags(
     tag_public_ids: Option<&[Uuid]>,
     tag_keys: Option<&[String]>,
 ) -> Result<()> {
-    sqlx::query(INDEXER_INSTANCE_TAGS_CALL)
-        .bind(actor_user_public_id)
-        .bind(indexer_instance_public_id)
-        .bind(tag_public_ids)
-        .bind(tag_keys)
-        .execute(pool)
-        .await
-        .map_err(try_op("indexer instance set tags"))?;
+    try_op("indexer instance set tags", || {
+        sqlx::query(INDEXER_INSTANCE_TAGS_CALL)
+            .bind(actor_user_public_id)
+            .bind(indexer_instance_public_id)
+            .bind(tag_public_ids)
+            .bind(tag_keys)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -279,17 +285,18 @@ pub async fn indexer_instance_field_set_value(
     pool: &PgPool,
     input: &IndexerInstanceFieldValueInput<'_>,
 ) -> Result<()> {
-    sqlx::query(INDEXER_INSTANCE_FIELD_SET_CALL)
-        .bind(input.actor_user_public_id)
-        .bind(input.indexer_instance_public_id)
-        .bind(input.field_name)
-        .bind(input.value_plain)
-        .bind(input.value_int)
-        .bind(input.value_decimal)
-        .bind(input.value_bool)
-        .execute(pool)
-        .await
-        .map_err(try_op("indexer instance field set"))?;
+    try_op("indexer instance field set", || {
+        sqlx::query(INDEXER_INSTANCE_FIELD_SET_CALL)
+            .bind(input.actor_user_public_id)
+            .bind(input.indexer_instance_public_id)
+            .bind(input.field_name)
+            .bind(input.value_plain)
+            .bind(input.value_int)
+            .bind(input.value_decimal)
+            .bind(input.value_bool)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -305,14 +312,15 @@ pub async fn indexer_instance_field_bind_secret(
     field_name: &str,
     secret_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(INDEXER_INSTANCE_FIELD_BIND_SECRET_CALL)
-        .bind(actor_user_public_id)
-        .bind(indexer_instance_public_id)
-        .bind(field_name)
-        .bind(secret_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("indexer instance field bind secret"))?;
+    try_op("indexer instance field bind secret", || {
+        sqlx::query(INDEXER_INSTANCE_FIELD_BIND_SECRET_CALL)
+            .bind(actor_user_public_id)
+            .bind(indexer_instance_public_id)
+            .bind(field_name)
+            .bind(secret_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 

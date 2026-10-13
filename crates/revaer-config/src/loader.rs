@@ -18,6 +18,8 @@ use revaer_data::config::{
     FsOptionalStringField, FsPolicyRow, FsStringField, LabelPolicyRow, NewSetupToken,
     SETTINGS_CHANNEL, SeedingToggleSet,
 };
+use revaer_data::transaction::{commit_transaction, rollback_transaction};
+use sqlx::pool::PoolConnection;
 use sqlx::postgres::{PgListener, PgNotification, PgPoolOptions};
 use sqlx::{Executor, Postgres, Transaction};
 use std::collections::HashSet;
@@ -178,7 +180,9 @@ impl ConfigService {
             .await
             .map_err(map_sqlx_err("config.connect.migrations"))?;
 
-        apply_migrations(&migrator_pool).await?;
+        let migration_result = apply_migrations(&migrator_pool).await;
+        migrator_pool.close().await;
+        migration_result?;
 
         let pool = PgPoolOptions::new()
             .max_connections(8)
@@ -217,19 +221,10 @@ impl ConfigService {
     ///
     /// Returns an error if any underlying configuration query fails.
     pub async fn snapshot(&self) -> ConfigResult<ConfigSnapshot> {
-        let app = fetch_app_profile(&self.pool).await?;
-        let engine = fetch_engine_profile(&self.pool).await?;
-        let effective_engine = normalize_engine_profile(&engine);
-        let fs = fetch_fs_policy(&self.pool).await?;
-        let revision = fetch_revision(&self.pool).await?;
-
-        Ok(ConfigSnapshot {
-            revision,
-            app_profile: app,
-            engine_profile: engine,
-            engine_profile_effective: effective_engine,
-            fs_policy: fs,
-        })
+        let service = self.clone();
+        tokio::spawn(async move { service.snapshot_transaction().await })
+            .await
+            .map_err(|source| ConfigError::TransactionTask { source })?
     }
 
     /// Subscribe to configuration changes, falling back to polling if LISTEN fails.
@@ -267,52 +262,12 @@ impl ConfigService {
     /// Returns an error if database access fails, token verification fails, or
     /// the token is expired or missing.
     pub async fn validate_setup_token(&self, token: &str) -> ConfigResult<()> {
-        let mut tx = self
-            .pool
-            .begin()
+        let service = self.clone();
+        let token = token.to_owned();
+        // The worker owns BEGIN and cleanup even when the request stops waiting.
+        tokio::spawn(async move { service.validate_setup_token_transaction(&token).await })
             .await
-            .map_err(map_sqlx_err("config.validate_setup_token.begin"))?;
-        data_config::cleanup_expired_setup_tokens(tx.as_mut())
-            .await
-            .map_err(map_db_err("config.validate_setup_token.cleanup"))?;
-
-        let active = data_config::fetch_active_setup_token(tx.as_mut())
-            .await
-            .map_err(map_db_err("config.validate_setup_token.fetch_active"))?;
-
-        let Some(active) = active else {
-            tx.rollback()
-                .await
-                .map_err(map_sqlx_err("config.validate_setup_token.rollback"))?;
-            return Err(ConfigError::SetupTokenMissing);
-        };
-
-        if active.expires_at <= Utc::now() {
-            tx.rollback()
-                .await
-                .map_err(map_sqlx_err("config.validate_setup_token.rollback"))?;
-            return Err(ConfigError::SetupTokenExpired);
-        }
-
-        let matches = match verify_secret(&active.token_hash, token) {
-            Ok(result) => result,
-            Err(err) => {
-                tx.rollback()
-                    .await
-                    .map_err(map_sqlx_err("config.validate_setup_token.rollback"))?;
-                return Err(err);
-            }
-        };
-
-        tx.rollback()
-            .await
-            .map_err(map_sqlx_err("config.validate_setup_token.rollback"))?;
-
-        if matches {
-            Ok(())
-        } else {
-            Err(ConfigError::SetupTokenInvalid)
-        }
+            .map_err(|source| ConfigError::TransactionTask { source })?
     }
 
     /// Validate an API key/secret combination and return authorisation context.
@@ -578,207 +533,34 @@ impl SettingsFacade for ConfigService {
         _reason: &str,
         changeset: SettingsChangeset,
     ) -> Result<AppliedChanges> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(map_sqlx_err("config.apply_changeset.begin"))?;
-
-        let current_app = fetch_app_profile_tx(&mut tx).await?;
-        let immutable_keys: HashSet<String> = current_app.immutable_keys.iter().cloned().collect();
-
-        let mut applied_app: Option<AppProfile> = None;
-        let mut applied_engine: Option<EngineProfile> = None;
-        let mut applied_fs: Option<FsPolicy> = None;
-        let mut any_change = if let Some(app_update) = changeset.app_profile
-            && apply_app_profile_update(&mut tx, &current_app, &app_update, &immutable_keys).await?
-        {
-            applied_app = Some(fetch_app_profile_tx(&mut tx).await?);
-            true
-        } else {
-            false
-        };
-
-        if let Some(engine_update) = changeset.engine_profile {
-            let current_engine = fetch_engine_profile(tx.as_mut()).await?;
-            if apply_engine_profile_update(
-                &mut tx,
-                &current_engine,
-                &engine_update,
-                &immutable_keys,
-            )
-            .await?
-            {
-                applied_engine = Some(fetch_engine_profile(tx.as_mut()).await?);
-                any_change = true;
-            }
-        }
-
-        if let Some(fs_update) = changeset.fs_policy {
-            let current_fs = fetch_fs_policy(tx.as_mut()).await?;
-            if apply_fs_policy_update(&mut tx, &current_fs, &fs_update, &immutable_keys).await? {
-                applied_fs = Some(fetch_fs_policy(tx.as_mut()).await?);
-                any_change = true;
-            }
-        }
-
-        let api_keys_changed = if changeset.api_keys.is_empty() {
-            false
-        } else {
-            apply_api_key_patches(&mut tx, &changeset.api_keys, &immutable_keys).await?
-        };
-        if api_keys_changed {
-            any_change = true;
-        }
-
-        let secrets_changed = if changeset.secrets.is_empty() {
-            false
-        } else {
-            apply_secret_patches(&mut tx, &changeset.secrets, actor, &immutable_keys).await?
-        };
-        if secrets_changed {
-            any_change = true;
-        }
-
-        let mutated_via_triggers = applied_app.is_some()
-            || applied_engine.is_some()
-            || applied_fs.is_some()
-            || api_keys_changed;
-        if secrets_changed && !mutated_via_triggers {
-            data_config::bump_revision(tx.as_mut(), "settings_secret")
+        let service = self.clone();
+        let (actor, reason, changeset) = (actor.to_owned(), _reason.to_owned(), changeset);
+        // The worker owns BEGIN and cleanup even when the request stops waiting.
+        tokio::spawn(async move {
+            service
+                .apply_changeset_transaction(&actor, &reason, changeset)
                 .await
-                .map_err(map_db_err("config.apply_changeset.bump_revision"))?;
-        }
-
-        let revision = fetch_revision(tx.as_mut()).await?;
-        if any_change {
-            tx.commit()
-                .await
-                .map_err(map_sqlx_err("config.apply_changeset.commit"))?;
-        } else {
-            tx.rollback()
-                .await
-                .map_err(map_sqlx_err("config.apply_changeset.rollback"))?;
-        }
-
-        Ok(AppliedChanges {
-            revision,
-            app_profile: applied_app,
-            engine_profile: applied_engine,
-            fs_policy: applied_fs,
         })
+        .await
+        .map_err(|source| ConfigError::TransactionTask { source })?
     }
 
     async fn issue_setup_token(&self, ttl: Duration, issued_by: &str) -> Result<SetupToken> {
-        if ttl.as_secs() == 0 && ttl.subsec_nanos() == 0 {
-            return Err(ConfigError::InvalidField {
-                section: "setup_token".to_string(),
-                field: "ttl".to_string(),
-                value: Some(ttl.as_millis().to_string()),
-                reason: "must be positive",
-            });
-        }
-        let chrono_ttl =
-            ChronoDuration::from_std(ttl).map_err(|_err| ConfigError::InvalidField {
-                section: "setup_token".to_string(),
-                field: "ttl".to_string(),
-                value: Some(ttl.as_millis().to_string()),
-                reason: "ttl exceeds supported range",
-            })?;
-
-        let mut tx = self
-            .pool
-            .begin()
+        let service = self.clone();
+        let (ttl, issued_by) = (ttl, issued_by.to_owned());
+        // The worker owns BEGIN and cleanup even when the request stops waiting.
+        tokio::spawn(async move { service.issue_setup_token_transaction(ttl, &issued_by).await })
             .await
-            .map_err(map_sqlx_err("config.issue_setup_token.begin"))?;
-        data_config::cleanup_expired_setup_tokens(tx.as_mut())
-            .await
-            .map_err(map_db_err("config.issue_setup_token.cleanup"))?;
-        data_config::invalidate_active_setup_tokens(tx.as_mut())
-            .await
-            .map_err(map_db_err("config.issue_setup_token.invalidate"))?;
-
-        let plaintext = generate_token(32);
-        let token_hash = hash_secret(&plaintext)?;
-        let expires_at = Utc::now() + chrono_ttl;
-
-        let insert = NewSetupToken {
-            token_hash: &token_hash,
-            expires_at,
-            issued_by,
-        };
-        data_config::insert_setup_token(tx.as_mut(), &insert)
-            .await
-            .map_err(map_db_err("config.issue_setup_token.insert"))?;
-
-        tx.commit()
-            .await
-            .map_err(map_sqlx_err("config.issue_setup_token.commit"))?;
-
-        info!(
-            issued_by,
-            expires_at = %expires_at,
-            ttl_ms = ttl.as_millis(),
-            "setup token issued"
-        );
-
-        Ok(SetupToken {
-            plaintext,
-            expires_at,
-        })
+            .map_err(|source| ConfigError::TransactionTask { source })?
     }
 
     async fn consume_setup_token(&self, token: &str) -> Result<()> {
-        let mut tx = self
-            .pool
-            .begin()
+        let service = self.clone();
+        let token = token.to_owned();
+        // The worker owns BEGIN and cleanup even when the request stops waiting.
+        tokio::spawn(async move { service.consume_setup_token_transaction(&token).await })
             .await
-            .map_err(map_sqlx_err("config.consume_setup_token.begin"))?;
-        data_config::cleanup_expired_setup_tokens(tx.as_mut())
-            .await
-            .map_err(map_db_err("config.consume_setup_token.cleanup"))?;
-
-        let active = data_config::fetch_active_setup_token(tx.as_mut())
-            .await
-            .map_err(map_db_err("config.consume_setup_token.fetch_active"))?;
-
-        let Some(active) = active else {
-            tx.rollback()
-                .await
-                .map_err(map_sqlx_err("config.consume_setup_token.rollback"))?;
-            warn!("setup token consumption attempted without an active token");
-            return Err(ConfigError::SetupTokenMissing);
-        };
-
-        if active.expires_at <= Utc::now() {
-            data_config::mark_setup_token_consumed(tx.as_mut(), active.id)
-                .await
-                .map_err(map_db_err("config.consume_setup_token.expire"))?;
-            tx.commit()
-                .await
-                .map_err(map_sqlx_err("config.consume_setup_token.commit"))?;
-            warn!("setup token expired prior to consumption");
-            return Err(ConfigError::SetupTokenExpired);
-        }
-
-        let matches = verify_secret(&active.token_hash, token)?;
-        if !matches {
-            tx.rollback()
-                .await
-                .map_err(map_sqlx_err("config.consume_setup_token.rollback"))?;
-            warn!("setup token consumption failed due to invalid secret");
-            return Err(ConfigError::SetupTokenInvalid);
-        }
-
-        data_config::mark_setup_token_consumed(tx.as_mut(), active.id)
-            .await
-            .map_err(map_db_err("config.consume_setup_token.consume"))?;
-
-        tx.commit()
-            .await
-            .map_err(map_sqlx_err("config.consume_setup_token.commit"))?;
-        info!("setup token consumed successfully");
-        Ok(())
+            .map_err(|source| ConfigError::TransactionTask { source })?
     }
 
     async fn has_api_keys(&self) -> Result<bool> {
@@ -797,6 +579,290 @@ impl SettingsFacade for ConfigService {
     }
 }
 
+impl ConfigService {
+    async fn snapshot_transaction(&self) -> ConfigResult<ConfigSnapshot> {
+        let mut connection = self
+            .pool
+            .acquire()
+            .await
+            .map_err(map_sqlx_err("config.snapshot.acquire"))?;
+        let completed = async {
+            let mut tx = revaer_data::transaction::begin_transaction(&mut connection)
+                .await
+                .map_err(map_db_err("config.snapshot.begin"))?;
+            let result = async {
+                let app = fetch_app_profile_tx(&mut tx).await?;
+                let engine = fetch_engine_profile(tx.as_mut()).await?;
+                let effective_engine = normalize_engine_profile(&engine);
+                let fs = fetch_fs_policy(tx.as_mut()).await?;
+                let revision = fetch_revision(tx.as_mut()).await?;
+                Ok(ConfigSnapshot {
+                    revision,
+                    app_profile: app,
+                    engine_profile: engine,
+                    engine_profile_effective: effective_engine,
+                    fs_policy: fs,
+                })
+            }
+            .await;
+            finish_config_transaction(tx, result, false).await
+        }
+        .await;
+        release_config_connection(connection, completed).await
+    }
+
+    async fn validate_setup_token_transaction(&self, token: &str) -> ConfigResult<()> {
+        let mut connection = self
+            .pool
+            .acquire()
+            .await
+            .map_err(map_sqlx_err("config.validate_setup_token.acquire"))?;
+        let completed = async {
+            let mut tx = revaer_data::transaction::begin_transaction(&mut connection)
+                .await
+                .map_err(map_db_err("config.validate_setup_token.begin"))?;
+            let result = async {
+                data_config::cleanup_expired_setup_tokens(tx.as_mut())
+                    .await
+                    .map_err(map_db_err("config.validate_setup_token.cleanup"))?;
+                let active = data_config::fetch_active_setup_token(tx.as_mut())
+                    .await
+                    .map_err(map_db_err("config.validate_setup_token.fetch_active"))?
+                    .ok_or(ConfigError::SetupTokenMissing)?;
+                if active.expires_at <= Utc::now() {
+                    return Err(ConfigError::SetupTokenExpired);
+                }
+                if verify_secret(&active.token_hash, token)? {
+                    Ok(())
+                } else {
+                    Err(ConfigError::SetupTokenInvalid)
+                }
+            }
+            .await;
+            finish_config_transaction(tx, result, false).await
+        }
+        .await;
+        release_config_connection(connection, completed).await
+    }
+    async fn apply_changeset_transaction(
+        &self,
+        actor: &str,
+        _reason: &str,
+        changeset: SettingsChangeset,
+    ) -> Result<AppliedChanges> {
+        let mut connection = self
+            .pool
+            .acquire()
+            .await
+            .map_err(map_sqlx_err("config.apply_changeset.acquire"))?;
+        let completed = async {
+            let mut tx = revaer_data::transaction::begin_transaction(&mut connection)
+                .await
+                .map_err(map_db_err("config.apply_changeset.begin"))?;
+
+            let result = async {
+                let current_app = fetch_app_profile_tx(&mut tx).await?;
+                let immutable_keys: HashSet<String> =
+                    current_app.immutable_keys.iter().cloned().collect();
+
+                let mut applied_app: Option<AppProfile> = None;
+                let mut applied_engine: Option<EngineProfile> = None;
+                let mut applied_fs: Option<FsPolicy> = None;
+                let mut any_change = if let Some(app_update) = changeset.app_profile
+                    && apply_app_profile_update(&mut tx, &current_app, &app_update, &immutable_keys)
+                        .await?
+                {
+                    applied_app = Some(fetch_app_profile_tx(&mut tx).await?);
+                    true
+                } else {
+                    false
+                };
+
+                if let Some(engine_update) = changeset.engine_profile {
+                    let current_engine = fetch_engine_profile(tx.as_mut()).await?;
+                    if apply_engine_profile_update(
+                        &mut tx,
+                        &current_engine,
+                        &engine_update,
+                        &immutable_keys,
+                    )
+                    .await?
+                    {
+                        applied_engine = Some(fetch_engine_profile(tx.as_mut()).await?);
+                        any_change = true;
+                    }
+                }
+
+                if let Some(fs_update) = changeset.fs_policy {
+                    let current_fs = fetch_fs_policy(tx.as_mut()).await?;
+                    if apply_fs_policy_update(&mut tx, &current_fs, &fs_update, &immutable_keys)
+                        .await?
+                    {
+                        applied_fs = Some(fetch_fs_policy(tx.as_mut()).await?);
+                        any_change = true;
+                    }
+                }
+
+                let api_keys_changed = if changeset.api_keys.is_empty() {
+                    false
+                } else {
+                    apply_api_key_patches(&mut tx, &changeset.api_keys, &immutable_keys).await?
+                };
+                if api_keys_changed {
+                    any_change = true;
+                }
+
+                let secrets_changed = if changeset.secrets.is_empty() {
+                    false
+                } else {
+                    apply_secret_patches(&mut tx, &changeset.secrets, actor, &immutable_keys)
+                        .await?
+                };
+                if secrets_changed {
+                    any_change = true;
+                }
+
+                let mutated_via_triggers = applied_app.is_some()
+                    || applied_engine.is_some()
+                    || applied_fs.is_some()
+                    || api_keys_changed;
+                if secrets_changed && !mutated_via_triggers {
+                    data_config::bump_revision(tx.as_mut(), "settings_secret")
+                        .await
+                        .map_err(map_db_err("config.apply_changeset.bump_revision"))?;
+                }
+
+                let revision = fetch_revision(tx.as_mut()).await?;
+                Ok((
+                    any_change,
+                    AppliedChanges {
+                        revision,
+                        app_profile: applied_app,
+                        engine_profile: applied_engine,
+                        fs_policy: applied_fs,
+                    },
+                ))
+            }
+            .await;
+            let (commit, result) = match result {
+                Ok((changed, applied)) => (changed, Ok(applied)),
+                Err(error) => (false, Err(error)),
+            };
+            finish_config_transaction(tx, result, commit).await
+        }
+        .await;
+        release_config_connection(connection, completed).await
+    }
+    async fn issue_setup_token_transaction(
+        &self,
+        ttl: Duration,
+        issued_by: &str,
+    ) -> Result<SetupToken> {
+        if ttl.as_secs() == 0 && ttl.subsec_nanos() == 0 {
+            return Err(ConfigError::InvalidField {
+                section: "setup_token".to_string(),
+                field: "ttl".to_string(),
+                value: Some(ttl.as_millis().to_string()),
+                reason: "must be positive",
+            });
+        }
+        let chrono_ttl =
+            ChronoDuration::from_std(ttl).map_err(|_err| ConfigError::InvalidField {
+                section: "setup_token".to_string(),
+                field: "ttl".to_string(),
+                value: Some(ttl.as_millis().to_string()),
+                reason: "ttl exceeds supported range",
+            })?;
+
+        let mut connection = self
+            .pool
+            .acquire()
+            .await
+            .map_err(map_sqlx_err("config.issue_setup_token.acquire"))?;
+        let completed = async {
+            let mut tx = revaer_data::transaction::begin_transaction(&mut connection)
+                .await
+                .map_err(map_db_err("config.issue_setup_token.begin"))?;
+            let result = async {
+                data_config::cleanup_expired_setup_tokens(tx.as_mut())
+                    .await
+                    .map_err(map_db_err("config.issue_setup_token.cleanup"))?;
+                data_config::invalidate_active_setup_tokens(tx.as_mut())
+                    .await
+                    .map_err(map_db_err("config.issue_setup_token.invalidate"))?;
+
+                let plaintext = generate_token(32);
+                let token_hash = hash_secret(&plaintext)?;
+                let expires_at = Utc::now() + chrono_ttl;
+
+                let insert = NewSetupToken {
+                    token_hash: &token_hash,
+                    expires_at,
+                    issued_by,
+                };
+                data_config::insert_setup_token(tx.as_mut(), &insert)
+                    .await
+                    .map_err(map_db_err("config.issue_setup_token.insert"))?;
+
+                Ok(SetupToken {
+                    plaintext,
+                    expires_at,
+                })
+            }
+            .await;
+            finish_config_transaction(tx, result, true).await
+        }
+        .await;
+        let token = release_config_connection(connection, completed).await?;
+        info!(issued_by, expires_at = %token.expires_at, ttl_ms = ttl.as_millis(), "setup token issued");
+        Ok(token)
+    }
+    async fn consume_setup_token_transaction(&self, token: &str) -> Result<()> {
+        let mut connection = self
+            .pool
+            .acquire()
+            .await
+            .map_err(map_sqlx_err("config.consume_setup_token.acquire"))?;
+        let completed = async {
+            let mut tx = revaer_data::transaction::begin_transaction(&mut connection)
+                .await
+                .map_err(map_db_err("config.consume_setup_token.begin"))?;
+            let result = async {
+                data_config::cleanup_expired_setup_tokens(tx.as_mut())
+                    .await
+                    .map_err(map_db_err("config.consume_setup_token.cleanup"))?;
+                let active = data_config::fetch_active_setup_token(tx.as_mut())
+                    .await
+                    .map_err(map_db_err("config.consume_setup_token.fetch_active"))?
+                    .ok_or(ConfigError::SetupTokenMissing)?;
+                if active.expires_at <= Utc::now() {
+                    data_config::mark_setup_token_consumed(tx.as_mut(), active.id)
+                        .await
+                        .map_err(map_db_err("config.consume_setup_token.expire"))?;
+                    return Ok(false);
+                }
+                if !verify_secret(&active.token_hash, token)? {
+                    return Err(ConfigError::SetupTokenInvalid);
+                }
+                data_config::mark_setup_token_consumed(tx.as_mut(), active.id)
+                    .await
+                    .map_err(map_db_err("config.consume_setup_token.consume"))?;
+                Ok(true)
+            }
+            .await;
+            finish_config_transaction(tx, result, true).await
+        }
+        .await;
+        if release_config_connection(connection, completed).await? {
+            info!("setup token consumed successfully");
+            Ok(())
+        } else {
+            warn!("setup token expired prior to consumption");
+            Err(ConfigError::SetupTokenExpired)
+        }
+    }
+}
+
 async fn apply_migrations(pool: &sqlx::PgPool) -> Result<()> {
     data_config::run_migrations(pool)
         .await
@@ -808,14 +874,24 @@ async fn apply_migrations(pool: &sqlx::PgPool) -> Result<()> {
 }
 
 async fn fetch_app_profile(pool: &sqlx::PgPool) -> Result<AppProfile> {
-    let id = parse_uuid(APP_PROFILE_ID)?;
-    let row = data_config::fetch_app_profile_row(pool, id)
-        .await
-        .map_err(map_db_err("config.fetch_app_profile.row"))?;
-    let labels = data_config::fetch_app_label_policies(pool, id)
-        .await
-        .map_err(map_db_err("config.fetch_app_profile.labels"))?;
-    map_app_profile_row(row, labels)
+    let pool = pool.clone();
+    tokio::spawn(async move {
+        let mut connection = pool
+            .acquire()
+            .await
+            .map_err(map_sqlx_err("config.fetch_app_profile.acquire"))?;
+        let completed = async {
+            let mut tx = revaer_data::transaction::begin_transaction(&mut connection)
+                .await
+                .map_err(map_db_err("config.fetch_app_profile.begin"))?;
+            let result = fetch_app_profile_tx(&mut tx).await;
+            finish_config_transaction(tx, result, false).await
+        }
+        .await;
+        release_config_connection(connection, completed).await
+    })
+    .await
+    .map_err(|source| ConfigError::TransactionTask { source })?
 }
 
 async fn fetch_app_profile_tx(tx: &mut Transaction<'_, Postgres>) -> Result<AppProfile> {
@@ -2592,6 +2668,65 @@ fn verify_secret(expected_hash: &str, candidate: &str) -> Result<bool> {
         Ok(()) => Ok(true),
         Err(PasswordHashError::Password) => Ok(false),
         Err(detail) => Err(ConfigError::SecretVerifyFailed { detail }),
+    }
+}
+
+async fn finish_config_transaction<T>(
+    tx: Transaction<'_, Postgres>,
+    result: Result<T>,
+    commit: bool,
+) -> Result<T> {
+    match result {
+        Ok(value) => {
+            if commit {
+                commit_transaction(tx)
+                    .await
+                    .map_err(map_db_err("config.transaction.commit"))?;
+            } else {
+                rollback_transaction(tx)
+                    .await
+                    .map_err(|source| ConfigError::TransactionRollback { source })?;
+            }
+            Ok(value)
+        }
+        Err(original) => match rollback_transaction(tx).await {
+            Ok(()) => Err(original),
+            Err(error) => Err(ConfigError::TransactionCleanup {
+                original: Box::new(original),
+                cleanup: Box::new(map_db_err("config.transaction.rollback")(error)),
+            }),
+        },
+    }
+}
+
+async fn release_config_connection<T>(
+    connection: PoolConnection<Postgres>,
+    result: Result<T>,
+) -> Result<T> {
+    let cleanup_failed = matches!(
+        &result,
+        Err(ConfigError::DataAccess {
+            source: revaer_data::DataError::QueryFailed {
+                operation: "transaction begin",
+                ..
+            } | revaer_data::DataError::RollbackFailed { .. },
+            ..
+        } | ConfigError::TransactionCleanup { .. }
+            | ConfigError::TransactionRollback { .. })
+    );
+    if cleanup_failed {
+        match connection.close().await {
+            Ok(()) => result,
+            Err(error) => match result {
+                Err(original) => Err(ConfigError::TransactionCleanup {
+                    original: Box::new(original),
+                    cleanup: Box::new(map_sqlx_err("config.transaction.close")(error)),
+                }),
+                Ok(value) => Ok(value),
+            },
+        }
+    } else {
+        result
     }
 }
 

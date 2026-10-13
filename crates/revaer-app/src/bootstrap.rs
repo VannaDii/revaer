@@ -335,6 +335,8 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         }
     }
 
+    // Await transaction owners that outlive a cancelled API request before runtime shutdown.
+    config.pool().close().await;
     serve_result.map_err(|err| AppError::api_server("api_server.serve", err))?;
     info!("API server shutdown complete");
     Ok(())

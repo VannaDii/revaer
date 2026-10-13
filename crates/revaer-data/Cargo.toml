@@ -14,6 +14,9 @@ chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
+# SQLx commit consumes Transaction; its manager lets us await rollback after commit failure.
+# This exposes the already-resolved SQLx core API without changing the driver version.
+sqlx-core = { version = "=0.9.0", default-features = false }
 uuid.workspace = true
 revaer-torrent-core = { path = "../revaer-torrent-core" }
 revaer-events = { path = "../revaer-events" }

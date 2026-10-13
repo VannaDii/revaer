@@ -104,18 +104,19 @@ pub async fn tracker_category_mapping_upsert(
     actor_user_public_id: Uuid,
     input: TrackerCategoryMappingUpsertInput<'_>,
 ) -> Result<()> {
-    sqlx::query(TRACKER_CATEGORY_MAPPING_UPSERT_CALL)
-        .bind(actor_user_public_id)
-        .bind(input.torznab_instance_public_id)
-        .bind(input.indexer_definition_upstream_slug)
-        .bind(input.indexer_instance_public_id)
-        .bind(input.tracker_category)
-        .bind(input.tracker_subcategory)
-        .bind(input.torznab_cat_id)
-        .bind(input.media_domain_key)
-        .execute(pool)
-        .await
-        .map_err(try_op("tracker category mapping upsert"))?;
+    try_op("tracker category mapping upsert", || {
+        sqlx::query(TRACKER_CATEGORY_MAPPING_UPSERT_CALL)
+            .bind(actor_user_public_id)
+            .bind(input.torznab_instance_public_id)
+            .bind(input.indexer_definition_upstream_slug)
+            .bind(input.indexer_instance_public_id)
+            .bind(input.tracker_category)
+            .bind(input.tracker_subcategory)
+            .bind(input.torznab_cat_id)
+            .bind(input.media_domain_key)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -129,16 +130,17 @@ pub async fn tracker_category_mapping_delete(
     actor_user_public_id: Uuid,
     input: TrackerCategoryMappingDeleteInput<'_>,
 ) -> Result<()> {
-    sqlx::query(TRACKER_CATEGORY_MAPPING_DELETE_CALL)
-        .bind(actor_user_public_id)
-        .bind(input.torznab_instance_public_id)
-        .bind(input.indexer_definition_upstream_slug)
-        .bind(input.indexer_instance_public_id)
-        .bind(input.tracker_category)
-        .bind(input.tracker_subcategory)
-        .execute(pool)
-        .await
-        .map_err(try_op("tracker category mapping delete"))?;
+    try_op("tracker category mapping delete", || {
+        sqlx::query(TRACKER_CATEGORY_MAPPING_DELETE_CALL)
+            .bind(actor_user_public_id)
+            .bind(input.torznab_instance_public_id)
+            .bind(input.indexer_definition_upstream_slug)
+            .bind(input.indexer_instance_public_id)
+            .bind(input.tracker_category)
+            .bind(input.tracker_subcategory)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -154,14 +156,15 @@ pub async fn tracker_category_mapping_resolve_feed(
     tracker_category: Option<i32>,
     tracker_subcategory: Option<i32>,
 ) -> Result<Vec<i32>> {
-    sqlx::query_scalar(TRACKER_CATEGORY_MAPPING_RESOLVE_FEED_CALL)
-        .bind(torznab_instance_public_id)
-        .bind(indexer_instance_public_id)
-        .bind(tracker_category)
-        .bind(tracker_subcategory)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("tracker category mapping resolve feed"))
+    try_op("tracker category mapping resolve feed", || {
+        sqlx::query_scalar(TRACKER_CATEGORY_MAPPING_RESOLVE_FEED_CALL)
+            .bind(torznab_instance_public_id)
+            .bind(indexer_instance_public_id)
+            .bind(tracker_category)
+            .bind(tracker_subcategory)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Upsert a media-domain-to-torznab-category mapping.
@@ -176,14 +179,15 @@ pub async fn media_domain_mapping_upsert(
     torznab_cat_id: i32,
     is_primary: Option<bool>,
 ) -> Result<()> {
-    sqlx::query(MEDIA_DOMAIN_MAPPING_UPSERT_CALL)
-        .bind(actor_user_public_id)
-        .bind(media_domain_key)
-        .bind(torznab_cat_id)
-        .bind(is_primary)
-        .execute(pool)
-        .await
-        .map_err(try_op("media domain mapping upsert"))?;
+    try_op("media domain mapping upsert", || {
+        sqlx::query(MEDIA_DOMAIN_MAPPING_UPSERT_CALL)
+            .bind(actor_user_public_id)
+            .bind(media_domain_key)
+            .bind(torznab_cat_id)
+            .bind(is_primary)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -198,13 +202,14 @@ pub async fn media_domain_mapping_delete(
     media_domain_key: &str,
     torznab_cat_id: i32,
 ) -> Result<()> {
-    sqlx::query(MEDIA_DOMAIN_MAPPING_DELETE_CALL)
-        .bind(actor_user_public_id)
-        .bind(media_domain_key)
-        .bind(torznab_cat_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("media domain mapping delete"))?;
+    try_op("media domain mapping delete", || {
+        sqlx::query(MEDIA_DOMAIN_MAPPING_DELETE_CALL)
+            .bind(actor_user_public_id)
+            .bind(media_domain_key)
+            .bind(torznab_cat_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 

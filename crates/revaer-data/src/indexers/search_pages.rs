@@ -156,12 +156,13 @@ pub async fn search_page_list(
     actor_user_public_id: Uuid,
     search_request_public_id: Uuid,
 ) -> Result<Vec<SearchPageSummaryRow>> {
-    sqlx::query_as(SEARCH_PAGE_LIST_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_request_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("search page list"))
+    try_op("search page list", || {
+        sqlx::query_as(SEARCH_PAGE_LIST_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_request_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Fetch items for a specific search request page.
@@ -175,13 +176,14 @@ pub async fn search_page_fetch(
     search_request_public_id: Uuid,
     page_number: i32,
 ) -> Result<Vec<SearchPageFetchRow>> {
-    sqlx::query_as(SEARCH_PAGE_FETCH_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_request_public_id)
-        .bind(page_number)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("search page fetch"))
+    try_op("search page fetch", || {
+        sqlx::query_as(SEARCH_PAGE_FETCH_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_request_public_id)
+            .bind(page_number)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Fetch explainability details for a search request.
@@ -194,12 +196,13 @@ pub async fn search_request_explainability(
     actor_user_public_id: Uuid,
     search_request_public_id: Uuid,
 ) -> Result<SearchRequestExplainabilityRow> {
-    sqlx::query_as(SEARCH_REQUEST_EXPLAINABILITY_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_request_public_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("search request explainability"))
+    try_op("search request explainability", || {
+        sqlx::query_as(SEARCH_REQUEST_EXPLAINABILITY_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_request_public_id)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

@@ -140,12 +140,13 @@ pub async fn indexer_connectivity_profile_get(
     actor_user_public_id: Uuid,
     indexer_instance_public_id: Uuid,
 ) -> Result<IndexerConnectivityProfileRow> {
-    sqlx::query_as(CONNECTIVITY_PROFILE_GET_CALL)
-        .bind(actor_user_public_id)
-        .bind(indexer_instance_public_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("indexer connectivity profile get"))
+    try_op("indexer connectivity profile get", || {
+        sqlx::query_as(CONNECTIVITY_PROFILE_GET_CALL)
+            .bind(actor_user_public_id)
+            .bind(indexer_instance_public_id)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// List recent reputation rollups for an indexer instance and window.
@@ -160,14 +161,15 @@ pub async fn indexer_source_reputation_list(
     window_key: Option<&str>,
     limit: Option<i32>,
 ) -> Result<Vec<IndexerSourceReputationRow>> {
-    sqlx::query_as(SOURCE_REPUTATION_LIST_CALL)
-        .bind(actor_user_public_id)
-        .bind(indexer_instance_public_id)
-        .bind(window_key)
-        .bind(limit)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("indexer source reputation list"))
+    try_op("indexer source reputation list", || {
+        sqlx::query_as(SOURCE_REPUTATION_LIST_CALL)
+            .bind(actor_user_public_id)
+            .bind(indexer_instance_public_id)
+            .bind(window_key)
+            .bind(limit)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// List recent health events for an indexer instance.
@@ -181,13 +183,14 @@ pub async fn indexer_health_event_list(
     indexer_instance_public_id: Uuid,
     limit: Option<i32>,
 ) -> Result<Vec<IndexerHealthEventRow>> {
-    sqlx::query_as(HEALTH_EVENT_LIST_CALL)
-        .bind(actor_user_public_id)
-        .bind(indexer_instance_public_id)
-        .bind(limit)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("indexer health event list"))
+    try_op("indexer health event list", || {
+        sqlx::query_as(HEALTH_EVENT_LIST_CALL)
+            .bind(actor_user_public_id)
+            .bind(indexer_instance_public_id)
+            .bind(limit)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

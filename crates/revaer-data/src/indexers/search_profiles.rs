@@ -177,16 +177,17 @@ pub async fn search_profile_create(
     default_media_domain_key: Option<&str>,
     user_public_id: Option<Uuid>,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(SEARCH_PROFILE_CREATE_CALL)
-        .bind(actor_user_public_id)
-        .bind(display_name)
-        .bind(is_default)
-        .bind(page_size)
-        .bind(default_media_domain_key)
-        .bind(user_public_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("search profile create"))
+    try_op("search profile create", || {
+        sqlx::query_scalar(SEARCH_PROFILE_CREATE_CALL)
+            .bind(actor_user_public_id)
+            .bind(display_name)
+            .bind(is_default)
+            .bind(page_size)
+            .bind(default_media_domain_key)
+            .bind(user_public_id)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Update a search profile.
@@ -201,14 +202,15 @@ pub async fn search_profile_update(
     display_name: Option<&str>,
     page_size: Option<i32>,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(SEARCH_PROFILE_UPDATE_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_profile_public_id)
-        .bind(display_name)
-        .bind(page_size)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("search profile update"))
+    try_op("search profile update", || {
+        sqlx::query_scalar(SEARCH_PROFILE_UPDATE_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_profile_public_id)
+            .bind(display_name)
+            .bind(page_size)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Set a search profile as default.
@@ -222,13 +224,14 @@ pub async fn search_profile_set_default(
     search_profile_public_id: Uuid,
     page_size: Option<i32>,
 ) -> Result<()> {
-    sqlx::query(SEARCH_PROFILE_SET_DEFAULT_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_profile_public_id)
-        .bind(page_size)
-        .execute(pool)
-        .await
-        .map_err(try_op("search profile set default"))?;
+    try_op("search profile set default", || {
+        sqlx::query(SEARCH_PROFILE_SET_DEFAULT_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_profile_public_id)
+            .bind(page_size)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -243,13 +246,14 @@ pub async fn search_profile_set_default_domain(
     search_profile_public_id: Uuid,
     default_media_domain_key: Option<&str>,
 ) -> Result<()> {
-    sqlx::query(SEARCH_PROFILE_SET_DEFAULT_DOMAIN_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_profile_public_id)
-        .bind(default_media_domain_key)
-        .execute(pool)
-        .await
-        .map_err(try_op("search profile set default domain"))?;
+    try_op("search profile set default domain", || {
+        sqlx::query(SEARCH_PROFILE_SET_DEFAULT_DOMAIN_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_profile_public_id)
+            .bind(default_media_domain_key)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -264,13 +268,14 @@ pub async fn search_profile_set_domain_allowlist(
     search_profile_public_id: Uuid,
     media_domain_keys: &[String],
 ) -> Result<()> {
-    sqlx::query(SEARCH_PROFILE_SET_DOMAIN_ALLOWLIST_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_profile_public_id)
-        .bind(media_domain_keys)
-        .execute(pool)
-        .await
-        .map_err(try_op("search profile set domain allowlist"))?;
+    try_op("search profile set domain allowlist", || {
+        sqlx::query(SEARCH_PROFILE_SET_DOMAIN_ALLOWLIST_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_profile_public_id)
+            .bind(media_domain_keys)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -285,13 +290,14 @@ pub async fn search_profile_add_policy_set(
     search_profile_public_id: Uuid,
     policy_set_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(SEARCH_PROFILE_ADD_POLICY_SET_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_profile_public_id)
-        .bind(policy_set_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("search profile add policy set"))?;
+    try_op("search profile add policy set", || {
+        sqlx::query(SEARCH_PROFILE_ADD_POLICY_SET_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_profile_public_id)
+            .bind(policy_set_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -306,13 +312,14 @@ pub async fn search_profile_remove_policy_set(
     search_profile_public_id: Uuid,
     policy_set_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(SEARCH_PROFILE_REMOVE_POLICY_SET_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_profile_public_id)
-        .bind(policy_set_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("search profile remove policy set"))?;
+    try_op("search profile remove policy set", || {
+        sqlx::query(SEARCH_PROFILE_REMOVE_POLICY_SET_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_profile_public_id)
+            .bind(policy_set_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -327,13 +334,14 @@ pub async fn search_profile_indexer_allow(
     search_profile_public_id: Uuid,
     indexer_instance_public_ids: &[Uuid],
 ) -> Result<()> {
-    sqlx::query(SEARCH_PROFILE_INDEXER_ALLOW_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_profile_public_id)
-        .bind(indexer_instance_public_ids)
-        .execute(pool)
-        .await
-        .map_err(try_op("search profile indexer allow"))?;
+    try_op("search profile indexer allow", || {
+        sqlx::query(SEARCH_PROFILE_INDEXER_ALLOW_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_profile_public_id)
+            .bind(indexer_instance_public_ids)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -348,13 +356,14 @@ pub async fn search_profile_indexer_block(
     search_profile_public_id: Uuid,
     indexer_instance_public_ids: &[Uuid],
 ) -> Result<()> {
-    sqlx::query(SEARCH_PROFILE_INDEXER_BLOCK_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_profile_public_id)
-        .bind(indexer_instance_public_ids)
-        .execute(pool)
-        .await
-        .map_err(try_op("search profile indexer block"))?;
+    try_op("search profile indexer block", || {
+        sqlx::query(SEARCH_PROFILE_INDEXER_BLOCK_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_profile_public_id)
+            .bind(indexer_instance_public_ids)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -370,14 +379,15 @@ pub async fn search_profile_tag_allow(
     tag_public_ids: Option<&[Uuid]>,
     tag_keys: Option<&[String]>,
 ) -> Result<()> {
-    sqlx::query(SEARCH_PROFILE_TAG_ALLOW_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_profile_public_id)
-        .bind(tag_public_ids)
-        .bind(tag_keys)
-        .execute(pool)
-        .await
-        .map_err(try_op("search profile tag allow"))?;
+    try_op("search profile tag allow", || {
+        sqlx::query(SEARCH_PROFILE_TAG_ALLOW_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_profile_public_id)
+            .bind(tag_public_ids)
+            .bind(tag_keys)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -393,14 +403,15 @@ pub async fn search_profile_tag_block(
     tag_public_ids: Option<&[Uuid]>,
     tag_keys: Option<&[String]>,
 ) -> Result<()> {
-    sqlx::query(SEARCH_PROFILE_TAG_BLOCK_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_profile_public_id)
-        .bind(tag_public_ids)
-        .bind(tag_keys)
-        .execute(pool)
-        .await
-        .map_err(try_op("search profile tag block"))?;
+    try_op("search profile tag block", || {
+        sqlx::query(SEARCH_PROFILE_TAG_BLOCK_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_profile_public_id)
+            .bind(tag_public_ids)
+            .bind(tag_keys)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -416,14 +427,15 @@ pub async fn search_profile_tag_prefer(
     tag_public_ids: Option<&[Uuid]>,
     tag_keys: Option<&[String]>,
 ) -> Result<()> {
-    sqlx::query(SEARCH_PROFILE_TAG_PREFER_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_profile_public_id)
-        .bind(tag_public_ids)
-        .bind(tag_keys)
-        .execute(pool)
-        .await
-        .map_err(try_op("search profile tag prefer"))?;
+    try_op("search profile tag prefer", || {
+        sqlx::query(SEARCH_PROFILE_TAG_PREFER_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_profile_public_id)
+            .bind(tag_public_ids)
+            .bind(tag_keys)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -436,11 +448,12 @@ pub async fn search_profile_list(
     pool: &PgPool,
     actor_user_public_id: Uuid,
 ) -> Result<Vec<SearchProfileListRow>> {
-    sqlx::query_as(SEARCH_PROFILE_LIST_CALL)
-        .bind(actor_user_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("search profile list"))
+    try_op("search profile list", || {
+        sqlx::query_as(SEARCH_PROFILE_LIST_CALL)
+            .bind(actor_user_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

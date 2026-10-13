@@ -2,6 +2,7 @@
 
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
+use std::future::Future;
 use std::path::PathBuf;
 
 use sqlx::postgres::PgDatabaseError;
@@ -10,13 +11,33 @@ use sqlx::postgres::PgDatabaseError;
 pub type Result<T> = std::result::Result<T, DataError>;
 
 /// Wrap external operation errors with a consistent data-layer error.
-pub(crate) fn try_op(operation: &'static str) -> impl FnOnce(sqlx::Error) -> DataError {
-    move |source| DataError::QueryFailed { operation, source }
+pub(crate) async fn try_op<T, F, Fut>(operation: &'static str, call: F) -> Result<T>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = sqlx::Result<T>>,
+{
+    call()
+        .await
+        .map_err(|source| DataError::QueryFailed { operation, source })
 }
 
 /// Errors raised by the data access layer.
 #[derive(Debug)]
 pub enum DataError {
+    /// The owner of a database boundary could not complete.
+    BoundaryFailed {
+        /// Operation identifier.
+        operation: &'static str,
+        /// Underlying worker error.
+        source: Box<dyn Error + Send + Sync>,
+    },
+    /// An interaction and its awaited rollback both failed.
+    RollbackFailed {
+        /// Original interaction failure.
+        original: Box<Self>,
+        /// Failure while rolling back the interaction.
+        cleanup: Box<Self>,
+    },
     /// Migration execution failed.
     MigrationFailed {
         /// Underlying migration error.
@@ -54,6 +75,7 @@ impl DataError {
     #[must_use]
     pub fn database_code(&self) -> Option<String> {
         match self {
+            Self::RollbackFailed { original, .. } => original.database_code(),
             Self::QueryFailed {
                 source: sqlx::Error::Database(db_err),
                 ..
@@ -67,6 +89,7 @@ impl DataError {
     #[must_use]
     pub fn database_detail(&self) -> Option<&str> {
         match self {
+            Self::RollbackFailed { original, .. } => original.database_detail(),
             Self::QueryFailed {
                 source: sqlx::Error::Database(db_err),
                 ..
@@ -82,8 +105,14 @@ impl DataError {
 impl Display for DataError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
+            Self::BoundaryFailed { operation, source } => {
+                write!(formatter, "{operation}: {source}")
+            }
+            Self::RollbackFailed { original, cleanup } => {
+                write!(formatter, "{original}; rollback failed: {cleanup}")
+            }
             Self::MigrationFailed { .. } => formatter.write_str("migration failed"),
-            Self::QueryFailed { .. } => formatter.write_str("database operation failed"),
+            Self::QueryFailed { operation, source } => write!(formatter, "{operation}: {source}"),
             Self::JobFailed { .. } => formatter.write_str("job run failed"),
             Self::PathNotUtf8 { .. } => formatter.write_str("path contained invalid utf-8"),
         }
@@ -93,6 +122,8 @@ impl Display for DataError {
 impl Error for DataError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::BoundaryFailed { source, .. } => Some(source.as_ref()),
+            Self::RollbackFailed { original, .. } => Some(original),
             Self::MigrationFailed { source } => Some(source),
             Self::QueryFailed { source, .. } => Some(source),
             Self::JobFailed { .. } | Self::PathNotUtf8 { .. } => None,
@@ -125,7 +156,8 @@ mod tests {
             operation: "fetch",
             source: sqlx::Error::RowNotFound,
         };
-        assert_eq!(query.to_string(), "database operation failed");
+        assert!(query.to_string().starts_with("fetch: "));
+        assert!(query.to_string().contains("no rows returned"));
         assert!(query.source().is_some());
         assert_eq!(query.database_code(), None);
         assert_eq!(query.database_detail(), None);
@@ -149,7 +181,7 @@ mod tests {
         assert!(path.source().is_none());
 
         let from = DataError::from(sqlx::Error::RowNotFound);
-        assert_eq!(from.to_string(), "database operation failed");
+        assert!(from.to_string().starts_with("sqlx operation: "));
         assert!(from.source().is_some());
     }
 }

@@ -6,34 +6,45 @@
 //! - Uses constant error messages for mapping database failures.
 
 use crate::error::{DataError, Result, try_op};
-use sqlx::PgPool;
+use sqlx::{Executor, PgPool, Postgres};
 
 const JOB_CLAIM_NEXT_CALL: &str = r"
-    SELECT job_claim_next(
+    SELECT outcome FROM job_claim_next(
         job_key_input => $1::job_key
     )
 ";
 
-const JOB_RUN_RETENTION_PURGE_CALL: &str = "SELECT * FROM job_run_retention_purge_v2()";
+const JOB_RUN_RETENTION_PURGE_CALL: &str = "SELECT * FROM job_run_retention_purge()";
 const JOB_RUN_CONNECTIVITY_REFRESH_CALL: &str =
-    "SELECT * FROM job_run_connectivity_profile_refresh_v2()";
+    "SELECT * FROM job_run_connectivity_profile_refresh()";
 const JOB_RUN_REPUTATION_ROLLUP_CALL: &str = r"
-    SELECT * FROM job_run_reputation_rollup_v2(
+    SELECT * FROM job_run_reputation_rollup(
         window_key_input => $1::reputation_window
     )
 ";
 const JOB_RUN_CANONICAL_BACKFILL_CALL: &str =
-    "SELECT * FROM job_run_canonical_backfill_best_source_v2()";
-const JOB_RUN_CANONICAL_PRUNE_CALL: &str =
-    "SELECT * FROM job_run_canonical_prune_low_confidence_v2()";
-const JOB_RUN_BASE_SCORE_REFRESH_CALL: &str =
-    "SELECT * FROM job_run_base_score_refresh_recent_v2()";
-const JOB_RUN_RSS_BACKFILL_CALL: &str = "SELECT * FROM job_run_rss_subscription_backfill_v2()";
-const JOB_RUN_POLICY_SNAPSHOT_GC_CALL: &str = "SELECT * FROM job_run_policy_snapshot_gc_v2()";
+    "SELECT * FROM job_run_canonical_backfill_best_source()";
+const JOB_RUN_CANONICAL_PRUNE_CALL: &str = "SELECT * FROM job_run_canonical_prune_low_confidence()";
+const JOB_RUN_BASE_SCORE_REFRESH_CALL: &str = "SELECT * FROM job_run_base_score_refresh_recent()";
+const JOB_RUN_RSS_BACKFILL_CALL: &str = "SELECT * FROM job_run_rss_subscription_backfill()";
+const JOB_RUN_POLICY_SNAPSHOT_GC_CALL: &str = "SELECT * FROM job_run_policy_snapshot_gc()";
 const JOB_RUN_POLICY_SNAPSHOT_REPAIR_CALL: &str =
-    "SELECT * FROM job_run_policy_snapshot_refcount_repair_v2()";
-const JOB_RUN_RATE_LIMIT_STATE_PURGE_CALL: &str =
-    "SELECT * FROM job_run_rate_limit_state_purge_v2()";
+    "SELECT * FROM job_run_policy_snapshot_refcount_repair()";
+const JOB_RUN_RATE_LIMIT_STATE_PURGE_CALL: &str = "SELECT * FROM job_run_rate_limit_state_purge()";
+
+/// Explicit scheduling outcome returned by a job claim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "job_claim_outcome", rename_all = "snake_case")]
+pub enum JobClaimOutcome {
+    /// The lease was acquired and the job should run.
+    Claimed,
+    /// The schedule has not reached its next run time.
+    NotDue,
+    /// The schedule is disabled.
+    Disabled,
+    /// Another execution owns the advisory or schedule lock.
+    Locked,
+}
 
 #[derive(Debug, sqlx::FromRow)]
 struct JobRunResult {
@@ -62,13 +73,16 @@ impl JobRunResult {
 /// # Errors
 ///
 /// Returns an error if the stored procedure rejects the input.
-pub async fn job_claim_next(pool: &PgPool, job_key: &str) -> Result<()> {
-    sqlx::query(JOB_CLAIM_NEXT_CALL)
-        .bind(job_key)
-        .execute(pool)
-        .await
-        .map_err(try_op("job claim next"))?;
-    Ok(())
+pub async fn job_claim_next<'e, E>(executor: E, job_key: &str) -> Result<JobClaimOutcome>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    try_op("job claim next", || {
+        sqlx::query_scalar(JOB_CLAIM_NEXT_CALL)
+            .bind(job_key)
+            .fetch_one(executor)
+    })
+    .await
 }
 
 /// Run the retention purge job.
@@ -77,10 +91,10 @@ pub async fn job_claim_next(pool: &PgPool, job_key: &str) -> Result<()> {
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn job_run_retention_purge(pool: &PgPool) -> Result<()> {
-    let result: JobRunResult = sqlx::query_as(JOB_RUN_RETENTION_PURGE_CALL)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("job run retention purge"))?;
+    let result: JobRunResult = try_op("job run retention purge", || {
+        sqlx::query_as(JOB_RUN_RETENTION_PURGE_CALL).fetch_one(pool)
+    })
+    .await?;
     result.into_result("job run retention purge", "retention_purge")
 }
 
@@ -90,10 +104,10 @@ pub async fn job_run_retention_purge(pool: &PgPool) -> Result<()> {
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn job_run_connectivity_profile_refresh(pool: &PgPool) -> Result<()> {
-    let result: JobRunResult = sqlx::query_as(JOB_RUN_CONNECTIVITY_REFRESH_CALL)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("job run connectivity profile refresh"))?;
+    let result: JobRunResult = try_op("job run connectivity profile refresh", || {
+        sqlx::query_as(JOB_RUN_CONNECTIVITY_REFRESH_CALL).fetch_one(pool)
+    })
+    .await?;
     result.into_result(
         "job run connectivity profile refresh",
         "connectivity_profile_refresh",
@@ -106,11 +120,12 @@ pub async fn job_run_connectivity_profile_refresh(pool: &PgPool) -> Result<()> {
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn job_run_reputation_rollup(pool: &PgPool, window_key: &str) -> Result<()> {
-    let result: JobRunResult = sqlx::query_as(JOB_RUN_REPUTATION_ROLLUP_CALL)
-        .bind(window_key)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("job run reputation rollup"))?;
+    let result: JobRunResult = try_op("job run reputation rollup", || {
+        sqlx::query_as(JOB_RUN_REPUTATION_ROLLUP_CALL)
+            .bind(window_key)
+            .fetch_one(pool)
+    })
+    .await?;
     let job_key = match window_key {
         "1h" => "reputation_rollup_1h",
         "24h" => "reputation_rollup_24h",
@@ -126,10 +141,10 @@ pub async fn job_run_reputation_rollup(pool: &PgPool, window_key: &str) -> Resul
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn job_run_canonical_backfill_best_source(pool: &PgPool) -> Result<()> {
-    let result: JobRunResult = sqlx::query_as(JOB_RUN_CANONICAL_BACKFILL_CALL)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("job run canonical backfill best source"))?;
+    let result: JobRunResult = try_op("job run canonical backfill best source", || {
+        sqlx::query_as(JOB_RUN_CANONICAL_BACKFILL_CALL).fetch_one(pool)
+    })
+    .await?;
     result.into_result(
         "job run canonical backfill best source",
         "canonical_backfill_best_source",
@@ -142,10 +157,10 @@ pub async fn job_run_canonical_backfill_best_source(pool: &PgPool) -> Result<()>
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn job_run_canonical_prune_low_confidence(pool: &PgPool) -> Result<()> {
-    let result: JobRunResult = sqlx::query_as(JOB_RUN_CANONICAL_PRUNE_CALL)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("job run canonical prune low confidence"))?;
+    let result: JobRunResult = try_op("job run canonical prune low confidence", || {
+        sqlx::query_as(JOB_RUN_CANONICAL_PRUNE_CALL).fetch_one(pool)
+    })
+    .await?;
     result.into_result(
         "job run canonical prune low confidence",
         "canonical_prune_low_confidence",
@@ -158,10 +173,10 @@ pub async fn job_run_canonical_prune_low_confidence(pool: &PgPool) -> Result<()>
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn job_run_base_score_refresh_recent(pool: &PgPool) -> Result<()> {
-    let result: JobRunResult = sqlx::query_as(JOB_RUN_BASE_SCORE_REFRESH_CALL)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("job run base score refresh recent"))?;
+    let result: JobRunResult = try_op("job run base score refresh recent", || {
+        sqlx::query_as(JOB_RUN_BASE_SCORE_REFRESH_CALL).fetch_one(pool)
+    })
+    .await?;
     result.into_result(
         "job run base score refresh recent",
         "base_score_refresh_recent",
@@ -174,10 +189,10 @@ pub async fn job_run_base_score_refresh_recent(pool: &PgPool) -> Result<()> {
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn job_run_rss_subscription_backfill(pool: &PgPool) -> Result<()> {
-    let result: JobRunResult = sqlx::query_as(JOB_RUN_RSS_BACKFILL_CALL)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("job run rss subscription backfill"))?;
+    let result: JobRunResult = try_op("job run rss subscription backfill", || {
+        sqlx::query_as(JOB_RUN_RSS_BACKFILL_CALL).fetch_one(pool)
+    })
+    .await?;
     result.into_result(
         "job run rss subscription backfill",
         "rss_subscription_backfill",
@@ -190,10 +205,10 @@ pub async fn job_run_rss_subscription_backfill(pool: &PgPool) -> Result<()> {
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn job_run_policy_snapshot_gc(pool: &PgPool) -> Result<()> {
-    let result: JobRunResult = sqlx::query_as(JOB_RUN_POLICY_SNAPSHOT_GC_CALL)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("job run policy snapshot gc"))?;
+    let result: JobRunResult = try_op("job run policy snapshot gc", || {
+        sqlx::query_as(JOB_RUN_POLICY_SNAPSHOT_GC_CALL).fetch_one(pool)
+    })
+    .await?;
     result.into_result("job run policy snapshot gc", "policy_snapshot_gc")
 }
 
@@ -203,10 +218,10 @@ pub async fn job_run_policy_snapshot_gc(pool: &PgPool) -> Result<()> {
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn job_run_policy_snapshot_refcount_repair(pool: &PgPool) -> Result<()> {
-    let result: JobRunResult = sqlx::query_as(JOB_RUN_POLICY_SNAPSHOT_REPAIR_CALL)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("job run policy snapshot refcount repair"))?;
+    let result: JobRunResult = try_op("job run policy snapshot refcount repair", || {
+        sqlx::query_as(JOB_RUN_POLICY_SNAPSHOT_REPAIR_CALL).fetch_one(pool)
+    })
+    .await?;
     result.into_result(
         "job run policy snapshot refcount repair",
         "policy_snapshot_refcount_repair",
@@ -219,10 +234,10 @@ pub async fn job_run_policy_snapshot_refcount_repair(pool: &PgPool) -> Result<()
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn job_run_rate_limit_state_purge(pool: &PgPool) -> Result<()> {
-    let result: JobRunResult = sqlx::query_as(JOB_RUN_RATE_LIMIT_STATE_PURGE_CALL)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("job run rate limit state purge"))?;
+    let result: JobRunResult = try_op("job run rate limit state purge", || {
+        sqlx::query_as(JOB_RUN_RATE_LIMIT_STATE_PURGE_CALL).fetch_one(pool)
+    })
+    .await?;
     result.into_result("job run rate limit state purge", "rate_limit_state_purge")
 }
 

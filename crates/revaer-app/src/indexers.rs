@@ -687,35 +687,70 @@ impl IndexerFacade for IndexerService {
         let summary = self
             .run_operation(
                 "indexer.definition_import_cardigann",
-                async {
-                    let mut tx = self.config.pool().begin().await?;
-                    let _definition = indexer_definition_import_cardigann_begin(
-                        &mut tx,
-                        actor_user_public_id,
-                        &prepared.upstream_slug,
-                        &prepared.display_name,
-                        &prepared.canonical_definition_text,
-                        is_deprecated.unwrap_or(false),
-                    )
-                    .await?;
-                    for field in &prepared.fields {
-                        let field_import = field.to_data_import();
-                        indexer_definition_import_cardigann_field(
-                            &mut tx,
-                            actor_user_public_id,
-                            &prepared.upstream_slug,
-                            &field_import,
-                        )
-                        .await?;
+                {
+                    let pool = self.config.pool().clone();
+                    async move {
+                        tokio::spawn(async move {
+                            let mut connection = pool.acquire().await?;
+                            let completed = async {
+                                let mut tx =
+                                    revaer_data::transaction::begin_transaction(&mut connection)
+                                        .await?;
+                                let result = async {
+                                    let _definition = indexer_definition_import_cardigann_begin(
+                                        &mut tx,
+                                        actor_user_public_id,
+                                        &prepared.upstream_slug,
+                                        &prepared.display_name,
+                                        &prepared.canonical_definition_text,
+                                        is_deprecated.unwrap_or(false),
+                                    )
+                                    .await?;
+                                    for field in &prepared.fields {
+                                        let field_import = field.to_data_import();
+                                        indexer_definition_import_cardigann_field(
+                                            &mut tx,
+                                            actor_user_public_id,
+                                            &prepared.upstream_slug,
+                                            &field_import,
+                                        )
+                                        .await?;
+                                    }
+                                    let summary = indexer_definition_import_cardigann_complete(
+                                        &mut tx,
+                                        actor_user_public_id,
+                                        &prepared.upstream_slug,
+                                    )
+                                    .await?;
+                                    Ok(summary)
+                                }
+                                .await;
+                                revaer_data::transaction::finish_transaction(tx, result).await
+                            }
+                            .await;
+                            if matches!(
+                                &completed,
+                                Err(DataError::RollbackFailed { .. }
+                                    | DataError::QueryFailed {
+                                        operation: "transaction begin",
+                                        ..
+                                    })
+                            ) && let Err(source) = connection.close().await
+                                && let Err(original) = completed
+                            {
+                                return Err(DataError::RollbackFailed {
+                                    original: Box::new(original),
+                                    cleanup: Box::new(DataError::from(source)),
+                                });
+                            }
+                            completed
+                        })
+                        .await
+                        .map_err(|source| DataError::BoundaryFailed {
+                            operation: "indexer import transaction worker",
+                            source: Box::new(source),
+                        })?
                     }
-                    let summary = indexer_definition_import_cardigann_complete(
-                        &mut tx,
-                        actor_user_public_id,
-                        &prepared.upstream_slug,
-                    )
-                    .await?;
-                    tx.commit().await.map_err(DataError::from)?;
-                    Ok(summary)
                 }
                 .instrument(span),
                 |error| map_indexer_definition_error("indexer_definition_import_cardigann", error),

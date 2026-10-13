@@ -70,13 +70,14 @@ pub async fn tag_create(
     tag_key: &str,
     display_name: &str,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(TAG_CREATE_CALL)
-        .bind(actor_user_public_id)
-        .bind(tag_key)
-        .bind(display_name)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("tag create"))
+    try_op("tag create", || {
+        sqlx::query_scalar(TAG_CREATE_CALL)
+            .bind(actor_user_public_id)
+            .bind(tag_key)
+            .bind(display_name)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Update an existing tag.
@@ -91,14 +92,15 @@ pub async fn tag_update(
     tag_key: Option<&str>,
     display_name: &str,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(TAG_UPDATE_CALL)
-        .bind(actor_user_public_id)
-        .bind(tag_public_id)
-        .bind(tag_key)
-        .bind(display_name)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("tag update"))
+    try_op("tag update", || {
+        sqlx::query_scalar(TAG_UPDATE_CALL)
+            .bind(actor_user_public_id)
+            .bind(tag_public_id)
+            .bind(tag_key)
+            .bind(display_name)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Soft delete a tag.
@@ -112,13 +114,14 @@ pub async fn tag_soft_delete(
     tag_public_id: Option<Uuid>,
     tag_key: Option<&str>,
 ) -> Result<()> {
-    sqlx::query(TAG_SOFT_DELETE_CALL)
-        .bind(actor_user_public_id)
-        .bind(tag_public_id)
-        .bind(tag_key)
-        .execute(pool)
-        .await
-        .map_err(try_op("tag soft delete"))?;
+    try_op("tag soft delete", || {
+        sqlx::query(TAG_SOFT_DELETE_CALL)
+            .bind(actor_user_public_id)
+            .bind(tag_public_id)
+            .bind(tag_key)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -128,11 +131,12 @@ pub async fn tag_soft_delete(
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn tag_list(pool: &PgPool, actor_user_public_id: Uuid) -> Result<Vec<TagListRow>> {
-    sqlx::query_as(TAG_LIST_CALL)
-        .bind(actor_user_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("tag list"))
+    try_op("tag list", || {
+        sqlx::query_as(TAG_LIST_CALL)
+            .bind(actor_user_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

@@ -15,6 +15,20 @@ applyTo:
 
 # Database Rules
 
+- Transaction-owning request operations run to an awaited commit or rollback even
+  when their caller stops waiting. Do not abort their owning tasks or return
+  through an error before cleanup. Preserve both operation and cleanup errors.
+  Reuse connections after successful rollback; close only connections whose
+  cleanup cannot establish a clean boundary.
+- `try_op` executes the supplied fallible call; do not use it as a `.map_err`
+  mapper. Scheduling skips are typed outcomes, not database exceptions.
+- The data and test-support crates use the already-resolved SQLx core transaction manager so a
+  failed commit can still be followed by an awaited rollback on the same
+  transaction. This dependency does not change or patch the SQLx driver.
+- The existing test-support PostgreSQL integration suite uses `revaer-config` as
+  a development dependency to exercise actual request cancellation and cleanup;
+  database SQL remains inside its permitted fixture boundary.
+
 - Runtime application code must call stored procedures for database behavior. Do not embed inline business SQL in Rust.
 - `rv lint` mechanically enforces that `sqlx::query*` usage stays confined to `crates/revaer-data/src`, except for the disposable test-database provisioning helper at `crates/revaer-test-support/src/postgres.rs` and its integration test. Inline DDL/DML text must not appear in authored Rust.
 - Raw DDL, DML, stored procedure bodies, and seed SQL belong in migrations or tightly scoped operational bootstrap scripts only.

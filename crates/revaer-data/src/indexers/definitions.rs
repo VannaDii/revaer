@@ -182,11 +182,12 @@ pub async fn indexer_definition_list(
     pool: &PgPool,
     actor_user_public_id: Uuid,
 ) -> Result<Vec<IndexerDefinitionRow>> {
-    sqlx::query_as(INDEXER_DEFINITION_LIST_CALL)
-        .bind(actor_user_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("indexer definition list"))
+    try_op("indexer definition list", || {
+        sqlx::query_as(INDEXER_DEFINITION_LIST_CALL)
+            .bind(actor_user_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Begin a transactional Cardigann definition import and clear existing field metadata.
@@ -202,15 +203,16 @@ pub async fn indexer_definition_import_cardigann_begin(
     canonical_definition_text: &str,
     is_deprecated: bool,
 ) -> Result<IndexerDefinitionRow> {
-    sqlx::query_as(INDEXER_DEFINITION_IMPORT_CARDIGANN_BEGIN_CALL)
-        .bind(actor_user_public_id)
-        .bind(upstream_slug)
-        .bind(display_name)
-        .bind(canonical_definition_text)
-        .bind(is_deprecated)
-        .fetch_one(tx.as_mut())
-        .await
-        .map_err(try_op("indexer definition import cardigann begin"))
+    try_op("indexer definition import cardigann begin", || {
+        sqlx::query_as(INDEXER_DEFINITION_IMPORT_CARDIGANN_BEGIN_CALL)
+            .bind(actor_user_public_id)
+            .bind(upstream_slug)
+            .bind(display_name)
+            .bind(canonical_definition_text)
+            .bind(is_deprecated)
+            .fetch_one(tx.as_mut())
+    })
+    .await
 }
 
 /// Insert one imported Cardigann definition field into the current transaction.
@@ -224,24 +226,25 @@ pub async fn indexer_definition_import_cardigann_field(
     upstream_slug: &str,
     field: &CardigannDefinitionFieldImport<'_>,
 ) -> Result<()> {
-    sqlx::query(INDEXER_DEFINITION_IMPORT_CARDIGANN_FIELD_CALL)
-        .bind(actor_user_public_id)
-        .bind(upstream_slug)
-        .bind(field.field_name)
-        .bind(field.label)
-        .bind(field.field_type)
-        .bind(field.is_required)
-        .bind(field.is_advanced)
-        .bind(field.display_order)
-        .bind(field.default_value_plain)
-        .bind(field.default_value_int)
-        .bind(field.default_value_decimal)
-        .bind(field.default_value_bool)
-        .bind((!field.option_values.is_empty()).then_some(&field.option_values))
-        .bind((!field.option_labels.is_empty()).then_some(&field.option_labels))
-        .execute(tx.as_mut())
-        .await
-        .map_err(try_op("indexer definition import cardigann field"))?;
+    try_op("indexer definition import cardigann field", || {
+        sqlx::query(INDEXER_DEFINITION_IMPORT_CARDIGANN_FIELD_CALL)
+            .bind(actor_user_public_id)
+            .bind(upstream_slug)
+            .bind(field.field_name)
+            .bind(field.label)
+            .bind(field.field_type)
+            .bind(field.is_required)
+            .bind(field.is_advanced)
+            .bind(field.display_order)
+            .bind(field.default_value_plain)
+            .bind(field.default_value_int)
+            .bind(field.default_value_decimal)
+            .bind(field.default_value_bool)
+            .bind((!field.option_values.is_empty()).then_some(&field.option_values))
+            .bind((!field.option_labels.is_empty()).then_some(&field.option_labels))
+            .execute(tx.as_mut())
+    })
+    .await?;
     Ok(())
 }
 
@@ -255,12 +258,13 @@ pub async fn indexer_definition_import_cardigann_complete(
     actor_user_public_id: Uuid,
     upstream_slug: &str,
 ) -> Result<ImportedIndexerDefinitionRow> {
-    sqlx::query_as(INDEXER_DEFINITION_IMPORT_CARDIGANN_COMPLETE_CALL)
-        .bind(actor_user_public_id)
-        .bind(upstream_slug)
-        .fetch_one(tx.as_mut())
-        .await
-        .map_err(try_op("indexer definition import cardigann complete"))
+    try_op("indexer definition import cardigann complete", || {
+        sqlx::query_as(INDEXER_DEFINITION_IMPORT_CARDIGANN_COMPLETE_CALL)
+            .bind(actor_user_public_id)
+            .bind(upstream_slug)
+            .fetch_one(tx.as_mut())
+    })
+    .await
 }
 
 #[cfg(test)]

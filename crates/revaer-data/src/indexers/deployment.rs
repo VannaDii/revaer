@@ -21,11 +21,12 @@ const DEPLOYMENT_INIT_CALL: &str = r"
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn deployment_init(pool: &PgPool, actor_user_public_id: Uuid) -> Result<()> {
-    sqlx::query(DEPLOYMENT_INIT_CALL)
-        .bind(actor_user_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("deployment init"))?;
+    try_op("deployment init", || {
+        sqlx::query(DEPLOYMENT_INIT_CALL)
+            .bind(actor_user_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 

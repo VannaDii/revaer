@@ -1364,7 +1364,7 @@ async fn job_claim_next_rejects_missing_schedule() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn job_claim_next_rejects_not_due_schedule() -> anyhow::Result<()> {
+async fn job_claim_next_returns_not_due_schedule() -> anyhow::Result<()> {
     let Ok(test_db) = setup_db().await else {
         return Ok(());
     };
@@ -1382,14 +1382,16 @@ async fn job_claim_next_rejects_not_due_schedule() -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
-    let err = job_claim_next(pool, job_key).await.unwrap_err();
-    assert!(matches!(err, DataError::QueryFailed { .. }));
-    assert_eq!(err.database_detail(), Some("job_not_due"));
+    assert_eq!(
+        job_claim_next(pool, job_key).await?,
+        JobClaimOutcome::NotDue
+    );
+    crate::config::fetch_revision(pool).await?;
     Ok(())
 }
 
 #[tokio::test]
-async fn job_claim_next_rejects_locked_schedule() -> anyhow::Result<()> {
+async fn job_claim_next_returns_locked_schedule() -> anyhow::Result<()> {
     let Ok(test_db) = setup_db().await else {
         return Ok(());
     };
@@ -1407,9 +1409,11 @@ async fn job_claim_next_rejects_locked_schedule() -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
-    let err = job_claim_next(pool, job_key).await.unwrap_err();
-    assert!(matches!(err, DataError::QueryFailed { .. }));
-    assert_eq!(err.database_detail(), Some("job_locked"));
+    assert_eq!(
+        job_claim_next(pool, job_key).await?,
+        JobClaimOutcome::Locked
+    );
+    crate::config::fetch_revision(pool).await?;
     Ok(())
 }
 
@@ -1423,7 +1427,10 @@ async fn job_claim_next_applies_job_key_lease_duration() -> anyhow::Result<()> {
 
     for (job_key, expected_lease_seconds) in JOB_LEASE_EXPECTATIONS {
         mark_job_due(pool, job_key).await?;
-        job_claim_next(pool, job_key).await?;
+        assert_eq!(
+            job_claim_next(pool, job_key).await?,
+            JobClaimOutcome::Claimed
+        );
 
         let (locked_until, lock_owner, lease_seconds_remaining): ClaimedRow = sqlx::query_as(
             "SELECT
@@ -2282,7 +2289,7 @@ async fn job_run_canonical_backfill_best_source_recomputes_recent_durable_source
     assert_eq!(best_source_id, Some(second_source_id));
 
     let resolved_source_public_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT canonical_recompute_best_source_v1($1, 'global_current'::scoring_context)",
+        "SELECT canonical_recompute_best_source($1, 'global_current'::scoring_context)",
     )
     .bind(canonical_public_id)
     .fetch_optional(pool)

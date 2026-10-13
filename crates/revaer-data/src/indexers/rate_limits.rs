@@ -85,15 +85,16 @@ pub async fn rate_limit_policy_create(
     burst: i32,
     concurrent: i32,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(RATE_LIMIT_POLICY_CREATE_CALL)
-        .bind(actor_user_public_id)
-        .bind(display_name)
-        .bind(rpm)
-        .bind(burst)
-        .bind(concurrent)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("rate limit policy create"))
+    try_op("rate limit policy create", || {
+        sqlx::query_scalar(RATE_LIMIT_POLICY_CREATE_CALL)
+            .bind(actor_user_public_id)
+            .bind(display_name)
+            .bind(rpm)
+            .bind(burst)
+            .bind(concurrent)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Update an existing rate limit policy.
@@ -110,16 +111,17 @@ pub async fn rate_limit_policy_update(
     burst: Option<i32>,
     concurrent: Option<i32>,
 ) -> Result<()> {
-    sqlx::query(RATE_LIMIT_POLICY_UPDATE_CALL)
-        .bind(actor_user_public_id)
-        .bind(rate_limit_policy_public_id)
-        .bind(display_name)
-        .bind(rpm)
-        .bind(burst)
-        .bind(concurrent)
-        .execute(pool)
-        .await
-        .map_err(try_op("rate limit policy update"))?;
+    try_op("rate limit policy update", || {
+        sqlx::query(RATE_LIMIT_POLICY_UPDATE_CALL)
+            .bind(actor_user_public_id)
+            .bind(rate_limit_policy_public_id)
+            .bind(display_name)
+            .bind(rpm)
+            .bind(burst)
+            .bind(concurrent)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -133,12 +135,13 @@ pub async fn rate_limit_policy_soft_delete(
     actor_user_public_id: Uuid,
     rate_limit_policy_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(RATE_LIMIT_POLICY_SOFT_DELETE_CALL)
-        .bind(actor_user_public_id)
-        .bind(rate_limit_policy_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("rate limit policy soft delete"))?;
+    try_op("rate limit policy soft delete", || {
+        sqlx::query(RATE_LIMIT_POLICY_SOFT_DELETE_CALL)
+            .bind(actor_user_public_id)
+            .bind(rate_limit_policy_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -153,13 +156,14 @@ pub async fn indexer_instance_set_rate_limit_policy(
     indexer_instance_public_id: Uuid,
     rate_limit_policy_public_id: Option<Uuid>,
 ) -> Result<()> {
-    sqlx::query(INDEXER_INSTANCE_SET_RATE_LIMIT_CALL)
-        .bind(actor_user_public_id)
-        .bind(indexer_instance_public_id)
-        .bind(rate_limit_policy_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("indexer instance set rate limit policy"))?;
+    try_op("indexer instance set rate limit policy", || {
+        sqlx::query(INDEXER_INSTANCE_SET_RATE_LIMIT_CALL)
+            .bind(actor_user_public_id)
+            .bind(indexer_instance_public_id)
+            .bind(rate_limit_policy_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -174,13 +178,14 @@ pub async fn routing_policy_set_rate_limit_policy(
     routing_policy_public_id: Uuid,
     rate_limit_policy_public_id: Option<Uuid>,
 ) -> Result<()> {
-    sqlx::query(ROUTING_POLICY_SET_RATE_LIMIT_CALL)
-        .bind(actor_user_public_id)
-        .bind(routing_policy_public_id)
-        .bind(rate_limit_policy_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("routing policy set rate limit policy"))?;
+    try_op("routing policy set rate limit policy", || {
+        sqlx::query(ROUTING_POLICY_SET_RATE_LIMIT_CALL)
+            .bind(actor_user_public_id)
+            .bind(routing_policy_public_id)
+            .bind(rate_limit_policy_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -196,14 +201,15 @@ pub async fn rate_limit_try_consume(
     capacity: i32,
     tokens: i32,
 ) -> Result<RateLimitConsumeResult> {
-    sqlx::query_as(RATE_LIMIT_TRY_CONSUME_CALL)
-        .bind(scope_type)
-        .bind(scope_id)
-        .bind(capacity)
-        .bind(tokens)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("rate limit try consume"))
+    try_op("rate limit try consume", || {
+        sqlx::query_as(RATE_LIMIT_TRY_CONSUME_CALL)
+            .bind(scope_type)
+            .bind(scope_id)
+            .bind(capacity)
+            .bind(tokens)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

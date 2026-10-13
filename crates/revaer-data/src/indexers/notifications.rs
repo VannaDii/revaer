@@ -125,16 +125,17 @@ pub async fn indexer_health_notification_hook_create(
     webhook_url: Option<&str>,
     email: Option<&str>,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(HEALTH_NOTIFICATION_HOOK_CREATE_CALL)
-        .bind(actor_user_public_id)
-        .bind(channel)
-        .bind(display_name)
-        .bind(status_threshold)
-        .bind(webhook_url)
-        .bind(email)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("indexer health notification hook create"))
+    try_op("indexer health notification hook create", || {
+        sqlx::query_scalar(HEALTH_NOTIFICATION_HOOK_CREATE_CALL)
+            .bind(actor_user_public_id)
+            .bind(channel)
+            .bind(display_name)
+            .bind(status_threshold)
+            .bind(webhook_url)
+            .bind(email)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Update an existing health notification hook.
@@ -146,17 +147,18 @@ pub async fn indexer_health_notification_hook_update(
     pool: &PgPool,
     input: &IndexerHealthNotificationHookUpdateInput<'_>,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(HEALTH_NOTIFICATION_HOOK_UPDATE_CALL)
-        .bind(input.actor_user_public_id)
-        .bind(input.hook_public_id)
-        .bind(input.display_name)
-        .bind(input.status_threshold)
-        .bind(input.webhook_url)
-        .bind(input.email)
-        .bind(input.is_enabled)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("indexer health notification hook update"))
+    try_op("indexer health notification hook update", || {
+        sqlx::query_scalar(HEALTH_NOTIFICATION_HOOK_UPDATE_CALL)
+            .bind(input.actor_user_public_id)
+            .bind(input.hook_public_id)
+            .bind(input.display_name)
+            .bind(input.status_threshold)
+            .bind(input.webhook_url)
+            .bind(input.email)
+            .bind(input.is_enabled)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Delete a health notification hook.
@@ -169,12 +171,13 @@ pub async fn indexer_health_notification_hook_delete(
     actor_user_public_id: Uuid,
     hook_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(HEALTH_NOTIFICATION_HOOK_DELETE_CALL)
-        .bind(actor_user_public_id)
-        .bind(hook_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("indexer health notification hook delete"))?;
+    try_op("indexer health notification hook delete", || {
+        sqlx::query(HEALTH_NOTIFICATION_HOOK_DELETE_CALL)
+            .bind(actor_user_public_id)
+            .bind(hook_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -187,11 +190,12 @@ pub async fn indexer_health_notification_hook_list(
     pool: &PgPool,
     actor_user_public_id: Uuid,
 ) -> Result<Vec<IndexerHealthNotificationHookRow>> {
-    sqlx::query_as(HEALTH_NOTIFICATION_HOOK_LIST_CALL)
-        .bind(actor_user_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("indexer health notification hook list"))
+    try_op("indexer health notification hook list", || {
+        sqlx::query_as(HEALTH_NOTIFICATION_HOOK_LIST_CALL)
+            .bind(actor_user_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Fetch a single configured health notification hook.
@@ -204,12 +208,13 @@ pub async fn indexer_health_notification_hook_get(
     actor_user_public_id: Uuid,
     hook_public_id: Uuid,
 ) -> Result<IndexerHealthNotificationHookRow> {
-    sqlx::query_as(HEALTH_NOTIFICATION_HOOK_GET_CALL)
-        .bind(actor_user_public_id)
-        .bind(hook_public_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("indexer health notification hook get"))
+    try_op("indexer health notification hook get", || {
+        sqlx::query_as(HEALTH_NOTIFICATION_HOOK_GET_CALL)
+            .bind(actor_user_public_id)
+            .bind(hook_public_id)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

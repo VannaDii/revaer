@@ -129,23 +129,24 @@ pub async fn search_request_create(
     pool: &PgPool,
     input: &SearchRequestCreateInput<'_>,
 ) -> Result<SearchRequestCreateRow> {
-    sqlx::query_as(SEARCH_REQUEST_CREATE_CALL)
-        .bind(input.actor_user_public_id)
-        .bind(input.query_text)
-        .bind(input.query_type)
-        .bind(input.torznab_mode)
-        .bind(input.requested_media_domain_key)
-        .bind(input.page_size)
-        .bind(input.search_profile_public_id)
-        .bind(input.request_policy_set_public_id)
-        .bind(input.season_number)
-        .bind(input.episode_number)
-        .bind(input.identifier_types)
-        .bind(input.identifier_values)
-        .bind(input.torznab_cat_ids)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("search request create"))
+    try_op("search request create", || {
+        sqlx::query_as(SEARCH_REQUEST_CREATE_CALL)
+            .bind(input.actor_user_public_id)
+            .bind(input.query_text)
+            .bind(input.query_type)
+            .bind(input.torznab_mode)
+            .bind(input.requested_media_domain_key)
+            .bind(input.page_size)
+            .bind(input.search_profile_public_id)
+            .bind(input.request_policy_set_public_id)
+            .bind(input.season_number)
+            .bind(input.episode_number)
+            .bind(input.identifier_types)
+            .bind(input.identifier_values)
+            .bind(input.torznab_cat_ids)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Cancel a search request.
@@ -158,12 +159,13 @@ pub async fn search_request_cancel(
     actor_user_public_id: Uuid,
     search_request_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(SEARCH_REQUEST_CANCEL_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_request_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("search request cancel"))?;
+    try_op("search request cancel", || {
+        sqlx::query(SEARCH_REQUEST_CANCEL_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_request_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -177,12 +179,13 @@ pub async fn search_indexer_run_enqueue(
     search_request_public_id: Uuid,
     indexer_instance_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(SEARCH_INDEXER_RUN_ENQUEUE_CALL)
-        .bind(search_request_public_id)
-        .bind(indexer_instance_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("search indexer run enqueue"))?;
+    try_op("search indexer run enqueue", || {
+        sqlx::query(SEARCH_INDEXER_RUN_ENQUEUE_CALL)
+            .bind(search_request_public_id)
+            .bind(indexer_instance_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -196,12 +199,13 @@ pub async fn search_indexer_run_mark_started(
     search_request_public_id: Uuid,
     indexer_instance_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(SEARCH_INDEXER_RUN_MARK_STARTED_CALL)
-        .bind(search_request_public_id)
-        .bind(indexer_instance_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("search indexer run mark started"))?;
+    try_op("search indexer run mark started", || {
+        sqlx::query(SEARCH_INDEXER_RUN_MARK_STARTED_CALL)
+            .bind(search_request_public_id)
+            .bind(indexer_instance_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -218,15 +222,16 @@ pub async fn search_indexer_run_mark_finished(
     items_emitted_delta: i32,
     canonical_added_delta: i32,
 ) -> Result<()> {
-    sqlx::query(SEARCH_INDEXER_RUN_MARK_FINISHED_CALL)
-        .bind(search_request_public_id)
-        .bind(indexer_instance_public_id)
-        .bind(items_seen_delta)
-        .bind(items_emitted_delta)
-        .bind(canonical_added_delta)
-        .execute(pool)
-        .await
-        .map_err(try_op("search indexer run mark finished"))?;
+    try_op("search indexer run mark finished", || {
+        sqlx::query(SEARCH_INDEXER_RUN_MARK_FINISHED_CALL)
+            .bind(search_request_public_id)
+            .bind(indexer_instance_public_id)
+            .bind(items_seen_delta)
+            .bind(items_emitted_delta)
+            .bind(canonical_added_delta)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -258,17 +263,18 @@ pub async fn search_indexer_run_mark_failed(
     pool: &PgPool,
     input: &SearchIndexerRunFailedInput<'_>,
 ) -> Result<()> {
-    sqlx::query(SEARCH_INDEXER_RUN_MARK_FAILED_CALL)
-        .bind(input.search_request_public_id)
-        .bind(input.indexer_instance_public_id)
-        .bind(input.error_class)
-        .bind(input.error_detail)
-        .bind(input.retry_after_seconds)
-        .bind(input.retry_seq)
-        .bind(input.rate_limit_scope)
-        .execute(pool)
-        .await
-        .map_err(try_op("search indexer run mark failed"))?;
+    try_op("search indexer run mark failed", || {
+        sqlx::query(SEARCH_INDEXER_RUN_MARK_FAILED_CALL)
+            .bind(input.search_request_public_id)
+            .bind(input.indexer_instance_public_id)
+            .bind(input.error_class)
+            .bind(input.error_detail)
+            .bind(input.retry_after_seconds)
+            .bind(input.retry_seq)
+            .bind(input.rate_limit_scope)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -282,12 +288,13 @@ pub async fn search_indexer_run_mark_canceled(
     search_request_public_id: Uuid,
     indexer_instance_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(SEARCH_INDEXER_RUN_MARK_CANCELED_CALL)
-        .bind(search_request_public_id)
-        .bind(indexer_instance_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("search indexer run mark canceled"))?;
+    try_op("search indexer run mark canceled", || {
+        sqlx::query(SEARCH_INDEXER_RUN_MARK_CANCELED_CALL)
+            .bind(search_request_public_id)
+            .bind(indexer_instance_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 

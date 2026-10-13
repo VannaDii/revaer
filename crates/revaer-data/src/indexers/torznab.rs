@@ -138,13 +138,14 @@ pub async fn torznab_instance_create(
     search_profile_public_id: Option<Uuid>,
     display_name: &str,
 ) -> Result<TorznabInstanceCredentials> {
-    sqlx::query_as(TORZNAB_INSTANCE_CREATE_CALL)
-        .bind(actor_user_public_id)
-        .bind(search_profile_public_id)
-        .bind(display_name)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("torznab instance create"))
+    try_op("torznab instance create", || {
+        sqlx::query_as(TORZNAB_INSTANCE_CREATE_CALL)
+            .bind(actor_user_public_id)
+            .bind(search_profile_public_id)
+            .bind(display_name)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Rotate a Torznab instance API key.
@@ -157,12 +158,13 @@ pub async fn torznab_instance_rotate_key(
     actor_user_public_id: Uuid,
     torznab_instance_public_id: Uuid,
 ) -> Result<String> {
-    sqlx::query_scalar(TORZNAB_INSTANCE_ROTATE_KEY_CALL)
-        .bind(actor_user_public_id)
-        .bind(torznab_instance_public_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("torznab instance rotate key"))
+    try_op("torznab instance rotate key", || {
+        sqlx::query_scalar(TORZNAB_INSTANCE_ROTATE_KEY_CALL)
+            .bind(actor_user_public_id)
+            .bind(torznab_instance_public_id)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Enable or disable a Torznab instance.
@@ -176,13 +178,14 @@ pub async fn torznab_instance_enable_disable(
     torznab_instance_public_id: Uuid,
     is_enabled: bool,
 ) -> Result<()> {
-    sqlx::query(TORZNAB_INSTANCE_ENABLE_DISABLE_CALL)
-        .bind(actor_user_public_id)
-        .bind(torznab_instance_public_id)
-        .bind(is_enabled)
-        .execute(pool)
-        .await
-        .map_err(try_op("torznab instance enable disable"))?;
+    try_op("torznab instance enable disable", || {
+        sqlx::query(TORZNAB_INSTANCE_ENABLE_DISABLE_CALL)
+            .bind(actor_user_public_id)
+            .bind(torznab_instance_public_id)
+            .bind(is_enabled)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -196,12 +199,13 @@ pub async fn torznab_instance_soft_delete(
     actor_user_public_id: Uuid,
     torznab_instance_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(TORZNAB_INSTANCE_SOFT_DELETE_CALL)
-        .bind(actor_user_public_id)
-        .bind(torznab_instance_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("torznab instance soft delete"))?;
+    try_op("torznab instance soft delete", || {
+        sqlx::query(TORZNAB_INSTANCE_SOFT_DELETE_CALL)
+            .bind(actor_user_public_id)
+            .bind(torznab_instance_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -215,12 +219,13 @@ pub async fn torznab_instance_authenticate(
     torznab_instance_public_id: Uuid,
     api_key_plaintext: &str,
 ) -> Result<TorznabInstanceAuthRow> {
-    sqlx::query_as(TORZNAB_INSTANCE_AUTHENTICATE_CALL)
-        .bind(torznab_instance_public_id)
-        .bind(api_key_plaintext)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("torznab instance authenticate"))
+    try_op("torznab instance authenticate", || {
+        sqlx::query_as(TORZNAB_INSTANCE_AUTHENTICATE_CALL)
+            .bind(torznab_instance_public_id)
+            .bind(api_key_plaintext)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// List Torznab categories for caps responses.
@@ -229,10 +234,10 @@ pub async fn torznab_instance_authenticate(
 ///
 /// Returns an error if the stored procedure fails.
 pub async fn torznab_category_list(pool: &PgPool) -> Result<Vec<TorznabCategoryRow>> {
-    sqlx::query_as(TORZNAB_CATEGORY_LIST_CALL)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("torznab category list"))
+    try_op("torznab category list", || {
+        sqlx::query_as(TORZNAB_CATEGORY_LIST_CALL).fetch_all(pool)
+    })
+    .await
 }
 
 /// List Torznab instances for operator inventory flows.
@@ -244,11 +249,12 @@ pub async fn torznab_instance_list(
     pool: &PgPool,
     actor_user_public_id: Uuid,
 ) -> Result<Vec<TorznabInstanceListRow>> {
-    sqlx::query_as(TORZNAB_INSTANCE_LIST_CALL)
-        .bind(actor_user_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("torznab instance list"))
+    try_op("torznab instance list", || {
+        sqlx::query_as(TORZNAB_INSTANCE_LIST_CALL)
+            .bind(actor_user_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Prepare a Torznab download redirect and record an acquisition attempt.
@@ -261,12 +267,13 @@ pub async fn torznab_download_prepare(
     torznab_instance_public_id: Uuid,
     canonical_torrent_source_public_id: Uuid,
 ) -> Result<Option<String>> {
-    let row: TorznabDownloadRow = sqlx::query_as(TORZNAB_DOWNLOAD_PREPARE_CALL)
-        .bind(torznab_instance_public_id)
-        .bind(canonical_torrent_source_public_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("torznab download prepare"))?;
+    let row: TorznabDownloadRow = try_op("torznab download prepare", || {
+        sqlx::query_as(TORZNAB_DOWNLOAD_PREPARE_CALL)
+            .bind(torznab_instance_public_id)
+            .bind(canonical_torrent_source_public_id)
+            .fetch_one(pool)
+    })
+    .await?;
     Ok(row.redirect_url)
 }
 

@@ -41,11 +41,12 @@ const COMPUTE_TITLE_SIZE_HASH_CALL: &str = r"
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn normalize_title(pool: &PgPool, title_raw: &str) -> Result<String> {
-    sqlx::query_scalar(NORMALIZE_TITLE_CALL)
-        .bind(title_raw)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("normalize title"))
+    try_op("normalize title", || {
+        sqlx::query_scalar(NORMALIZE_TITLE_CALL)
+            .bind(title_raw)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Normalize a magnet URI into its canonical representation.
@@ -54,11 +55,12 @@ pub async fn normalize_title(pool: &PgPool, title_raw: &str) -> Result<String> {
 ///
 /// Returns an error if the stored procedure rejects the input.
 pub async fn normalize_magnet_uri(pool: &PgPool, raw_uri: &str) -> Result<String> {
-    sqlx::query_scalar(NORMALIZE_MAGNET_CALL)
-        .bind(raw_uri)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("normalize magnet uri"))
+    try_op("normalize magnet uri", || {
+        sqlx::query_scalar(NORMALIZE_MAGNET_CALL)
+            .bind(raw_uri)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Derive a magnet hash from available inputs.
@@ -72,13 +74,14 @@ pub async fn derive_magnet_hash(
     infohash_v1: Option<&str>,
     magnet_uri: Option<&str>,
 ) -> Result<Option<String>> {
-    sqlx::query_scalar(DERIVE_MAGNET_HASH_CALL)
-        .bind(infohash_v2)
-        .bind(infohash_v1)
-        .bind(magnet_uri)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("derive magnet hash"))
+    try_op("derive magnet hash", || {
+        sqlx::query_scalar(DERIVE_MAGNET_HASH_CALL)
+            .bind(infohash_v2)
+            .bind(infohash_v1)
+            .bind(magnet_uri)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Compute a title/size hash used for fallback identity matching.
@@ -91,12 +94,13 @@ pub async fn compute_title_size_hash(
     title_normalized: Option<&str>,
     size_bytes: Option<i64>,
 ) -> Result<Option<String>> {
-    sqlx::query_scalar(COMPUTE_TITLE_SIZE_HASH_CALL)
-        .bind(title_normalized)
-        .bind(size_bytes)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("compute title size hash"))
+    try_op("compute title size hash", || {
+        sqlx::query_scalar(COMPUTE_TITLE_SIZE_HASH_CALL)
+            .bind(title_normalized)
+            .bind(size_bytes)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

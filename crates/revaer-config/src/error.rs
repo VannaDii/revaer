@@ -95,7 +95,7 @@ pub enum ConfigError {
     NotificationPayloadMissingRevision,
     /// Underlying database operation failed.
     #[cfg(not(target_arch = "wasm32"))]
-    #[error("database operation failed")]
+    #[error("{operation}: {source}")]
     Database {
         /// Operation identifier.
         operation: &'static str,
@@ -104,12 +104,35 @@ pub enum ConfigError {
     },
     /// Data layer operation failed.
     #[cfg(not(target_arch = "wasm32"))]
-    #[error("data access failed")]
+    #[error("{operation}: {source}")]
     DataAccess {
         /// Operation identifier.
         operation: &'static str,
         /// Source data-layer error.
         source: revaer_data::DataError,
+    },
+    /// Rollback could not establish a reusable connection.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[error("transaction rollback failed: {source}")]
+    TransactionRollback {
+        /// Rollback error.
+        source: revaer_data::DataError,
+    },
+    /// The owned transaction worker could not complete.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[error("transaction worker failed: {source}")]
+    TransactionTask {
+        /// Failure of the transaction-owning task.
+        source: tokio::task::JoinError,
+    },
+    /// An operation failed and its transaction cleanup also failed.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[error("{original}; transaction cleanup failed: {cleanup}")]
+    TransactionCleanup {
+        /// The original operation error.
+        original: Box<Self>,
+        /// The cleanup error.
+        cleanup: Box<Self>,
     },
     /// File system operation failed.
     #[error("filesystem operation failed")]

@@ -103,13 +103,14 @@ pub async fn routing_policy_create(
     display_name: &str,
     mode: &str,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(ROUTING_POLICY_CREATE_CALL)
-        .bind(actor_user_public_id)
-        .bind(display_name)
-        .bind(mode)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("routing policy create"))
+    try_op("routing policy create", || {
+        sqlx::query_scalar(ROUTING_POLICY_CREATE_CALL)
+            .bind(actor_user_public_id)
+            .bind(display_name)
+            .bind(mode)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Set a routing policy parameter.
@@ -126,16 +127,17 @@ pub async fn routing_policy_set_param(
     value_int: Option<i32>,
     value_bool: Option<bool>,
 ) -> Result<()> {
-    sqlx::query(ROUTING_POLICY_SET_PARAM_CALL)
-        .bind(actor_user_public_id)
-        .bind(routing_policy_public_id)
-        .bind(param_key)
-        .bind(value_plain)
-        .bind(value_int)
-        .bind(value_bool)
-        .execute(pool)
-        .await
-        .map_err(try_op("routing policy set param"))?;
+    try_op("routing policy set param", || {
+        sqlx::query(ROUTING_POLICY_SET_PARAM_CALL)
+            .bind(actor_user_public_id)
+            .bind(routing_policy_public_id)
+            .bind(param_key)
+            .bind(value_plain)
+            .bind(value_int)
+            .bind(value_bool)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -151,14 +153,15 @@ pub async fn routing_policy_bind_secret(
     param_key: &str,
     secret_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(ROUTING_POLICY_BIND_SECRET_CALL)
-        .bind(actor_user_public_id)
-        .bind(routing_policy_public_id)
-        .bind(param_key)
-        .bind(secret_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("routing policy bind secret"))?;
+    try_op("routing policy bind secret", || {
+        sqlx::query(ROUTING_POLICY_BIND_SECRET_CALL)
+            .bind(actor_user_public_id)
+            .bind(routing_policy_public_id)
+            .bind(param_key)
+            .bind(secret_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -172,12 +175,13 @@ pub async fn routing_policy_get(
     actor_user_public_id: Uuid,
     routing_policy_public_id: Uuid,
 ) -> Result<Vec<RoutingPolicyDetailRow>> {
-    sqlx::query_as(ROUTING_POLICY_GET_CALL)
-        .bind(actor_user_public_id)
-        .bind(routing_policy_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("routing policy get"))
+    try_op("routing policy get", || {
+        sqlx::query_as(ROUTING_POLICY_GET_CALL)
+            .bind(actor_user_public_id)
+            .bind(routing_policy_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

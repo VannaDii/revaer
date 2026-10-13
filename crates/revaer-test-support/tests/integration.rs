@@ -271,3 +271,155 @@ fn initialized_fixture_seals_runtime_identity_and_cleans_owned_roles()
     assert!(!fixture_roles_exist(&admin_url, &database)?);
     Ok(())
 }
+
+#[tokio::test]
+async fn failed_token_validation_rolls_back_before_reusing_connection() -> anyhow::Result<()> {
+    use revaer_config::ConfigError;
+    use revaer_test_support::postgres::start_postgres;
+    let database = start_postgres()?;
+    let service = revaer_config::ConfigService::new(database.connection_string()).await?;
+    let pool = service.pool().clone();
+    // Reserve seven of the service's eight slots so the request must reuse the known backend.
+    let mut held = Vec::new();
+    for _ in 0..7 {
+        held.push(pool.acquire().await?);
+    }
+    let backend: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&pool)
+        .await?;
+    let error = service
+        .validate_setup_token("missing")
+        .await
+        .expect_err("no token was created");
+    assert!(matches!(error, ConfigError::SetupTokenMissing));
+    let reused: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(backend, reused);
+    service.snapshot().await?;
+    drop(held);
+    pool.close().await;
+    database.close()?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_rollback_preserves_errors_and_replaces_connection() -> anyhow::Result<()> {
+    use revaer_config::ConfigError;
+    use std::time::Duration;
+    use tokio::time::{sleep, timeout};
+    let database = start_postgres()?;
+    let service = revaer_config::ConfigService::new(database.connection_string()).await?;
+    let pool = service.pool().clone();
+    let mut held = Vec::new();
+    for _ in 0..7 {
+        held.push(pool.acquire().await?);
+    }
+    let backend: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&pool)
+        .await?;
+    let mut observer = PgConnection::connect(database.connection_string()).await?;
+    let mut blocker = observer.begin().await?;
+    sqlx::query("LOCK TABLE public.setup_tokens IN ACCESS EXCLUSIVE MODE")
+        .execute(blocker.as_mut())
+        .await?;
+    let caller = tokio::spawn(async move { service.validate_setup_token("missing").await });
+    let mut probe = PgConnection::connect(database.connection_string()).await?;
+    timeout(Duration::from_secs(5), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid = $1 AND wait_event_type = 'Lock')")
+                .bind(backend).fetch_one(&mut probe).await?;
+            if waiting { break Ok::<(), sqlx::Error>(()); }
+            sleep(Duration::from_millis(10)).await;
+        }
+    }).await??;
+    let terminated: bool = sqlx::query_scalar("SELECT pg_terminate_backend($1)")
+        .bind(backend)
+        .fetch_one(&mut probe)
+        .await?;
+    assert!(terminated);
+    let error = timeout(Duration::from_secs(5), caller)
+        .await??
+        .expect_err("operation and rollback must both fail");
+    assert!(
+        matches!(error, ConfigError::TransactionCleanup { .. }),
+        "cleanup must preserve the original operation error: {error}"
+    );
+    let message = error.to_string();
+    assert!(
+        message.contains("config.validate_setup_token.cleanup"),
+        "original failure must survive cleanup: {message}"
+    );
+    let replacement: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&pool)
+        .await?;
+    assert_ne!(backend, replacement);
+    blocker.rollback().await?;
+    probe.close().await?;
+    observer.close().await?;
+    drop(held);
+    pool.close().await;
+    database.close()?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelled_token_validation_finishes_rollback_and_reuses_connection() -> anyhow::Result<()>
+{
+    use revaer_test_support::postgres::start_postgres;
+    use std::time::Duration;
+    use tokio::time::{sleep, timeout};
+    let database = start_postgres()?;
+    let service = revaer_config::ConfigService::new(database.connection_string()).await?;
+    let pool = service.pool().clone();
+    // Reserve seven of the service's eight slots so the request must reuse the known backend.
+    let mut held = Vec::new();
+    for _ in 0..7 {
+        held.push(pool.acquire().await?);
+    }
+    let backend: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&pool)
+        .await?;
+    let mut observer = sqlx::postgres::PgConnection::connect(database.connection_string()).await?;
+    let mut blocker = observer.begin().await?;
+    sqlx::query("LOCK TABLE public.setup_tokens IN ACCESS EXCLUSIVE MODE")
+        .execute(blocker.as_mut())
+        .await?;
+    let caller = tokio::spawn(async move { service.validate_setup_token("missing").await });
+    // Observe the actual request waiting on the table lock before cancelling its caller.
+    let mut probe = sqlx::postgres::PgConnection::connect(database.connection_string()).await?;
+    timeout(Duration::from_secs(5), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid = $1 AND wait_event_type = 'Lock')")
+                .bind(backend).fetch_one(&mut probe).await?;
+            if waiting { break Ok::<(), sqlx::Error>(()); }
+            sleep(Duration::from_millis(10)).await;
+        }
+    }).await??;
+    caller.abort();
+    assert!(caller.await.is_err());
+    blocker.rollback().await?;
+    let reused: i32 = timeout(
+        Duration::from_secs(5),
+        sqlx::query_scalar("SELECT pg_backend_pid()").fetch_one(&pool),
+    )
+    .await??;
+    assert_eq!(
+        backend, reused,
+        "request cancellation must preserve a healthy reusable connection"
+    );
+    sqlx::query_scalar::<_, i64>("SELECT revaer_config.fetch_revision()")
+        .fetch_one(&pool)
+        .await?;
+    let state: String = sqlx::query_scalar("SELECT state FROM pg_stat_activity WHERE pid = $1")
+        .bind(backend)
+        .fetch_one(&mut probe)
+        .await?;
+    assert_eq!(state, "idle");
+    probe.close().await?;
+    observer.close().await?;
+    drop(held);
+    pool.close().await;
+    database.close()?;
+    Ok(())
+}

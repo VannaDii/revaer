@@ -12,5 +12,11 @@ authors.workspace = true
 [dependencies]
 anyhow.workspace = true
 sqlx.workspace = true
+# Await rollback after a failed commit using the already-resolved driver API.
+sqlx-core = { version = "=0.9.0", default-features = false }
 tokio.workspace = true
 url = "2.5"
+
+[dev-dependencies]
+# Exercise the actual configuration transaction owner in the existing PostgreSQL integration suite.
+revaer-config = { path = "../revaer-config" }
