@@ -303,76 +303,116 @@ impl MediaService {
         actor_user_public_id: Uuid,
         snapshot: &CapabilitySnapshot,
     ) -> Result<i64, MediaServiceError> {
-        let snapshot_run_public_id = Uuid::new_v4();
-        let mut transaction = self.store.pool().begin().await.map_err(|_| {
-            MediaServiceError::new(MediaServiceErrorKind::Storage)
-                .with_code("media_capability_refresh_transaction_start_failed")
-        })?;
-        start_capability_snapshot_run_with_executor(
-            &mut *transaction,
-            actor_user_public_id,
-            snapshot_run_public_id,
-        )
+        let service = self.clone();
+        let snapshot = snapshot.clone();
+        tokio::spawn(async move {
+            service
+                .persist_capability_snapshot_owned(actor_user_public_id, &snapshot)
+                .await
+        })
         .await
-        .map_err(|err| map_data_error(&err))?;
-
-        let mut last_snapshot_id = None;
-        for codec in capability_codec_inputs(snapshot) {
-            let snapshot_id = record_capability_snapshot_with_executor(
-                &mut *transaction,
-                &RecordCapabilitySnapshotInput {
-                    actor_public_id: actor_user_public_id,
-                    snapshot_run_public_id: Some(snapshot_run_public_id),
-                    ffmpeg_version: &snapshot.ffmpeg_version,
-                    ffprobe_version: &snapshot.ffprobe_version,
-                    codec_name: &codec.name,
-                    encode_supported: codec.encode_supported,
-                    decode_supported: codec.decode_supported,
-                },
-            )
-            .await
-            .map_err(|err| map_data_error(&err))?;
-            last_snapshot_id = Some(snapshot_id);
-        }
-        for encoder_name in normalized_unique_names(&snapshot.encoders) {
-            record_capability_encoder_with_executor(
-                &mut *transaction,
-                &RecordCapabilityEncoderInput {
-                    actor_public_id: actor_user_public_id,
-                    snapshot_run_public_id,
-                    encoder_name: &encoder_name,
-                },
-            )
-            .await
-            .map_err(|err| map_data_error(&err))?;
-        }
-        for feature in capability_feature_inputs(snapshot) {
-            record_capability_feature_with_executor(
-                &mut *transaction,
-                &RecordCapabilityFeatureInput {
-                    actor_public_id: actor_user_public_id,
-                    snapshot_run_public_id,
-                    feature_family: feature.family,
-                    feature_name: feature.name,
-                    supported: feature.supported,
-                    detail_text: feature.detail,
-                },
-            )
-            .await
-            .map_err(|err| map_data_error(&err))?;
-        }
-        let snapshot_id = last_snapshot_id.ok_or_else(|| {
-            MediaServiceError::new(MediaServiceErrorKind::Invalid)
-                .with_code("media_capability_refresh_invalid")
-        })?;
-        complete_capability_snapshot_run_with_executor(&mut *transaction, snapshot_run_public_id)
-            .await
-            .map_err(|err| map_data_error(&err))?;
-        transaction.commit().await.map_err(|_| {
+        .map_err(|source| {
             MediaServiceError::new(MediaServiceErrorKind::Storage)
-                .with_code("media_capability_refresh_transaction_commit_failed")
+                .with_code("media_capability_refresh_transaction_task_failed")
+                .with_source(source)
+        })?
+    }
+
+    async fn persist_capability_snapshot_owned(
+        &self,
+        actor_user_public_id: Uuid,
+        snapshot: &CapabilitySnapshot,
+    ) -> Result<i64, MediaServiceError> {
+        let snapshot_run_public_id = Uuid::new_v4();
+        let mut connection = self.store.pool().acquire().await.map_err(|source| {
+            media_transaction_error(DataError::QueryFailed {
+                operation: "transaction acquire",
+                source,
+            })
         })?;
-        Ok(snapshot_id)
+        let completed = async {
+            let mut transaction =
+                revaer_data::transaction::begin_transaction(&mut connection).await?;
+            let written = async {
+                start_capability_snapshot_run_with_executor(
+                    &mut *transaction,
+                    actor_user_public_id,
+                    snapshot_run_public_id,
+                )
+                .await
+                .map_err(media_transaction_error)?;
+
+                let mut last_snapshot_id = None;
+                for codec in capability_codec_inputs(snapshot) {
+                    let snapshot_id = record_capability_snapshot_with_executor(
+                        &mut *transaction,
+                        &RecordCapabilitySnapshotInput {
+                            actor_public_id: actor_user_public_id,
+                            snapshot_run_public_id: Some(snapshot_run_public_id),
+                            ffmpeg_version: &snapshot.ffmpeg_version,
+                            ffprobe_version: &snapshot.ffprobe_version,
+                            codec_name: &codec.name,
+                            encode_supported: codec.encode_supported,
+                            decode_supported: codec.decode_supported,
+                        },
+                    )
+                    .await
+                    .map_err(media_transaction_error)?;
+                    last_snapshot_id = Some(snapshot_id);
+                }
+                for encoder_name in normalized_unique_names(&snapshot.encoders) {
+                    record_capability_encoder_with_executor(
+                        &mut *transaction,
+                        &RecordCapabilityEncoderInput {
+                            actor_public_id: actor_user_public_id,
+                            snapshot_run_public_id,
+                            encoder_name: &encoder_name,
+                        },
+                    )
+                    .await
+                    .map_err(media_transaction_error)?;
+                }
+                for feature in capability_feature_inputs(snapshot) {
+                    record_capability_feature_with_executor(
+                        &mut *transaction,
+                        &RecordCapabilityFeatureInput {
+                            actor_public_id: actor_user_public_id,
+                            snapshot_run_public_id,
+                            feature_family: feature.family,
+                            feature_name: feature.name,
+                            supported: feature.supported,
+                            detail_text: feature.detail,
+                        },
+                    )
+                    .await
+                    .map_err(media_transaction_error)?;
+                }
+                let snapshot_id = last_snapshot_id.ok_or_else(|| {
+                    MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                        .with_code("media_capability_refresh_invalid")
+                })?;
+                complete_capability_snapshot_run_with_executor(
+                    &mut *transaction,
+                    snapshot_run_public_id,
+                )
+                .await
+                .map_err(media_transaction_error)?;
+                Ok(snapshot_id)
+            }
+            .await;
+            revaer_data::transaction::finish_transaction(
+                transaction,
+                written.map_err(|source: MediaServiceError| DataError::BoundaryFailed {
+                    operation: "media capability refresh",
+                    source: Box::new(source),
+                }),
+            )
+            .await
+        }
+        .await;
+        revaer_data::transaction::release_connection(connection, completed)
+            .await
+            .map_err(media_transaction_error)
     }
 
     fn record_capability_refresh_metric(&self, result: &Result<i64, MediaServiceError>) {
@@ -972,79 +1012,14 @@ impl MediaFacade for MediaService {
         &self,
         params: MediaDesiredTargetCreateParams,
     ) -> Result<AppMediaDesiredTargetResponse, MediaServiceError> {
-        if params.streams.is_empty() {
-            return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
-                .with_code("media_desired_target_streams_required"));
-        }
-        if params.streams.len() > MAX_DESIRED_TARGET_STREAMS {
-            return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
-                .with_code("media_desired_target_stream_limit_exceeded"));
-        }
-        let mut transaction = self
-            .store
-            .pool()
-            .begin()
+        let service = self.clone();
+        tokio::spawn(async move { service.media_desired_target_create_owned(params).await })
             .await
-            .map_err(|err| map_data_error(&DataError::from(err)))?;
-        let target_id = create_media_desired_target_with_executor(
-            &mut *transaction,
-            CreateMediaDesiredTargetInput {
-                actor_public_id: params.actor_user_public_id,
-                target_key: &params.target_key,
-                version: params.version,
-                display_name: &params.display_name,
-                container_format: &params.container_format,
-            },
-        )
-        .await
-        .map_err(|err| map_data_error(&err))?;
-        for stream in &params.streams {
-            append_media_desired_target_stream_with_executor(
-                &mut *transaction,
-                AppendMediaDesiredTargetStreamInput {
-                    media_desired_target_profile_public_id: target_id,
-                    stream_key: &stream.stream_key,
-                    stream_kind: &stream.stream_kind,
-                    semantic_role: stream.semantic_role.as_deref(),
-                    language_code: stream.language_code.as_deref(),
-                    optional: stream.optional,
-                    sort_order: stream.sort_order,
-                    codec: &stream.codec,
-                    channel_count: stream.channel_count,
-                    channel_layout: stream.channel_layout.as_deref(),
-                    audio_bitrate_bps: stream.audio_bitrate_bps,
-                    audio_sample_rate_hz: stream.audio_sample_rate_hz,
-                    audio_loudness_profile: stream.audio_loudness_profile.as_deref(),
-                    audio_dynamic_range: stream.audio_dynamic_range.as_deref(),
-                    video_profile: stream.video_profile.as_deref(),
-                    video_level: stream.video_level.as_deref(),
-                    video_bitrate_bps: stream.video_bitrate_bps,
-                    color_primaries: stream.color_primaries.as_deref(),
-                    color_transfer: stream.color_transfer.as_deref(),
-                    color_space: stream.color_space.as_deref(),
-                    hdr_format: stream.hdr_format.as_deref(),
-                    title: stream.title.as_deref(),
-                    default_disposition: stream.default_disposition,
-                    forced_disposition: stream.forced_disposition,
-                    subtitle_placement: stream.subtitle_placement.as_deref(),
-                    image_subtitle_action: stream.image_subtitle_action.as_deref(),
-                },
-            )
-            .await
-            .map_err(|err| map_data_error(&err))?;
-        }
-        transaction
-            .commit()
-            .await
-            .map_err(|err| map_data_error(&DataError::from(err)))?;
-        Ok(AppMediaDesiredTargetResponse {
-            media_desired_target_profile_public_id: target_id,
-            target_key: params.target_key,
-            version: params.version,
-            display_name: params.display_name,
-            container_format: params.container_format,
-            streams: params.streams,
-        })
+            .map_err(|source| {
+                MediaServiceError::new(MediaServiceErrorKind::Storage)
+                    .with_code("media_desired_target_transaction_task_failed")
+                    .with_source(source)
+            })?
     }
 
     async fn media_profile_desired_target_set(
@@ -1654,6 +1629,126 @@ impl MediaFacade for MediaService {
         yaml_payload: &str,
         preconditions: &[revaer_api::models::MediaYamlResourcePrecondition],
     ) -> Result<MediaYamlApplyResult, MediaServiceError> {
+        let service = self.clone();
+        let yaml_payload = yaml_payload.to_owned();
+        let preconditions = preconditions.to_vec();
+        tokio::spawn(async move {
+            service
+                .media_yaml_apply_owned(actor_user_public_id, &yaml_payload, &preconditions)
+                .await
+        })
+        .await
+        .map_err(|source| {
+            MediaServiceError::new(MediaServiceErrorKind::Storage)
+                .with_code("media_yaml_apply_transaction_task_failed")
+                .with_source(source)
+        })?
+    }
+}
+
+impl MediaService {
+    async fn media_desired_target_create_owned(
+        &self,
+        params: MediaDesiredTargetCreateParams,
+    ) -> Result<AppMediaDesiredTargetResponse, MediaServiceError> {
+        if params.streams.is_empty() {
+            return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_desired_target_streams_required"));
+        }
+        if params.streams.len() > MAX_DESIRED_TARGET_STREAMS {
+            return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_desired_target_stream_limit_exceeded"));
+        }
+        let mut connection = self.store.pool().acquire().await.map_err(|source| {
+            media_transaction_error(DataError::QueryFailed {
+                operation: "transaction acquire",
+                source,
+            })
+        })?;
+        let completed = async {
+            let mut transaction =
+                revaer_data::transaction::begin_transaction(&mut connection).await?;
+            let written = async {
+                let target_id = create_media_desired_target_with_executor(
+                    &mut *transaction,
+                    CreateMediaDesiredTargetInput {
+                        actor_public_id: params.actor_user_public_id,
+                        target_key: &params.target_key,
+                        version: params.version,
+                        display_name: &params.display_name,
+                        container_format: &params.container_format,
+                    },
+                )
+                .await
+                .map_err(media_transaction_error)?;
+                for stream in &params.streams {
+                    append_media_desired_target_stream_with_executor(
+                        &mut *transaction,
+                        AppendMediaDesiredTargetStreamInput {
+                            media_desired_target_profile_public_id: target_id,
+                            stream_key: &stream.stream_key,
+                            stream_kind: &stream.stream_kind,
+                            semantic_role: stream.semantic_role.as_deref(),
+                            language_code: stream.language_code.as_deref(),
+                            optional: stream.optional,
+                            sort_order: stream.sort_order,
+                            codec: &stream.codec,
+                            channel_count: stream.channel_count,
+                            channel_layout: stream.channel_layout.as_deref(),
+                            audio_bitrate_bps: stream.audio_bitrate_bps,
+                            audio_sample_rate_hz: stream.audio_sample_rate_hz,
+                            audio_loudness_profile: stream.audio_loudness_profile.as_deref(),
+                            audio_dynamic_range: stream.audio_dynamic_range.as_deref(),
+                            video_profile: stream.video_profile.as_deref(),
+                            video_level: stream.video_level.as_deref(),
+                            video_bitrate_bps: stream.video_bitrate_bps,
+                            color_primaries: stream.color_primaries.as_deref(),
+                            color_transfer: stream.color_transfer.as_deref(),
+                            color_space: stream.color_space.as_deref(),
+                            hdr_format: stream.hdr_format.as_deref(),
+                            title: stream.title.as_deref(),
+                            default_disposition: stream.default_disposition,
+                            forced_disposition: stream.forced_disposition,
+                            subtitle_placement: stream.subtitle_placement.as_deref(),
+                            image_subtitle_action: stream.image_subtitle_action.as_deref(),
+                        },
+                    )
+                    .await
+                    .map_err(media_transaction_error)?;
+                }
+                Ok(AppMediaDesiredTargetResponse {
+                    media_desired_target_profile_public_id: target_id,
+                    target_key: params.target_key,
+                    version: params.version,
+                    display_name: params.display_name,
+                    container_format: params.container_format,
+                    streams: params.streams,
+                })
+            }
+            .await;
+            revaer_data::transaction::finish_transaction(
+                transaction,
+                written.map_err(|source: MediaServiceError| DataError::BoundaryFailed {
+                    operation: "media desired target create",
+                    source: Box::new(source),
+                }),
+            )
+            .await
+        }
+        .await;
+        revaer_data::transaction::release_connection(connection, completed)
+            .await
+            .map_err(media_transaction_error)
+    }
+}
+
+impl MediaService {
+    async fn media_yaml_apply_owned(
+        &self,
+        actor_user_public_id: Uuid,
+        yaml_payload: &str,
+        preconditions: &[revaer_api::models::MediaYamlResourcePrecondition],
+    ) -> Result<MediaYamlApplyResult, MediaServiceError> {
         let validation = self.media_yaml_validate(yaml_payload).await?;
         if !validation.valid {
             let catalog_conflict = |issue: &MediaYamlIssue| {
@@ -1677,45 +1772,58 @@ impl MediaFacade for MediaService {
                 .with_code("media_yaml_validation_failed"));
         }
         portable_export::validate_preconditions(yaml_payload, preconditions)?;
-        let mut transaction =
-            revaer_data::media::configuration::begin_import_transaction(self.store.pool())
+        let mut connection = self.store.pool().acquire().await.map_err(|source| {
+            media_transaction_error(DataError::QueryFailed {
+                operation: "transaction acquire",
+                source,
+            })
+        })?;
+        let completed = async {
+            let mut transaction =
+                revaer_data::media::configuration::begin_import_transaction(&mut connection)
+                    .await?;
+            let result = async {
+                portable_export::prepare_import(
+                    &mut transaction,
+                    actor_user_public_id,
+                    yaml_payload,
+                    preconditions,
+                )
+                .await?;
+                portable_export::apply_import(
+                    self,
+                    &mut transaction,
+                    actor_user_public_id,
+                    yaml_payload,
+                    preconditions,
+                )
                 .await
-                .map_err(|error| map_data_error(&error))?;
-        let result = async {
-            portable_export::prepare_import(
-                &mut transaction,
-                actor_user_public_id,
-                yaml_payload,
-                preconditions,
-            )
-            .await?;
-            portable_export::apply_import(
-                self,
-                &mut transaction,
-                actor_user_public_id,
-                yaml_payload,
-                preconditions,
-            )
-            .await
+            }
+            .await;
+            let result = result.map_err(|source| DataError::BoundaryFailed {
+                operation: "media configuration import",
+                source: Box::new(source),
+            });
+            revaer_data::transaction::finish_transaction(transaction, result).await
         }
         .await;
-        match result {
-            Ok(result) => {
-                transaction.commit().await.map_err(|_| {
-                    MediaServiceError::new(MediaServiceErrorKind::Storage)
-                        .with_code("media_yaml_apply_transaction_commit_failed")
-                })?;
-                Ok(result)
-            }
-            Err(error) => {
-                transaction.rollback().await.map_err(|_| {
-                    MediaServiceError::new(MediaServiceErrorKind::Storage)
-                        .with_code("media_yaml_apply_transaction_rollback_failed")
-                })?;
-                Err(error)
+        revaer_data::transaction::release_connection(connection, completed)
+            .await
+            .map_err(media_transaction_error)
+    }
+}
+
+fn media_transaction_error(error: DataError) -> MediaServiceError {
+    let error = match error {
+        DataError::BoundaryFailed { operation, source } => {
+            match source.downcast::<MediaServiceError>() {
+                Ok(original) => return *original,
+                Err(source) => DataError::BoundaryFailed { operation, source },
             }
         }
-    }
+        error => error,
+    };
+    map_data_error(&error).with_source(error)
 }
 
 async fn import_yaml_catalogs(

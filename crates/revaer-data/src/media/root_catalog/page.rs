@@ -120,11 +120,12 @@ pub async fn read_root_catalog_page(
     cursor_key: Option<&str>,
     cursor_id: Option<Uuid>,
 ) -> Result<Vec<RootCatalogPageRow>> {
-    sqlx::query_as(PAGE)
-        .bind(limit)
-        .bind(cursor_key)
-        .bind(cursor_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("read root catalog page"))
+    try_op("read root catalog page", || {
+        sqlx::query_as(PAGE)
+            .bind(limit)
+            .bind(cursor_key)
+            .bind(cursor_id)
+            .fetch_all(pool)
+    })
+    .await
 }

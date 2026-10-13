@@ -8,8 +8,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use sqlx::Connection;
-use sqlx::postgres::{PgConnection, PgPoolOptions, PgTransactionManager};
-use sqlx::{AssertSqlSafe, raw_sql};
+use sqlx::postgres::{PgConnectOptions, PgConnection, PgTransactionManager};
 use sqlx_core::transaction::TransactionManager;
 use url::{Position, Url, form_urlencoded};
 
@@ -102,6 +101,20 @@ impl TestDatabase {
         }
     }
 
+    /// Connection options for administrative fixture-only SQL on this owned database.
+    ///
+    /// # Errors
+    /// Rejects closed or uninitialized fixtures and invalid connection options.
+    pub fn fixture_connect_options(&self) -> Result<PgConnectOptions> {
+        anyhow::ensure!(
+            !self.closed && self.runtime_roles,
+            "fixture is not initialized"
+        );
+        let mut url = Url::parse(&self.admin_url)?;
+        url.set_path(&self.database);
+        Ok(url.as_str().parse()?)
+    }
+
     /// Open a control connection to this owned initialized database for fixture setup.
     ///
     /// The application continues to use the restricted runtime login.
@@ -113,9 +126,7 @@ impl TestDatabase {
             !self.closed && self.runtime_roles,
             "fixture is not initialized"
         );
-        let mut url = Url::parse(&self.admin_url)?;
-        url.set_path(&self.database);
-        let mut connection = PgConnection::connect(url.as_str()).await?;
+        let mut connection = PgConnection::connect_with(&self.fixture_connect_options()?).await?;
         let identity = sqlx::query_scalar::<_, String>("SELECT current_database()")
             .fetch_one(&mut connection)
             .await;

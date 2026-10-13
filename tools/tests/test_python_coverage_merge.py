@@ -11,6 +11,7 @@ from xml.etree import ElementTree
 import pytest
 from revaer_tooling.cli import main, make_context
 from revaer_tooling.context import Context, Options
+from revaer_tooling.e2e.database import uses_single_init
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.tasks.python_coverage import PythonCoverageMerge
 
@@ -158,8 +159,13 @@ def test_merge_combines_real_data_from_separate_producer_directories(
     tooling = producers / "tooling-coverage"
     tooling.mkdir(parents=True)
     shutil.move(context.root / ".coverage", tooling / ".coverage")
+    api_phases = tuple(
+        phase
+        for phase in context.settings.e2e.phases(media=uses_single_init(context))
+        if phase.startswith("api-")
+    )
     groups = (
-        ("api-e2e-coverage", ("api-none", "api-api-key")),
+        ("api-e2e-coverage", api_phases),
         ("ui-e2e-chromium", ("ui-chromium",)),
     )
     for name, phases in groups:

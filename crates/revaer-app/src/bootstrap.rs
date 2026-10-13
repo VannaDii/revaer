@@ -415,13 +415,12 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         .with_association_source(media_roots.as_ref().map(Arc::clone)),
     );
     refresh_startup_media_capabilities(&media, &events, &telemetry).await;
-    let api_media = Arc::clone(&media);
     let api = build_api_server(
         &config,
         &events,
         torrent_handles,
         telemetry.clone(),
-        api_media,
+        Arc::clone(&media),
         source_compliance,
     )?;
     let indexer_runtime_task =

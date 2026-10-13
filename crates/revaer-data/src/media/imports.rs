@@ -81,21 +81,22 @@ pub async fn upsert_media_profile_import_draft_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query_scalar::<_, Uuid>(MEDIA_PROFILE_IMPORT_DRAFT_UPSERT_V1)
-        .bind(input.actor_public_id)
-        .bind(input.profile_key)
-        .bind(input.source_root)
-        .bind(input.output_root)
-        .bind(input.source_root_resolved)
-        .bind(input.output_root_resolved)
-        .bind(input.retention_days)
-        .bind(input.compatibility_target_key)
-        .bind(input.desired_target_key)
-        .bind(input.desired_target_version)
-        .bind(input.policy_key)
-        .fetch_one(executor)
-        .await
-        .map_err(try_op("media profile import draft upsert"))
+    try_op("media profile import draft upsert", || {
+        sqlx::query_scalar::<_, Uuid>(MEDIA_PROFILE_IMPORT_DRAFT_UPSERT_V1)
+            .bind(input.actor_public_id)
+            .bind(input.profile_key)
+            .bind(input.source_root)
+            .bind(input.output_root)
+            .bind(input.source_root_resolved)
+            .bind(input.output_root_resolved)
+            .bind(input.retention_days)
+            .bind(input.compatibility_target_key)
+            .bind(input.desired_target_key)
+            .bind(input.desired_target_version)
+            .bind(input.policy_key)
+            .fetch_one(executor)
+    })
+    .await
 }
 
 /// Delete a resolved import draft in a caller-owned transaction.
@@ -110,11 +111,12 @@ pub async fn delete_media_profile_import_draft_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query_scalar::<_, bool>(MEDIA_PROFILE_IMPORT_DRAFT_DELETE_V1)
-        .bind(profile_key)
-        .fetch_one(executor)
-        .await
-        .map_err(try_op("media profile import draft delete"))
+    try_op("media profile import draft delete", || {
+        sqlx::query_scalar::<_, bool>(MEDIA_PROFILE_IMPORT_DRAFT_DELETE_V1)
+            .bind(profile_key)
+            .fetch_one(executor)
+    })
+    .await
 }
 
 /// List disabled import drafts awaiting local path mapping.
@@ -125,10 +127,11 @@ where
 pub async fn list_media_profile_import_drafts(
     pool: &PgPool,
 ) -> Result<Vec<MediaProfileImportDraftRow>> {
-    sqlx::query_as::<_, MediaProfileImportDraftRow>(MEDIA_PROFILE_IMPORT_DRAFT_LIST_V1)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media profile import draft list"))
+    try_op("media profile import draft list", || {
+        sqlx::query_as::<_, MediaProfileImportDraftRow>(MEDIA_PROFILE_IMPORT_DRAFT_LIST_V1)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

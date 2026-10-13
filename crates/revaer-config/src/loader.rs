@@ -19,7 +19,7 @@ use revaer_data::config::{
 use revaer_data::transaction::{commit_transaction, rollback_transaction};
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::{PgConnectOptions, PgListener, PgNotification, PgPoolOptions};
-use sqlx::{Connection, Executor, Postgres, Transaction};
+use sqlx::{Executor, Postgres, Transaction};
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::time::Duration;
@@ -588,11 +588,36 @@ impl SettingsFacade for ConfigService {
     }
 
     async fn factory_reset(&self) -> Result<()> {
-        data_config::factory_reset(&self.pool)
-            .await
-            .map_err(map_db_err("config.factory_reset"))?;
-        info!("factory reset completed");
-        Ok(())
+        let service = self.clone();
+        tokio::spawn(async move {
+            let mut attempt = 1;
+            loop {
+                match data_config::factory_reset(&service.pool).await {
+                    Ok(()) => {
+                        info!("factory reset completed");
+                        return Ok(());
+                    }
+                    Err(source) => {
+                        let sqlstate = source.database_code();
+                        let Some(delay) = factory_reset_retry_delay(attempt, sqlstate.as_deref())
+                        else {
+                            return Err(map_db_err("config.factory_reset")(source));
+                        };
+                        warn!(
+                            attempt,
+                            max_attempts = FACTORY_RESET_MAX_ATTEMPTS,
+                            sqlstate = sqlstate.as_deref().unwrap_or("unknown"),
+                            delay_ms = delay.as_millis(),
+                            "factory reset hit transient database contention; retrying"
+                        );
+                        sleep(delay).await;
+                        attempt += 1;
+                    }
+                }
+            }
+        })
+        .await
+        .map_err(|source| ConfigError::TransactionTask { source })?
     }
 }
 

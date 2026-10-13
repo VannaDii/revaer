@@ -120,21 +120,22 @@ pub async fn upsert_media_profile_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query_scalar::<_, Uuid>(MEDIA_PROFILE_UPSERT_V2)
-        .bind(input.actor_public_id)
-        .bind(input.profile_key)
-        .bind(input.source_root)
-        .bind(input.output_root)
-        .bind(input.dry_run_only)
-        .bind(input.retention_days)
-        .bind(input.compatibility_target_key)
-        .bind(input.policy_key)
-        .bind(input.watcher_enabled)
-        .bind(input.schedule_enabled)
-        .bind(input.schedule_interval_minutes)
-        .fetch_one(executor)
-        .await
-        .map_err(try_op("media profile upsert"))
+    try_op("media profile upsert", || {
+        sqlx::query_scalar::<_, Uuid>(MEDIA_PROFILE_UPSERT_V2)
+            .bind(input.actor_public_id)
+            .bind(input.profile_key)
+            .bind(input.source_root)
+            .bind(input.output_root)
+            .bind(input.dry_run_only)
+            .bind(input.retention_days)
+            .bind(input.compatibility_target_key)
+            .bind(input.policy_key)
+            .bind(input.watcher_enabled)
+            .bind(input.schedule_enabled)
+            .bind(input.schedule_interval_minutes)
+            .fetch_one(executor)
+    })
+    .await
 }
 
 /// Patch a media profile by public id.
@@ -146,21 +147,22 @@ pub async fn update_media_profile(
     pool: &PgPool,
     input: &UpdateMediaProfileInput<'_>,
 ) -> Result<Uuid> {
-    sqlx::query_scalar::<_, Uuid>(MEDIA_PROFILE_UPDATE_V1)
-        .bind(input.actor_public_id)
-        .bind(input.media_profile_public_id)
-        .bind(input.source_root)
-        .bind(input.output_root)
-        .bind(input.dry_run_only)
-        .bind(input.retention_days)
-        .bind(input.compatibility_target_key)
-        .bind(input.policy_key)
-        .bind(input.watcher_enabled)
-        .bind(input.schedule_enabled)
-        .bind(input.schedule_interval_minutes)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("media profile update"))
+    try_op("media profile update", || {
+        sqlx::query_scalar::<_, Uuid>(MEDIA_PROFILE_UPDATE_V1)
+            .bind(input.actor_public_id)
+            .bind(input.media_profile_public_id)
+            .bind(input.source_root)
+            .bind(input.output_root)
+            .bind(input.dry_run_only)
+            .bind(input.retention_days)
+            .bind(input.compatibility_target_key)
+            .bind(input.policy_key)
+            .bind(input.watcher_enabled)
+            .bind(input.schedule_enabled)
+            .bind(input.schedule_interval_minutes)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// List active media profiles.
@@ -169,10 +171,10 @@ pub async fn update_media_profile(
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn list_media_profiles(pool: &PgPool) -> Result<Vec<MediaProfileRow>> {
-    sqlx::query_as::<_, MediaProfileRow>(MEDIA_PROFILE_LIST_V3)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media profile list"))
+    try_op("media profile list", || {
+        sqlx::query_as::<_, MediaProfileRow>(MEDIA_PROFILE_LIST_V3).fetch_all(pool)
+    })
+    .await
 }
 
 /// Get one media profile by public id.
@@ -184,11 +186,12 @@ pub async fn get_media_profile(
     pool: &PgPool,
     media_profile_public_id: Uuid,
 ) -> Result<Option<MediaProfileRow>> {
-    sqlx::query_as::<_, MediaProfileRow>(MEDIA_PROFILE_GET_V3)
-        .bind(media_profile_public_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(try_op("media profile get"))
+    try_op("media profile get", || {
+        sqlx::query_as::<_, MediaProfileRow>(MEDIA_PROFILE_GET_V3)
+            .bind(media_profile_public_id)
+            .fetch_optional(pool)
+    })
+    .await
 }
 
 #[cfg(test)]

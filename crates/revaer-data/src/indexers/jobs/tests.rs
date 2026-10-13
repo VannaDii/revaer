@@ -1584,15 +1584,10 @@ async fn job_run_rss_subscription_backfill_skips_when_maintenance_completed() ->
 
     let pool = test_db.pool();
     let instance_id = insert_indexer_instance(pool).await?;
-    sqlx::query(
-        "INSERT INTO deployment_maintenance_state (
-                rss_subscription_backfill_completed_at,
-                last_updated_at
-            )
-            VALUES (now(), now())",
-    )
-    .execute(pool)
-    .await?;
+    let completed = sqlx::query(
+        "UPDATE deployment_maintenance_state SET rss_subscription_backfill_completed_at = now(), last_updated_at = now()",
+    ).execute(pool).await?;
+    assert_eq!(completed.rows_affected(), 1);
 
     job_run_rss_subscription_backfill(pool).await?;
 

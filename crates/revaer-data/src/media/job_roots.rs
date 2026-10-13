@@ -3,7 +3,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::error::{Result, try_op};
+use crate::error::{DataError, Result, try_op};
 
 /// One claimed destructive attempt whose immutable source owns its journal.
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -28,19 +28,19 @@ pub async fn list_replacement_recovery(
     pool: &PgPool,
     after_attempt_id: i64,
 ) -> Result<Vec<ReplacementRecoveryRow>> {
-    let rows = sqlx::query_as::<_, ReplacementRecoveryRow>(
-        "SELECT * FROM media_job_replacement_recovery_list_v1(after_attempt_id_input => $1)",
-    )
-    .bind(after_attempt_id)
-    .fetch_all(pool)
-    .await
-    .map_err(try_op("media job immutable replacement recovery read"))?;
+    let rows = try_op("media job immutable replacement recovery read", || {
+        sqlx::query_as::<_, ReplacementRecoveryRow>(
+            "SELECT * FROM media_job_replacement_recovery_list_v1(after_attempt_id_input => $1)",
+        )
+        .bind(after_attempt_id)
+        .fetch_all(pool)
+    })
+    .await?;
     if !recovery_page_valid(&rows, after_attempt_id) {
-        return Err(
-            try_op("media job immutable replacement recovery transport")(sqlx::Error::Protocol(
-                "media_job_root_snapshot_invalid".into(),
-            )),
-        );
+        return Err(DataError::QueryFailed {
+            operation: "media job immutable replacement recovery transport",
+            source: sqlx::Error::Protocol("media_job_root_snapshot_invalid".into()),
+        });
     }
     Ok(rows)
 }
@@ -115,15 +115,16 @@ pub async fn read_job_roots(
     attempt: i32,
     generation: i64,
 ) -> Result<Vec<JobRootSnapshotRow>> {
-    let rows = sqlx::query_as::<_, JobRootSnapshotRow>(
+    let rows = try_op("media job immutable root read", || { sqlx::query_as::<_, JobRootSnapshotRow>(
         "SELECT * FROM media_job_policy_snapshot_root_list_v1(job_public_id_input => $1, attempt_number_input => $2, claim_generation_input => $3)",
     )
     .bind(job).bind(attempt).bind(generation)
-    .fetch_all(pool).await.map_err(try_op("media job immutable root read"))?;
+    .fetch_all(pool) }).await?;
     if !ordered_complete(&rows) {
-        return Err(try_op("media job immutable root transport")(
-            sqlx::Error::Protocol("media_job_root_snapshot_invalid".into()),
-        ));
+        return Err(DataError::QueryFailed {
+            operation: "media job immutable root transport",
+            source: sqlx::Error::Protocol("media_job_root_snapshot_invalid".into()),
+        });
     }
     Ok(rows)
 }
@@ -163,23 +164,24 @@ pub struct RestoredSourceInput<'a> {
 /// # Errors
 /// Rejects stale attempts, foreign paths, changed content and invalid metadata.
 pub async fn refresh_restored_source(pool: &PgPool, input: &RestoredSourceInput<'_>) -> Result<()> {
-    sqlx::query(
-        "SELECT media_job_restored_source_refresh_v1(
+    try_op("refresh verified rollback source metadata", || {
+        sqlx::query(
+            "SELECT media_job_restored_source_refresh_v1(
             job_public_id_input => $1, generation_input => $2, source_path_input => $3,
             identity_input => $4, size_input => $5, modified_ns_input => $6,
             changed_ns_input => $7, sha256_input => $8)",
-    )
-    .bind(input.job_id)
-    .bind(input.generation)
-    .bind(input.source_path)
-    .bind(input.identity)
-    .bind(input.size_bytes)
-    .bind(input.modified_ns)
-    .bind(input.changed_ns)
-    .bind(input.sha256)
-    .execute(pool)
-    .await
-    .map_err(try_op("refresh verified rollback source metadata"))?;
+        )
+        .bind(input.job_id)
+        .bind(input.generation)
+        .bind(input.source_path)
+        .bind(input.identity)
+        .bind(input.size_bytes)
+        .bind(input.modified_ns)
+        .bind(input.changed_ns)
+        .bind(input.sha256)
+        .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 

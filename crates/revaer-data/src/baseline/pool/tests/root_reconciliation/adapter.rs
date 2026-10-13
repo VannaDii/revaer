@@ -79,13 +79,15 @@ pub(super) async fn check(pool: &sqlx::PgPool) -> anyhow::Result<()> {
         .await?
         .remove(0)
         .state;
-    let mut rejected = RootCatalogReconciliation::begin(pool, &input).await?;
+    let mut root_connection = pool.acquire().await?;
+    let mut rejected = RootCatalogReconciliation::begin(&mut root_connection, &input).await?;
     let slot = rejected.append_slot(&inputs[0]).await?;
     anyhow::ensure!(
         rejected.append_kind(slot, "unknown").await.is_err(),
         "unknown kind accepted"
     );
     rejected.rollback().await?;
+    root_connection.return_to_pool().await;
     let after = read_root_catalog_page(pool, 1, None, None)
         .await?
         .remove(0)
@@ -95,7 +97,9 @@ pub(super) async fn check(pool: &sqlx::PgPool) -> anyhow::Result<()> {
         "failed adapter transaction changed readiness"
     );
 
-    let mut candidate = RootCatalogReconciliation::begin(pool, &input).await?;
+    let mut root_connection = pool.acquire().await?;
+
+    let mut candidate = RootCatalogReconciliation::begin(&mut root_connection, &input).await?;
     anyhow::ensure!(
         !candidate.already_current(),
         "populated adapter fixture already current"
@@ -106,6 +110,7 @@ pub(super) async fn check(pool: &sqlx::PgPool) -> anyhow::Result<()> {
         candidate.append_kind(id, kind).await?;
     }
     let active = candidate.activate().await?;
+    root_connection.return_to_pool().await;
     anyhow::ensure!(
         active.attestation_generation == generation
             && active.slot_count == 2
@@ -113,12 +118,14 @@ pub(super) async fn check(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             && active.generation_sha256 == input.generation_sha256,
         "adapter returned mismatched committed metadata"
     );
-    let current = RootCatalogReconciliation::begin(pool, &input).await?;
+    let mut root_connection = pool.acquire().await?;
+    let current = RootCatalogReconciliation::begin(&mut root_connection, &input).await?;
     anyhow::ensure!(
         current.already_current() && current.generation() == generation,
         "adapter did not reuse current generation"
     );
     let reused = current.activate().await?;
+    root_connection.return_to_pool().await;
     anyhow::ensure!(
         reused.media_root_catalog_generation_public_id
             == active.media_root_catalog_generation_public_id
@@ -136,19 +143,20 @@ async fn check_failed_activation(pool: &sqlx::PgPool) -> anyhow::Result<()> {
         .state;
     {
         let inputs = slots()?;
-        let mut abandoned = RootCatalogReconciliation::begin(pool, &input).await?;
+        let mut root_connection = pool.acquire().await?;
+        let mut abandoned = RootCatalogReconciliation::begin(&mut root_connection, &input).await?;
         let slot = abandoned.append_slot(&inputs[0]).await?;
         abandoned.append_kind(slot, "source").await?;
-        // The fixture pool has one connection: readback requires the dropped
-        // transaction's rollback to finish before the connection can be reused.
+        abandoned.rollback().await?;
+        root_connection.return_to_pool().await;
     }
-    let after_drop = read_root_catalog_page(pool, 1, None, None)
+    let after_rollback = read_root_catalog_page(pool, 1, None, None)
         .await?
         .remove(0)
         .state;
     anyhow::ensure!(
-        before == after_drop,
-        "abandoned reconciliation changed readiness"
+        before == after_rollback,
+        "rolled-back reconciliation changed readiness"
     );
     for mutation in [
         "missing-slot",
@@ -163,7 +171,8 @@ async fn check_failed_activation(pool: &sqlx::PgPool) -> anyhow::Result<()> {
         if mutation == "wrong-digest" {
             inputs[0].root_identity_sha256[0] ^= 1;
         }
-        let mut candidate = RootCatalogReconciliation::begin(pool, &input).await?;
+        let mut root_connection = pool.acquire().await?;
+        let mut candidate = RootCatalogReconciliation::begin(&mut root_connection, &input).await?;
         for (index, (slot, kind)) in inputs.iter().zip(["source", "workspace"]).enumerate() {
             if mutation == "missing-slot" && index == 1 {
                 break;
@@ -177,6 +186,7 @@ async fn check_failed_activation(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             candidate.activate().await.is_err(),
             "invalid activation succeeded: {mutation}"
         );
+        root_connection.return_to_pool().await;
         let after = read_root_catalog_page(pool, 1, None, None)
             .await?
             .remove(0)

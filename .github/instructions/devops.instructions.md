@@ -128,10 +128,14 @@ applyTo:
 - Maintain focused README files for setup, architecture, command ownership, and
   verification. Comments should explain ordering, ownership, and compatibility
   constraints that are not apparent from the code.
+- Distributed coverage retains every selected producer and shard. Media API
+  producers include both missing-catalog phases alongside anonymous/authenticated
+  phases; merging must verify their complete selections and route coverage.
 - Sonar input verification derives `coverage/rust-sonar-lcov.info` from the complete
   LCOV report using the tracked Rust inventory and zero-hit unexecuted branches,
   as explicitly approved by the operator. Both workflows retain the complete
-  original and adapted input; no thresholds or authored analysis scope change.
+  original and adapted input, including the PR Rust/native upload; no thresholds
+  or authored analysis scope change.
 - Rust coverage retains the existing per-crate 90% Rust line gate and publishes complete
   LCOV, text, and HTML evidence with native sources and build scripts. Do not add
   filename exclusions during the migration. Resolve workspace members through

@@ -698,6 +698,7 @@ pub struct MediaServiceError {
     kind: MediaServiceErrorKind,
     code: Option<String>,
     sqlstate: Option<String>,
+    source: Option<std::sync::Arc<dyn Error + Send + Sync>>,
 }
 
 impl MediaServiceError {
@@ -708,6 +709,7 @@ impl MediaServiceError {
             kind,
             code: None,
             sqlstate: None,
+            source: None,
         }
     }
 
@@ -715,6 +717,13 @@ impl MediaServiceError {
     #[must_use]
     pub fn with_code(mut self, code: impl Into<String>) -> Self {
         self.code = Some(code.into());
+        self
+    }
+
+    /// Retain a backend cause for internal diagnostics without changing the API code.
+    #[must_use]
+    pub fn with_source(mut self, source: impl Error + Send + Sync + 'static) -> Self {
+        self.source = Some(std::sync::Arc::new(source));
         self
     }
 
@@ -750,7 +759,13 @@ impl Display for MediaServiceError {
     }
 }
 
-impl Error for MediaServiceError {}
+impl Error for MediaServiceError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        self.source
+            .as_deref()
+            .map(|source| source as &(dyn Error + 'static))
+    }
+}
 
 /// Facade for media API operations.
 #[async_trait]

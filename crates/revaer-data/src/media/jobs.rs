@@ -565,15 +565,16 @@ pub struct MediaJobDesiredTargetStreamRow {
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn create_media_job(pool: &PgPool, input: &CreateMediaJobInput<'_>) -> Result<Uuid> {
-    sqlx::query_scalar::<_, Uuid>(MEDIA_JOB_CREATE_V1)
-        .bind(input.actor_public_id)
-        .bind(input.media_profile_public_id)
-        .bind(input.source_path)
-        .bind(input.output_path.unwrap_or_default())
-        .bind(input.dry_run)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("media job create"))
+    try_op("media job create", || {
+        sqlx::query_scalar::<_, Uuid>(MEDIA_JOB_CREATE_V1)
+            .bind(input.actor_public_id)
+            .bind(input.media_profile_public_id)
+            .bind(input.source_path)
+            .bind(input.output_path.unwrap_or_default())
+            .bind(input.dry_run)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Atomically enqueue a discovered source only when its durable identity changed.
@@ -588,20 +589,21 @@ pub async fn enqueue_discovered_media_job(
     pool: &PgPool,
     input: &EnqueueDiscoveredMediaJobInput<'_>,
 ) -> Result<Option<EnqueuedMediaJobRow>> {
-    sqlx::query_as::<_, EnqueuedMediaJobRow>(MEDIA_DISCOVERY_JOB_ENQUEUE_V3)
-        .bind(input.actor_public_id)
-        .bind(input.media_profile_public_id)
-        .bind(input.source_path)
-        .bind(input.output_path.unwrap_or_default())
-        .bind(input.dry_run)
-        .bind(input.source_identity)
-        .bind(input.source_size_bytes)
-        .bind(input.source_modified_ns)
-        .bind(input.source_changed_ns)
-        .bind(input.source_sha256)
-        .fetch_optional(pool)
-        .await
-        .map_err(try_op("media discovery job enqueue"))
+    try_op("media discovery job enqueue", || {
+        sqlx::query_as::<_, EnqueuedMediaJobRow>(MEDIA_DISCOVERY_JOB_ENQUEUE_V3)
+            .bind(input.actor_public_id)
+            .bind(input.media_profile_public_id)
+            .bind(input.source_path)
+            .bind(input.output_path.unwrap_or_default())
+            .bind(input.dry_run)
+            .bind(input.source_identity)
+            .bind(input.source_size_bytes)
+            .bind(input.source_modified_ns)
+            .bind(input.source_changed_ns)
+            .bind(input.source_sha256)
+            .fetch_optional(pool)
+    })
+    .await
 }
 
 /// List the immutable ordered desired-target stream snapshot for one job.
@@ -613,11 +615,12 @@ pub async fn list_media_job_desired_target_streams(
     pool: &PgPool,
     media_job_public_id: Uuid,
 ) -> Result<Vec<MediaJobDesiredTargetStreamRow>> {
-    sqlx::query_as::<_, MediaJobDesiredTargetStreamRow>(MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V5)
-        .bind(media_job_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media job desired target stream list"))
+    try_op("media job desired target stream list", || {
+        sqlx::query_as::<_, MediaJobDesiredTargetStreamRow>(MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V5)
+            .bind(media_job_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Append or update a media job phase row.
@@ -634,16 +637,17 @@ pub async fn append_media_job_phase(
     phase_status_text: &str,
     details_text: Option<&str>,
 ) -> Result<()> {
-    sqlx::query(MEDIA_JOB_PHASE_APPEND_V1)
-        .bind(media_job_public_id)
-        .bind(claim_generation)
-        .bind(phase_index)
-        .bind(phase_name)
-        .bind(phase_status_text)
-        .bind(details_text.unwrap_or_default())
-        .execute(pool)
-        .await
-        .map_err(try_op("media job phase append"))?;
+    try_op("media job phase append", || {
+        sqlx::query(MEDIA_JOB_PHASE_APPEND_V1)
+            .bind(media_job_public_id)
+            .bind(claim_generation)
+            .bind(phase_index)
+            .bind(phase_name)
+            .bind(phase_status_text)
+            .bind(details_text.unwrap_or_default())
+            .execute(pool)
+    })
+    .await?;
 
     Ok(())
 }
@@ -657,11 +661,12 @@ pub async fn list_media_job_phases(
     pool: &PgPool,
     media_job_public_id: Uuid,
 ) -> Result<Vec<MediaJobPhaseRow>> {
-    sqlx::query_as::<_, MediaJobPhaseRow>(MEDIA_JOB_PHASE_LIST_V1)
-        .bind(media_job_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media job phase list"))
+    try_op("media job phase list", || {
+        sqlx::query_as::<_, MediaJobPhaseRow>(MEDIA_JOB_PHASE_LIST_V1)
+            .bind(media_job_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Append or update a media job operation row.
@@ -674,21 +679,22 @@ pub async fn append_media_job_operation(
     claim_generation: i64,
     input: &AppendMediaJobOperationInput<'_>,
 ) -> Result<()> {
-    sqlx::query(MEDIA_JOB_OPERATION_APPEND_V1)
-        .bind(input.media_job_public_id)
-        .bind(claim_generation)
-        .bind(input.operation_index)
-        .bind(input.operation_kind)
-        .bind(input.stream_id)
-        .bind(input.command_bin)
-        .bind(input.args[0].unwrap_or_default())
-        .bind(input.args[1].unwrap_or_default())
-        .bind(input.args[2].unwrap_or_default())
-        .bind(input.args[3].unwrap_or_default())
-        .bind(input.args[4].unwrap_or_default())
-        .execute(pool)
-        .await
-        .map_err(try_op("media job operation append"))?;
+    try_op("media job operation append", || {
+        sqlx::query(MEDIA_JOB_OPERATION_APPEND_V1)
+            .bind(input.media_job_public_id)
+            .bind(claim_generation)
+            .bind(input.operation_index)
+            .bind(input.operation_kind)
+            .bind(input.stream_id)
+            .bind(input.command_bin)
+            .bind(input.args[0].unwrap_or_default())
+            .bind(input.args[1].unwrap_or_default())
+            .bind(input.args[2].unwrap_or_default())
+            .bind(input.args[3].unwrap_or_default())
+            .bind(input.args[4].unwrap_or_default())
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -706,16 +712,17 @@ pub async fn append_media_job_violation(
     severity: &str,
     stream_id: Option<i32>,
 ) -> Result<()> {
-    sqlx::query(MEDIA_JOB_VIOLATION_APPEND_V1)
-        .bind(media_job_public_id)
-        .bind(claim_generation)
-        .bind(violation_index)
-        .bind(violation_kind)
-        .bind(severity)
-        .bind(stream_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("media job violation append"))?;
+    try_op("media job violation append", || {
+        sqlx::query(MEDIA_JOB_VIOLATION_APPEND_V1)
+            .bind(media_job_public_id)
+            .bind(claim_generation)
+            .bind(violation_index)
+            .bind(violation_kind)
+            .bind(severity)
+            .bind(stream_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -729,17 +736,18 @@ pub async fn append_media_job_plan_reason(
     claim_generation: i64,
     input: &AppendMediaJobPlanReasonInput<'_>,
 ) -> Result<()> {
-    sqlx::query(MEDIA_JOB_PLAN_REASON_APPEND_V1)
-        .bind(input.media_job_public_id)
-        .bind(claim_generation)
-        .bind(input.reason_index)
-        .bind(input.candidate_index)
-        .bind(input.selected)
-        .bind(input.reason_code)
-        .bind(input.reason_text)
-        .execute(pool)
-        .await
-        .map_err(try_op("media job plan reason append"))?;
+    try_op("media job plan reason append", || {
+        sqlx::query(MEDIA_JOB_PLAN_REASON_APPEND_V1)
+            .bind(input.media_job_public_id)
+            .bind(claim_generation)
+            .bind(input.reason_index)
+            .bind(input.candidate_index)
+            .bind(input.selected)
+            .bind(input.reason_code)
+            .bind(input.reason_text)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -753,18 +761,19 @@ pub async fn append_media_job_verification_check(
     claim_generation: i64,
     input: &AppendMediaJobVerificationCheckInput<'_>,
 ) -> Result<()> {
-    sqlx::query(MEDIA_JOB_VERIFICATION_CHECK_APPEND_V1)
-        .bind(input.media_job_public_id)
-        .bind(claim_generation)
-        .bind(input.check_index)
-        .bind(input.check_kind)
-        .bind(input.check_status)
-        .bind(input.expected_value.unwrap_or_default())
-        .bind(input.actual_value.unwrap_or_default())
-        .bind(input.details_text.unwrap_or_default())
-        .execute(pool)
-        .await
-        .map_err(try_op("media job verification check append"))?;
+    try_op("media job verification check append", || {
+        sqlx::query(MEDIA_JOB_VERIFICATION_CHECK_APPEND_V1)
+            .bind(input.media_job_public_id)
+            .bind(claim_generation)
+            .bind(input.check_index)
+            .bind(input.check_kind)
+            .bind(input.check_status)
+            .bind(input.expected_value.unwrap_or_default())
+            .bind(input.actual_value.unwrap_or_default())
+            .bind(input.details_text.unwrap_or_default())
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -778,17 +787,18 @@ pub async fn append_media_job_artifact(
     claim_generation: i64,
     input: &AppendMediaJobArtifactInput<'_>,
 ) -> Result<()> {
-    sqlx::query(MEDIA_JOB_ARTIFACT_APPEND_V1)
-        .bind(input.media_job_public_id)
-        .bind(claim_generation)
-        .bind(input.artifact_index)
-        .bind(input.artifact_kind)
-        .bind(input.artifact_path)
-        .bind(input.size_bytes)
-        .bind(input.content_type.unwrap_or_default())
-        .execute(pool)
-        .await
-        .map_err(try_op("media job artifact append"))?;
+    try_op("media job artifact append", || {
+        sqlx::query(MEDIA_JOB_ARTIFACT_APPEND_V1)
+            .bind(input.media_job_public_id)
+            .bind(claim_generation)
+            .bind(input.artifact_index)
+            .bind(input.artifact_kind)
+            .bind(input.artifact_path)
+            .bind(input.size_bytes)
+            .bind(input.content_type.unwrap_or_default())
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -802,15 +812,16 @@ pub async fn append_media_job_compact_audit(
     claim_generation: i64,
     input: &AppendMediaJobCompactAuditInput<'_>,
 ) -> Result<()> {
-    sqlx::query(MEDIA_JOB_COMPACT_AUDIT_APPEND_V1)
-        .bind(input.media_job_public_id)
-        .bind(claim_generation)
-        .bind(input.audit_index)
-        .bind(input.fact_kind)
-        .bind(input.fact_text)
-        .execute(pool)
-        .await
-        .map_err(try_op("media job compact audit append"))?;
+    try_op("media job compact audit append", || {
+        sqlx::query(MEDIA_JOB_COMPACT_AUDIT_APPEND_V1)
+            .bind(input.media_job_public_id)
+            .bind(claim_generation)
+            .bind(input.audit_index)
+            .bind(input.fact_kind)
+            .bind(input.fact_text)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -824,12 +835,13 @@ pub async fn list_media_jobs(
     media_profile_public_id: Uuid,
     status_text: Option<&str>,
 ) -> Result<Vec<MediaJobRow>> {
-    sqlx::query_as::<_, MediaJobRow>(MEDIA_JOB_LIST_V1)
-        .bind(media_profile_public_id)
-        .bind(status_text)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media job list"))
+    try_op("media job list", || {
+        sqlx::query_as::<_, MediaJobRow>(MEDIA_JOB_LIST_V1)
+            .bind(media_profile_public_id)
+            .bind(status_text)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Read one bounded keyset page of recent jobs with diagnostic counts.
@@ -844,14 +856,15 @@ pub async fn list_recent_media_jobs(
     media_profile_public_id: Option<Uuid>,
 ) -> Result<Vec<MediaRecentJobRow>> {
     let (cursor_queued_at, cursor_public_id) = cursor.unzip();
-    sqlx::query_as::<_, MediaRecentJobRow>(MEDIA_JOB_RECENT_PAGE_V1)
-        .bind(limit)
-        .bind(cursor_queued_at)
-        .bind(cursor_public_id)
-        .bind(media_profile_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media recent job page"))
+    try_op("media recent job page", || {
+        sqlx::query_as::<_, MediaRecentJobRow>(MEDIA_JOB_RECENT_PAGE_V1)
+            .bind(limit)
+            .bind(cursor_queued_at)
+            .bind(cursor_public_id)
+            .bind(media_profile_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// List media job operations for one job.
@@ -863,11 +876,12 @@ pub async fn list_media_job_operations(
     pool: &PgPool,
     media_job_public_id: Uuid,
 ) -> Result<Vec<MediaJobOperationRow>> {
-    sqlx::query_as::<_, MediaJobOperationRow>(MEDIA_JOB_OPERATION_LIST_V1)
-        .bind(media_job_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media job operation list"))
+    try_op("media job operation list", || {
+        sqlx::query_as::<_, MediaJobOperationRow>(MEDIA_JOB_OPERATION_LIST_V1)
+            .bind(media_job_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// List media job compliance violations for one job.
@@ -879,11 +893,12 @@ pub async fn list_media_job_violations(
     pool: &PgPool,
     media_job_public_id: Uuid,
 ) -> Result<Vec<MediaJobViolationRow>> {
-    sqlx::query_as::<_, MediaJobViolationRow>(MEDIA_JOB_VIOLATION_LIST_V1)
-        .bind(media_job_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media job violation list"))
+    try_op("media job violation list", || {
+        sqlx::query_as::<_, MediaJobViolationRow>(MEDIA_JOB_VIOLATION_LIST_V1)
+            .bind(media_job_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// List media job plan reasons for one job.
@@ -895,11 +910,12 @@ pub async fn list_media_job_plan_reasons(
     pool: &PgPool,
     media_job_public_id: Uuid,
 ) -> Result<Vec<MediaJobPlanReasonRow>> {
-    sqlx::query_as::<_, MediaJobPlanReasonRow>(MEDIA_JOB_PLAN_REASON_LIST_V1)
-        .bind(media_job_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media job plan reason list"))
+    try_op("media job plan reason list", || {
+        sqlx::query_as::<_, MediaJobPlanReasonRow>(MEDIA_JOB_PLAN_REASON_LIST_V1)
+            .bind(media_job_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// List media job verification checks for one job.
@@ -911,11 +927,12 @@ pub async fn list_media_job_verification_checks(
     pool: &PgPool,
     media_job_public_id: Uuid,
 ) -> Result<Vec<MediaJobVerificationCheckRow>> {
-    sqlx::query_as::<_, MediaJobVerificationCheckRow>(MEDIA_JOB_VERIFICATION_CHECK_LIST_V1)
-        .bind(media_job_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media job verification check list"))
+    try_op("media job verification check list", || {
+        sqlx::query_as::<_, MediaJobVerificationCheckRow>(MEDIA_JOB_VERIFICATION_CHECK_LIST_V1)
+            .bind(media_job_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// List media job artifact references for one job.
@@ -927,11 +944,12 @@ pub async fn list_media_job_artifacts(
     pool: &PgPool,
     media_job_public_id: Uuid,
 ) -> Result<Vec<MediaJobArtifactRow>> {
-    sqlx::query_as::<_, MediaJobArtifactRow>(MEDIA_JOB_ARTIFACT_LIST_V1)
-        .bind(media_job_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media job artifact list"))
+    try_op("media job artifact list", || {
+        sqlx::query_as::<_, MediaJobArtifactRow>(MEDIA_JOB_ARTIFACT_LIST_V1)
+            .bind(media_job_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// List persisted attempt identities for one job, including terminal outcomes.
@@ -943,11 +961,12 @@ pub async fn list_media_job_attempt_identities(
     pool: &PgPool,
     media_job_public_id: Uuid,
 ) -> Result<Vec<MediaJobAttemptIdentityRow>> {
-    sqlx::query_as::<_, MediaJobAttemptIdentityRow>(MEDIA_JOB_ATTEMPT_IDENTITY_LIST_V1)
-        .bind(media_job_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media job attempt identity list"))
+    try_op("media job attempt identity list", || {
+        sqlx::query_as::<_, MediaJobAttemptIdentityRow>(MEDIA_JOB_ATTEMPT_IDENTITY_LIST_V1)
+            .bind(media_job_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// List media job compact audit facts for one job.
@@ -959,11 +978,12 @@ pub async fn list_media_job_compact_audits(
     pool: &PgPool,
     media_job_public_id: Uuid,
 ) -> Result<Vec<MediaJobCompactAuditRow>> {
-    sqlx::query_as::<_, MediaJobCompactAuditRow>(MEDIA_JOB_COMPACT_AUDIT_LIST_V1)
-        .bind(media_job_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media job compact audit list"))
+    try_op("media job compact audit list", || {
+        sqlx::query_as::<_, MediaJobCompactAuditRow>(MEDIA_JOB_COMPACT_AUDIT_LIST_V1)
+            .bind(media_job_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Get one media job by public id.
@@ -975,11 +995,12 @@ pub async fn get_media_job(
     pool: &PgPool,
     media_job_public_id: Uuid,
 ) -> Result<Option<MediaJobRow>> {
-    sqlx::query_as::<_, MediaJobRow>(MEDIA_JOB_GET_V1)
-        .bind(media_job_public_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(try_op("media job get"))
+    try_op("media job get", || {
+        sqlx::query_as::<_, MediaJobRow>(MEDIA_JOB_GET_V1)
+            .bind(media_job_public_id)
+            .fetch_optional(pool)
+    })
+    .await
 }
 
 /// Read one operator job with root-relative paths, not worker filesystem paths.
@@ -987,8 +1008,8 @@ pub async fn get_media_job(
 /// # Errors
 /// Propagates privilege, snapshot, procedure and decoding failures.
 pub async fn get_operator_media_job(pool: &PgPool, id: Uuid) -> Result<Option<MediaJobRow>> {
-    sqlx::query_as("SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_operator_get_v1($1)")
-        .bind(id).fetch_optional(pool).await.map_err(try_op("operator media job get"))
+    try_op("operator media job get", || { sqlx::query_as("SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_operator_get_v1($1)")
+        .bind(id).fetch_optional(pool) }).await
 }
 
 /// List operator jobs without exposing worker filesystem paths.
@@ -1000,8 +1021,8 @@ pub async fn list_operator_media_jobs(
     profile: Uuid,
     status: Option<&str>,
 ) -> Result<Vec<MediaJobRow>> {
-    sqlx::query_as("SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_operator_list_v1($1, $2::media_job_status)")
-        .bind(profile).bind(status).fetch_all(pool).await.map_err(try_op("operator media job list"))
+    try_op("operator media job list", || { sqlx::query_as("SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_operator_list_v1($1, $2::media_job_status)")
+        .bind(profile).bind(status).fetch_all(pool) }).await
 }
 
 /// Read the canonical recent page with root-relative operator paths.
@@ -1015,14 +1036,15 @@ pub async fn list_operator_recent_media_jobs(
     profile: Option<Uuid>,
 ) -> Result<Vec<MediaRecentJobRow>> {
     let (queued_at, id) = cursor.unzip();
-    sqlx::query_as("SELECT * FROM media_job_operator_recent_page_v1($1, $2, $3, $4)")
-        .bind(limit)
-        .bind(queued_at)
-        .bind(id)
-        .bind(profile)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("operator media recent job page"))
+    try_op("operator media recent job page", || {
+        sqlx::query_as("SELECT * FROM media_job_operator_recent_page_v1($1, $2, $3, $4)")
+            .bind(limit)
+            .bind(queued_at)
+            .bind(id)
+            .bind(profile)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Cancel one queued/running/verifying media job.
@@ -1031,11 +1053,12 @@ pub async fn list_operator_recent_media_jobs(
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn cancel_media_job(pool: &PgPool, media_job_public_id: Uuid) -> Result<i64> {
-    sqlx::query_scalar::<_, i64>(MEDIA_JOB_CANCEL_V2)
-        .bind(media_job_public_id)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("media job cancel"))
+    try_op("media job cancel", || {
+        sqlx::query_scalar::<_, i64>(MEDIA_JOB_CANCEL_V2)
+            .bind(media_job_public_id)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Retry one failed/cancelled media job by requeueing it.
@@ -1044,11 +1067,12 @@ pub async fn cancel_media_job(pool: &PgPool, media_job_public_id: Uuid) -> Resul
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn retry_media_job(pool: &PgPool, media_job_public_id: Uuid) -> Result<()> {
-    sqlx::query(MEDIA_JOB_RETRY_V1)
-        .bind(media_job_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("media job retry"))?;
+    try_op("media job retry", || {
+        sqlx::query(MEDIA_JOB_RETRY_V1)
+            .bind(media_job_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -1058,11 +1082,12 @@ pub async fn retry_media_job(pool: &PgPool, media_job_public_id: Uuid) -> Result
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn mark_media_job_completed(pool: &PgPool, media_job_public_id: Uuid) -> Result<()> {
-    sqlx::query(MEDIA_JOB_MARK_COMPLETED_V1)
-        .bind(media_job_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("media job mark completed"))?;
+    try_op("media job mark completed", || {
+        sqlx::query(MEDIA_JOB_MARK_COMPLETED_V1)
+            .bind(media_job_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -1075,11 +1100,12 @@ pub async fn run_media_job_retention(
     pool: &PgPool,
     as_of: chrono::DateTime<chrono::Utc>,
 ) -> Result<MediaJobRetentionRunRow> {
-    sqlx::query_as::<_, MediaJobRetentionRunRow>(MEDIA_JOB_RETENTION_RUN_V1)
-        .bind(as_of)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("media job retention run"))
+    try_op("media job retention run", || {
+        sqlx::query_as::<_, MediaJobRetentionRunRow>(MEDIA_JOB_RETENTION_RUN_V1)
+            .bind(as_of)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Read persisted workspace-retention bounds and active job keys in one database snapshot.
@@ -1093,10 +1119,13 @@ pub async fn run_media_job_retention(
 pub async fn load_media_workspace_retention_snapshot(
     pool: &PgPool,
 ) -> Result<Vec<MediaWorkspaceRetentionSnapshotRow>> {
-    sqlx::query_as::<_, MediaWorkspaceRetentionSnapshotRow>(MEDIA_WORKSPACE_RETENTION_SNAPSHOT_V1)
+    try_op("media workspace retention snapshot", || {
+        sqlx::query_as::<_, MediaWorkspaceRetentionSnapshotRow>(
+            MEDIA_WORKSPACE_RETENTION_SNAPSHOT_V1,
+        )
         .fetch_all(pool)
-        .await
-        .map_err(try_op("media workspace retention snapshot"))
+    })
+    .await
 }
 
 /// Claim the next queued media job for worker processing.
@@ -1105,10 +1134,10 @@ pub async fn load_media_workspace_retention_snapshot(
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn media_job_worker_claim_next(pool: &PgPool) -> Result<Option<ClaimedMediaJobRow>> {
-    sqlx::query_as::<_, ClaimedMediaJobRow>(MEDIA_JOB_WORKER_CLAIM_NEXT_V4)
-        .fetch_optional(pool)
-        .await
-        .map_err(try_op("media job worker claim next"))
+    try_op("media job worker claim next", || {
+        sqlx::query_as::<_, ClaimedMediaJobRow>(MEDIA_JOB_WORKER_CLAIM_NEXT_V4).fetch_optional(pool)
+    })
+    .await
 }
 
 /// Refresh the worker heartbeat and read durable cancellation state.
@@ -1122,13 +1151,14 @@ pub async fn media_job_worker_poll_control(
     claim_generation: i64,
     observed_cancel_generation: i64,
 ) -> Result<MediaJobControlRow> {
-    sqlx::query_as::<_, MediaJobControlRow>(MEDIA_JOB_WORKER_POLL_CONTROL_V1)
-        .bind(media_job_public_id)
-        .bind(claim_generation)
-        .bind(observed_cancel_generation)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("media job worker poll control"))
+    try_op("media job worker poll control", || {
+        sqlx::query_as::<_, MediaJobControlRow>(MEDIA_JOB_WORKER_POLL_CONTROL_V1)
+            .bind(media_job_public_id)
+            .bind(claim_generation)
+            .bind(observed_cancel_generation)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Acknowledge a cancellation newer than the worker's claim and mark the job cancelled.
@@ -1142,13 +1172,14 @@ pub async fn media_job_worker_acknowledge_cancel(
     claim_generation: i64,
     observed_cancel_generation: i64,
 ) -> Result<i64> {
-    sqlx::query_scalar::<_, i64>(MEDIA_JOB_WORKER_ACKNOWLEDGE_CANCEL_V1)
-        .bind(media_job_public_id)
-        .bind(claim_generation)
-        .bind(observed_cancel_generation)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("media job worker acknowledge cancel"))
+    try_op("media job worker acknowledge cancel", || {
+        sqlx::query_scalar::<_, i64>(MEDIA_JOB_WORKER_ACKNOWLEDGE_CANCEL_V1)
+            .bind(media_job_public_id)
+            .bind(claim_generation)
+            .bind(observed_cancel_generation)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Atomically complete a job or acknowledge a cancellation that won the terminal-state race.
@@ -1164,13 +1195,14 @@ pub async fn media_job_worker_complete(
     claim_generation: i64,
     observed_cancel_generation: i64,
 ) -> Result<bool> {
-    sqlx::query_scalar::<_, bool>(MEDIA_JOB_WORKER_COMPLETE_V1)
-        .bind(media_job_public_id)
-        .bind(claim_generation)
-        .bind(observed_cancel_generation)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("media job worker complete"))
+    try_op("media job worker complete", || {
+        sqlx::query_scalar::<_, bool>(MEDIA_JOB_WORKER_COMPLETE_V1)
+            .bind(media_job_public_id)
+            .bind(claim_generation)
+            .bind(observed_cancel_generation)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Atomically persist replacement verification, terminal completion, and an outbox event.
@@ -1184,13 +1216,14 @@ pub async fn media_job_worker_commit_replacement_terminal(
     claim_generation: i64,
     observed_cancel_generation: i64,
 ) -> Result<bool> {
-    sqlx::query_scalar::<_, bool>(MEDIA_JOB_WORKER_COMMIT_REPLACEMENT_TERMINAL_V1)
-        .bind(media_job_public_id)
-        .bind(claim_generation)
-        .bind(observed_cancel_generation)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("media job worker commit replacement terminal"))
+    try_op("media job worker commit replacement terminal", || {
+        sqlx::query_scalar::<_, bool>(MEDIA_JOB_WORKER_COMMIT_REPLACEMENT_TERMINAL_V1)
+            .bind(media_job_public_id)
+            .bind(claim_generation)
+            .bind(observed_cancel_generation)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// List bounded unpublished terminal events in commit order.
@@ -1201,10 +1234,13 @@ pub async fn media_job_worker_commit_replacement_terminal(
 pub async fn list_media_job_terminal_outbox_unpublished(
     pool: &PgPool,
 ) -> Result<Vec<MediaJobTerminalOutboxRow>> {
-    sqlx::query_as::<_, MediaJobTerminalOutboxRow>(MEDIA_JOB_TERMINAL_OUTBOX_LIST_UNPUBLISHED_V1)
+    try_op("media job terminal outbox list unpublished", || {
+        sqlx::query_as::<_, MediaJobTerminalOutboxRow>(
+            MEDIA_JOB_TERMINAL_OUTBOX_LIST_UNPUBLISHED_V1,
+        )
         .fetch_all(pool)
-        .await
-        .map_err(try_op("media job terminal outbox list unpublished"))
+    })
+    .await
 }
 
 /// Mark one durable terminal event published.
@@ -1216,11 +1252,12 @@ pub async fn mark_media_job_terminal_outbox_published(
     pool: &PgPool,
     media_job_public_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(MEDIA_JOB_TERMINAL_OUTBOX_MARK_PUBLISHED_V1)
-        .bind(media_job_public_id)
-        .execute(pool)
-        .await
-        .map_err(try_op("media job terminal outbox mark published"))?;
+    try_op("media job terminal outbox mark published", || {
+        sqlx::query(MEDIA_JOB_TERMINAL_OUTBOX_MARK_PUBLISHED_V1)
+            .bind(media_job_public_id)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -1234,12 +1271,13 @@ pub async fn media_job_worker_heartbeat(
     media_job_public_id: Uuid,
     claim_generation: i64,
 ) -> Result<()> {
-    sqlx::query(MEDIA_JOB_WORKER_HEARTBEAT_V1)
-        .bind(media_job_public_id)
-        .bind(claim_generation)
-        .execute(pool)
-        .await
-        .map_err(try_op("media job worker heartbeat"))?;
+    try_op("media job worker heartbeat", || {
+        sqlx::query(MEDIA_JOB_WORKER_HEARTBEAT_V1)
+            .bind(media_job_public_id)
+            .bind(claim_generation)
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 
@@ -1251,11 +1289,12 @@ pub async fn media_job_worker_resume_interrupted(
     pool: &PgPool,
     workspace_root: &str,
 ) -> Result<Vec<RecoveredMediaJobRow>> {
-    sqlx::query_as(MEDIA_JOB_WORKER_RESUME_INTERRUPTED_V1)
-        .bind(workspace_root)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media job worker resume interrupted"))
+    try_op("media job worker resume interrupted", || {
+        sqlx::query_as(MEDIA_JOB_WORKER_RESUME_INTERRUPTED_V1)
+            .bind(workspace_root)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Requeue stopped work on the same attempt, acknowledging pending cancellation instead.
@@ -1269,12 +1308,13 @@ pub async fn media_job_worker_interrupt(
     media_job_public_id: Uuid,
     claim_generation: i64,
 ) -> Result<bool> {
-    sqlx::query_scalar(MEDIA_JOB_WORKER_INTERRUPT_V1)
-        .bind(media_job_public_id)
-        .bind(claim_generation)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("media job worker interrupt"))
+    try_op("media job worker interrupt", || {
+        sqlx::query_scalar(MEDIA_JOB_WORKER_INTERRUPT_V1)
+            .bind(media_job_public_id)
+            .bind(claim_generation)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Mark a claimed media job with the next worker-visible status.
@@ -1289,14 +1329,15 @@ pub async fn media_job_worker_mark_status(
     status_text: &str,
     last_error: Option<&str>,
 ) -> Result<()> {
-    sqlx::query(MEDIA_JOB_WORKER_MARK_STATUS_V1)
-        .bind(media_job_public_id)
-        .bind(claim_generation)
-        .bind(status_text)
-        .bind(last_error.unwrap_or_default())
-        .execute(pool)
-        .await
-        .map_err(try_op("media job worker mark status"))?;
+    try_op("media job worker mark status", || {
+        sqlx::query(MEDIA_JOB_WORKER_MARK_STATUS_V1)
+            .bind(media_job_public_id)
+            .bind(claim_generation)
+            .bind(status_text)
+            .bind(last_error.unwrap_or_default())
+            .execute(pool)
+    })
+    .await?;
     Ok(())
 }
 

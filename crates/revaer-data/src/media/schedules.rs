@@ -31,11 +31,12 @@ pub async fn read_schedule_configuration(
     pool: &PgPool,
     id: Uuid,
 ) -> Result<Option<ScheduleConfigurationRow>> {
-    sqlx::query_as("SELECT * FROM media_discovery_schedule_configuration_get_v1($1)")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .map_err(try_op("read native schedule configuration"))
+    try_op("read native schedule configuration", || {
+        sqlx::query_as("SELECT * FROM media_discovery_schedule_configuration_get_v1($1)")
+            .bind(id)
+            .fetch_optional(pool)
+    })
+    .await
 }
 
 /// Create cadence atomically, checking the exact active association under a lock.
@@ -50,15 +51,18 @@ pub async fn create_schedule_configuration(
     quantity: i32,
     unit: &str,
 ) -> Result<ScheduleConfigurationRow> {
-    sqlx::query_as("SELECT * FROM media_discovery_schedule_configuration_create_v1($1,$2,$3,$4,$5)")
+    try_op("create native schedule configuration", || {
+        sqlx::query_as(
+            "SELECT * FROM media_discovery_schedule_configuration_create_v1($1,$2,$3,$4,$5)",
+        )
         .bind(actor)
         .bind(id)
         .bind(version)
         .bind(quantity)
         .bind(unit)
         .fetch_one(pool)
-        .await
-        .map_err(try_op("create native schedule configuration"))
+    })
+    .await
 }
 
 /// Complete replacement input with an exact prior state revision.
@@ -85,18 +89,19 @@ pub async fn replace_schedule_configuration(
     pool: &PgPool,
     request: &ScheduleReplacementInput<'_>,
 ) -> Result<ScheduleConfigurationRow> {
-    sqlx::query_as(
-        "SELECT * FROM media_discovery_schedule_configuration_replace_v1($1,$2,$3,$4,$5,$6)",
-    )
-    .bind(request.actor)
-    .bind(request.id)
-    .bind(request.version)
-    .bind(request.quantity)
-    .bind(request.unit)
-    .bind(request.updated_at)
-    .fetch_one(pool)
+    try_op("replace native schedule configuration", || {
+        sqlx::query_as(
+            "SELECT * FROM media_discovery_schedule_configuration_replace_v1($1,$2,$3,$4,$5,$6)",
+        )
+        .bind(request.actor)
+        .bind(request.id)
+        .bind(request.version)
+        .bind(request.quantity)
+        .bind(request.unit)
+        .bind(request.updated_at)
+        .fetch_one(pool)
+    })
     .await
-    .map_err(try_op("replace native schedule configuration"))
 }
 
 /// Observe overdue intervals once and publish one coalesced rescan transactionally.
@@ -108,13 +113,14 @@ pub async fn observe_schedule_due(
     pool: &PgPool,
     fence: &super::rescan::RescanFence<'_>,
 ) -> Result<Option<i64>> {
-    sqlx::query_scalar("SELECT media_discovery_schedule_observe_due_v1($1,$2,$3,$4,$5)")
-        .bind(fence.association)
-        .bind(fence.version)
-        .bind(fence.generation)
-        .bind(fence.generation_sha256.as_slice())
-        .bind(fence.trigger)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("observe fenced native schedule due intervals"))
+    try_op("observe fenced native schedule due intervals", || {
+        sqlx::query_scalar("SELECT media_discovery_schedule_observe_due_v1($1,$2,$3,$4,$5)")
+            .bind(fence.association)
+            .bind(fence.version)
+            .bind(fence.generation)
+            .bind(fence.generation_sha256.as_slice())
+            .bind(fence.trigger)
+            .fetch_one(pool)
+    })
+    .await
 }

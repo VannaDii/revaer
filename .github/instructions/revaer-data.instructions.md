@@ -35,6 +35,12 @@ applyTo:
   through an error before cleanup. Preserve both operation and cleanup errors.
   Reuse connections after successful rollback; close only connections whose
   cleanup cannot establish a clean boundary.
+- Media transaction owners retain their reserved connection through awaited
+  completion. Request and bootstrap workers retain input/root ownership when a
+  caller stops waiting; root reconciliation borrows that reserved connection.
+  Fixture-only administrative controls must not grant the runtime login extra
+  privileges. The single initializer carries canonical routine implementations
+  and explicit success/claim outcomes without adding to the frozen migrations.
 - `try_op` executes the supplied fallible call; do not use it as a `.map_err`
   mapper. Scheduling skips are typed outcomes, not database exceptions.
 - The data and test-support crates use the already-resolved SQLx core transaction manager so a

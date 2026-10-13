@@ -1079,17 +1079,6 @@ CREATE CAST (public.policy_action AS public.decision_type) WITH FUNCTION public.
 --
 
 CREATE FUNCTION public.app_user_create(email_input character varying, display_name_input character varying) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT app_user_create_v1(email_input => email_input, display_name_input => display_name_input);
-$$;
-
-
---
--- Name: app_user_create_v1(character varying, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.app_user_create_v1(email_input character varying, display_name_input character varying) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -1173,20 +1162,7 @@ $$;
 -- Name: app_user_update(uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.app_user_update(user_public_id_input uuid, display_name_input character varying) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM app_user_update_v1(user_public_id_input => user_public_id_input, display_name_input => display_name_input);
-END;
-$$;
-
-
---
--- Name: app_user_update_v1(uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.app_user_update_v1(user_public_id_input uuid, display_name_input character varying) RETURNS void
+CREATE FUNCTION public.app_user_update(user_public_id_input uuid, display_name_input character varying) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -1227,6 +1203,7 @@ BEGIN
             MESSAGE = base_message,
             DETAIL = 'user_not_found';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -1235,20 +1212,7 @@ $$;
 -- Name: app_user_verify_email(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.app_user_verify_email(user_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM app_user_verify_email_v1(user_public_id_input => user_public_id_input);
-END;
-$$;
-
-
---
--- Name: app_user_verify_email_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.app_user_verify_email_v1(user_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.app_user_verify_email(user_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$DECLARE
     base_message CONSTANT text := 'Failed to verify app user email';
@@ -1272,6 +1236,7 @@ BEGIN
             MESSAGE = base_message,
             DETAIL = 'user_not_found';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -1280,20 +1245,7 @@ $$;
 -- Name: canonical_disambiguation_rule_create(uuid, public.disambiguation_rule_type, public.disambiguation_identity_type, character varying, uuid, public.disambiguation_identity_type, character varying, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.canonical_disambiguation_rule_create(actor_user_public_id uuid, rule_type_input public.disambiguation_rule_type, identity_left_type_input public.disambiguation_identity_type, identity_left_value_text_input character varying, identity_left_value_uuid_input uuid, identity_right_type_input public.disambiguation_identity_type, identity_right_value_text_input character varying, identity_right_value_uuid_input uuid, reason_input character varying) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM canonical_disambiguation_rule_create_v1(actor_user_public_id => actor_user_public_id, rule_type_input => rule_type_input, identity_left_type_input => identity_left_type_input, identity_left_value_text_input => identity_left_value_text_input, identity_left_value_uuid_input => identity_left_value_uuid_input, identity_right_type_input => identity_right_type_input, identity_right_value_text_input => identity_right_value_text_input, identity_right_value_uuid_input => identity_right_value_uuid_input, reason_input => reason_input);
-END;
-$$;
-
-
---
--- Name: canonical_disambiguation_rule_create_v1(uuid, public.disambiguation_rule_type, public.disambiguation_identity_type, character varying, uuid, public.disambiguation_identity_type, character varying, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.canonical_disambiguation_rule_create_v1(actor_user_public_id uuid, rule_type_input public.disambiguation_rule_type, identity_left_type_input public.disambiguation_identity_type, identity_left_value_text_input character varying, identity_left_value_uuid_input uuid, identity_right_type_input public.disambiguation_identity_type, identity_right_value_text_input character varying, identity_right_value_uuid_input uuid, reason_input character varying) RETURNS void
+CREATE FUNCTION public.canonical_disambiguation_rule_create(actor_user_public_id uuid, rule_type_input public.disambiguation_rule_type, identity_left_type_input public.disambiguation_identity_type, identity_left_value_text_input character varying, identity_left_value_uuid_input uuid, identity_right_type_input public.disambiguation_identity_type, identity_right_value_text_input character varying, identity_right_value_uuid_input uuid, reason_input character varying) RETURNS boolean
     LANGUAGE plpgsql
     AS $_$
 DECLARE
@@ -1572,6 +1524,7 @@ BEGIN
         actor_user_id,
         'canonical_disambiguation_rule_create'
     );
+RETURN true;
 END;
 $_$;
 
@@ -1580,20 +1533,7 @@ $_$;
 -- Name: canonical_merge_by_infohash(character, character); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.canonical_merge_by_infohash(infohash_v2_input character, infohash_v1_input character) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM canonical_merge_by_infohash_v1(infohash_v2_input => infohash_v2_input, infohash_v1_input => infohash_v1_input);
-END;
-$$;
-
-
---
--- Name: canonical_merge_by_infohash_v1(character, character); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.canonical_merge_by_infohash_v1(infohash_v2_input character, infohash_v1_input character) RETURNS void
+CREATE FUNCTION public.canonical_merge_by_infohash(infohash_v2_input character, infohash_v1_input character) RETURNS boolean
     LANGUAGE plpgsql
     AS $_$
 DECLARE
@@ -1677,7 +1617,7 @@ BEGIN
     FROM tmp_merge_candidates;
 
     IF candidate_count < 2 THEN
-        RETURN;
+        RETURN true;
     END IF;
 
     SELECT canonical_torrent_id,
@@ -2183,10 +2123,11 @@ BEGIN
         WHERE canonical_torrent_id = winner_id;
     END IF;
 
-    PERFORM canonical_recompute_best_source_v1(
+    PERFORM canonical_recompute_best_source(
         (SELECT canonical_torrent_public_id FROM canonical_torrent WHERE canonical_torrent_id = winner_id),
         'global_current'
     );
+RETURN true;
 END;
 $_$;
 
@@ -2195,20 +2136,7 @@ $_$;
 -- Name: canonical_prune_low_confidence(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.canonical_prune_low_confidence() RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM canonical_prune_low_confidence_v1();
-END;
-$$;
-
-
---
--- Name: canonical_prune_low_confidence_v1(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.canonical_prune_low_confidence_v1() RETURNS void
+CREATE FUNCTION public.canonical_prune_low_confidence() RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -2295,6 +2223,7 @@ BEGIN
         SELECT canonical_torrent_id
         FROM eligible
     );
+RETURN true;
 END;
 $$;
 
@@ -2304,17 +2233,6 @@ $$;
 --
 
 CREATE FUNCTION public.canonical_recompute_best_source(canonical_torrent_public_id_input uuid, scoring_context_input public.scoring_context DEFAULT 'global_current'::public.scoring_context) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT canonical_recompute_best_source_v1(canonical_torrent_public_id_input => canonical_torrent_public_id_input, scoring_context_input => scoring_context_input);
-$$;
-
-
---
--- Name: canonical_recompute_best_source_v1(uuid, public.scoring_context); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.canonical_recompute_best_source_v1(canonical_torrent_public_id_input uuid, scoring_context_input public.scoring_context DEFAULT 'global_current'::public.scoring_context) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -2410,17 +2328,6 @@ $$;
 --
 
 CREATE FUNCTION public.compute_title_size_hash(title_normalized_input text, size_bytes_input bigint) RETURNS text
-    LANGUAGE sql
-    AS $$
-    SELECT compute_title_size_hash_v1(title_normalized_input => title_normalized_input, size_bytes_input => size_bytes_input);
-$$;
-
-
---
--- Name: compute_title_size_hash_v1(text, bigint); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.compute_title_size_hash_v1(title_normalized_input text, size_bytes_input bigint) RETURNS text
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -2443,20 +2350,7 @@ $$;
 -- Name: deployment_init(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.deployment_init(actor_user_public_id uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM deployment_init_v1(actor_user_public_id => actor_user_public_id);
-END;
-$$;
-
-
---
--- Name: deployment_init_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.deployment_init_v1(actor_user_public_id uuid) RETURNS void
+CREATE FUNCTION public.deployment_init(actor_user_public_id uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -2582,6 +2476,7 @@ BEGIN
         )
     FROM seed_jobs
     ON CONFLICT (job_key) DO NOTHING;
+RETURN true;
 END;
 $$;
 
@@ -2591,17 +2486,6 @@ $$;
 --
 
 CREATE FUNCTION public.derive_magnet_hash(infohash_v2_input text, infohash_v1_input text, magnet_uri_input text) RETURNS text
-    LANGUAGE sql
-    AS $$
-    SELECT derive_magnet_hash_v1(infohash_v2_input => infohash_v2_input, infohash_v1_input => infohash_v1_input, magnet_uri_input => magnet_uri_input);
-$$;
-
-
---
--- Name: derive_magnet_hash_v1(text, text, text); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.derive_magnet_hash_v1(infohash_v2_input text, infohash_v1_input text, magnet_uri_input text) RETURNS text
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -2622,7 +2506,7 @@ BEGIN
         RETURN NULL;
     END IF;
 
-    normalized_uri := normalize_magnet_uri_v1(magnet_uri_input);
+    normalized_uri := normalize_magnet_uri(magnet_uri_input);
     IF normalized_uri IS NULL THEN
         RETURN NULL;
     END IF;
@@ -2638,17 +2522,6 @@ $$;
 --
 
 CREATE FUNCTION public.import_job_create(actor_user_public_id uuid, source_input public.import_source, is_dry_run_input boolean, target_search_profile_public_id_input uuid, target_torznab_instance_public_id_input uuid) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT import_job_create_v1(actor_user_public_id => actor_user_public_id, source_input => source_input, is_dry_run_input => is_dry_run_input, target_search_profile_public_id_input => target_search_profile_public_id_input, target_torznab_instance_public_id_input => target_torznab_instance_public_id_input);
-$$;
-
-
---
--- Name: import_job_create_v1(uuid, public.import_source, boolean, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.import_job_create_v1(actor_user_public_id uuid, source_input public.import_source, is_dry_run_input boolean, target_search_profile_public_id_input uuid, target_torznab_instance_public_id_input uuid) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -2756,17 +2629,6 @@ $$;
 --
 
 CREATE FUNCTION public.import_job_get_status(import_job_public_id_input uuid) RETURNS TABLE(status public.import_job_status, result_total integer, result_imported_ready integer, result_imported_needs_secret integer, result_imported_test_failed integer, result_unmapped_definition integer, result_skipped_duplicate integer)
-    LANGUAGE sql
-    AS $$
-    SELECT * FROM import_job_get_status_v1(import_job_public_id_input => import_job_public_id_input);
-$$;
-
-
---
--- Name: import_job_get_status_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.import_job_get_status_v1(import_job_public_id_input uuid) RETURNS TABLE(status public.import_job_status, result_total integer, result_imported_ready integer, result_imported_needs_secret integer, result_imported_test_failed integer, result_unmapped_definition integer, result_skipped_duplicate integer)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -2818,20 +2680,6 @@ $$;
 --
 
 CREATE FUNCTION public.import_job_list_results(import_job_public_id_input uuid) RETURNS TABLE(prowlarr_identifier character varying, upstream_slug character varying, indexer_instance_public_id uuid, status public.import_indexer_result_status, detail character varying, resolved_is_enabled boolean, resolved_priority integer, missing_secret_fields integer, media_domain_keys character varying[], tag_keys character varying[], created_at timestamp with time zone)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT * FROM import_job_list_results_v1(import_job_public_id_input);
-END;
-$$;
-
-
---
--- Name: import_job_list_results_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.import_job_list_results_v1(import_job_public_id_input uuid) RETURNS TABLE(prowlarr_identifier character varying, upstream_slug character varying, indexer_instance_public_id uuid, status public.import_indexer_result_status, detail character varying, resolved_is_enabled boolean, resolved_priority integer, missing_secret_fields integer, media_domain_keys character varying[], tag_keys character varying[], created_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -2897,20 +2745,7 @@ $$;
 -- Name: import_job_run_prowlarr_api(uuid, character varying, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.import_job_run_prowlarr_api(import_job_public_id_input uuid, prowlarr_url_input character varying, prowlarr_api_key_secret_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM import_job_run_prowlarr_api_v1(import_job_public_id_input => import_job_public_id_input, prowlarr_url_input => prowlarr_url_input, prowlarr_api_key_secret_public_id_input => prowlarr_api_key_secret_public_id_input);
-END;
-$$;
-
-
---
--- Name: import_job_run_prowlarr_api_v1(uuid, character varying, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.import_job_run_prowlarr_api_v1(import_job_public_id_input uuid, prowlarr_url_input character varying, prowlarr_api_key_secret_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.import_job_run_prowlarr_api(import_job_public_id_input uuid, prowlarr_url_input character varying, prowlarr_api_key_secret_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -3013,6 +2848,7 @@ BEGIN
         started_at = now(),
         error_detail = config_detail
     WHERE import_job_id = job_id;
+RETURN true;
 END;
 $$;
 
@@ -3021,20 +2857,7 @@ $$;
 -- Name: import_job_run_prowlarr_backup(uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.import_job_run_prowlarr_backup(import_job_public_id_input uuid, backup_blob_ref_input character varying) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM import_job_run_prowlarr_backup_v1(import_job_public_id_input => import_job_public_id_input, backup_blob_ref_input => backup_blob_ref_input);
-END;
-$$;
-
-
---
--- Name: import_job_run_prowlarr_backup_v1(uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.import_job_run_prowlarr_backup_v1(import_job_public_id_input uuid, backup_blob_ref_input character varying) RETURNS void
+CREATE FUNCTION public.import_job_run_prowlarr_backup(import_job_public_id_input uuid, backup_blob_ref_input character varying) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -3115,6 +2938,7 @@ BEGIN
         started_at = now(),
         error_detail = config_detail
     WHERE import_job_id = job_id;
+RETURN true;
 END;
 $$;
 
@@ -3124,20 +2948,6 @@ $$;
 --
 
 CREATE FUNCTION public.import_job_worker_claim_next() RETURNS TABLE(import_job_public_id uuid, source public.import_source, is_dry_run boolean, config_detail character varying)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT * FROM import_job_worker_claim_next_v1();
-END;
-$$;
-
-
---
--- Name: import_job_worker_claim_next_v1(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.import_job_worker_claim_next_v1() RETURNS TABLE(import_job_public_id uuid, source public.import_source, is_dry_run boolean, config_detail character varying)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -3160,24 +2970,7 @@ $$;
 -- Name: import_job_worker_mark_terminal(uuid, public.import_job_status, character varying); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.import_job_worker_mark_terminal(import_job_public_id_input uuid, status_input public.import_job_status, error_detail_input character varying) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM import_job_worker_mark_terminal_v1(
-        import_job_public_id_input,
-        status_input,
-        error_detail_input
-    );
-END;
-$$;
-
-
---
--- Name: import_job_worker_mark_terminal_v1(uuid, public.import_job_status, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.import_job_worker_mark_terminal_v1(import_job_public_id_input uuid, status_input public.import_job_status, error_detail_input character varying) RETURNS void
+CREATE FUNCTION public.import_job_worker_mark_terminal(import_job_public_id_input uuid, status_input public.import_job_status, error_detail_input character varying) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -3218,6 +3011,7 @@ BEGIN
         finished_at = now(),
         error_detail = error_detail_input
     WHERE import_job_id = job_id;
+RETURN true;
 END;
 $$;
 
@@ -3226,28 +3020,7 @@ $$;
 -- Name: import_job_worker_record_result(uuid, character varying, public.import_indexer_result_status, character varying, boolean, integer, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.import_job_worker_record_result(import_job_public_id_input uuid, prowlarr_identifier_input character varying, status_input public.import_indexer_result_status, detail_input character varying, resolved_is_enabled_input boolean, resolved_priority_input integer, missing_secret_fields_input integer) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM import_job_worker_record_result_v1(
-        import_job_public_id_input,
-        prowlarr_identifier_input,
-        status_input,
-        detail_input,
-        resolved_is_enabled_input,
-        resolved_priority_input,
-        missing_secret_fields_input
-    );
-END;
-$$;
-
-
---
--- Name: import_job_worker_record_result_v1(uuid, character varying, public.import_indexer_result_status, character varying, boolean, integer, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.import_job_worker_record_result_v1(import_job_public_id_input uuid, prowlarr_identifier_input character varying, status_input public.import_indexer_result_status, detail_input character varying, resolved_is_enabled_input boolean, resolved_priority_input integer, missing_secret_fields_input integer) RETURNS void
+CREATE FUNCTION public.import_job_worker_record_result(import_job_public_id_input uuid, prowlarr_identifier_input character varying, status_input public.import_indexer_result_status, detail_input character varying, resolved_is_enabled_input boolean, resolved_priority_input integer, missing_secret_fields_input integer) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -3303,6 +3076,7 @@ BEGIN
     )
     ON CONFLICT (import_job_id, prowlarr_identifier)
     DO NOTHING;
+RETURN true;
 END;
 $$;
 
@@ -3311,7 +3085,7 @@ $$;
 -- Name: indexer_backup_assert_actor_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.indexer_backup_assert_actor_v1(actor_user_public_id uuid) RETURNS void
+CREATE FUNCTION public.indexer_backup_assert_actor_v1(actor_user_public_id uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -3353,6 +3127,7 @@ BEGIN
             MESSAGE = base_message,
             DETAIL = 'actor_unauthorized';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -3362,18 +3137,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_backup_export_indexer_instance_list(actor_user_public_id uuid) RETURNS TABLE(indexer_instance_public_id uuid, upstream_slug character varying, display_name character varying, is_enabled boolean, enable_rss boolean, enable_automatic_search boolean, enable_interactive_search boolean, priority integer, trust_tier_key public.trust_tier_key, routing_policy_public_id uuid, routing_policy_display_name character varying, connect_timeout_ms integer, read_timeout_ms integer, max_parallel_requests integer, rate_limit_policy_public_id uuid, rate_limit_display_name character varying, rss_subscription_enabled boolean, rss_interval_seconds integer, media_domain_key public.media_domain_key, tag_key character varying, field_name character varying, field_type public.field_type, value_plain character varying, value_int integer, value_decimal character varying, value_bool boolean, secret_public_id uuid, secret_type public.secret_type)
-    LANGUAGE sql
-    AS $$
-    SELECT *
-    FROM indexer_backup_export_indexer_instance_list_v1(actor_user_public_id);
-$$;
-
-
---
--- Name: indexer_backup_export_indexer_instance_list_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_backup_export_indexer_instance_list_v1(actor_user_public_id uuid) RETURNS TABLE(indexer_instance_public_id uuid, upstream_slug character varying, display_name character varying, is_enabled boolean, enable_rss boolean, enable_automatic_search boolean, enable_interactive_search boolean, priority integer, trust_tier_key public.trust_tier_key, routing_policy_public_id uuid, routing_policy_display_name character varying, connect_timeout_ms integer, read_timeout_ms integer, max_parallel_requests integer, rate_limit_policy_public_id uuid, rate_limit_display_name character varying, rss_subscription_enabled boolean, rss_interval_seconds integer, media_domain_key public.media_domain_key, tag_key character varying, field_name character varying, field_type public.field_type, value_plain character varying, value_int integer, value_decimal character varying, value_bool boolean, secret_public_id uuid, secret_type public.secret_type)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -3450,18 +3213,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_backup_export_rate_limit_policy_list(actor_user_public_id uuid) RETURNS TABLE(rate_limit_policy_public_id uuid, display_name character varying, requests_per_minute integer, burst integer, concurrent_requests integer, is_system boolean)
-    LANGUAGE sql
-    AS $$
-    SELECT *
-    FROM indexer_backup_export_rate_limit_policy_list_v1(actor_user_public_id);
-$$;
-
-
---
--- Name: indexer_backup_export_rate_limit_policy_list_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_backup_export_rate_limit_policy_list_v1(actor_user_public_id uuid) RETURNS TABLE(rate_limit_policy_public_id uuid, display_name character varying, requests_per_minute integer, burst integer, concurrent_requests integer, is_system boolean)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -3487,18 +3238,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_backup_export_routing_policy_list(actor_user_public_id uuid) RETURNS TABLE(routing_policy_public_id uuid, display_name character varying, mode public.routing_policy_mode, rate_limit_policy_public_id uuid, rate_limit_display_name character varying, param_key public.routing_param_key, value_plain character varying, value_int integer, value_bool boolean, secret_public_id uuid, secret_type public.secret_type)
-    LANGUAGE sql
-    AS $$
-    SELECT *
-    FROM indexer_backup_export_routing_policy_list_v1(actor_user_public_id);
-$$;
-
-
---
--- Name: indexer_backup_export_routing_policy_list_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_backup_export_routing_policy_list_v1(actor_user_public_id uuid) RETURNS TABLE(routing_policy_public_id uuid, display_name character varying, mode public.routing_policy_mode, rate_limit_policy_public_id uuid, rate_limit_display_name character varying, param_key public.routing_param_key, value_plain character varying, value_int integer, value_bool boolean, secret_public_id uuid, secret_type public.secret_type)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -3542,18 +3281,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_backup_export_tag_list(actor_user_public_id uuid) RETURNS TABLE(tag_public_id uuid, tag_key character varying, display_name character varying)
-    LANGUAGE sql
-    AS $$
-    SELECT *
-    FROM indexer_backup_export_tag_list_v1(actor_user_public_id);
-$$;
-
-
---
--- Name: indexer_backup_export_tag_list_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_backup_export_tag_list_v1(actor_user_public_id uuid) RETURNS TABLE(tag_public_id uuid, tag_key character varying, display_name character varying)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -3576,18 +3303,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_cf_state_get(actor_user_public_id uuid, indexer_instance_public_id_input uuid) RETURNS TABLE(state public.cf_state, last_changed_at timestamp with time zone, cf_session_expires_at timestamp with time zone, cooldown_until timestamp with time zone, backoff_seconds integer, consecutive_failures integer, last_error_class public.error_class)
-    LANGUAGE sql STABLE
-    AS $$
-    SELECT *
-    FROM indexer_cf_state_get_v1(actor_user_public_id, indexer_instance_public_id_input);
-$$;
-
-
---
--- Name: indexer_cf_state_get_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_cf_state_get_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid) RETURNS TABLE(state public.cf_state, last_changed_at timestamp with time zone, cf_session_expires_at timestamp with time zone, cooldown_until timestamp with time zone, backoff_seconds integer, consecutive_failures integer, last_error_class public.error_class)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -3631,24 +3346,7 @@ $$;
 -- Name: indexer_cf_state_reset(uuid, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.indexer_cf_state_reset(actor_user_public_id uuid, indexer_instance_public_id_input uuid, reason_input character varying) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM indexer_cf_state_reset_v1(
-        actor_user_public_id,
-        indexer_instance_public_id_input,
-        reason_input
-    );
-END;
-$$;
-
-
---
--- Name: indexer_cf_state_reset_v1(uuid, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_cf_state_reset_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid, reason_input character varying) RETURNS void
+CREATE FUNCTION public.indexer_cf_state_reset(actor_user_public_id uuid, indexer_instance_public_id_input uuid, reason_input character varying) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -3802,6 +3500,7 @@ BEGIN
         'cf_state_reset',
         trimmed_reason
     );
+RETURN true;
 END;
 $$;
 
@@ -3811,24 +3510,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_connectivity_profile_get(actor_user_public_id uuid, indexer_instance_public_id_input uuid) RETURNS TABLE(profile_exists boolean, status public.connectivity_status, error_class public.error_class, latency_p50_ms integer, latency_p95_ms integer, success_rate_1h numeric, success_rate_24h numeric, last_checked_at timestamp with time zone)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT *
-    FROM indexer_connectivity_profile_get_v1(
-        actor_user_public_id,
-        indexer_instance_public_id_input
-    );
-END;
-$$;
-
-
---
--- Name: indexer_connectivity_profile_get_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_connectivity_profile_get_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid) RETURNS TABLE(profile_exists boolean, status public.connectivity_status, error_class public.error_class, latency_p50_ms integer, latency_p95_ms integer, success_rate_1h numeric, success_rate_24h numeric, last_checked_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -3914,27 +3595,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_definition_import_cardigann_begin(actor_user_public_id_input uuid, upstream_slug_input character varying, display_name_input character varying, canonical_definition_text_input text, is_deprecated_input boolean DEFAULT false) RETURNS TABLE(upstream_source character varying, upstream_slug character varying, display_name character varying, protocol character varying, engine character varying, schema_version integer, definition_hash character, is_deprecated boolean, created_at timestamp with time zone, updated_at timestamp with time zone)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT *
-    FROM indexer_definition_import_cardigann_begin_v1(
-        actor_user_public_id_input,
-        upstream_slug_input,
-        display_name_input,
-        canonical_definition_text_input,
-        is_deprecated_input
-    );
-END;
-$$;
-
-
---
--- Name: indexer_definition_import_cardigann_begin_v1(uuid, character varying, character varying, text, boolean); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_definition_import_cardigann_begin_v1(actor_user_public_id_input uuid, upstream_slug_input character varying, display_name_input character varying, canonical_definition_text_input text, is_deprecated_input boolean DEFAULT false) RETURNS TABLE(upstream_source character varying, upstream_slug character varying, display_name character varying, protocol character varying, engine character varying, schema_version integer, definition_hash character, is_deprecated boolean, created_at timestamp with time zone, updated_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -4056,24 +3716,6 @@ $$;
 CREATE FUNCTION public.indexer_definition_import_cardigann_complete(actor_user_public_id_input uuid, upstream_slug_input character varying) RETURNS TABLE(upstream_source character varying, upstream_slug character varying, display_name character varying, protocol character varying, engine character varying, schema_version integer, definition_hash character, is_deprecated boolean, created_at timestamp with time zone, updated_at timestamp with time zone, field_count integer, option_count integer)
     LANGUAGE plpgsql
     AS $$
-BEGIN
-    RETURN QUERY
-    SELECT *
-    FROM indexer_definition_import_cardigann_complete_v1(
-        actor_user_public_id_input,
-        upstream_slug_input
-    );
-END;
-$$;
-
-
---
--- Name: indexer_definition_import_cardigann_complete_v1(uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_definition_import_cardigann_complete_v1(actor_user_public_id_input uuid, upstream_slug_input character varying) RETURNS TABLE(upstream_source character varying, upstream_slug character varying, display_name character varying, protocol character varying, engine character varying, schema_version integer, definition_hash character, is_deprecated boolean, created_at timestamp with time zone, updated_at timestamp with time zone, field_count integer, option_count integer)
-    LANGUAGE plpgsql
-    AS $$
 DECLARE
     base_message CONSTANT text := 'Failed to finalize Cardigann definition import';
     errcode CONSTANT text := 'P0001';
@@ -4149,35 +3791,7 @@ $$;
 -- Name: indexer_definition_import_cardigann_field(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.indexer_definition_import_cardigann_field(actor_user_public_id_input uuid, upstream_slug_input character varying, field_name_input character varying, label_input character varying, field_type_input public.field_type, is_required_input boolean, is_advanced_input boolean, display_order_input integer, default_value_plain_input character varying DEFAULT NULL::character varying, default_value_int_input integer DEFAULT NULL::integer, default_value_decimal_input character varying DEFAULT NULL::character varying, default_value_bool_input boolean DEFAULT NULL::boolean, option_values_input character varying[] DEFAULT NULL::character varying[], option_labels_input character varying[] DEFAULT NULL::character varying[]) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM indexer_definition_import_cardigann_field_v1(
-        actor_user_public_id_input,
-        upstream_slug_input,
-        field_name_input,
-        label_input,
-        field_type_input,
-        is_required_input,
-        is_advanced_input,
-        display_order_input,
-        default_value_plain_input,
-        default_value_int_input,
-        default_value_decimal_input,
-        default_value_bool_input,
-        option_values_input,
-        option_labels_input
-    );
-END;
-$$;
-
-
---
--- Name: indexer_definition_import_cardigann_field_v1(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_definition_import_cardigann_field_v1(actor_user_public_id_input uuid, upstream_slug_input character varying, field_name_input character varying, label_input character varying, field_type_input public.field_type, is_required_input boolean, is_advanced_input boolean, display_order_input integer, default_value_plain_input character varying DEFAULT NULL::character varying, default_value_int_input integer DEFAULT NULL::integer, default_value_decimal_input character varying DEFAULT NULL::character varying, default_value_bool_input boolean DEFAULT NULL::boolean, option_values_input character varying[] DEFAULT NULL::character varying[], option_labels_input character varying[] DEFAULT NULL::character varying[]) RETURNS void
+CREATE FUNCTION public.indexer_definition_import_cardigann_field(actor_user_public_id_input uuid, upstream_slug_input character varying, field_name_input character varying, label_input character varying, field_type_input public.field_type, is_required_input boolean, is_advanced_input boolean, display_order_input integer, default_value_plain_input character varying DEFAULT NULL::character varying, default_value_int_input integer DEFAULT NULL::integer, default_value_decimal_input character varying DEFAULT NULL::character varying, default_value_bool_input boolean DEFAULT NULL::boolean, option_values_input character varying[] DEFAULT NULL::character varying[], option_labels_input character varying[] DEFAULT NULL::character varying[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -4295,6 +3909,7 @@ BEGIN
             item.ordinality
         FROM unnest(option_values_input) WITH ORDINALITY AS item(option_value, ordinality);
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -4304,20 +3919,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_definition_list(actor_user_public_id uuid) RETURNS TABLE(upstream_source character varying, upstream_slug character varying, display_name character varying, protocol character varying, engine character varying, schema_version integer, definition_hash character, is_deprecated boolean, created_at timestamp with time zone, updated_at timestamp with time zone)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT * FROM indexer_definition_list_v1(actor_user_public_id);
-END;
-$$;
-
-
---
--- Name: indexer_definition_list_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_definition_list_v1(actor_user_public_id uuid) RETURNS TABLE(upstream_source character varying, upstream_slug character varying, display_name character varying, protocol character varying, engine character varying, schema_version integer, definition_hash character, is_deprecated boolean, created_at timestamp with time zone, updated_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -4367,25 +3968,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_health_event_list(actor_user_public_id uuid, indexer_instance_public_id_input uuid, limit_input integer) RETURNS TABLE(occurred_at timestamp with time zone, event_type public.health_event_type, latency_ms integer, http_status integer, error_class public.error_class, detail character varying)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT *
-    FROM indexer_health_event_list_v1(
-        actor_user_public_id,
-        indexer_instance_public_id_input,
-        limit_input
-    );
-END;
-$$;
-
-
---
--- Name: indexer_health_event_list_v1(uuid, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_health_event_list_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid, limit_input integer) RETURNS TABLE(occurred_at timestamp with time zone, event_type public.health_event_type, latency_ms integer, http_status integer, error_class public.error_class, detail character varying)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -4590,23 +4172,7 @@ $$;
 -- Name: indexer_health_notification_hook_delete(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.indexer_health_notification_hook_delete(actor_user_public_id uuid, indexer_health_notification_hook_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM indexer_health_notification_hook_delete_v1(
-        actor_user_public_id,
-        indexer_health_notification_hook_public_id_input
-    );
-END;
-$$;
-
-
---
--- Name: indexer_health_notification_hook_delete_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_health_notification_hook_delete_v1(actor_user_public_id uuid, indexer_health_notification_hook_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.indexer_health_notification_hook_delete(actor_user_public_id uuid, indexer_health_notification_hook_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -4642,6 +4208,7 @@ BEGIN
     IF NOT FOUND THEN
         RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'hook_not_found';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -4651,24 +4218,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_health_notification_hook_get(actor_user_public_id uuid, indexer_health_notification_hook_public_id_input uuid) RETURNS TABLE(indexer_health_notification_hook_public_id uuid, channel public.indexer_health_notification_channel, display_name character varying, status_threshold public.indexer_health_notification_threshold, webhook_url character varying, email character varying, is_enabled boolean, updated_at timestamp with time zone)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT *
-    FROM indexer_health_notification_hook_get_v1(
-        actor_user_public_id,
-        indexer_health_notification_hook_public_id_input
-    );
-END;
-$$;
-
-
---
--- Name: indexer_health_notification_hook_get_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_health_notification_hook_get_v1(actor_user_public_id uuid, indexer_health_notification_hook_public_id_input uuid) RETURNS TABLE(indexer_health_notification_hook_public_id uuid, channel public.indexer_health_notification_channel, display_name character varying, status_threshold public.indexer_health_notification_threshold, webhook_url character varying, email character varying, is_enabled boolean, updated_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -4724,21 +4273,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_health_notification_hook_list(actor_user_public_id uuid) RETURNS TABLE(indexer_health_notification_hook_public_id uuid, channel public.indexer_health_notification_channel, display_name character varying, status_threshold public.indexer_health_notification_threshold, webhook_url character varying, email character varying, is_enabled boolean, updated_at timestamp with time zone)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT *
-    FROM indexer_health_notification_hook_list_v1(actor_user_public_id);
-END;
-$$;
-
-
---
--- Name: indexer_health_notification_hook_list_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_health_notification_hook_list_v1(actor_user_public_id uuid) RETURNS TABLE(indexer_health_notification_hook_public_id uuid, channel public.indexer_health_notification_channel, display_name character varying, status_threshold public.indexer_health_notification_threshold, webhook_url character varying, email character varying, is_enabled boolean, updated_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -4932,24 +4466,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_instance_create(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, display_name_input character varying, priority_input integer, trust_tier_key_input public.trust_tier_key, routing_policy_public_id_input uuid) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT indexer_instance_create_v1(
-        actor_user_public_id => actor_user_public_id,
-        indexer_definition_upstream_slug_input => indexer_definition_upstream_slug_input,
-        display_name_input => display_name_input,
-        priority_input => priority_input,
-        trust_tier_key_input => trust_tier_key_input,
-        routing_policy_public_id_input => routing_policy_public_id_input
-    );
-$$;
-
-
---
--- Name: indexer_instance_create_v1(uuid, character varying, character varying, integer, public.trust_tier_key, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_instance_create_v1(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, display_name_input character varying, priority_input integer, trust_tier_key_input public.trust_tier_key, routing_policy_public_id_input uuid) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -5209,20 +4725,7 @@ $$;
 -- Name: indexer_instance_field_bind_secret(uuid, uuid, character varying, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.indexer_instance_field_bind_secret(actor_user_public_id uuid, indexer_instance_public_id_input uuid, field_name_input character varying, secret_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM indexer_instance_field_bind_secret_v1(actor_user_public_id => actor_user_public_id, indexer_instance_public_id_input => indexer_instance_public_id_input, field_name_input => field_name_input, secret_public_id_input => secret_public_id_input);
-END;
-$$;
-
-
---
--- Name: indexer_instance_field_bind_secret_v1(uuid, uuid, character varying, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_instance_field_bind_secret_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid, field_name_input character varying, secret_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.indexer_instance_field_bind_secret(actor_user_public_id uuid, indexer_instance_public_id_input uuid, field_name_input character varying, secret_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -5447,6 +4950,7 @@ BEGIN
         actor_user_id,
         'indexer_field_bind_secret'
     );
+RETURN true;
 END;
 $$;
 
@@ -5455,20 +4959,7 @@ $$;
 -- Name: indexer_instance_field_set_value(uuid, uuid, character varying, character varying, integer, numeric, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.indexer_instance_field_set_value(actor_user_public_id uuid, indexer_instance_public_id_input uuid, field_name_input character varying, value_plain_input character varying, value_int_input integer, value_decimal_input numeric, value_bool_input boolean) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM indexer_instance_field_set_value_v1(actor_user_public_id => actor_user_public_id, indexer_instance_public_id_input => indexer_instance_public_id_input, field_name_input => field_name_input, value_plain_input => value_plain_input, value_int_input => value_int_input, value_decimal_input => value_decimal_input, value_bool_input => value_bool_input);
-END;
-$$;
-
-
---
--- Name: indexer_instance_field_set_value_v1(uuid, uuid, character varying, character varying, integer, numeric, boolean); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_instance_field_set_value_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid, field_name_input character varying, value_plain_input character varying, value_int_input integer, value_decimal_input numeric, value_bool_input boolean) RETURNS void
+CREATE FUNCTION public.indexer_instance_field_set_value(actor_user_public_id uuid, indexer_instance_public_id_input uuid, field_name_input character varying, value_plain_input character varying, value_int_input integer, value_decimal_input numeric, value_bool_input boolean) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -5962,6 +5453,7 @@ BEGIN
         actor_user_id,
         'indexer_field_set'
     );
+RETURN true;
 END;
 $$;
 
@@ -5970,20 +5462,7 @@ $$;
 -- Name: indexer_instance_set_media_domains(uuid, uuid, text[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.indexer_instance_set_media_domains(actor_user_public_id uuid, indexer_instance_public_id_input uuid, media_domain_keys_input text[]) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM indexer_instance_set_media_domains_v1(actor_user_public_id => actor_user_public_id, indexer_instance_public_id_input => indexer_instance_public_id_input, media_domain_keys_input => media_domain_keys_input);
-END;
-$$;
-
-
---
--- Name: indexer_instance_set_media_domains_v1(uuid, uuid, text[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_instance_set_media_domains_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid, media_domain_keys_input text[]) RETURNS void
+CREATE FUNCTION public.indexer_instance_set_media_domains(actor_user_public_id uuid, indexer_instance_public_id_input uuid, media_domain_keys_input text[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -6123,6 +5602,7 @@ BEGIN
         actor_user_id,
         'indexer_media_domains_set'
     );
+RETURN true;
 END;
 $$;
 
@@ -6131,20 +5611,7 @@ $$;
 -- Name: indexer_instance_set_rate_limit_policy(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.indexer_instance_set_rate_limit_policy(actor_user_public_id uuid, indexer_instance_public_id_input uuid, rate_limit_policy_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM indexer_instance_set_rate_limit_policy_v1(actor_user_public_id => actor_user_public_id, indexer_instance_public_id_input => indexer_instance_public_id_input, rate_limit_policy_public_id_input => rate_limit_policy_public_id_input);
-END;
-$$;
-
-
---
--- Name: indexer_instance_set_rate_limit_policy_v1(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_instance_set_rate_limit_policy_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid, rate_limit_policy_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.indexer_instance_set_rate_limit_policy(actor_user_public_id uuid, indexer_instance_public_id_input uuid, rate_limit_policy_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -6260,6 +5727,7 @@ BEGIN
         actor_user_id,
         'indexer_rate_limit_set'
     );
+RETURN true;
 END;
 $$;
 
@@ -6268,20 +5736,7 @@ $$;
 -- Name: indexer_instance_set_tags(uuid, uuid, uuid[], text[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.indexer_instance_set_tags(actor_user_public_id uuid, indexer_instance_public_id_input uuid, tag_public_ids_input uuid[], tag_keys_input text[]) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM indexer_instance_set_tags_v1(actor_user_public_id => actor_user_public_id, indexer_instance_public_id_input => indexer_instance_public_id_input, tag_public_ids_input => tag_public_ids_input, tag_keys_input => tag_keys_input);
-END;
-$$;
-
-
---
--- Name: indexer_instance_set_tags_v1(uuid, uuid, uuid[], text[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_instance_set_tags_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid, tag_public_ids_input uuid[], tag_keys_input text[]) RETURNS void
+CREATE FUNCTION public.indexer_instance_set_tags(actor_user_public_id uuid, indexer_instance_public_id_input uuid, tag_public_ids_input uuid[], tag_keys_input text[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -6470,6 +5925,7 @@ BEGIN
         actor_user_id,
         'indexer_tags_set'
     );
+RETURN true;
 END;
 $$;
 
@@ -6479,17 +5935,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_instance_test_finalize(actor_user_public_id uuid, indexer_instance_public_id_input uuid, ok_input boolean, error_class_input public.error_class, error_code_input character varying, detail_input character varying, result_count_input integer) RETURNS TABLE(ok boolean, error_class public.error_class, error_code character varying, detail character varying, result_count integer)
-    LANGUAGE sql
-    AS $$
-    SELECT * FROM indexer_instance_test_finalize_v1(actor_user_public_id => actor_user_public_id, indexer_instance_public_id_input => indexer_instance_public_id_input, ok_input => ok_input, error_class_input => error_class_input, error_code_input => error_code_input, detail_input => detail_input, result_count_input => result_count_input);
-$$;
-
-
---
--- Name: indexer_instance_test_finalize_v1(uuid, uuid, boolean, public.error_class, character varying, character varying, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_instance_test_finalize_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid, ok_input boolean, error_class_input public.error_class, error_code_input character varying, detail_input character varying, result_count_input integer) RETURNS TABLE(ok boolean, error_class public.error_class, error_code character varying, detail character varying, result_count integer)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -6625,17 +6070,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_instance_test_prepare(actor_user_public_id uuid, indexer_instance_public_id_input uuid) RETURNS TABLE(can_execute boolean, error_class public.error_class, error_code character varying, detail character varying, engine public.engine, routing_policy_public_id uuid, connect_timeout_ms integer, read_timeout_ms integer, field_names character varying[], field_types public.field_type[], value_plain character varying[], value_int integer[], value_decimal numeric[], value_bool boolean[], secret_public_ids uuid[])
-    LANGUAGE sql
-    AS $$
-    SELECT * FROM indexer_instance_test_prepare_v1(actor_user_public_id => actor_user_public_id, indexer_instance_public_id_input => indexer_instance_public_id_input);
-$$;
-
-
---
--- Name: indexer_instance_test_prepare_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_instance_test_prepare_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid) RETURNS TABLE(can_execute boolean, error_class public.error_class, error_code character varying, detail character varying, engine public.engine, routing_policy_public_id uuid, connect_timeout_ms integer, read_timeout_ms integer, field_names character varying[], field_types public.field_type[], value_plain character varying[], value_int integer[], value_decimal numeric[], value_bool boolean[], secret_public_ids uuid[])
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -6840,17 +6274,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_instance_update(actor_user_public_id uuid, indexer_instance_public_id_input uuid, display_name_input character varying, priority_input integer, trust_tier_key_input public.trust_tier_key, routing_policy_public_id_input uuid, is_enabled_input boolean, enable_rss_input boolean, enable_automatic_search_input boolean, enable_interactive_search_input boolean) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT indexer_instance_update_v1(actor_user_public_id => actor_user_public_id, indexer_instance_public_id_input => indexer_instance_public_id_input, display_name_input => display_name_input, priority_input => priority_input, trust_tier_key_input => trust_tier_key_input, routing_policy_public_id_input => routing_policy_public_id_input, is_enabled_input => is_enabled_input, enable_rss_input => enable_rss_input, enable_automatic_search_input => enable_automatic_search_input, enable_interactive_search_input => enable_interactive_search_input);
-$$;
-
-
---
--- Name: indexer_instance_update_v1(uuid, uuid, character varying, integer, public.trust_tier_key, uuid, boolean, boolean, boolean, boolean); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_instance_update_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid, display_name_input character varying, priority_input integer, trust_tier_key_input public.trust_tier_key, routing_policy_public_id_input uuid, is_enabled_input boolean, enable_rss_input boolean, enable_automatic_search_input boolean, enable_interactive_search_input boolean) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -7150,18 +6573,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_policy_set_rule_list(actor_user_public_id uuid) RETURNS TABLE(policy_set_public_id uuid, policy_set_display_name character varying, scope public.policy_scope, is_enabled boolean, user_public_id uuid, policy_rule_public_id uuid, rule_type public.policy_rule_type, match_field public.policy_match_field, match_operator public.policy_match_operator, sort_order integer, match_value_text character varying, match_value_int integer, match_value_uuid uuid, action public.policy_action, severity public.policy_severity, is_case_insensitive boolean, rationale character varying, expires_at timestamp with time zone, is_rule_disabled boolean)
-    LANGUAGE sql
-    AS $$
-    SELECT *
-    FROM indexer_policy_set_rule_list_v1(actor_user_public_id);
-$$;
-
-
---
--- Name: indexer_policy_set_rule_list_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_policy_set_rule_list_v1(actor_user_public_id uuid) RETURNS TABLE(policy_set_public_id uuid, policy_set_display_name character varying, scope public.policy_scope, is_enabled boolean, user_public_id uuid, policy_rule_public_id uuid, rule_type public.policy_rule_type, match_field public.policy_match_field, match_operator public.policy_match_operator, sort_order integer, match_value_text character varying, match_value_int integer, match_value_uuid uuid, action public.policy_action, severity public.policy_severity, is_case_insensitive boolean, rationale character varying, expires_at timestamp with time zone, is_rule_disabled boolean)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -7208,25 +6619,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_rss_item_seen_list(actor_user_public_id uuid, indexer_instance_public_id_input uuid, limit_input integer) RETURNS TABLE(item_guid character varying, infohash_v1 character, infohash_v2 character, magnet_hash character, first_seen_at timestamp with time zone)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT *
-    FROM indexer_rss_item_seen_list_v1(
-        actor_user_public_id,
-        indexer_instance_public_id_input,
-        limit_input
-    );
-END;
-$$;
-
-
---
--- Name: indexer_rss_item_seen_list_v1(uuid, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_rss_item_seen_list_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid, limit_input integer) RETURNS TABLE(item_guid character varying, infohash_v1 character, infohash_v2 character, magnet_hash character, first_seen_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -7318,28 +6710,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_rss_item_seen_mark(actor_user_public_id uuid, indexer_instance_public_id_input uuid, item_guid_input character varying, infohash_v1_input character, infohash_v2_input character, magnet_hash_input character) RETURNS TABLE(item_guid character varying, infohash_v1 character, infohash_v2 character, magnet_hash character, first_seen_at timestamp with time zone, inserted boolean)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT *
-    FROM indexer_rss_item_seen_mark_v1(
-        actor_user_public_id,
-        indexer_instance_public_id_input,
-        item_guid_input,
-        infohash_v1_input,
-        infohash_v2_input,
-        magnet_hash_input
-    );
-END;
-$$;
-
-
---
--- Name: indexer_rss_item_seen_mark_v1(uuid, uuid, character varying, character, character, character); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_rss_item_seen_mark_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid, item_guid_input character varying, infohash_v1_input character, infohash_v2_input character, magnet_hash_input character) RETURNS TABLE(item_guid character varying, infohash_v1 character, infohash_v2 character, magnet_hash character, first_seen_at timestamp with time zone, inserted boolean)
     LANGUAGE plpgsql
     AS $_$
 DECLARE
@@ -7504,20 +6874,7 @@ $_$;
 -- Name: indexer_rss_subscription_disable(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.indexer_rss_subscription_disable(actor_user_public_id uuid, indexer_instance_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM indexer_rss_subscription_disable_v1(actor_user_public_id => actor_user_public_id, indexer_instance_public_id_input => indexer_instance_public_id_input);
-END;
-$$;
-
-
---
--- Name: indexer_rss_subscription_disable_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_rss_subscription_disable_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.indexer_rss_subscription_disable(actor_user_public_id uuid, indexer_instance_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -7619,6 +6976,7 @@ BEGIN
         actor_user_id,
         'rss_subscription_disable'
     );
+RETURN true;
 END;
 $$;
 
@@ -7628,24 +6986,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_rss_subscription_get(actor_user_public_id uuid, indexer_instance_public_id_input uuid) RETURNS TABLE(indexer_instance_public_id uuid, instance_is_enabled boolean, instance_enable_rss boolean, subscription_exists boolean, subscription_is_enabled boolean, interval_seconds integer, last_polled_at timestamp with time zone, next_poll_at timestamp with time zone, backoff_seconds integer, last_error_class public.error_class)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT *
-    FROM indexer_rss_subscription_get_v1(
-        actor_user_public_id,
-        indexer_instance_public_id_input
-    );
-END;
-$$;
-
-
---
--- Name: indexer_rss_subscription_get_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_rss_subscription_get_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid) RETURNS TABLE(indexer_instance_public_id uuid, instance_is_enabled boolean, instance_enable_rss boolean, subscription_exists boolean, subscription_is_enabled boolean, interval_seconds integer, last_polled_at timestamp with time zone, next_poll_at timestamp with time zone, backoff_seconds integer, last_error_class public.error_class)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -7732,20 +7072,7 @@ $$;
 -- Name: indexer_rss_subscription_set(uuid, uuid, boolean, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.indexer_rss_subscription_set(actor_user_public_id uuid, indexer_instance_public_id_input uuid, is_enabled_input boolean, interval_seconds_input integer) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM indexer_rss_subscription_set_v1(actor_user_public_id => actor_user_public_id, indexer_instance_public_id_input => indexer_instance_public_id_input, is_enabled_input => is_enabled_input, interval_seconds_input => interval_seconds_input);
-END;
-$$;
-
-
---
--- Name: indexer_rss_subscription_set_v1(uuid, uuid, boolean, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_rss_subscription_set_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid, is_enabled_input boolean, interval_seconds_input integer) RETURNS void
+CREATE FUNCTION public.indexer_rss_subscription_set(actor_user_public_id uuid, indexer_instance_public_id_input uuid, is_enabled_input boolean, interval_seconds_input integer) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -7909,6 +7236,7 @@ BEGIN
         actor_user_id,
         'rss_subscription_set'
     );
+RETURN true;
 END;
 $$;
 
@@ -7918,18 +7246,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_search_profile_list(actor_user_public_id uuid) RETURNS TABLE(search_profile_public_id uuid, display_name character varying, is_default boolean, page_size integer, default_media_domain_key public.media_domain_key, media_domain_keys character varying[], policy_set_public_ids uuid[], policy_set_display_names character varying[], allow_indexer_public_ids uuid[], block_indexer_public_ids uuid[], allow_tag_keys character varying[], block_tag_keys character varying[], prefer_tag_keys character varying[])
-    LANGUAGE sql
-    AS $$
-    SELECT *
-    FROM indexer_search_profile_list_v1(actor_user_public_id);
-$$;
-
-
---
--- Name: indexer_search_profile_list_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_search_profile_list_v1(actor_user_public_id uuid) RETURNS TABLE(search_profile_public_id uuid, display_name character varying, is_default boolean, page_size integer, default_media_domain_key public.media_domain_key, media_domain_keys character varying[], policy_set_public_ids uuid[], policy_set_display_names character varying[], allow_indexer_public_ids uuid[], block_indexer_public_ids uuid[], allow_tag_keys character varying[], block_tag_keys character varying[], prefer_tag_keys character varying[])
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -8019,26 +7335,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_source_reputation_list(actor_user_public_id uuid, indexer_instance_public_id_input uuid, window_key_input public.reputation_window, limit_input integer) RETURNS TABLE(window_key public.reputation_window, window_start timestamp with time zone, request_success_rate numeric, acquisition_success_rate numeric, fake_rate numeric, dmca_rate numeric, request_count integer, request_success_count integer, acquisition_count integer, acquisition_success_count integer, min_samples integer, computed_at timestamp with time zone)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT *
-    FROM indexer_source_reputation_list_v1(
-        actor_user_public_id,
-        indexer_instance_public_id_input,
-        window_key_input,
-        limit_input
-    );
-END;
-$$;
-
-
---
--- Name: indexer_source_reputation_list_v1(uuid, uuid, public.reputation_window, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_source_reputation_list_v1(actor_user_public_id uuid, indexer_instance_public_id_input uuid, window_key_input public.reputation_window, limit_input integer) RETURNS TABLE(window_key public.reputation_window, window_start timestamp with time zone, request_success_rate numeric, acquisition_success_rate numeric, fake_rate numeric, dmca_rate numeric, request_count integer, request_success_count integer, acquisition_count integer, acquisition_success_count integer, min_samples integer, computed_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -8140,18 +7436,6 @@ $$;
 --
 
 CREATE FUNCTION public.indexer_torznab_instance_list(actor_user_public_id uuid) RETURNS TABLE(torznab_instance_public_id uuid, display_name character varying, is_enabled boolean, search_profile_public_id uuid, search_profile_display_name character varying)
-    LANGUAGE sql
-    AS $$
-    SELECT *
-    FROM indexer_torznab_instance_list_v1(actor_user_public_id);
-$$;
-
-
---
--- Name: indexer_torznab_instance_list_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.indexer_torznab_instance_list_v1(actor_user_public_id uuid) RETURNS TABLE(torznab_instance_public_id uuid, display_name character varying, is_enabled boolean, search_profile_public_id uuid, search_profile_display_name character varying)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -8211,28 +7495,13 @@ CREATE FUNCTION public.job_claim_lease_seconds_v1(job_key_input public.job_key) 
         ELSE 300
     END;
 $$;
-
-
---
--- Name: job_claim_next(public.job_key); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.job_claim_next(job_key_input public.job_key) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM job_claim_next_v1(job_key_input => job_key_input);
-END;
-$$;
-
-
---
--- Name: job_claim_next_v1(public.job_key); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.job_claim_next_v1(job_key_input public.job_key) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
+CREATE TYPE public.job_claim_outcome AS ENUM ('claimed', 'not_due', 'disabled', 'locked');
+CREATE FUNCTION public.job_claim_next(
+    job_key_input public.job_key
+)
+RETURNS TABLE (claimed BOOLEAN, outcome public.job_claim_outcome)
+LANGUAGE plpgsql
+AS $$
 DECLARE
     base_message CONSTANT text := 'Failed to claim job';
     errcode CONSTANT text := 'P0001';
@@ -8252,17 +7521,20 @@ BEGIN
 
     lock_acquired := pg_try_advisory_xact_lock(hashtext(job_key_input::text)::BIGINT);
     IF lock_acquired IS NOT TRUE THEN
-        RAISE EXCEPTION USING
-            ERRCODE = errcode,
-            MESSAGE = base_message,
-            DETAIL = 'job_locked';
+        RETURN QUERY SELECT false, 'locked'::public.job_claim_outcome;
+        RETURN;
     END IF;
 
     SELECT job_schedule_id, enabled, next_run_at, locked_until
     INTO schedule_id, schedule_enabled, schedule_next_run, schedule_locked_until
     FROM job_schedule
     WHERE job_key = job_key_input
-    FOR UPDATE;
+    FOR UPDATE SKIP LOCKED;
+
+    IF schedule_id IS NULL AND EXISTS (SELECT 1 FROM job_schedule WHERE job_key = job_key_input) THEN
+        RETURN QUERY SELECT false, 'locked'::public.job_claim_outcome;
+        RETURN;
+    END IF;
 
     IF schedule_id IS NULL THEN
         RAISE EXCEPTION USING
@@ -8272,45 +7544,27 @@ BEGIN
     END IF;
 
     IF schedule_enabled IS NOT TRUE THEN
-        RAISE EXCEPTION USING
-            ERRCODE = errcode,
-            MESSAGE = base_message,
-            DETAIL = 'job_disabled';
+        RETURN QUERY SELECT false, 'disabled'::public.job_claim_outcome;
+        RETURN;
     END IF;
 
     now_ts := now();
 
     IF schedule_next_run > now_ts THEN
-        RAISE EXCEPTION USING
-            ERRCODE = errcode,
-            MESSAGE = base_message,
-            DETAIL = 'job_not_due';
+        RETURN QUERY SELECT false, 'not_due'::public.job_claim_outcome;
+        RETURN;
     END IF;
 
     IF schedule_locked_until IS NOT NULL AND schedule_locked_until > now_ts THEN
-        RAISE EXCEPTION USING
-            ERRCODE = errcode,
-            MESSAGE = base_message,
-            DETAIL = 'job_locked';
+        RETURN QUERY SELECT false, 'locked'::public.job_claim_outcome;
+        RETURN;
     END IF;
 
     UPDATE job_schedule
-    SET locked_until = now_ts + make_interval(secs => job_claim_lease_seconds_v1(job_key_input)),
+    SET locked_until = now_ts + make_interval(secs => job_claim_lease_seconds(job_key_input)),
         lock_owner = current_user
     WHERE job_schedule_id = schedule_id;
-END;
-$$;
-
-
---
--- Name: job_run_base_score_refresh_recent(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.job_run_base_score_refresh_recent() RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM job_run_base_score_refresh_recent_v2();
+    RETURN QUERY SELECT true, 'claimed'::public.job_claim_outcome;
 END;
 $$;
 
@@ -8319,7 +7573,7 @@ $$;
 -- Name: job_run_base_score_refresh_recent_v1(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_base_score_refresh_recent_v1() RETURNS void
+CREATE FUNCTION public.job_run_base_score_refresh_recent_v1() RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -8538,17 +7792,18 @@ BEGIN
               AND s.last_seen_at >= cutoff_recent
         )
     LOOP
-        PERFORM canonical_recompute_best_source_v1(canonical_public_id, 'global_current');
+        PERFORM canonical_recompute_best_source(canonical_public_id, 'global_current');
     END LOOP;
+RETURN true;
 END;
 $$;
 
 
 --
--- Name: job_run_base_score_refresh_recent_v2(); Type: FUNCTION; Schema: public; Owner: -
+-- Name: job_run_base_score_refresh_recent(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_base_score_refresh_recent_v2() RETURNS TABLE(ok boolean, error_code text, error_detail text)
+CREATE FUNCTION public.job_run_base_score_refresh_recent() RETURNS TABLE(ok boolean, error_code text, error_detail text)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -8565,22 +7820,9 @@ BEGIN
             error_detail_value = PG_EXCEPTION_DETAIL;
     END;
 
-    PERFORM job_schedule_mark_completed_v1('base_score_refresh_recent');
+    PERFORM job_schedule_mark_completed('base_score_refresh_recent');
 
     RETURN QUERY SELECT ok_value, error_code_value, error_detail_value;
-END;
-$$;
-
-
---
--- Name: job_run_canonical_backfill_best_source(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.job_run_canonical_backfill_best_source() RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM job_run_canonical_backfill_best_source_v2();
 END;
 $$;
 
@@ -8589,7 +7831,7 @@ $$;
 -- Name: job_run_canonical_backfill_best_source_v1(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_canonical_backfill_best_source_v1() RETURNS void
+CREATE FUNCTION public.job_run_canonical_backfill_best_source_v1() RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -8622,17 +7864,18 @@ BEGIN
            OR r.canonical_torrent_id IS NOT NULL
            OR (c.identity_strategy = 'title_size_fallback' AND c.identity_confidence <= 0.60)
     LOOP
-        PERFORM canonical_recompute_best_source_v1(canonical_public_id, 'global_current');
+        PERFORM canonical_recompute_best_source(canonical_public_id, 'global_current');
     END LOOP;
+RETURN true;
 END;
 $$;
 
 
 --
--- Name: job_run_canonical_backfill_best_source_v2(); Type: FUNCTION; Schema: public; Owner: -
+-- Name: job_run_canonical_backfill_best_source(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_canonical_backfill_best_source_v2() RETURNS TABLE(ok boolean, error_code text, error_detail text)
+CREATE FUNCTION public.job_run_canonical_backfill_best_source() RETURNS TABLE(ok boolean, error_code text, error_detail text)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -8649,7 +7892,7 @@ BEGIN
             error_detail_value = PG_EXCEPTION_DETAIL;
     END;
 
-    PERFORM job_schedule_mark_completed_v1('canonical_backfill_best_source');
+    PERFORM job_schedule_mark_completed('canonical_backfill_best_source');
 
     RETURN QUERY SELECT ok_value, error_code_value, error_detail_value;
 END;
@@ -8660,20 +7903,7 @@ $$;
 -- Name: job_run_canonical_prune_low_confidence(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_canonical_prune_low_confidence() RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM job_run_canonical_prune_low_confidence_v2();
-END;
-$$;
-
-
---
--- Name: job_run_canonical_prune_low_confidence_v2(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.job_run_canonical_prune_low_confidence_v2() RETURNS TABLE(ok boolean, error_code text, error_detail text)
+CREATE FUNCTION public.job_run_canonical_prune_low_confidence() RETURNS TABLE(ok boolean, error_code text, error_detail text)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -8682,7 +7912,7 @@ DECLARE
     error_detail_value TEXT;
 BEGIN
     BEGIN
-        PERFORM canonical_prune_low_confidence_v1();
+        PERFORM canonical_prune_low_confidence();
     EXCEPTION WHEN OTHERS THEN
         ok_value := FALSE;
         GET STACKED DIAGNOSTICS
@@ -8690,22 +7920,9 @@ BEGIN
             error_detail_value = PG_EXCEPTION_DETAIL;
     END;
 
-    PERFORM job_schedule_mark_completed_v1('canonical_prune_low_confidence');
+    PERFORM job_schedule_mark_completed('canonical_prune_low_confidence');
 
     RETURN QUERY SELECT ok_value, error_code_value, error_detail_value;
-END;
-$$;
-
-
---
--- Name: job_run_connectivity_profile_refresh(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.job_run_connectivity_profile_refresh() RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM job_run_connectivity_profile_refresh_v2();
 END;
 $$;
 
@@ -8714,7 +7931,7 @@ $$;
 -- Name: job_run_connectivity_profile_refresh_v1(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_connectivity_profile_refresh_v1() RETURNS void
+CREATE FUNCTION public.job_run_connectivity_profile_refresh_v1() RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -8946,15 +8163,16 @@ BEGIN
         success_rate_1h = EXCLUDED.success_rate_1h,
         success_rate_24h = EXCLUDED.success_rate_24h,
         last_checked_at = EXCLUDED.last_checked_at;
+RETURN true;
 END;
 $$;
 
 
 --
--- Name: job_run_connectivity_profile_refresh_v2(); Type: FUNCTION; Schema: public; Owner: -
+-- Name: job_run_connectivity_profile_refresh(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_connectivity_profile_refresh_v2() RETURNS TABLE(ok boolean, error_code text, error_detail text)
+CREATE FUNCTION public.job_run_connectivity_profile_refresh() RETURNS TABLE(ok boolean, error_code text, error_detail text)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -8971,22 +8189,9 @@ BEGIN
             error_detail_value = PG_EXCEPTION_DETAIL;
     END;
 
-    PERFORM job_schedule_mark_completed_v1('connectivity_profile_refresh');
+    PERFORM job_schedule_mark_completed('connectivity_profile_refresh');
 
     RETURN QUERY SELECT ok_value, error_code_value, error_detail_value;
-END;
-$$;
-
-
---
--- Name: job_run_policy_snapshot_gc(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.job_run_policy_snapshot_gc() RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM job_run_policy_snapshot_gc_v2();
 END;
 $$;
 
@@ -8995,22 +8200,23 @@ $$;
 -- Name: job_run_policy_snapshot_gc_v1(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_policy_snapshot_gc_v1() RETURNS void
+CREATE FUNCTION public.job_run_policy_snapshot_gc_v1() RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     DELETE FROM policy_snapshot
     WHERE ref_count = 0
       AND created_at < now() - make_interval(days => 30);
+RETURN true;
 END;
 $$;
 
 
 --
--- Name: job_run_policy_snapshot_gc_v2(); Type: FUNCTION; Schema: public; Owner: -
+-- Name: job_run_policy_snapshot_gc(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_policy_snapshot_gc_v2() RETURNS TABLE(ok boolean, error_code text, error_detail text)
+CREATE FUNCTION public.job_run_policy_snapshot_gc() RETURNS TABLE(ok boolean, error_code text, error_detail text)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -9028,22 +8234,9 @@ BEGIN
             error_detail_value = PG_EXCEPTION_DETAIL;
     END;
 
-    PERFORM job_schedule_mark_completed_v1('policy_snapshot_gc');
+    PERFORM job_schedule_mark_completed('policy_snapshot_gc');
 
     RETURN QUERY SELECT ok_value, error_code_value, error_detail_value;
-END;
-$$;
-
-
---
--- Name: job_run_policy_snapshot_refcount_repair(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.job_run_policy_snapshot_refcount_repair() RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM job_run_policy_snapshot_refcount_repair_v2();
 END;
 $$;
 
@@ -9052,7 +8245,7 @@ $$;
 -- Name: job_run_policy_snapshot_refcount_repair_v1(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_policy_snapshot_refcount_repair_v1() RETURNS void
+CREATE FUNCTION public.job_run_policy_snapshot_refcount_repair_v1() RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -9075,15 +8268,16 @@ BEGIN
         WHERE search_request.policy_snapshot_id = policy_snapshot.policy_snapshot_id
     )
       AND ref_count <> 0;
+RETURN true;
 END;
 $$;
 
 
 --
--- Name: job_run_policy_snapshot_refcount_repair_v2(); Type: FUNCTION; Schema: public; Owner: -
+-- Name: job_run_policy_snapshot_refcount_repair(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_policy_snapshot_refcount_repair_v2() RETURNS TABLE(ok boolean, error_code text, error_detail text)
+CREATE FUNCTION public.job_run_policy_snapshot_refcount_repair() RETURNS TABLE(ok boolean, error_code text, error_detail text)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -9100,22 +8294,9 @@ BEGIN
             error_detail_value = PG_EXCEPTION_DETAIL;
     END;
 
-    PERFORM job_schedule_mark_completed_v1('policy_snapshot_refcount_repair');
+    PERFORM job_schedule_mark_completed('policy_snapshot_refcount_repair');
 
     RETURN QUERY SELECT ok_value, error_code_value, error_detail_value;
-END;
-$$;
-
-
---
--- Name: job_run_rate_limit_state_purge(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.job_run_rate_limit_state_purge() RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM job_run_rate_limit_state_purge_v2();
 END;
 $$;
 
@@ -9124,21 +8305,22 @@ $$;
 -- Name: job_run_rate_limit_state_purge_v1(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_rate_limit_state_purge_v1() RETURNS void
+CREATE FUNCTION public.job_run_rate_limit_state_purge_v1() RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     DELETE FROM rate_limit_state
     WHERE window_start < now() - make_interval(hours => 6);
+RETURN true;
 END;
 $$;
 
 
 --
--- Name: job_run_rate_limit_state_purge_v2(); Type: FUNCTION; Schema: public; Owner: -
+-- Name: job_run_rate_limit_state_purge(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_rate_limit_state_purge_v2() RETURNS TABLE(ok boolean, error_code text, error_detail text)
+CREATE FUNCTION public.job_run_rate_limit_state_purge() RETURNS TABLE(ok boolean, error_code text, error_detail text)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -9155,22 +8337,9 @@ BEGIN
             error_detail_value = PG_EXCEPTION_DETAIL;
     END;
 
-    PERFORM job_schedule_mark_completed_v1('rate_limit_state_purge');
+    PERFORM job_schedule_mark_completed('rate_limit_state_purge');
 
     RETURN QUERY SELECT ok_value, error_code_value, error_detail_value;
-END;
-$$;
-
-
---
--- Name: job_run_reputation_rollup(public.reputation_window); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.job_run_reputation_rollup(window_key_input public.reputation_window) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM job_run_reputation_rollup_v2(window_key_input => window_key_input);
 END;
 $$;
 
@@ -9179,7 +8348,7 @@ $$;
 -- Name: job_run_reputation_rollup_v1(public.reputation_window); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_reputation_rollup_v1(window_key_input public.reputation_window) RETURNS void
+CREATE FUNCTION public.job_run_reputation_rollup_v1(window_key_input public.reputation_window) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -9340,15 +8509,16 @@ BEGIN
         acquisition_success_count = EXCLUDED.acquisition_success_count,
         min_samples = EXCLUDED.min_samples,
         computed_at = EXCLUDED.computed_at;
+RETURN true;
 END;
 $$;
 
 
 --
--- Name: job_run_reputation_rollup_v2(public.reputation_window); Type: FUNCTION; Schema: public; Owner: -
+-- Name: job_run_reputation_rollup(public.reputation_window); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_reputation_rollup_v2(window_key_input public.reputation_window) RETURNS TABLE(ok boolean, error_code text, error_detail text)
+CREATE FUNCTION public.job_run_reputation_rollup(window_key_input public.reputation_window) RETURNS TABLE(ok boolean, error_code text, error_detail text)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -9372,22 +8542,9 @@ BEGIN
             error_detail_value = PG_EXCEPTION_DETAIL;
     END;
 
-    PERFORM job_schedule_mark_completed_v1(job_key_value);
+    PERFORM job_schedule_mark_completed(job_key_value);
 
     RETURN QUERY SELECT ok_value, error_code_value, error_detail_value;
-END;
-$$;
-
-
---
--- Name: job_run_retention_purge(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.job_run_retention_purge() RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM job_run_retention_purge_v2();
 END;
 $$;
 
@@ -9396,7 +8553,7 @@ $$;
 -- Name: job_run_retention_purge_v1(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_retention_purge_v1() RETURNS void
+CREATE FUNCTION public.job_run_retention_purge_v1() RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -9503,15 +8660,16 @@ BEGIN
 
     DELETE FROM source_reputation
     WHERE window_start < cutoff_reputation;
+RETURN true;
 END;
 $$;
 
 
 --
--- Name: job_run_retention_purge_v2(); Type: FUNCTION; Schema: public; Owner: -
+-- Name: job_run_retention_purge(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_retention_purge_v2() RETURNS TABLE(ok boolean, error_code text, error_detail text)
+CREATE FUNCTION public.job_run_retention_purge() RETURNS TABLE(ok boolean, error_code text, error_detail text)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -9528,22 +8686,9 @@ BEGIN
             error_detail_value = PG_EXCEPTION_DETAIL;
     END;
 
-    PERFORM job_schedule_mark_completed_v1('retention_purge');
+    PERFORM job_schedule_mark_completed('retention_purge');
 
     RETURN QUERY SELECT ok_value, error_code_value, error_detail_value;
-END;
-$$;
-
-
---
--- Name: job_run_rss_subscription_backfill(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.job_run_rss_subscription_backfill() RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM job_run_rss_subscription_backfill_v2();
 END;
 $$;
 
@@ -9552,7 +8697,7 @@ $$;
 -- Name: job_run_rss_subscription_backfill_v1(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_rss_subscription_backfill_v1() RETURNS void
+CREATE FUNCTION public.job_run_rss_subscription_backfill_v1() RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -9568,7 +8713,7 @@ BEGIN
         UPDATE job_schedule
         SET enabled = FALSE
         WHERE job_key = 'rss_subscription_backfill';
-        RETURN;
+        RETURN true;
     END IF;
 
     INSERT INTO indexer_rss_subscription (
@@ -9614,15 +8759,16 @@ BEGIN
     UPDATE job_schedule
     SET enabled = FALSE
     WHERE job_key = 'rss_subscription_backfill';
+RETURN true;
 END;
 $$;
 
 
 --
--- Name: job_run_rss_subscription_backfill_v2(); Type: FUNCTION; Schema: public; Owner: -
+-- Name: job_run_rss_subscription_backfill(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_run_rss_subscription_backfill_v2() RETURNS TABLE(ok boolean, error_code text, error_detail text)
+CREATE FUNCTION public.job_run_rss_subscription_backfill() RETURNS TABLE(ok boolean, error_code text, error_detail text)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -9639,7 +8785,7 @@ BEGIN
             error_detail_value = PG_EXCEPTION_DETAIL;
     END;
 
-    PERFORM job_schedule_mark_completed_v1('rss_subscription_backfill');
+    PERFORM job_schedule_mark_completed('rss_subscription_backfill');
 
     RETURN QUERY SELECT ok_value, error_code_value, error_detail_value;
 END;
@@ -9650,20 +8796,7 @@ $$;
 -- Name: job_schedule_mark_completed(public.job_key); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.job_schedule_mark_completed(job_key_input public.job_key) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM job_schedule_mark_completed_v1(job_key_input => job_key_input);
-END;
-$$;
-
-
---
--- Name: job_schedule_mark_completed_v1(public.job_key); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.job_schedule_mark_completed_v1(job_key_input public.job_key) RETURNS void
+CREATE FUNCTION public.job_schedule_mark_completed(job_key_input public.job_key) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -9703,6 +8836,7 @@ BEGIN
         locked_until = NULL,
         lock_owner = NULL
     WHERE job_schedule_id = schedule_id;
+RETURN true;
 END;
 $$;
 
@@ -9711,20 +8845,7 @@ $$;
 -- Name: log_source_metadata_conflict(bigint, bigint, public.conflict_type, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.log_source_metadata_conflict(canonical_torrent_source_id_input bigint, indexer_instance_id_input bigint, conflict_type_input public.conflict_type, existing_value_input text, incoming_value_input text, observed_at_input timestamp with time zone) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM log_source_metadata_conflict_v1(canonical_torrent_source_id_input => canonical_torrent_source_id_input, indexer_instance_id_input => indexer_instance_id_input, conflict_type_input => conflict_type_input, existing_value_input => existing_value_input, incoming_value_input => incoming_value_input, observed_at_input => observed_at_input);
-END;
-$$;
-
-
---
--- Name: log_source_metadata_conflict_v1(bigint, bigint, public.conflict_type, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.log_source_metadata_conflict_v1(canonical_torrent_source_id_input bigint, indexer_instance_id_input bigint, conflict_type_input public.conflict_type, existing_value_input text, incoming_value_input text, observed_at_input timestamp with time zone) RETURNS void
+CREATE FUNCTION public.log_source_metadata_conflict(canonical_torrent_source_id_input bigint, indexer_instance_id_input bigint, conflict_type_input public.conflict_type, existing_value_input text, incoming_value_input text, observed_at_input timestamp with time zone) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -9788,6 +8909,7 @@ BEGIN
         'identity_conflict',
         conflict_type_input::TEXT
     );
+RETURN true;
 END;
 $$;
 
@@ -10157,7 +9279,7 @@ $$;
 -- Name: media_capability_snapshot_run_complete_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_capability_snapshot_run_complete_v1(snapshot_run_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.media_capability_snapshot_run_complete_v1(snapshot_run_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -10173,6 +9295,7 @@ BEGIN
         RAISE EXCEPTION 'capability snapshot run not running'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_capability_snapshot_run_not_running';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -10181,7 +9304,7 @@ $$;
 -- Name: media_capability_snapshot_run_start_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_capability_snapshot_run_start_v1(actor_public_id_input uuid, snapshot_run_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.media_capability_snapshot_run_start_v1(actor_public_id_input uuid, snapshot_run_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -10200,6 +9323,7 @@ BEGIN
         media_capability_run_status_running_v1(),
         actor_id
     );
+RETURN true;
 END;
 $$;
 
@@ -10408,7 +9532,7 @@ $$;
 -- Name: media_desired_target_stream_append_v1(uuid, text, text, text, text, boolean, integer, text, integer, text, text, boolean, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_desired_target_stream_append_v1(media_desired_target_profile_public_id_input uuid, stream_key_input text, stream_kind_input text, semantic_role_input text, language_code_input text, optional_input boolean, sort_order_input integer, codec_input text, channel_count_input integer, channel_layout_input text, title_input text, default_disposition_input boolean, forced_disposition_input boolean) RETURNS void
+CREATE FUNCTION public.media_desired_target_stream_append_v1(media_desired_target_profile_public_id_input uuid, stream_key_input text, stream_kind_input text, semantic_role_input text, language_code_input text, optional_input boolean, sort_order_input integer, codec_input text, channel_count_input integer, channel_layout_input text, title_input text, default_disposition_input boolean, forced_disposition_input boolean) RETURNS boolean
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -10429,6 +9553,7 @@ CREATE FUNCTION public.media_desired_target_stream_append_v1(media_desired_targe
         CASE WHEN lower(btrim(stream_kind_input)) = 'subtitle' THEN 'embedded' END,
         CASE WHEN lower(btrim(stream_kind_input)) = 'subtitle' THEN 'fail' END
     );
+SELECT true;
 $$;
 
 
@@ -10436,7 +9561,7 @@ $$;
 -- Name: media_desired_target_stream_append_v2(uuid, text, text, text, text, boolean, integer, text, integer, text, text, boolean, boolean, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_desired_target_stream_append_v2(media_desired_target_profile_public_id_input uuid, stream_key_input text, stream_kind_input text, semantic_role_input text, language_code_input text, optional_input boolean, sort_order_input integer, codec_input text, channel_count_input integer, channel_layout_input text, title_input text, default_disposition_input boolean, forced_disposition_input boolean, subtitle_placement_input text, image_subtitle_action_input text) RETURNS void
+CREATE FUNCTION public.media_desired_target_stream_append_v2(media_desired_target_profile_public_id_input uuid, stream_key_input text, stream_kind_input text, semantic_role_input text, language_code_input text, optional_input boolean, sort_order_input integer, codec_input text, channel_count_input integer, channel_layout_input text, title_input text, default_disposition_input boolean, forced_disposition_input boolean, subtitle_placement_input text, image_subtitle_action_input text) RETURNS boolean
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -10464,6 +9589,7 @@ CREATE FUNCTION public.media_desired_target_stream_append_v2(media_desired_targe
         subtitle_placement_input,
         image_subtitle_action_input
     );
+SELECT true;
 $$;
 
 
@@ -10471,7 +9597,7 @@ $$;
 -- Name: media_desired_target_stream_append_v3(uuid, text, text, text, text, boolean, integer, text, integer, text, text, text, integer, text, text, text, text, text, boolean, boolean, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_desired_target_stream_append_v3(media_desired_target_profile_public_id_input uuid, stream_key_input text, stream_kind_input text, semantic_role_input text, language_code_input text, optional_input boolean, sort_order_input integer, codec_input text, channel_count_input integer, channel_layout_input text, video_profile_input text, video_level_input text, video_bitrate_bps_input integer, color_primaries_input text, color_transfer_input text, color_space_input text, hdr_format_input text, title_input text, default_disposition_input boolean, forced_disposition_input boolean, subtitle_placement_input text, image_subtitle_action_input text) RETURNS void
+CREATE FUNCTION public.media_desired_target_stream_append_v3(media_desired_target_profile_public_id_input uuid, stream_key_input text, stream_kind_input text, semantic_role_input text, language_code_input text, optional_input boolean, sort_order_input integer, codec_input text, channel_count_input integer, channel_layout_input text, video_profile_input text, video_level_input text, video_bitrate_bps_input integer, color_primaries_input text, color_transfer_input text, color_space_input text, hdr_format_input text, title_input text, default_disposition_input boolean, forced_disposition_input boolean, subtitle_placement_input text, image_subtitle_action_input text) RETURNS boolean
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -10501,6 +9627,7 @@ CREATE FUNCTION public.media_desired_target_stream_append_v3(media_desired_targe
         subtitle_placement_input,
         image_subtitle_action_input
     );
+SELECT true;
 $$;
 
 
@@ -10508,7 +9635,7 @@ $$;
 -- Name: media_desired_target_stream_append_v4(uuid, text, text, text, text, boolean, integer, text, integer, text, integer, integer, text, text, integer, text, text, text, text, text, boolean, boolean, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_desired_target_stream_append_v4(media_desired_target_profile_public_id_input uuid, stream_key_input text, stream_kind_input text, semantic_role_input text, language_code_input text, optional_input boolean, sort_order_input integer, codec_input text, channel_count_input integer, channel_layout_input text, audio_bitrate_bps_input integer, audio_sample_rate_hz_input integer, video_profile_input text, video_level_input text, video_bitrate_bps_input integer, color_primaries_input text, color_transfer_input text, color_space_input text, hdr_format_input text, title_input text, default_disposition_input boolean, forced_disposition_input boolean, subtitle_placement_input text, image_subtitle_action_input text) RETURNS void
+CREATE FUNCTION public.media_desired_target_stream_append_v4(media_desired_target_profile_public_id_input uuid, stream_key_input text, stream_kind_input text, semantic_role_input text, language_code_input text, optional_input boolean, sort_order_input integer, codec_input text, channel_count_input integer, channel_layout_input text, audio_bitrate_bps_input integer, audio_sample_rate_hz_input integer, video_profile_input text, video_level_input text, video_bitrate_bps_input integer, color_primaries_input text, color_transfer_input text, color_space_input text, hdr_format_input text, title_input text, default_disposition_input boolean, forced_disposition_input boolean, subtitle_placement_input text, image_subtitle_action_input text) RETURNS boolean
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -10540,6 +9667,7 @@ CREATE FUNCTION public.media_desired_target_stream_append_v4(media_desired_targe
         subtitle_placement_input,
         image_subtitle_action_input
     );
+SELECT true;
 $$;
 
 
@@ -10547,7 +9675,7 @@ $$;
 -- Name: media_desired_target_stream_append_v5(uuid, text, text, text, text, boolean, integer, text, integer, text, integer, integer, text, text, text, text, integer, text, text, text, text, text, boolean, boolean, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_desired_target_stream_append_v5(media_desired_target_profile_public_id_input uuid, stream_key_input text, stream_kind_input text, semantic_role_input text, language_code_input text, optional_input boolean, sort_order_input integer, codec_input text, channel_count_input integer, channel_layout_input text, audio_bitrate_bps_input integer, audio_sample_rate_hz_input integer, audio_loudness_profile_input text, audio_dynamic_range_input text, video_profile_input text, video_level_input text, video_bitrate_bps_input integer, color_primaries_input text, color_transfer_input text, color_space_input text, hdr_format_input text, title_input text, default_disposition_input boolean, forced_disposition_input boolean, subtitle_placement_input text, image_subtitle_action_input text) RETURNS void
+CREATE FUNCTION public.media_desired_target_stream_append_v5(media_desired_target_profile_public_id_input uuid, stream_key_input text, stream_kind_input text, semantic_role_input text, language_code_input text, optional_input boolean, sort_order_input integer, codec_input text, channel_count_input integer, channel_layout_input text, audio_bitrate_bps_input integer, audio_sample_rate_hz_input integer, audio_loudness_profile_input text, audio_dynamic_range_input text, video_profile_input text, video_level_input text, video_bitrate_bps_input integer, color_primaries_input text, color_transfer_input text, color_space_input text, hdr_format_input text, title_input text, default_disposition_input boolean, forced_disposition_input boolean, subtitle_placement_input text, image_subtitle_action_input text) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -10763,6 +9891,7 @@ BEGIN
             audio_dynamic_range_value
         );
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -11505,7 +10634,7 @@ $$;
 -- Name: media_domain_seed_defaults(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_domain_seed_defaults() RETURNS void
+CREATE FUNCTION public.media_domain_seed_defaults() RETURNS boolean
     LANGUAGE plpgsql
     AS $$DECLARE
     errcode CONSTANT text := 'P0001';
@@ -11532,6 +10661,7 @@ BEGIN
             MESSAGE = 'Failed to seed media domains',
             DETAIL = 'media_domain_key_not_lowercase';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -11540,24 +10670,7 @@ $$;
 -- Name: media_domain_to_torznab_category_delete(uuid, character varying, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_domain_to_torznab_category_delete(actor_user_public_id uuid, media_domain_key_input character varying, torznab_cat_id_input integer) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM media_domain_to_torznab_category_delete_v1(
-        actor_user_public_id,
-        media_domain_key_input,
-        torznab_cat_id_input
-    );
-END;
-$$;
-
-
---
--- Name: media_domain_to_torznab_category_delete_v1(uuid, character varying, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.media_domain_to_torznab_category_delete_v1(actor_user_public_id uuid, media_domain_key_input character varying, torznab_cat_id_input integer) RETURNS void
+CREATE FUNCTION public.media_domain_to_torznab_category_delete(actor_user_public_id uuid, media_domain_key_input character varying, torznab_cat_id_input integer) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -11667,6 +10780,7 @@ BEGIN
         actor_user_id,
         'media_domain_mapping_delete'
     );
+RETURN true;
 END;
 $$;
 
@@ -11675,20 +10789,7 @@ $$;
 -- Name: media_domain_to_torznab_category_upsert(uuid, character varying, integer, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_domain_to_torznab_category_upsert(actor_user_public_id uuid, media_domain_key_input character varying, torznab_cat_id_input integer, is_primary_input boolean) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM media_domain_to_torznab_category_upsert_v1(actor_user_public_id => actor_user_public_id, media_domain_key_input => media_domain_key_input, torznab_cat_id_input => torznab_cat_id_input, is_primary_input => is_primary_input);
-END;
-$$;
-
-
---
--- Name: media_domain_to_torznab_category_upsert_v1(uuid, character varying, integer, boolean); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.media_domain_to_torznab_category_upsert_v1(actor_user_public_id uuid, media_domain_key_input character varying, torznab_cat_id_input integer, is_primary_input boolean) RETURNS void
+CREATE FUNCTION public.media_domain_to_torznab_category_upsert(actor_user_public_id uuid, media_domain_key_input character varying, torznab_cat_id_input integer, is_primary_input boolean) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -11813,6 +10914,7 @@ BEGIN
         actor_user_id,
         'media_domain_mapping_upsert'
     );
+RETURN true;
 END;
 $$;
 
@@ -11821,7 +10923,7 @@ $$;
 -- Name: media_job_artifact_append_v1(uuid, bigint, integer, text, text, bigint, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_job_artifact_append_v1(media_job_public_id_input uuid, claim_generation_input bigint, artifact_index_input integer, artifact_kind_input text, artifact_path_input text, size_bytes_input bigint DEFAULT NULL::bigint, content_type_input text DEFAULT NULL::text) RETURNS void
+CREATE FUNCTION public.media_job_artifact_append_v1(media_job_public_id_input uuid, claim_generation_input bigint, artifact_index_input integer, artifact_kind_input text, artifact_path_input text, size_bytes_input bigint DEFAULT NULL::bigint, content_type_input text DEFAULT NULL::text) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -11844,6 +10946,7 @@ BEGIN
         btrim(artifact_kind_input), btrim(artifact_path_input), size_bytes_input,
         NULLIF(btrim(content_type_input), '')
     );
+RETURN true;
 END;
 $$;
 
@@ -11961,7 +11064,7 @@ $$;
 -- Name: media_job_cancel_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_job_cancel_v1(media_job_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.media_job_cancel_v1(media_job_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -11984,6 +11087,7 @@ BEGIN
         RAISE EXCEPTION 'job not found'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_not_found';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -12299,7 +11403,7 @@ $$;
 -- Name: media_job_compact_audit_append_v1(uuid, bigint, integer, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_job_compact_audit_append_v1(media_job_public_id_input uuid, claim_generation_input bigint, audit_index_input integer, fact_kind_input text, fact_text_input text) RETURNS void
+CREATE FUNCTION public.media_job_compact_audit_append_v1(media_job_public_id_input uuid, claim_generation_input bigint, audit_index_input integer, fact_kind_input text, fact_text_input text) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -12329,6 +11433,7 @@ BEGIN
         RAISE EXCEPTION 'resumed plan evidence changed'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_resumed_plan_changed';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -12909,7 +12014,7 @@ $$;
 -- Name: media_job_mark_completed_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_job_mark_completed_v1(media_job_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.media_job_mark_completed_v1(media_job_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -12930,7 +12035,7 @@ BEGIN
 
     GET DIAGNOSTICS affected_count = ROW_COUNT;
     IF affected_count > 0 THEN
-        RETURN;
+        RETURN true;
     END IF;
 
     SELECT status INTO current_status
@@ -12943,11 +12048,12 @@ BEGIN
     END IF;
 
     IF current_status = media_job_status_completed_v1() THEN
-        RETURN;
+        RETURN true;
     END IF;
 
     RAISE EXCEPTION 'media job cannot be completed from current status'
         USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_complete_invalid_status';
+RETURN true;
 END;
 $$;
 
@@ -12999,7 +12105,7 @@ $$;
 -- Name: media_job_operation_append_v1(uuid, bigint, integer, text, integer, text, text, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_job_operation_append_v1(media_job_public_id_input uuid, claim_generation_input bigint, operation_index_input integer, operation_kind_input text, stream_id_input integer, command_bin_input text, arg_1_input text, arg_2_input text, arg_3_input text, arg_4_input text, arg_5_input text) RETURNS void
+CREATE FUNCTION public.media_job_operation_append_v1(media_job_public_id_input uuid, claim_generation_input bigint, operation_index_input integer, operation_kind_input text, stream_id_input integer, command_bin_input text, arg_1_input text, arg_2_input text, arg_3_input text, arg_4_input text, arg_5_input text) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -13032,6 +12138,7 @@ BEGIN
         RAISE EXCEPTION 'resumed plan evidence changed'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_resumed_plan_changed';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -13060,7 +12167,7 @@ $$;
 -- Name: media_job_phase_append_v1(uuid, bigint, integer, text, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_job_phase_append_v1(media_job_public_id_input uuid, claim_generation_input bigint, phase_index_input integer, phase_name_input text, phase_status_input text, details_text_input text) RETURNS void
+CREATE FUNCTION public.media_job_phase_append_v1(media_job_public_id_input uuid, claim_generation_input bigint, phase_index_input integer, phase_name_input text, phase_status_input text, details_text_input text) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -13086,6 +12193,7 @@ BEGIN
         phase_name = EXCLUDED.phase_name,
         phase_status = EXCLUDED.phase_status,
         details_text = EXCLUDED.details_text;
+RETURN true;
 END;
 $$;
 
@@ -13113,7 +12221,7 @@ $$;
 -- Name: media_job_plan_reason_append_v1(uuid, bigint, integer, integer, boolean, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_job_plan_reason_append_v1(media_job_public_id_input uuid, claim_generation_input bigint, reason_index_input integer, candidate_index_input integer, selected_input boolean, reason_code_input text, reason_text_input text) RETURNS void
+CREATE FUNCTION public.media_job_plan_reason_append_v1(media_job_public_id_input uuid, claim_generation_input bigint, reason_index_input integer, candidate_index_input integer, selected_input boolean, reason_code_input text, reason_text_input text) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -13143,6 +12251,7 @@ BEGIN
         RAISE EXCEPTION 'resumed plan evidence changed'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_resumed_plan_changed';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -13715,7 +12824,7 @@ $$;
 -- Name: media_job_terminal_outbox_mark_published_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_job_terminal_outbox_mark_published_v1(media_job_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.media_job_terminal_outbox_mark_published_v1(media_job_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -13730,6 +12839,7 @@ BEGIN
         RAISE EXCEPTION 'media job terminal outbox row not found'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_terminal_outbox_not_found';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -13738,7 +12848,7 @@ $$;
 -- Name: media_job_validate_path_within_root_v1(text, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_job_validate_path_within_root_v1(path_input text, root_input text, detail_input text) RETURNS void
+CREATE FUNCTION public.media_job_validate_path_within_root_v1(path_input text, root_input text, detail_input text) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -13759,6 +12869,7 @@ BEGIN
         RAISE EXCEPTION 'media job path outside profile root'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = detail_input;
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -13767,7 +12878,7 @@ $$;
 -- Name: media_job_verification_check_append_v1(uuid, bigint, integer, text, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_job_verification_check_append_v1(media_job_public_id_input uuid, claim_generation_input bigint, check_index_input integer, check_kind_input text, check_status_input text, expected_value_input text DEFAULT NULL::text, actual_value_input text DEFAULT NULL::text, details_text_input text DEFAULT NULL::text) RETURNS void
+CREATE FUNCTION public.media_job_verification_check_append_v1(media_job_public_id_input uuid, claim_generation_input bigint, check_index_input integer, check_kind_input text, check_status_input text, expected_value_input text DEFAULT NULL::text, actual_value_input text DEFAULT NULL::text, details_text_input text DEFAULT NULL::text) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -13796,6 +12907,7 @@ BEGIN
         expected_value = EXCLUDED.expected_value,
         actual_value = EXCLUDED.actual_value,
         details_text = EXCLUDED.details_text;
+RETURN true;
 END;
 $$;
 
@@ -13824,7 +12936,7 @@ $$;
 -- Name: media_job_violation_append_v1(uuid, bigint, integer, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_job_violation_append_v1(media_job_public_id_input uuid, claim_generation_input bigint, violation_index_input integer, violation_kind_input text, severity_input text, stream_id_input integer DEFAULT NULL::integer) RETURNS void
+CREATE FUNCTION public.media_job_violation_append_v1(media_job_public_id_input uuid, claim_generation_input bigint, violation_index_input integer, violation_kind_input text, severity_input text, stream_id_input integer DEFAULT NULL::integer) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -13845,6 +12957,7 @@ BEGIN
         current_job_id, current_attempt_id, violation_index_input,
         btrim(violation_kind_input), lower(btrim(severity_input)), stream_id_input
     );
+RETURN true;
 END;
 $$;
 
@@ -14297,7 +13410,7 @@ $$;
 -- Name: media_job_worker_heartbeat_v1(uuid, bigint); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_job_worker_heartbeat_v1(media_job_public_id_input uuid, claim_generation_input bigint) RETURNS void
+CREATE FUNCTION public.media_job_worker_heartbeat_v1(media_job_public_id_input uuid, claim_generation_input bigint) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -14316,6 +13429,7 @@ BEGIN
     END IF;
     UPDATE media_job SET heartbeat_at = now()
      WHERE media_job_public_id = media_job_public_id_input;
+RETURN true;
 END;
 $$;
 
@@ -14392,7 +13506,7 @@ $$;
 -- Name: media_job_worker_mark_status_v1(uuid, bigint, public.media_job_status, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_job_worker_mark_status_v1(media_job_public_id_input uuid, claim_generation_input bigint, status_input public.media_job_status, last_error_input text DEFAULT NULL::text) RETURNS void
+CREATE FUNCTION public.media_job_worker_mark_status_v1(media_job_public_id_input uuid, claim_generation_input bigint, status_input public.media_job_status, last_error_input text DEFAULT NULL::text) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -14430,6 +13544,7 @@ BEGIN
            completed_at = CASE WHEN status_input IN (media_job_status_completed_v1(), media_job_status_failed_v1()) THEN now() END,
            last_error = NULLIF(btrim(COALESCE(last_error_input, '')), '')
      WHERE media_job_public_id = media_job_public_id_input;
+RETURN true;
 END;
 $$;
 
@@ -14504,7 +13619,7 @@ $$;
 -- Name: media_policy_behavior_set_v1(uuid, text, integer, text, text, text, text, text, text, boolean, boolean, text, boolean, boolean, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_policy_behavior_set_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, unmatched_video_action_input text, unmatched_audio_action_input text, unmatched_subtitle_action_input text, unmatched_attachment_action_input text, unmatched_data_action_input text, unsupported_format_action_input text, require_all_targets_input boolean, dry_run_input boolean, replacement_mode_input text, quarantine_enabled_input boolean, preserve_permissions_input boolean, preserve_ownership_input boolean) RETURNS void
+CREATE FUNCTION public.media_policy_behavior_set_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, unmatched_video_action_input text, unmatched_audio_action_input text, unmatched_subtitle_action_input text, unmatched_attachment_action_input text, unmatched_data_action_input text, unsupported_format_action_input text, require_all_targets_input boolean, dry_run_input boolean, replacement_mode_input text, quarantine_enabled_input boolean, preserve_permissions_input boolean, preserve_ownership_input boolean) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -14545,6 +13660,7 @@ BEGIN
         quarantine_enabled = EXCLUDED.quarantine_enabled,
         preserve_permissions = EXCLUDED.preserve_permissions,
         preserve_ownership = EXCLUDED.preserve_ownership;
+RETURN true;
 END;
 $$;
 
@@ -14553,7 +13669,7 @@ $$;
 -- Name: media_policy_compatibility_target_append_v1(uuid, text, integer, text, integer, integer, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_policy_compatibility_target_append_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, compatibility_target_key_input text, compatibility_target_version_input integer, sort_order_input integer, enabled_input boolean) RETURNS void
+CREATE FUNCTION public.media_policy_compatibility_target_append_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, compatibility_target_key_input text, compatibility_target_version_input integer, sort_order_input integer, enabled_input boolean) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -14574,6 +13690,7 @@ BEGIN
     INSERT INTO media_policy_compatibility_target (
         media_policy_profile_id, media_compatibility_target_id, sort_order, enabled
     ) VALUES (policy_id, target_id, sort_order_input, COALESCE(enabled_input, TRUE));
+RETURN true;
 END;
 $$;
 
@@ -14626,7 +13743,7 @@ $$;
 -- Name: media_policy_maintenance_window_append_v1(uuid, text, integer, smallint, time without time zone, time without time zone, integer, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_policy_maintenance_window_append_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, day_of_week_input smallint, start_time_input time without time zone, end_time_input time without time zone, sort_order_input integer, enabled_input boolean) RETURNS void
+CREATE FUNCTION public.media_policy_maintenance_window_append_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, day_of_week_input smallint, start_time_input time without time zone, end_time_input time without time zone, sort_order_input integer, enabled_input boolean) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -14641,6 +13758,7 @@ BEGIN
         policy_id, day_of_week_input, start_time_input, end_time_input,
         sort_order_input, COALESCE(enabled_input, TRUE)
     );
+RETURN true;
 END;
 $$;
 
@@ -14649,7 +13767,7 @@ $$;
 -- Name: media_policy_operation_cost_append_v1(uuid, text, integer, text, integer, integer, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_policy_operation_cost_append_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, operation_kind_input text, cost_weight_input integer, sort_order_input integer, enabled_input boolean) RETURNS void
+CREATE FUNCTION public.media_policy_operation_cost_append_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, operation_kind_input text, cost_weight_input integer, sort_order_input integer, enabled_input boolean) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -14663,6 +13781,7 @@ BEGIN
         policy_id, lower(btrim(operation_kind_input)), cost_weight_input,
         sort_order_input, COALESCE(enabled_input, TRUE)
     );
+RETURN true;
 END;
 $$;
 
@@ -14829,7 +13948,7 @@ $$;
 -- Name: media_policy_runtime_limit_set_v1(uuid, text, integer, integer, integer, integer, integer, bigint, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_policy_runtime_limit_set_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, max_concurrency_input integer, max_retries_input integer, max_runtime_seconds_input integer, max_io_megabytes_per_second_input integer, min_free_space_bytes_input bigint, pause_on_battery_input boolean) RETURNS void
+CREATE FUNCTION public.media_policy_runtime_limit_set_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, max_concurrency_input integer, max_retries_input integer, max_runtime_seconds_input integer, max_io_megabytes_per_second_input integer, min_free_space_bytes_input bigint, pause_on_battery_input boolean) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -14852,6 +13971,7 @@ BEGIN
         max_io_megabytes_per_second = EXCLUDED.max_io_megabytes_per_second,
         min_free_space_bytes = EXCLUDED.min_free_space_bytes,
         pause_on_battery = EXCLUDED.pause_on_battery;
+RETURN true;
 END;
 $$;
 
@@ -14860,7 +13980,7 @@ $$;
 -- Name: media_policy_runtime_limit_set_v2(uuid, text, integer, integer, integer, integer, integer, bigint, boolean, integer, text, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_policy_runtime_limit_set_v2(actor_public_id_input uuid, policy_key_input text, version_input integer, max_concurrency_input integer, max_retries_input integer, max_runtime_seconds_input integer, max_io_megabytes_per_second_input integer, min_free_space_bytes_input bigint, pause_on_battery_input boolean, minimum_battery_percent_input integer, thermal_pressure_limit_input text, pause_when_thermal_exceeded_input boolean) RETURNS void
+CREATE FUNCTION public.media_policy_runtime_limit_set_v2(actor_public_id_input uuid, policy_key_input text, version_input integer, max_concurrency_input integer, max_retries_input integer, max_runtime_seconds_input integer, max_io_megabytes_per_second_input integer, min_free_space_bytes_input bigint, pause_on_battery_input boolean, minimum_battery_percent_input integer, thermal_pressure_limit_input text, pause_when_thermal_exceeded_input boolean) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -14889,6 +14009,7 @@ BEGIN
         minimum_battery_percent = EXCLUDED.minimum_battery_percent,
         thermal_pressure_limit = EXCLUDED.thermal_pressure_limit,
         pause_when_thermal_exceeded = EXCLUDED.pause_when_thermal_exceeded;
+RETURN true;
 END;
 $$;
 
@@ -14922,7 +14043,7 @@ $$;
 -- Name: media_policy_seed_bounded_defaults_v1(bigint); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_policy_seed_bounded_defaults_v1(policy_id_input bigint) RETURNS void
+CREATE FUNCTION public.media_policy_seed_bounded_defaults_v1(policy_id_input bigint) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -15003,6 +14124,7 @@ BEGIN
       FROM media_policy_profile policy
      WHERE policy.media_policy_profile_id = policy_id_input
     ON CONFLICT (media_policy_profile_id) DO NOTHING;
+RETURN true;
 END;
 $$;
 
@@ -15011,7 +14133,7 @@ $$;
 -- Name: media_policy_workspace_set_v1(uuid, text, integer, integer, boolean, integer, bigint, boolean, integer, bigint); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_policy_workspace_set_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, retention_hours_input integer, diagnostics_enabled_input boolean, stale_cleanup_hours_input integer, max_workspace_bytes_input bigint, backup_enabled_input boolean, backup_retention_days_input integer, backup_min_free_space_bytes_input bigint) RETURNS void
+CREATE FUNCTION public.media_policy_workspace_set_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, retention_hours_input integer, diagnostics_enabled_input boolean, stale_cleanup_hours_input integer, max_workspace_bytes_input bigint, backup_enabled_input boolean, backup_retention_days_input integer, backup_min_free_space_bytes_input bigint) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -15040,6 +14162,7 @@ BEGIN
         enabled = EXCLUDED.enabled,
         retention_days = EXCLUDED.retention_days,
         min_free_space_bytes = EXCLUDED.min_free_space_bytes;
+RETURN true;
 END;
 $$;
 
@@ -15298,7 +14421,7 @@ $$;
 -- Name: media_profile_filter_set_v1(uuid, bigint, bigint, bigint, bigint, boolean, boolean, boolean, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_profile_filter_set_v1(media_profile_public_id_input uuid, min_size_bytes_input bigint, max_size_bytes_input bigint, min_duration_millis_input bigint, max_duration_millis_input bigint, include_samples_input boolean, include_trailers_input boolean, exclude_trash_input boolean, exclude_quarantine_input boolean) RETURNS void
+CREATE FUNCTION public.media_profile_filter_set_v1(media_profile_public_id_input uuid, min_size_bytes_input bigint, max_size_bytes_input bigint, min_duration_millis_input bigint, max_duration_millis_input bigint, include_samples_input boolean, include_trailers_input boolean, exclude_trash_input boolean, exclude_quarantine_input boolean) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -15352,6 +14475,7 @@ BEGIN
     UPDATE media_profile
        SET configuration_version = configuration_version + 1, updated_at = now()
      WHERE media_profile_id = profile_id;
+RETURN true;
 END;
 $$;
 
@@ -15918,7 +15042,7 @@ $$;
 -- Name: media_profile_validate_all_root_overlap_v1(bigint, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_profile_validate_all_root_overlap_v1(media_profile_id_input bigint, source_root_input text, output_root_input text) RETURNS void
+CREATE FUNCTION public.media_profile_validate_all_root_overlap_v1(media_profile_id_input bigint, source_root_input text, output_root_input text) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -15948,6 +15072,7 @@ BEGIN
         RAISE EXCEPTION 'profile roots overlap another active profile'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_discovery_root_overlap';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -15956,7 +15081,7 @@ $$;
 -- Name: media_profile_validate_catalog_refs_v1(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_profile_validate_catalog_refs_v1(compatibility_target_key_input text, policy_key_input text) RETURNS void
+CREATE FUNCTION public.media_profile_validate_catalog_refs_v1(compatibility_target_key_input text, policy_key_input text) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -15987,6 +15112,7 @@ BEGIN
         RAISE EXCEPTION 'policy profile not found'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_policy_profile_not_found';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -15995,7 +15121,7 @@ $$;
 -- Name: media_profile_validate_discovery_root_overlap_v1(bigint, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_profile_validate_discovery_root_overlap_v1(media_profile_id_input bigint, source_root_input text) RETURNS void
+CREATE FUNCTION public.media_profile_validate_discovery_root_overlap_v1(media_profile_id_input bigint, source_root_input text) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -16021,6 +15147,7 @@ BEGIN
         RAISE EXCEPTION 'profile discovery roots overlap'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_discovery_root_overlap';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -16029,7 +15156,7 @@ $$;
 -- Name: media_profile_validate_root_identity_v1(bigint, text, bigint, bigint); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.media_profile_validate_root_identity_v1(media_profile_root_id_input bigint, canonical_path_input text, filesystem_device_input bigint, filesystem_inode_input bigint) RETURNS void
+CREATE FUNCTION public.media_profile_validate_root_identity_v1(media_profile_root_id_input bigint, canonical_path_input text, filesystem_device_input bigint, filesystem_inode_input bigint) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $_$
@@ -16069,6 +15196,7 @@ BEGIN
         RAISE EXCEPTION 'filesystem roots overlap'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_root_identity_overlap';
     END IF;
+RETURN true;
 END;
 $_$;
 
@@ -16371,17 +15499,6 @@ $$;
 --
 
 CREATE FUNCTION public.normalize_magnet_uri(raw_uri text) RETURNS text
-    LANGUAGE sql
-    AS $$
-    SELECT normalize_magnet_uri_v1(raw_uri => raw_uri);
-$$;
-
-
---
--- Name: normalize_magnet_uri_v1(text); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.normalize_magnet_uri_v1(raw_uri text) RETURNS text
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -16448,17 +15565,6 @@ $$;
 --
 
 CREATE FUNCTION public.normalize_title(title_raw text) RETURNS text
-    LANGUAGE sql
-    AS $$
-    SELECT normalize_title_v1(title_raw => title_raw);
-$$;
-
-
---
--- Name: normalize_title_v1(text); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.normalize_title_v1(title_raw text) RETURNS text
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -16506,20 +15612,7 @@ $$;
 -- Name: outbound_request_log_write(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.outbound_request_log_write(indexer_instance_public_id_input uuid, routing_policy_public_id_input uuid, search_request_public_id_input uuid, request_type_input public.outbound_request_type, correlation_id_input uuid, retry_seq_input smallint, started_at_input timestamp with time zone, finished_at_input timestamp with time zone, outcome_input public.outbound_request_outcome, via_mitigation_input public.outbound_via_mitigation, rate_limit_denied_scope_input public.rate_limit_scope, error_class_input public.error_class, http_status_input integer, latency_ms_input integer, parse_ok_input boolean, result_count_input integer, cf_detected_input boolean, page_number_input integer, page_cursor_key_input character varying) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM outbound_request_log_write_v1(indexer_instance_public_id_input => indexer_instance_public_id_input, routing_policy_public_id_input => routing_policy_public_id_input, search_request_public_id_input => search_request_public_id_input, request_type_input => request_type_input, correlation_id_input => correlation_id_input, retry_seq_input => retry_seq_input, started_at_input => started_at_input, finished_at_input => finished_at_input, outcome_input => outcome_input, via_mitigation_input => via_mitigation_input, rate_limit_denied_scope_input => rate_limit_denied_scope_input, error_class_input => error_class_input, http_status_input => http_status_input, latency_ms_input => latency_ms_input, parse_ok_input => parse_ok_input, result_count_input => result_count_input, cf_detected_input => cf_detected_input, page_number_input => page_number_input, page_cursor_key_input => page_cursor_key_input);
-END;
-$$;
-
-
---
--- Name: outbound_request_log_write_v1(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.outbound_request_log_write_v1(indexer_instance_public_id_input uuid, routing_policy_public_id_input uuid, search_request_public_id_input uuid, request_type_input public.outbound_request_type, correlation_id_input uuid, retry_seq_input smallint, started_at_input timestamp with time zone, finished_at_input timestamp with time zone, outcome_input public.outbound_request_outcome, via_mitigation_input public.outbound_via_mitigation, rate_limit_denied_scope_input public.rate_limit_scope, error_class_input public.error_class, http_status_input integer, latency_ms_input integer, parse_ok_input boolean, result_count_input integer, cf_detected_input boolean, page_number_input integer, page_cursor_key_input character varying) RETURNS void
+CREATE FUNCTION public.outbound_request_log_write(indexer_instance_public_id_input uuid, routing_policy_public_id_input uuid, search_request_public_id_input uuid, request_type_input public.outbound_request_type, correlation_id_input uuid, retry_seq_input smallint, started_at_input timestamp with time zone, finished_at_input timestamp with time zone, outcome_input public.outbound_request_outcome, via_mitigation_input public.outbound_via_mitigation, rate_limit_denied_scope_input public.rate_limit_scope, error_class_input public.error_class, http_status_input integer, latency_ms_input integer, parse_ok_input boolean, result_count_input integer, cf_detected_input boolean, page_number_input integer, page_cursor_key_input character varying) RETURNS boolean
     LANGUAGE plpgsql
     AS $_$
 DECLARE
@@ -16891,6 +15984,7 @@ BEGIN
         )
         ON CONFLICT (search_request_indexer_run_id, correlation_id) DO NOTHING;
     END IF;
+RETURN true;
 END;
 $_$;
 
@@ -16900,17 +15994,6 @@ $_$;
 --
 
 CREATE FUNCTION public.policy_int_match(candidate_input integer, match_operator_input public.policy_match_operator, match_value_int_input integer, value_set_id_input bigint) RETURNS boolean
-    LANGUAGE sql
-    AS $$
-    SELECT policy_int_match_v1(candidate_input => candidate_input, match_operator_input => match_operator_input, match_value_int_input => match_value_int_input, value_set_id_input => value_set_id_input);
-$$;
-
-
---
--- Name: policy_int_match_v1(integer, public.policy_match_operator, integer, bigint); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.policy_int_match_v1(candidate_input integer, match_operator_input public.policy_match_operator, match_value_int_input integer, value_set_id_input bigint) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -16942,22 +16025,11 @@ $$;
 --
 
 CREATE FUNCTION public.policy_release_group_match(canonical_torrent_id_input bigint, release_group_token_input text, match_operator_input public.policy_match_operator, match_value_text_input text, value_set_id_input bigint, is_case_insensitive_input boolean) RETURNS boolean
-    LANGUAGE sql
-    AS $$
-    SELECT policy_release_group_match_v1(canonical_torrent_id_input => canonical_torrent_id_input, release_group_token_input => release_group_token_input, match_operator_input => match_operator_input, match_value_text_input => match_value_text_input, value_set_id_input => value_set_id_input, is_case_insensitive_input => is_case_insensitive_input);
-$$;
-
-
---
--- Name: policy_release_group_match_v1(bigint, text, public.policy_match_operator, text, bigint, boolean); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.policy_release_group_match_v1(canonical_torrent_id_input bigint, release_group_token_input text, match_operator_input public.policy_match_operator, match_value_text_input text, value_set_id_input bigint, is_case_insensitive_input boolean) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     IF release_group_token_input IS NOT NULL THEN
-        IF policy_text_match_v1(
+        IF policy_text_match(
             release_group_token_input,
             match_operator_input,
             match_value_text_input,
@@ -16973,7 +16045,7 @@ BEGIN
         FROM canonical_torrent_signal
         WHERE canonical_torrent_id = canonical_torrent_id_input
           AND signal_key = 'release_group'
-          AND policy_text_match_v1(
+          AND policy_text_match(
               value_text,
               match_operator_input,
               match_value_text_input,
@@ -16990,17 +16062,6 @@ $$;
 --
 
 CREATE FUNCTION public.policy_rule_create(actor_user_public_id uuid, policy_set_public_id_input uuid, rule_type_input public.policy_rule_type, match_field_input public.policy_match_field, match_operator_input public.policy_match_operator, sort_order_input integer, match_value_text_input character varying, match_value_int_input integer, match_value_uuid_input uuid, value_set_items_input public.policy_rule_value_item[], action_input public.policy_action, severity_input public.policy_severity, is_case_insensitive_input boolean, rationale_input character varying, expires_at_input timestamp with time zone) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT policy_rule_create_v1(actor_user_public_id => actor_user_public_id, policy_set_public_id_input => policy_set_public_id_input, rule_type_input => rule_type_input, match_field_input => match_field_input, match_operator_input => match_operator_input, sort_order_input => sort_order_input, match_value_text_input => match_value_text_input, match_value_int_input => match_value_int_input, match_value_uuid_input => match_value_uuid_input, value_set_items_input => value_set_items_input, action_input => action_input, severity_input => severity_input, is_case_insensitive_input => is_case_insensitive_input, rationale_input => rationale_input, expires_at_input => expires_at_input);
-$$;
-
-
---
--- Name: policy_rule_create_v1(uuid, uuid, public.policy_rule_type, public.policy_match_field, public.policy_match_operator, integer, character varying, integer, uuid, public.policy_rule_value_item[], public.policy_action, public.policy_severity, boolean, character varying, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.policy_rule_create_v1(actor_user_public_id uuid, policy_set_public_id_input uuid, rule_type_input public.policy_rule_type, match_field_input public.policy_match_field, match_operator_input public.policy_match_operator, sort_order_input integer, match_value_text_input character varying, match_value_int_input integer, match_value_uuid_input uuid, value_set_items_input public.policy_rule_value_item[], action_input public.policy_action, severity_input public.policy_severity, is_case_insensitive_input boolean, rationale_input character varying, expires_at_input timestamp with time zone) RETURNS uuid
     LANGUAGE plpgsql
     AS $_$
 DECLARE
@@ -17555,20 +16616,7 @@ $_$;
 -- Name: policy_rule_disable(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.policy_rule_disable(actor_user_public_id uuid, policy_rule_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM policy_rule_disable_v1(actor_user_public_id => actor_user_public_id, policy_rule_public_id_input => policy_rule_public_id_input);
-END;
-$$;
-
-
---
--- Name: policy_rule_disable_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.policy_rule_disable_v1(actor_user_public_id uuid, policy_rule_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.policy_rule_disable(actor_user_public_id uuid, policy_rule_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -17670,6 +16718,7 @@ BEGIN
         actor_user_id,
         'policy_rule_disable'
     );
+RETURN true;
 END;
 $$;
 
@@ -17678,20 +16727,7 @@ $$;
 -- Name: policy_rule_enable(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.policy_rule_enable(actor_user_public_id uuid, policy_rule_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM policy_rule_enable_v1(actor_user_public_id => actor_user_public_id, policy_rule_public_id_input => policy_rule_public_id_input);
-END;
-$$;
-
-
---
--- Name: policy_rule_enable_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.policy_rule_enable_v1(actor_user_public_id uuid, policy_rule_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.policy_rule_enable(actor_user_public_id uuid, policy_rule_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -17793,6 +16829,7 @@ BEGIN
         actor_user_id,
         'policy_rule_enable'
     );
+RETURN true;
 END;
 $$;
 
@@ -17801,20 +16838,7 @@ $$;
 -- Name: policy_rule_reorder(uuid, uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.policy_rule_reorder(actor_user_public_id uuid, policy_set_public_id_input uuid, ordered_rule_public_ids uuid[]) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM policy_rule_reorder_v1(actor_user_public_id => actor_user_public_id, policy_set_public_id_input => policy_set_public_id_input, ordered_rule_public_ids => ordered_rule_public_ids);
-END;
-$$;
-
-
---
--- Name: policy_rule_reorder_v1(uuid, uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.policy_rule_reorder_v1(actor_user_public_id uuid, policy_set_public_id_input uuid, ordered_rule_public_ids uuid[]) RETURNS void
+CREATE FUNCTION public.policy_rule_reorder(actor_user_public_id uuid, policy_set_public_id_input uuid, ordered_rule_public_ids uuid[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -17952,6 +16976,7 @@ BEGIN
     FROM policy_rule
     WHERE policy_rule_public_id = ANY(ordered_rule_public_ids)
       AND policy_set_id = policy_set_id_value;
+RETURN true;
 END;
 $$;
 
@@ -17961,17 +16986,6 @@ $$;
 --
 
 CREATE FUNCTION public.policy_set_create(actor_user_public_id uuid, display_name_input character varying, scope_input public.policy_scope, enabled_input boolean) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT policy_set_create_v1(actor_user_public_id => actor_user_public_id, display_name_input => display_name_input, scope_input => scope_input, enabled_input => enabled_input);
-$$;
-
-
---
--- Name: policy_set_create_v1(uuid, character varying, public.policy_scope, boolean); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.policy_set_create_v1(actor_user_public_id uuid, display_name_input character varying, scope_input public.policy_scope, enabled_input boolean) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -18138,20 +17152,7 @@ $$;
 -- Name: policy_set_disable(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.policy_set_disable(actor_user_public_id uuid, policy_set_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM policy_set_disable_v1(actor_user_public_id => actor_user_public_id, policy_set_public_id_input => policy_set_public_id_input);
-END;
-$$;
-
-
---
--- Name: policy_set_disable_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.policy_set_disable_v1(actor_user_public_id uuid, policy_set_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.policy_set_disable(actor_user_public_id uuid, policy_set_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -18247,6 +17248,7 @@ BEGIN
         actor_user_id,
         'policy_set_disable'
     );
+RETURN true;
 END;
 $$;
 
@@ -18255,20 +17257,7 @@ $$;
 -- Name: policy_set_enable(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.policy_set_enable(actor_user_public_id uuid, policy_set_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM policy_set_enable_v1(actor_user_public_id => actor_user_public_id, policy_set_public_id_input => policy_set_public_id_input);
-END;
-$$;
-
-
---
--- Name: policy_set_enable_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.policy_set_enable_v1(actor_user_public_id uuid, policy_set_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.policy_set_enable(actor_user_public_id uuid, policy_set_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -18410,6 +17399,7 @@ BEGIN
         actor_user_id,
         'policy_set_enable'
     );
+RETURN true;
 END;
 $$;
 
@@ -18418,20 +17408,7 @@ $$;
 -- Name: policy_set_reorder(uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.policy_set_reorder(actor_user_public_id uuid, ordered_policy_set_public_ids uuid[]) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM policy_set_reorder_v1(actor_user_public_id => actor_user_public_id, ordered_policy_set_public_ids => ordered_policy_set_public_ids);
-END;
-$$;
-
-
---
--- Name: policy_set_reorder_v1(uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.policy_set_reorder_v1(actor_user_public_id uuid, ordered_policy_set_public_ids uuid[]) RETURNS void
+CREATE FUNCTION public.policy_set_reorder(actor_user_public_id uuid, ordered_policy_set_public_ids uuid[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -18556,6 +17533,7 @@ BEGIN
         'policy_set_reorder'
     FROM policy_set
     WHERE policy_set_public_id = ANY(ordered_policy_set_public_ids);
+RETURN true;
 END;
 $$;
 
@@ -18565,17 +17543,6 @@ $$;
 --
 
 CREATE FUNCTION public.policy_set_update(actor_user_public_id uuid, policy_set_public_id_input uuid, display_name_input character varying) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT policy_set_update_v1(actor_user_public_id => actor_user_public_id, policy_set_public_id_input => policy_set_public_id_input, display_name_input => display_name_input);
-$$;
-
-
---
--- Name: policy_set_update_v1(uuid, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.policy_set_update_v1(actor_user_public_id uuid, policy_set_public_id_input uuid, display_name_input character varying) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -18706,17 +17673,6 @@ $$;
 --
 
 CREATE FUNCTION public.policy_text_match(candidate_input text, match_operator_input public.policy_match_operator, match_value_text_input text, value_set_id_input bigint, is_case_insensitive_input boolean) RETURNS boolean
-    LANGUAGE sql
-    AS $$
-    SELECT policy_text_match_v1(candidate_input => candidate_input, match_operator_input => match_operator_input, match_value_text_input => match_value_text_input, value_set_id_input => value_set_id_input, is_case_insensitive_input => is_case_insensitive_input);
-$$;
-
-
---
--- Name: policy_text_match_v1(text, public.policy_match_operator, text, bigint, boolean); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.policy_text_match_v1(candidate_input text, match_operator_input public.policy_match_operator, match_value_text_input text, value_set_id_input bigint, is_case_insensitive_input boolean) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -18774,17 +17730,6 @@ $$;
 --
 
 CREATE FUNCTION public.policy_uuid_match(candidate_input uuid, match_operator_input public.policy_match_operator, match_value_uuid_input uuid, value_set_id_input bigint) RETURNS boolean
-    LANGUAGE sql
-    AS $$
-    SELECT policy_uuid_match_v1(candidate_input => candidate_input, match_operator_input => match_operator_input, match_value_uuid_input => match_value_uuid_input, value_set_id_input => value_set_id_input);
-$$;
-
-
---
--- Name: policy_uuid_match_v1(uuid, public.policy_match_operator, uuid, bigint); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.policy_uuid_match_v1(candidate_input uuid, match_operator_input public.policy_match_operator, match_value_uuid_input uuid, value_set_id_input bigint) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -18846,17 +17791,6 @@ $$;
 --
 
 CREATE FUNCTION public.rate_limit_policy_create(actor_user_public_id uuid, display_name_input character varying, rpm_input integer, burst_input integer, concurrent_input integer) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT rate_limit_policy_create_v1(actor_user_public_id => actor_user_public_id, display_name_input => display_name_input, rpm_input => rpm_input, burst_input => burst_input, concurrent_input => concurrent_input);
-$$;
-
-
---
--- Name: rate_limit_policy_create_v1(uuid, character varying, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.rate_limit_policy_create_v1(actor_user_public_id uuid, display_name_input character varying, rpm_input integer, burst_input integer, concurrent_input integer) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -19004,20 +17938,7 @@ $$;
 -- Name: rate_limit_policy_soft_delete(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.rate_limit_policy_soft_delete(actor_user_public_id uuid, rate_limit_policy_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM rate_limit_policy_soft_delete_v1(actor_user_public_id => actor_user_public_id, rate_limit_policy_public_id_input => rate_limit_policy_public_id_input);
-END;
-$$;
-
-
---
--- Name: rate_limit_policy_soft_delete_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.rate_limit_policy_soft_delete_v1(actor_user_public_id uuid, rate_limit_policy_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.rate_limit_policy_soft_delete(actor_user_public_id uuid, rate_limit_policy_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -19116,6 +18037,7 @@ BEGIN
         actor_user_id,
         'rate_limit_policy_soft_delete'
     );
+RETURN true;
 END;
 $$;
 
@@ -19124,20 +18046,7 @@ $$;
 -- Name: rate_limit_policy_update(uuid, uuid, character varying, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.rate_limit_policy_update(actor_user_public_id uuid, rate_limit_policy_public_id_input uuid, display_name_input character varying, rpm_input integer, burst_input integer, concurrent_input integer) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM rate_limit_policy_update_v1(actor_user_public_id => actor_user_public_id, rate_limit_policy_public_id_input => rate_limit_policy_public_id_input, display_name_input => display_name_input, rpm_input => rpm_input, burst_input => burst_input, concurrent_input => concurrent_input);
-END;
-$$;
-
-
---
--- Name: rate_limit_policy_update_v1(uuid, uuid, character varying, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.rate_limit_policy_update_v1(actor_user_public_id uuid, rate_limit_policy_public_id_input uuid, display_name_input character varying, rpm_input integer, burst_input integer, concurrent_input integer) RETURNS void
+CREATE FUNCTION public.rate_limit_policy_update(actor_user_public_id uuid, rate_limit_policy_public_id_input uuid, display_name_input character varying, rpm_input integer, burst_input integer, concurrent_input integer) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -19276,6 +18185,7 @@ BEGIN
         actor_user_id,
         'rate_limit_policy_update'
     );
+RETURN true;
 END;
 $$;
 
@@ -19285,17 +18195,6 @@ $$;
 --
 
 CREATE FUNCTION public.rate_limit_try_consume(scope_type_input public.rate_limit_scope, scope_id_input bigint, capacity_input integer, tokens_input integer DEFAULT 1) RETURNS TABLE(allowed boolean, tokens_used integer)
-    LANGUAGE sql
-    AS $$
-    SELECT * FROM rate_limit_try_consume_v1(scope_type_input => scope_type_input, scope_id_input => scope_id_input, capacity_input => capacity_input, tokens_input => tokens_input);
-$$;
-
-
---
--- Name: rate_limit_try_consume_v1(public.rate_limit_scope, bigint, integer, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.rate_limit_try_consume_v1(scope_type_input public.rate_limit_scope, scope_id_input bigint, capacity_input integer, tokens_input integer DEFAULT 1) RETURNS TABLE(allowed boolean, tokens_used integer)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -19445,20 +18344,7 @@ $$;
 -- Name: routing_policy_bind_secret(uuid, uuid, public.routing_param_key, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.routing_policy_bind_secret(actor_user_public_id uuid, routing_policy_public_id_input uuid, param_key_input public.routing_param_key, secret_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM routing_policy_bind_secret_v1(actor_user_public_id => actor_user_public_id, routing_policy_public_id_input => routing_policy_public_id_input, param_key_input => param_key_input, secret_public_id_input => secret_public_id_input);
-END;
-$$;
-
-
---
--- Name: routing_policy_bind_secret_v1(uuid, uuid, public.routing_param_key, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.routing_policy_bind_secret_v1(actor_user_public_id uuid, routing_policy_public_id_input uuid, param_key_input public.routing_param_key, secret_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.routing_policy_bind_secret(actor_user_public_id uuid, routing_policy_public_id_input uuid, param_key_input public.routing_param_key, secret_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -19636,6 +18522,7 @@ BEGIN
         actor_user_id,
         'routing_policy_bind_secret'
     );
+RETURN true;
 END;
 $$;
 
@@ -19645,17 +18532,6 @@ $$;
 --
 
 CREATE FUNCTION public.routing_policy_create(actor_user_public_id uuid, display_name_input character varying, mode_input public.routing_policy_mode) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT routing_policy_create_v1(actor_user_public_id => actor_user_public_id, display_name_input => display_name_input, mode_input => mode_input);
-$$;
-
-
---
--- Name: routing_policy_create_v1(uuid, character varying, public.routing_policy_mode); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.routing_policy_create_v1(actor_user_public_id uuid, display_name_input character varying, mode_input public.routing_policy_mode) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -19819,24 +18695,6 @@ $$;
 CREATE FUNCTION public.routing_policy_get(actor_user_public_id uuid, routing_policy_public_id_input uuid) RETURNS TABLE(routing_policy_public_id uuid, display_name character varying, mode public.routing_policy_mode, rate_limit_policy_public_id uuid, rate_limit_display_name character varying, rate_limit_requests_per_minute integer, rate_limit_burst integer, rate_limit_concurrent_requests integer, param_key public.routing_param_key, value_plain character varying, value_int integer, value_bool boolean, secret_public_id uuid, secret_binding_name public.secret_binding_name)
     LANGUAGE plpgsql
     AS $$
-BEGIN
-    RETURN QUERY
-    SELECT *
-    FROM routing_policy_get_v1(
-        actor_user_public_id,
-        routing_policy_public_id_input
-    );
-END;
-$$;
-
-
---
--- Name: routing_policy_get_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.routing_policy_get_v1(actor_user_public_id uuid, routing_policy_public_id_input uuid) RETURNS TABLE(routing_policy_public_id uuid, display_name character varying, mode public.routing_policy_mode, rate_limit_policy_public_id uuid, rate_limit_display_name character varying, rate_limit_requests_per_minute integer, rate_limit_burst integer, rate_limit_concurrent_requests integer, param_key public.routing_param_key, value_plain character varying, value_int integer, value_bool boolean, secret_public_id uuid, secret_binding_name public.secret_binding_name)
-    LANGUAGE plpgsql
-    AS $$
 DECLARE
     base_message CONSTANT text := 'Failed to fetch routing policy';
     errcode CONSTANT text := 'P0001';
@@ -19937,20 +18795,7 @@ $$;
 -- Name: routing_policy_set_param(uuid, uuid, public.routing_param_key, character varying, integer, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.routing_policy_set_param(actor_user_public_id uuid, routing_policy_public_id_input uuid, param_key_input public.routing_param_key, value_plain_input character varying, value_int_input integer, value_bool_input boolean) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM routing_policy_set_param_v1(actor_user_public_id => actor_user_public_id, routing_policy_public_id_input => routing_policy_public_id_input, param_key_input => param_key_input, value_plain_input => value_plain_input, value_int_input => value_int_input, value_bool_input => value_bool_input);
-END;
-$$;
-
-
---
--- Name: routing_policy_set_param_v1(uuid, uuid, public.routing_param_key, character varying, integer, boolean); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.routing_policy_set_param_v1(actor_user_public_id uuid, routing_policy_public_id_input uuid, param_key_input public.routing_param_key, value_plain_input character varying, value_int_input integer, value_bool_input boolean) RETURNS void
+CREATE FUNCTION public.routing_policy_set_param(actor_user_public_id uuid, routing_policy_public_id_input uuid, param_key_input public.routing_param_key, value_plain_input character varying, value_int_input integer, value_bool_input boolean) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -20232,6 +19077,7 @@ BEGIN
         actor_user_id,
         'routing_policy_param_set'
     );
+RETURN true;
 END;
 $$;
 
@@ -20240,20 +19086,7 @@ $$;
 -- Name: routing_policy_set_rate_limit_policy(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.routing_policy_set_rate_limit_policy(actor_user_public_id uuid, routing_policy_public_id_input uuid, rate_limit_policy_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM routing_policy_set_rate_limit_policy_v1(actor_user_public_id => actor_user_public_id, routing_policy_public_id_input => routing_policy_public_id_input, rate_limit_policy_public_id_input => rate_limit_policy_public_id_input);
-END;
-$$;
-
-
---
--- Name: routing_policy_set_rate_limit_policy_v1(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.routing_policy_set_rate_limit_policy_v1(actor_user_public_id uuid, routing_policy_public_id_input uuid, rate_limit_policy_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.routing_policy_set_rate_limit_policy(actor_user_public_id uuid, routing_policy_public_id_input uuid, rate_limit_policy_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -20369,6 +19202,7 @@ BEGIN
         actor_user_id,
         'routing_policy_rate_limit_set'
     );
+RETURN true;
 END;
 $$;
 
@@ -20378,17 +19212,6 @@ $$;
 --
 
 CREATE FUNCTION public.rss_poll_apply(rss_subscription_id_input bigint, correlation_id_input uuid, retry_seq_input smallint, started_at_input timestamp with time zone, finished_at_input timestamp with time zone, outcome_input public.outbound_request_outcome, error_class_input public.error_class, http_status_input integer, latency_ms_input integer, parse_ok_input boolean, result_count_input integer, via_mitigation_input public.outbound_via_mitigation, rate_limit_denied_scope_input public.rate_limit_scope, cf_detected_input boolean, cf_retryable_input boolean, item_guid_input character varying[], infohash_v1_input character[], infohash_v2_input character[], magnet_hash_input character[]) RETURNS TABLE(items_parsed integer, items_eligible integer, items_inserted integer, subscription_succeeded boolean)
-    LANGUAGE sql
-    AS $$
-    SELECT * FROM rss_poll_apply_v1(rss_subscription_id_input => rss_subscription_id_input, correlation_id_input => correlation_id_input, retry_seq_input => retry_seq_input, started_at_input => started_at_input, finished_at_input => finished_at_input, outcome_input => outcome_input, error_class_input => error_class_input, http_status_input => http_status_input, latency_ms_input => latency_ms_input, parse_ok_input => parse_ok_input, result_count_input => result_count_input, via_mitigation_input => via_mitigation_input, rate_limit_denied_scope_input => rate_limit_denied_scope_input, cf_detected_input => cf_detected_input, cf_retryable_input => cf_retryable_input, item_guid_input => item_guid_input, infohash_v1_input => infohash_v1_input, infohash_v2_input => infohash_v2_input, magnet_hash_input => magnet_hash_input);
-$$;
-
-
---
--- Name: rss_poll_apply_v1(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.rss_poll_apply_v1(rss_subscription_id_input bigint, correlation_id_input uuid, retry_seq_input smallint, started_at_input timestamp with time zone, finished_at_input timestamp with time zone, outcome_input public.outbound_request_outcome, error_class_input public.error_class, http_status_input integer, latency_ms_input integer, parse_ok_input boolean, result_count_input integer, via_mitigation_input public.outbound_via_mitigation, rate_limit_denied_scope_input public.rate_limit_scope, cf_detected_input boolean, cf_retryable_input boolean, item_guid_input character varying[], infohash_v1_input character[], infohash_v2_input character[], magnet_hash_input character[]) RETURNS TABLE(items_parsed integer, items_eligible integer, items_inserted integer, subscription_succeeded boolean)
     LANGUAGE plpgsql
     AS $_$
 DECLARE
@@ -20638,7 +19461,7 @@ BEGIN
                 DETAIL = 'rate_limit_scope_missing';
         END IF;
 
-        PERFORM outbound_request_log_write_v1(
+        PERFORM outbound_request_log_write(
             instance_public_id_value,
             routing_policy_public_id_value,
             NULL,
@@ -20660,7 +19483,7 @@ BEGIN
             NULL
         );
     ELSE
-        PERFORM outbound_request_log_write_v1(
+        PERFORM outbound_request_log_write(
             instance_public_id_value,
             routing_policy_public_id_value,
             NULL,
@@ -20852,17 +19675,6 @@ $_$;
 --
 
 CREATE FUNCTION public.rss_poll_claim(limit_input integer DEFAULT 25) RETURNS TABLE(rss_subscription_id bigint, indexer_instance_public_id uuid, routing_policy_public_id uuid, interval_seconds integer, connect_timeout_ms integer, read_timeout_ms integer, correlation_id uuid, retry_seq smallint)
-    LANGUAGE sql
-    AS $$
-    SELECT * FROM rss_poll_claim_v1(limit_input => limit_input);
-$$;
-
-
---
--- Name: rss_poll_claim_v1(integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.rss_poll_claim_v1(limit_input integer DEFAULT 25) RETURNS TABLE(rss_subscription_id bigint, indexer_instance_public_id uuid, routing_policy_public_id uuid, interval_seconds integer, connect_timeout_ms integer, read_timeout_ms integer, correlation_id uuid, retry_seq smallint)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -20933,20 +19745,7 @@ $$;
 -- Name: search_indexer_run_enqueue(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_indexer_run_enqueue(search_request_public_id_input uuid, indexer_instance_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_indexer_run_enqueue_v1(search_request_public_id_input => search_request_public_id_input, indexer_instance_public_id_input => indexer_instance_public_id_input);
-END;
-$$;
-
-
---
--- Name: search_indexer_run_enqueue_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_indexer_run_enqueue_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.search_indexer_run_enqueue(search_request_public_id_input uuid, indexer_instance_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -21019,7 +19818,7 @@ BEGIN
 
     IF run_id IS NOT NULL THEN
         IF run_status = 'queued' THEN
-            RETURN;
+            RETURN true;
         END IF;
 
         IF run_status = 'running' THEN
@@ -21055,6 +19854,7 @@ BEGIN
         0,
         0
     );
+RETURN true;
 END;
 $$;
 
@@ -21063,20 +19863,7 @@ $$;
 -- Name: search_indexer_run_mark_canceled(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_indexer_run_mark_canceled(search_request_public_id_input uuid, indexer_instance_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_indexer_run_mark_canceled_v1(search_request_public_id_input => search_request_public_id_input, indexer_instance_public_id_input => indexer_instance_public_id_input);
-END;
-$$;
-
-
---
--- Name: search_indexer_run_mark_canceled_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_indexer_run_mark_canceled_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.search_indexer_run_mark_canceled(search_request_public_id_input uuid, indexer_instance_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -21147,7 +19934,7 @@ BEGIN
     END IF;
 
     IF run_status IN ('finished', 'failed', 'canceled') THEN
-        RETURN;
+        RETURN true;
     END IF;
 
     UPDATE search_request_indexer_run
@@ -21158,6 +19945,7 @@ BEGIN
         error_class = NULL,
         error_detail = NULL
     WHERE search_request_indexer_run_id = run_id;
+RETURN true;
 END;
 $$;
 
@@ -21166,20 +19954,7 @@ $$;
 -- Name: search_indexer_run_mark_failed(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_indexer_run_mark_failed(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, error_class_input public.error_class, error_detail_input character varying, retry_after_seconds_input integer, retry_seq_input smallint, rate_limit_scope_input public.rate_limit_scope) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_indexer_run_mark_failed_v1(search_request_public_id_input => search_request_public_id_input, indexer_instance_public_id_input => indexer_instance_public_id_input, error_class_input => error_class_input, error_detail_input => error_detail_input, retry_after_seconds_input => retry_after_seconds_input, retry_seq_input => retry_seq_input, rate_limit_scope_input => rate_limit_scope_input);
-END;
-$$;
-
-
---
--- Name: search_indexer_run_mark_failed_v1(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_indexer_run_mark_failed_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, error_class_input public.error_class, error_detail_input character varying, retry_after_seconds_input integer, retry_seq_input smallint, rate_limit_scope_input public.rate_limit_scope) RETURNS void
+CREATE FUNCTION public.search_indexer_run_mark_failed(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, error_class_input public.error_class, error_detail_input character varying, retry_after_seconds_input integer, retry_seq_input smallint, rate_limit_scope_input public.rate_limit_scope) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -21319,7 +20094,7 @@ BEGIN
                 error_detail = error_detail_input
             WHERE search_request_indexer_run_id = run_id;
 
-            RETURN;
+            RETURN true;
         END IF;
 
         delay_no_jitter := LEAST(5 * (1 << (new_rate_limited_count - 1)), 300);
@@ -21333,7 +20108,7 @@ BEGIN
             next_attempt_at = next_attempt
         WHERE search_request_indexer_run_id = run_id;
 
-        RETURN;
+        RETURN true;
     END IF;
 
     IF rate_limit_scope_input IS NOT NULL THEN
@@ -21362,7 +20137,7 @@ BEGIN
             last_rate_limit_scope = NULL
         WHERE search_request_indexer_run_id = run_id;
 
-        RETURN;
+        RETURN true;
     END IF;
 
     IF retry_seq_input IS NULL OR retry_seq_input < 0 THEN
@@ -21392,7 +20167,7 @@ BEGIN
             last_rate_limit_scope = NULL
         WHERE search_request_indexer_run_id = run_id;
 
-        RETURN;
+        RETURN true;
     END IF;
 
     IF error_class_input = 'http_429' THEN
@@ -21415,6 +20190,7 @@ BEGIN
         last_error_class = error_class_input,
         last_rate_limit_scope = NULL
     WHERE search_request_indexer_run_id = run_id;
+RETURN true;
 END;
 $$;
 
@@ -21423,20 +20199,7 @@ $$;
 -- Name: search_indexer_run_mark_finished(uuid, uuid, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_indexer_run_mark_finished(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, items_seen_delta_input integer, items_emitted_delta_input integer, canonical_added_delta_input integer) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_indexer_run_mark_finished_v1(search_request_public_id_input => search_request_public_id_input, indexer_instance_public_id_input => indexer_instance_public_id_input, items_seen_delta_input => items_seen_delta_input, items_emitted_delta_input => items_emitted_delta_input, canonical_added_delta_input => canonical_added_delta_input);
-END;
-$$;
-
-
---
--- Name: search_indexer_run_mark_finished_v1(uuid, uuid, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_indexer_run_mark_finished_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, items_seen_delta_input integer, items_emitted_delta_input integer, canonical_added_delta_input integer) RETURNS void
+CREATE FUNCTION public.search_indexer_run_mark_finished(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, items_seen_delta_input integer, items_emitted_delta_input integer, canonical_added_delta_input integer) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -21546,6 +20309,7 @@ BEGIN
         items_emitted_count = items_emitted_count + items_emitted_delta,
         canonical_added_count = canonical_added_count + canonical_added_delta
     WHERE search_request_indexer_run_id = run_id;
+RETURN true;
 END;
 $$;
 
@@ -21554,20 +20318,7 @@ $$;
 -- Name: search_indexer_run_mark_started(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_indexer_run_mark_started(search_request_public_id_input uuid, indexer_instance_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_indexer_run_mark_started_v1(search_request_public_id_input => search_request_public_id_input, indexer_instance_public_id_input => indexer_instance_public_id_input);
-END;
-$$;
-
-
---
--- Name: search_indexer_run_mark_started_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_indexer_run_mark_started_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.search_indexer_run_mark_started(search_request_public_id_input uuid, indexer_instance_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -21658,6 +20409,7 @@ BEGIN
         next_attempt_at = NULL,
         attempt_count = attempt_count + 1
     WHERE search_request_indexer_run_id = run_id;
+RETURN true;
 END;
 $$;
 
@@ -21667,24 +20419,6 @@ $$;
 --
 
 CREATE FUNCTION public.search_page_fetch(actor_user_public_id uuid, search_request_public_id_input uuid, page_number_input integer) RETURNS TABLE(page_number integer, sealed_at timestamp with time zone, item_count integer, item_position integer, canonical_torrent_public_id uuid, title_display character varying, size_bytes bigint, infohash_v1 character, infohash_v2 character, magnet_hash character, canonical_torrent_source_public_id uuid, indexer_instance_public_id uuid, indexer_display_name character varying, seeders integer, leechers integer, published_at timestamp with time zone, download_url character varying, magnet_uri character varying, details_url character varying, tracker_name character varying, tracker_category integer, tracker_subcategory integer)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT * FROM search_page_fetch_v1(
-        actor_user_public_id,
-        search_request_public_id_input,
-        page_number_input
-    );
-END;
-$$;
-
-
---
--- Name: search_page_fetch_v1(uuid, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_page_fetch_v1(actor_user_public_id uuid, search_request_public_id_input uuid, page_number_input integer) RETURNS TABLE(page_number integer, sealed_at timestamp with time zone, item_count integer, item_position integer, canonical_torrent_public_id uuid, title_display character varying, size_bytes bigint, infohash_v1 character, infohash_v2 character, magnet_hash character, canonical_torrent_source_public_id uuid, indexer_instance_public_id uuid, indexer_display_name character varying, seeders integer, leechers integer, published_at timestamp with time zone, download_url character varying, magnet_uri character varying, details_url character varying, tracker_name character varying, tracker_category integer, tracker_subcategory integer)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -21852,23 +20586,6 @@ $$;
 CREATE FUNCTION public.search_page_list(actor_user_public_id uuid, search_request_public_id_input uuid) RETURNS TABLE(page_number integer, sealed_at timestamp with time zone, item_count integer)
     LANGUAGE plpgsql
     AS $$
-BEGIN
-    RETURN QUERY
-    SELECT * FROM search_page_list_v1(
-        actor_user_public_id,
-        search_request_public_id_input
-    );
-END;
-$$;
-
-
---
--- Name: search_page_list_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_page_list_v1(actor_user_public_id uuid, search_request_public_id_input uuid) RETURNS TABLE(page_number integer, sealed_at timestamp with time zone, item_count integer)
-    LANGUAGE plpgsql
-    AS $$
 DECLARE
     base_message CONSTANT text := 'Failed to list search pages';
     errcode CONSTANT text := 'P0001';
@@ -21950,20 +20667,7 @@ $$;
 -- Name: search_profile_add_policy_set(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_profile_add_policy_set(actor_user_public_id uuid, search_profile_public_id_input uuid, policy_set_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_profile_add_policy_set_v1(actor_user_public_id => actor_user_public_id, search_profile_public_id_input => search_profile_public_id_input, policy_set_public_id_input => policy_set_public_id_input);
-END;
-$$;
-
-
---
--- Name: search_profile_add_policy_set_v1(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_profile_add_policy_set_v1(actor_user_public_id uuid, search_profile_public_id_input uuid, policy_set_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.search_profile_add_policy_set(actor_user_public_id uuid, search_profile_public_id_input uuid, policy_set_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -22098,6 +20802,7 @@ BEGIN
         actor_user_id,
         'search_profile_policy_set_add'
     );
+RETURN true;
 END;
 $$;
 
@@ -22107,17 +20812,6 @@ $$;
 --
 
 CREATE FUNCTION public.search_profile_create(actor_user_public_id uuid, display_name_input character varying, is_default_input boolean, page_size_input integer, default_media_domain_key_input character varying, user_public_id_input uuid) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT search_profile_create_v1(actor_user_public_id => actor_user_public_id, display_name_input => display_name_input, is_default_input => is_default_input, page_size_input => page_size_input, default_media_domain_key_input => default_media_domain_key_input, user_public_id_input => user_public_id_input);
-$$;
-
-
---
--- Name: search_profile_create_v1(uuid, character varying, boolean, integer, character varying, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_profile_create_v1(actor_user_public_id uuid, display_name_input character varying, is_default_input boolean, page_size_input integer, default_media_domain_key_input character varying, user_public_id_input uuid) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -22301,20 +20995,7 @@ $$;
 -- Name: search_profile_indexer_allow(uuid, uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_profile_indexer_allow(actor_user_public_id uuid, search_profile_public_id_input uuid, indexer_instance_public_ids_input uuid[]) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_profile_indexer_allow_v1(actor_user_public_id => actor_user_public_id, search_profile_public_id_input => search_profile_public_id_input, indexer_instance_public_ids_input => indexer_instance_public_ids_input);
-END;
-$$;
-
-
---
--- Name: search_profile_indexer_allow_v1(uuid, uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_profile_indexer_allow_v1(actor_user_public_id uuid, search_profile_public_id_input uuid, indexer_instance_public_ids_input uuid[]) RETURNS void
+CREATE FUNCTION public.search_profile_indexer_allow(actor_user_public_id uuid, search_profile_public_id_input uuid, indexer_instance_public_ids_input uuid[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -22474,6 +21155,7 @@ BEGIN
         actor_user_id,
         'search_profile_indexer_allow'
     );
+RETURN true;
 END;
 $$;
 
@@ -22482,20 +21164,7 @@ $$;
 -- Name: search_profile_indexer_block(uuid, uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_profile_indexer_block(actor_user_public_id uuid, search_profile_public_id_input uuid, indexer_instance_public_ids_input uuid[]) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_profile_indexer_block_v1(actor_user_public_id => actor_user_public_id, search_profile_public_id_input => search_profile_public_id_input, indexer_instance_public_ids_input => indexer_instance_public_ids_input);
-END;
-$$;
-
-
---
--- Name: search_profile_indexer_block_v1(uuid, uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_profile_indexer_block_v1(actor_user_public_id uuid, search_profile_public_id_input uuid, indexer_instance_public_ids_input uuid[]) RETURNS void
+CREATE FUNCTION public.search_profile_indexer_block(actor_user_public_id uuid, search_profile_public_id_input uuid, indexer_instance_public_ids_input uuid[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -22655,6 +21324,7 @@ BEGIN
         actor_user_id,
         'search_profile_indexer_block'
     );
+RETURN true;
 END;
 $$;
 
@@ -22663,20 +21333,7 @@ $$;
 -- Name: search_profile_remove_policy_set(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_profile_remove_policy_set(actor_user_public_id uuid, search_profile_public_id_input uuid, policy_set_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_profile_remove_policy_set_v1(actor_user_public_id => actor_user_public_id, search_profile_public_id_input => search_profile_public_id_input, policy_set_public_id_input => policy_set_public_id_input);
-END;
-$$;
-
-
---
--- Name: search_profile_remove_policy_set_v1(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_profile_remove_policy_set_v1(actor_user_public_id uuid, search_profile_public_id_input uuid, policy_set_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.search_profile_remove_policy_set(actor_user_public_id uuid, search_profile_public_id_input uuid, policy_set_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -22805,19 +21462,7 @@ BEGIN
         actor_user_id,
         'search_profile_policy_set_remove'
     );
-END;
-$$;
-
-
---
--- Name: search_profile_set_default(uuid, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_profile_set_default(actor_user_public_id uuid, search_profile_public_id_input uuid, page_size_input integer) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_profile_set_default_v1(actor_user_public_id => actor_user_public_id, search_profile_public_id_input => search_profile_public_id_input, page_size_input => page_size_input);
+RETURN true;
 END;
 $$;
 
@@ -22826,20 +21471,7 @@ $$;
 -- Name: search_profile_set_default_domain(uuid, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_profile_set_default_domain(actor_user_public_id uuid, search_profile_public_id_input uuid, default_media_domain_key_input character varying) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_profile_set_default_domain_v1(actor_user_public_id => actor_user_public_id, search_profile_public_id_input => search_profile_public_id_input, default_media_domain_key_input => default_media_domain_key_input);
-END;
-$$;
-
-
---
--- Name: search_profile_set_default_domain_v1(uuid, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_profile_set_default_domain_v1(actor_user_public_id uuid, search_profile_public_id_input uuid, default_media_domain_key_input character varying) RETURNS void
+CREATE FUNCTION public.search_profile_set_default_domain(actor_user_public_id uuid, search_profile_public_id_input uuid, default_media_domain_key_input character varying) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -22981,15 +21613,16 @@ BEGIN
         actor_user_id,
         'search_profile_set_default_domain'
     );
+RETURN true;
 END;
 $$;
 
 
 --
--- Name: search_profile_set_default_v1(uuid, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+-- Name: search_profile_set_default(uuid, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_profile_set_default_v1(actor_user_public_id uuid, search_profile_public_id_input uuid, page_size_input integer) RETURNS void
+CREATE FUNCTION public.search_profile_set_default(actor_user_public_id uuid, search_profile_public_id_input uuid, page_size_input integer) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -23107,6 +21740,7 @@ BEGIN
         actor_user_id,
         'search_profile_set_default'
     );
+RETURN true;
 END;
 $$;
 
@@ -23115,24 +21749,7 @@ $$;
 -- Name: search_profile_set_domain_allowlist(uuid, uuid, text[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_profile_set_domain_allowlist(actor_user_public_id uuid, search_profile_public_id_input uuid, media_domain_keys_input text[]) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_profile_set_domain_allowlist_v1(
-        actor_user_public_id => actor_user_public_id,
-        search_profile_public_id_input => search_profile_public_id_input,
-        media_domain_keys_input => media_domain_keys_input
-    );
-END;
-$$;
-
-
---
--- Name: search_profile_set_domain_allowlist_v1(uuid, uuid, text[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_profile_set_domain_allowlist_v1(actor_user_public_id uuid, search_profile_public_id_input uuid, media_domain_keys_input text[]) RETURNS void
+CREATE FUNCTION public.search_profile_set_domain_allowlist(actor_user_public_id uuid, search_profile_public_id_input uuid, media_domain_keys_input text[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -23295,6 +21912,7 @@ BEGIN
         actor_user_id,
         'search_profile_domain_allowlist'
     );
+RETURN true;
 END;
 $$;
 
@@ -23303,20 +21921,7 @@ $$;
 -- Name: search_profile_tag_allow(uuid, uuid, uuid[], text[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_profile_tag_allow(actor_user_public_id uuid, search_profile_public_id_input uuid, tag_public_ids_input uuid[], tag_keys_input text[]) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_profile_tag_allow_v1(actor_user_public_id => actor_user_public_id, search_profile_public_id_input => search_profile_public_id_input, tag_public_ids_input => tag_public_ids_input, tag_keys_input => tag_keys_input);
-END;
-$$;
-
-
---
--- Name: search_profile_tag_allow_v1(uuid, uuid, uuid[], text[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_profile_tag_allow_v1(actor_user_public_id uuid, search_profile_public_id_input uuid, tag_public_ids_input uuid[], tag_keys_input text[]) RETURNS void
+CREATE FUNCTION public.search_profile_tag_allow(actor_user_public_id uuid, search_profile_public_id_input uuid, tag_public_ids_input uuid[], tag_keys_input text[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -23545,6 +22150,7 @@ BEGIN
         actor_user_id,
         'search_profile_tag_allow'
     );
+RETURN true;
 END;
 $$;
 
@@ -23553,20 +22159,7 @@ $$;
 -- Name: search_profile_tag_block(uuid, uuid, uuid[], text[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_profile_tag_block(actor_user_public_id uuid, search_profile_public_id_input uuid, tag_public_ids_input uuid[], tag_keys_input text[]) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_profile_tag_block_v1(actor_user_public_id => actor_user_public_id, search_profile_public_id_input => search_profile_public_id_input, tag_public_ids_input => tag_public_ids_input, tag_keys_input => tag_keys_input);
-END;
-$$;
-
-
---
--- Name: search_profile_tag_block_v1(uuid, uuid, uuid[], text[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_profile_tag_block_v1(actor_user_public_id uuid, search_profile_public_id_input uuid, tag_public_ids_input uuid[], tag_keys_input text[]) RETURNS void
+CREATE FUNCTION public.search_profile_tag_block(actor_user_public_id uuid, search_profile_public_id_input uuid, tag_public_ids_input uuid[], tag_keys_input text[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -23795,6 +22388,7 @@ BEGIN
         actor_user_id,
         'search_profile_tag_block'
     );
+RETURN true;
 END;
 $$;
 
@@ -23803,20 +22397,7 @@ $$;
 -- Name: search_profile_tag_prefer(uuid, uuid, uuid[], text[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_profile_tag_prefer(actor_user_public_id uuid, search_profile_public_id_input uuid, tag_public_ids_input uuid[], tag_keys_input text[]) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_profile_tag_prefer_v1(actor_user_public_id => actor_user_public_id, search_profile_public_id_input => search_profile_public_id_input, tag_public_ids_input => tag_public_ids_input, tag_keys_input => tag_keys_input);
-END;
-$$;
-
-
---
--- Name: search_profile_tag_prefer_v1(uuid, uuid, uuid[], text[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_profile_tag_prefer_v1(actor_user_public_id uuid, search_profile_public_id_input uuid, tag_public_ids_input uuid[], tag_keys_input text[]) RETURNS void
+CREATE FUNCTION public.search_profile_tag_prefer(actor_user_public_id uuid, search_profile_public_id_input uuid, tag_public_ids_input uuid[], tag_keys_input text[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -24045,6 +22626,7 @@ BEGIN
         actor_user_id,
         'search_profile_tag_prefer'
     );
+RETURN true;
 END;
 $$;
 
@@ -24054,17 +22636,6 @@ $$;
 --
 
 CREATE FUNCTION public.search_profile_update(actor_user_public_id uuid, search_profile_public_id_input uuid, display_name_input character varying, page_size_input integer) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT search_profile_update_v1(actor_user_public_id => actor_user_public_id, search_profile_public_id_input => search_profile_public_id_input, display_name_input => display_name_input, page_size_input => page_size_input);
-$$;
-
-
---
--- Name: search_profile_update_v1(uuid, uuid, character varying, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_profile_update_v1(actor_user_public_id uuid, search_profile_public_id_input uuid, display_name_input character varying, page_size_input integer) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -24206,20 +22777,7 @@ $$;
 -- Name: search_request_cancel(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.search_request_cancel(actor_user_public_id uuid, search_request_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM search_request_cancel_v1(actor_user_public_id => actor_user_public_id, search_request_public_id_input => search_request_public_id_input);
-END;
-$$;
-
-
---
--- Name: search_request_cancel_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_request_cancel_v1(actor_user_public_id uuid, search_request_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.search_request_cancel(actor_user_public_id uuid, search_request_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -24286,7 +22844,7 @@ BEGIN
     END IF;
 
     IF request_status IN ('canceled', 'finished', 'failed') THEN
-        RETURN;
+        RETURN true;
     END IF;
 
     UPDATE search_request
@@ -24306,6 +22864,7 @@ BEGIN
         error_detail = NULL
     WHERE search_request_id = request_id
       AND status IN ('queued', 'running');
+RETURN true;
 END;
 $$;
 
@@ -24315,17 +22874,6 @@ $$;
 --
 
 CREATE FUNCTION public.search_request_create(actor_user_public_id uuid, query_text_input character varying, query_type_input public.query_type, torznab_mode_input public.torznab_mode, requested_media_domain_key_input character varying, page_size_input integer, search_profile_public_id_input uuid, request_policy_set_public_id_input uuid, season_number_input integer, episode_number_input integer, identifier_types_input public.identifier_type[], identifier_values_input text[], torznab_cat_ids_input integer[]) RETURNS TABLE(search_request_public_id uuid, request_policy_set_public_id uuid)
-    LANGUAGE sql
-    AS $$
-    SELECT * FROM search_request_create_v1(actor_user_public_id => actor_user_public_id, query_text_input => query_text_input, query_type_input => query_type_input, torznab_mode_input => torznab_mode_input, requested_media_domain_key_input => requested_media_domain_key_input, page_size_input => page_size_input, search_profile_public_id_input => search_profile_public_id_input, request_policy_set_public_id_input => request_policy_set_public_id_input, season_number_input => season_number_input, episode_number_input => episode_number_input, identifier_types_input => identifier_types_input, identifier_values_input => identifier_values_input, torznab_cat_ids_input => torznab_cat_ids_input);
-$$;
-
-
---
--- Name: search_request_create_v1(uuid, character varying, public.query_type, public.torznab_mode, character varying, integer, uuid, uuid, integer, integer, public.identifier_type[], text[], integer[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_request_create_v1(actor_user_public_id uuid, query_text_input character varying, query_type_input public.query_type, torznab_mode_input public.torznab_mode, requested_media_domain_key_input character varying, page_size_input integer, search_profile_public_id_input uuid, request_policy_set_public_id_input uuid, season_number_input integer, episode_number_input integer, identifier_types_input public.identifier_type[], identifier_values_input text[], torznab_cat_ids_input integer[]) RETURNS TABLE(search_request_public_id uuid, request_policy_set_public_id uuid)
     LANGUAGE plpgsql
     AS $_$
 DECLARE
@@ -25634,29 +24182,12 @@ $_$;
 CREATE FUNCTION public.search_request_explainability(actor_user_public_id uuid, search_request_public_id_input uuid) RETURNS TABLE(zero_runnable_indexers boolean, skipped_canceled_indexers integer, skipped_failed_indexers integer, blocked_results integer, blocked_rule_public_ids uuid[], rate_limited_indexers integer, retrying_indexers integer)
     LANGUAGE plpgsql
     AS $$
-BEGIN
-    RETURN QUERY
-    SELECT * FROM search_request_explainability_v1(
-        actor_user_public_id => actor_user_public_id,
-        search_request_public_id_input => search_request_public_id_input
-    );
-END;
-$$;
-
-
---
--- Name: search_request_explainability_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.search_request_explainability_v1(actor_user_public_id uuid, search_request_public_id_input uuid) RETURNS TABLE(zero_runnable_indexers boolean, skipped_canceled_indexers integer, skipped_failed_indexers integer, blocked_results integer, blocked_rule_public_ids uuid[], rate_limited_indexers integer, retrying_indexers integer)
-    LANGUAGE plpgsql
-    AS $$
 DECLARE
     request_id BIGINT;
 BEGIN
     -- Reuse list auth/visibility checks so error detail codes remain consistent.
     PERFORM *
-    FROM search_page_list_v1(
+    FROM search_page_list(
         actor_user_public_id => actor_user_public_id,
         search_request_public_id_input => search_request_public_id_input
     )
@@ -26153,7 +24684,7 @@ BEGIN
 
     magnet_hash_value := COALESCE(
         magnet_hash_value,
-        derive_magnet_hash_v1(infohash_v2_value, infohash_v1_value, magnet_uri_value)
+        derive_magnet_hash(infohash_v2_value, infohash_v1_value, magnet_uri_value)
     );
 
     IF source_guid_value IS NULL
@@ -26203,7 +24734,7 @@ BEGIN
         release_group_confidence := 0;
     END IF;
 
-    title_normalized_value := normalize_title_v1(title_for_norm);
+    title_normalized_value := normalize_title(title_for_norm);
 
     IF title_normalized_value IS NULL OR title_normalized_value = '' THEN
         RAISE EXCEPTION USING
@@ -26224,7 +24755,7 @@ BEGIN
     ELSE
         identity_strategy_value := 'title_size_fallback';
         identity_confidence_value := 0.60;
-        title_size_hash_value := compute_title_size_hash_v1(title_normalized_value, size_bytes_input);
+        title_size_hash_value := compute_title_size_hash(title_normalized_value, size_bytes_input);
     END IF;
 
     IF identity_strategy_value = 'title_size_fallback' AND title_size_hash_value IS NULL THEN
@@ -26449,7 +24980,7 @@ BEGIN
                     LIMIT 1;
 
                     guid_conflict_value := TRUE;
-                    PERFORM log_source_metadata_conflict_v1(
+                    PERFORM log_source_metadata_conflict(
                         source_id,
                         instance_id,
                         'source_guid',
@@ -26466,7 +24997,7 @@ BEGIN
                 END IF;
             ELSIF existing_source_guid <> source_guid_value THEN
                 guid_conflict_value := TRUE;
-                PERFORM log_source_metadata_conflict_v1(
+                PERFORM log_source_metadata_conflict(
                     source_id,
                     instance_id,
                     'source_guid',
@@ -26487,7 +25018,7 @@ BEGIN
                       AND infohash_v2 = infohash_v2_value
                       AND canonical_torrent_source_id <> source_id
                 ) THEN
-                    PERFORM log_source_metadata_conflict_v1(
+                    PERFORM log_source_metadata_conflict(
                         source_id,
                         instance_id,
                         'hash',
@@ -26503,7 +25034,7 @@ BEGIN
                     existing_infohash_v2 := infohash_v2_value;
                 END IF;
             ELSIF existing_infohash_v2 <> infohash_v2_value THEN
-                PERFORM log_source_metadata_conflict_v1(
+                PERFORM log_source_metadata_conflict(
                     source_id,
                     instance_id,
                     'hash',
@@ -26525,7 +25056,7 @@ BEGIN
                       AND infohash_v1 = infohash_v1_value
                       AND canonical_torrent_source_id <> source_id
                 ) THEN
-                    PERFORM log_source_metadata_conflict_v1(
+                    PERFORM log_source_metadata_conflict(
                         source_id,
                         instance_id,
                         'hash',
@@ -26541,7 +25072,7 @@ BEGIN
                     existing_infohash_v1 := infohash_v1_value;
                 END IF;
             ELSIF existing_infohash_v1 <> infohash_v1_value THEN
-                PERFORM log_source_metadata_conflict_v1(
+                PERFORM log_source_metadata_conflict(
                     source_id,
                     instance_id,
                     'hash',
@@ -26564,7 +25095,7 @@ BEGIN
                       AND magnet_hash = magnet_hash_value
                       AND canonical_torrent_source_id <> source_id
                 ) THEN
-                    PERFORM log_source_metadata_conflict_v1(
+                    PERFORM log_source_metadata_conflict(
                         source_id,
                         instance_id,
                         'hash',
@@ -26580,7 +25111,7 @@ BEGIN
                     existing_magnet_hash := magnet_hash_value;
                 END IF;
             ELSIF existing_magnet_hash <> magnet_hash_value THEN
-                PERFORM log_source_metadata_conflict_v1(
+                PERFORM log_source_metadata_conflict(
                     source_id,
                     instance_id,
                     'hash',
@@ -26981,7 +25512,7 @@ BEGIN
                 WHERE action = 'require'
                   AND rule_type = 'allow_indexer_instance'
                   AND scope_rank = allowlist_scope_indexer
-                  AND policy_uuid_match_v1(
+                  AND policy_uuid_match(
                       indexer_instance_public_id_input,
                       match_operator,
                       match_value_uuid,
@@ -27010,7 +25541,7 @@ BEGIN
                 WHERE action = 'require'
                   AND rule_type = 'allow_title_regex'
                   AND scope_rank = allowlist_scope_title
-                  AND policy_text_match_v1(
+                  AND policy_text_match(
                       title_normalized_value,
                       match_operator,
                       match_value_text,
@@ -27040,7 +25571,7 @@ BEGIN
                 WHERE action = 'require'
                   AND rule_type = 'allow_release_group'
                   AND scope_rank = allowlist_scope_release_group
-                  AND policy_release_group_match_v1(
+                  AND policy_release_group_match(
                       canonical_id,
                       release_group_token,
                       match_operator,
@@ -27075,7 +25606,7 @@ BEGIN
                 WHERE pr.action = 'require'
                   AND pr.rule_type = 'require_media_domain'
                   AND pr.scope_rank = allowlist_scope_domain
-                  AND policy_text_match_v1(
+                  AND policy_text_match(
                       md.media_domain_key::TEXT,
                       pr.match_operator,
                       pr.match_value_text,
@@ -27129,7 +25660,7 @@ BEGIN
             rule_matched := FALSE;
 
             IF policy_rule_record.match_field = 'infohash_v1' THEN
-                rule_matched := policy_text_match_v1(
+                rule_matched := policy_text_match(
                     canonical_infohash_v1,
                     policy_rule_record.match_operator,
                     policy_rule_record.match_value_text,
@@ -27137,7 +25668,7 @@ BEGIN
                     policy_rule_record.is_case_insensitive
                 );
             ELSIF policy_rule_record.match_field = 'infohash_v2' THEN
-                rule_matched := policy_text_match_v1(
+                rule_matched := policy_text_match(
                     canonical_infohash_v2,
                     policy_rule_record.match_operator,
                     policy_rule_record.match_value_text,
@@ -27145,7 +25676,7 @@ BEGIN
                     policy_rule_record.is_case_insensitive
                 );
             ELSIF policy_rule_record.match_field = 'magnet_hash' THEN
-                rule_matched := policy_text_match_v1(
+                rule_matched := policy_text_match(
                     canonical_magnet_hash,
                     policy_rule_record.match_operator,
                     policy_rule_record.match_value_text,
@@ -27153,7 +25684,7 @@ BEGIN
                     policy_rule_record.is_case_insensitive
                 );
             ELSIF policy_rule_record.match_field = 'title' THEN
-                rule_matched := policy_text_match_v1(
+                rule_matched := policy_text_match(
                     title_normalized_value,
                     policy_rule_record.match_operator,
                     policy_rule_record.match_value_text,
@@ -27161,7 +25692,7 @@ BEGIN
                     policy_rule_record.is_case_insensitive
                 );
             ELSIF policy_rule_record.match_field = 'release_group' THEN
-                rule_matched := policy_release_group_match_v1(
+                rule_matched := policy_release_group_match(
                     canonical_id,
                     release_group_token,
                     policy_rule_record.match_operator,
@@ -27170,7 +25701,7 @@ BEGIN
                     policy_rule_record.is_case_insensitive
                 );
             ELSIF policy_rule_record.match_field = 'uploader' THEN
-                rule_matched := policy_text_match_v1(
+                rule_matched := policy_text_match(
                     uploader_input,
                     policy_rule_record.match_operator,
                     policy_rule_record.match_value_text,
@@ -27178,7 +25709,7 @@ BEGIN
                     policy_rule_record.is_case_insensitive
                 );
             ELSIF policy_rule_record.match_field = 'tracker' THEN
-                rule_matched := policy_text_match_v1(
+                rule_matched := policy_text_match(
                     tracker_name_value,
                     policy_rule_record.match_operator,
                     policy_rule_record.match_value_text,
@@ -27186,7 +25717,7 @@ BEGIN
                     policy_rule_record.is_case_insensitive
                 );
             ELSIF policy_rule_record.match_field = 'indexer_instance_public_id' THEN
-                rule_matched := policy_uuid_match_v1(
+                rule_matched := policy_uuid_match(
                     indexer_instance_public_id_input,
                     policy_rule_record.match_operator,
                     policy_rule_record.match_value_uuid,
@@ -27199,7 +25730,7 @@ BEGIN
                     JOIN media_domain md
                         ON md.media_domain_id = imd.media_domain_id
                     WHERE imd.indexer_instance_id = instance_id
-                      AND policy_text_match_v1(
+                      AND policy_text_match(
                           md.media_domain_key::TEXT,
                           policy_rule_record.match_operator,
                           policy_rule_record.match_value_text,
@@ -27208,7 +25739,7 @@ BEGIN
                       )
                 );
             ELSIF policy_rule_record.match_field = 'trust_tier_key' THEN
-                rule_matched := policy_text_match_v1(
+                rule_matched := policy_text_match(
                     instance_trust_tier_key::TEXT,
                     policy_rule_record.match_operator,
                     policy_rule_record.match_value_text,
@@ -27216,7 +25747,7 @@ BEGIN
                     policy_rule_record.is_case_insensitive
                 );
             ELSIF policy_rule_record.match_field = 'trust_tier_rank' THEN
-                rule_matched := policy_int_match_v1(
+                rule_matched := policy_int_match(
                     instance_trust_rank,
                     policy_rule_record.match_operator,
                     policy_rule_record.match_value_int,
@@ -27618,7 +26149,7 @@ BEGIN
                 DO UPDATE SET
                     value_text = COALESCE(canonical_torrent_source_attr.value_text, EXCLUDED.value_text);
             ELSIF existing_tracker_name <> tracker_name_value THEN
-                PERFORM log_source_metadata_conflict_v1(
+                PERFORM log_source_metadata_conflict(
                     source_id,
                     instance_id,
                     'tracker_name',
@@ -27645,7 +26176,7 @@ BEGIN
                 DO UPDATE SET
                     value_int = COALESCE(canonical_torrent_source_attr.value_int, EXCLUDED.value_int);
             ELSIF existing_tracker_category <> tracker_category_value THEN
-                PERFORM log_source_metadata_conflict_v1(
+                PERFORM log_source_metadata_conflict(
                     source_id,
                     instance_id,
                     'tracker_category',
@@ -27672,7 +26203,7 @@ BEGIN
                 DO UPDATE SET
                     value_int = COALESCE(canonical_torrent_source_attr.value_int, EXCLUDED.value_int);
             ELSIF existing_tracker_subcategory <> tracker_subcategory_value THEN
-                PERFORM log_source_metadata_conflict_v1(
+                PERFORM log_source_metadata_conflict(
                     source_id,
                     instance_id,
                     'tracker_category',
@@ -27735,7 +26266,7 @@ BEGIN
                 DO UPDATE SET
                     value_text = COALESCE(canonical_torrent_source_attr.value_text, EXCLUDED.value_text);
             ELSIF existing_imdb_id <> imdb_id_value THEN
-                PERFORM log_source_metadata_conflict_v1(
+                PERFORM log_source_metadata_conflict(
                     source_id,
                     instance_id,
                     'external_id',
@@ -27762,7 +26293,7 @@ BEGIN
                 DO UPDATE SET
                     value_int = COALESCE(canonical_torrent_source_attr.value_int, EXCLUDED.value_int);
             ELSIF existing_tmdb_id <> tmdb_id_value THEN
-                PERFORM log_source_metadata_conflict_v1(
+                PERFORM log_source_metadata_conflict(
                     source_id,
                     instance_id,
                     'external_id',
@@ -27789,7 +26320,7 @@ BEGIN
                 DO UPDATE SET
                     value_int = COALESCE(canonical_torrent_source_attr.value_int, EXCLUDED.value_int);
             ELSIF existing_tvdb_id <> tvdb_id_value THEN
-                PERFORM log_source_metadata_conflict_v1(
+                PERFORM log_source_metadata_conflict(
                     source_id,
                     instance_id,
                     'external_id',
@@ -28440,17 +26971,6 @@ $_$;
 --
 
 CREATE FUNCTION public.secret_create(actor_user_public_id uuid, secret_type_input public.secret_type, plaintext_value_input character varying) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT secret_create_v1(actor_user_public_id => actor_user_public_id, secret_type_input => secret_type_input, plaintext_value_input => plaintext_value_input);
-$$;
-
-
---
--- Name: secret_create_v1(uuid, public.secret_type, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.secret_create_v1(actor_user_public_id uuid, secret_type_input public.secret_type, plaintext_value_input character varying) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -28570,21 +27090,6 @@ $$;
 CREATE FUNCTION public.secret_metadata_list(actor_user_public_id uuid) RETURNS TABLE(secret_public_id uuid, secret_type public.secret_type, is_revoked boolean, created_at timestamp with time zone, rotated_at timestamp with time zone, binding_count bigint)
     LANGUAGE plpgsql
     AS $$
-BEGIN
-    RETURN QUERY
-    SELECT *
-    FROM secret_metadata_list_v1(actor_user_public_id);
-END;
-$$;
-
-
---
--- Name: secret_metadata_list_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.secret_metadata_list_v1(actor_user_public_id uuid) RETURNS TABLE(secret_public_id uuid, secret_type public.secret_type, is_revoked boolean, created_at timestamp with time zone, rotated_at timestamp with time zone, binding_count bigint)
-    LANGUAGE plpgsql
-    AS $$
 DECLARE
     base_message CONSTANT text := 'Failed to list secret metadata';
     errcode CONSTANT text := 'P0001';
@@ -28636,17 +27141,6 @@ $$;
 --
 
 CREATE FUNCTION public.secret_read(actor_user_public_id uuid, secret_public_id_input uuid) RETURNS TABLE(secret_type public.secret_type, cipher_text bytea, key_id character varying)
-    LANGUAGE sql
-    AS $$
-    SELECT * FROM secret_read_v1(actor_user_public_id => actor_user_public_id, secret_public_id_input => secret_public_id_input);
-$$;
-
-
---
--- Name: secret_read_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.secret_read_v1(actor_user_public_id uuid, secret_public_id_input uuid) RETURNS TABLE(secret_type public.secret_type, cipher_text bytea, key_id character varying)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -28713,20 +27207,7 @@ $$;
 -- Name: secret_revoke(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.secret_revoke(actor_user_public_id uuid, secret_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM secret_revoke_v1(actor_user_public_id => actor_user_public_id, secret_public_id_input => secret_public_id_input);
-END;
-$$;
-
-
---
--- Name: secret_revoke_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.secret_revoke_v1(actor_user_public_id uuid, secret_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.secret_revoke(actor_user_public_id uuid, secret_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -28797,6 +27278,7 @@ BEGIN
         actor_user_id,
         'secret_revoke'
     );
+RETURN true;
 END;
 $$;
 
@@ -28806,17 +27288,6 @@ $$;
 --
 
 CREATE FUNCTION public.secret_rotate(actor_user_public_id uuid, secret_public_id_input uuid, plaintext_value_input character varying) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT secret_rotate_v1(actor_user_public_id => actor_user_public_id, secret_public_id_input => secret_public_id_input, plaintext_value_input => plaintext_value_input);
-$$;
-
-
---
--- Name: secret_rotate_v1(uuid, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.secret_rotate_v1(actor_user_public_id uuid, secret_public_id_input uuid, plaintext_value_input character varying) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -28936,24 +27407,7 @@ $$;
 -- Name: secret_session_configure(uuid, character varying, character varying); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.secret_session_configure(actor_user_public_id uuid, secret_key_id_input character varying, secret_key_input character varying) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM secret_session_configure_v1(
-        actor_user_public_id,
-        secret_key_id_input,
-        secret_key_input
-    );
-END;
-$$;
-
-
---
--- Name: secret_session_configure_v1(uuid, character varying, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.secret_session_configure_v1(actor_user_public_id uuid, secret_key_id_input character varying, secret_key_input character varying) RETURNS void
+CREATE FUNCTION public.secret_session_configure(actor_user_public_id uuid, secret_key_id_input character varying, secret_key_input character varying) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -29038,6 +27492,7 @@ BEGIN
 
     PERFORM set_config('revaer.secret_key_id', trimmed_key_id, false);
     PERFORM set_config('revaer.secret_key', trimmed_secret, false);
+RETURN true;
 END;
 $$;
 
@@ -29047,24 +27502,6 @@ $$;
 --
 
 CREATE FUNCTION public.source_metadata_conflict_list(actor_user_public_id uuid, include_resolved_input boolean, limit_input integer) RETURNS TABLE(conflict_id bigint, conflict_type public.conflict_type, existing_value character varying, incoming_value character varying, observed_at timestamp with time zone, resolved_at timestamp with time zone, resolution public.conflict_resolution, resolution_note character varying)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT * FROM source_metadata_conflict_list_v1(
-        actor_user_public_id => actor_user_public_id,
-        include_resolved_input => include_resolved_input,
-        limit_input => limit_input
-    );
-END;
-$$;
-
-
---
--- Name: source_metadata_conflict_list_v1(uuid, boolean, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.source_metadata_conflict_list_v1(actor_user_public_id uuid, include_resolved_input boolean, limit_input integer) RETURNS TABLE(conflict_id bigint, conflict_type public.conflict_type, existing_value character varying, incoming_value character varying, observed_at timestamp with time zone, resolved_at timestamp with time zone, resolution public.conflict_resolution, resolution_note character varying)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -29134,20 +27571,7 @@ $$;
 -- Name: source_metadata_conflict_reopen(uuid, bigint, character varying); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.source_metadata_conflict_reopen(actor_user_public_id uuid, conflict_id_input bigint, resolution_note_input character varying) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM source_metadata_conflict_reopen_v1(actor_user_public_id => actor_user_public_id, conflict_id_input => conflict_id_input, resolution_note_input => resolution_note_input);
-END;
-$$;
-
-
---
--- Name: source_metadata_conflict_reopen_v1(uuid, bigint, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.source_metadata_conflict_reopen_v1(actor_user_public_id uuid, conflict_id_input bigint, resolution_note_input character varying) RETURNS void
+CREATE FUNCTION public.source_metadata_conflict_reopen(actor_user_public_id uuid, conflict_id_input bigint, resolution_note_input character varying) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -29230,6 +27654,7 @@ BEGIN
         now(),
         resolution_note_input
     );
+RETURN true;
 END;
 $$;
 
@@ -29238,20 +27663,7 @@ $$;
 -- Name: source_metadata_conflict_resolve(uuid, bigint, public.conflict_resolution, character varying); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.source_metadata_conflict_resolve(actor_user_public_id uuid, conflict_id_input bigint, resolution_input public.conflict_resolution, resolution_note_input character varying) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM source_metadata_conflict_resolve_v1(actor_user_public_id => actor_user_public_id, conflict_id_input => conflict_id_input, resolution_input => resolution_input, resolution_note_input => resolution_note_input);
-END;
-$$;
-
-
---
--- Name: source_metadata_conflict_resolve_v1(uuid, bigint, public.conflict_resolution, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.source_metadata_conflict_resolve_v1(actor_user_public_id uuid, conflict_id_input bigint, resolution_input public.conflict_resolution, resolution_note_input character varying) RETURNS void
+CREATE FUNCTION public.source_metadata_conflict_resolve(actor_user_public_id uuid, conflict_id_input bigint, resolution_input public.conflict_resolution, resolution_note_input character varying) RETURNS boolean
     LANGUAGE plpgsql
     AS $_$
 DECLARE
@@ -29501,6 +27913,7 @@ BEGIN
         now(),
         resolution_note_input
     );
+RETURN true;
 END;
 $_$;
 
@@ -29510,17 +27923,6 @@ $_$;
 --
 
 CREATE FUNCTION public.tag_create(actor_user_public_id uuid, tag_key_input character varying, display_name_input character varying) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT tag_create_v1(actor_user_public_id => actor_user_public_id, tag_key_input => tag_key_input, display_name_input => display_name_input);
-$$;
-
-
---
--- Name: tag_create_v1(uuid, character varying, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.tag_create_v1(actor_user_public_id uuid, tag_key_input character varying, display_name_input character varying) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -29662,21 +28064,6 @@ $$;
 CREATE FUNCTION public.tag_list(actor_user_public_id uuid) RETURNS TABLE(tag_public_id uuid, tag_key character varying, display_name character varying, updated_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
-BEGIN
-    RETURN QUERY
-    SELECT *
-    FROM tag_list_v1(actor_user_public_id);
-END;
-$$;
-
-
---
--- Name: tag_list_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.tag_list_v1(actor_user_public_id uuid) RETURNS TABLE(tag_public_id uuid, tag_key character varying, display_name character varying, updated_at timestamp with time zone)
-    LANGUAGE plpgsql
-    AS $$
 DECLARE
     base_message CONSTANT text := 'Failed to list tags';
     errcode CONSTANT text := 'P0001';
@@ -29717,20 +28104,7 @@ $$;
 -- Name: tag_soft_delete(uuid, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.tag_soft_delete(actor_user_public_id uuid, tag_public_id_input uuid, tag_key_input character varying) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM tag_soft_delete_v1(actor_user_public_id => actor_user_public_id, tag_public_id_input => tag_public_id_input, tag_key_input => tag_key_input);
-END;
-$$;
-
-
---
--- Name: tag_soft_delete_v1(uuid, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.tag_soft_delete_v1(actor_user_public_id uuid, tag_public_id_input uuid, tag_key_input character varying) RETURNS void
+CREATE FUNCTION public.tag_soft_delete(actor_user_public_id uuid, tag_public_id_input uuid, tag_key_input character varying) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -29848,6 +28222,7 @@ BEGIN
         actor_user_id,
         'tag_soft_delete'
     );
+RETURN true;
 END;
 $$;
 
@@ -29857,17 +28232,6 @@ $$;
 --
 
 CREATE FUNCTION public.tag_update(actor_user_public_id uuid, tag_public_id_input uuid, tag_key_input character varying, display_name_input character varying) RETURNS uuid
-    LANGUAGE sql
-    AS $$
-    SELECT tag_update_v1(actor_user_public_id => actor_user_public_id, tag_public_id_input => tag_public_id_input, tag_key_input => tag_key_input, display_name_input => display_name_input);
-$$;
-
-
---
--- Name: tag_update_v1(uuid, uuid, character varying, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.tag_update_v1(actor_user_public_id uuid, tag_public_id_input uuid, tag_key_input character varying, display_name_input character varying) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -30053,23 +28417,6 @@ $$;
 --
 
 CREATE FUNCTION public.torznab_download_prepare(torznab_instance_public_id_input uuid, canonical_torrent_source_public_id_input uuid) RETURNS TABLE(redirect_url character varying)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT * FROM torznab_download_prepare_v1(
-        torznab_instance_public_id_input,
-        canonical_torrent_source_public_id_input
-    );
-END;
-$$;
-
-
---
--- Name: torznab_download_prepare_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.torznab_download_prepare_v1(torznab_instance_public_id_input uuid, canonical_torrent_source_public_id_input uuid) RETURNS TABLE(redirect_url character varying)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -30374,23 +28721,6 @@ $$;
 CREATE FUNCTION public.torznab_instance_authenticate(torznab_instance_public_id_input uuid, api_key_plaintext_input character varying) RETURNS TABLE(torznab_instance_id bigint, search_profile_id bigint, display_name character varying)
     LANGUAGE plpgsql
     AS $$
-BEGIN
-    RETURN QUERY
-    SELECT * FROM torznab_instance_authenticate_v1(
-        torznab_instance_public_id_input,
-        api_key_plaintext_input
-    );
-END;
-$$;
-
-
---
--- Name: torznab_instance_authenticate_v1(uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.torznab_instance_authenticate_v1(torznab_instance_public_id_input uuid, api_key_plaintext_input character varying) RETURNS TABLE(torznab_instance_id bigint, search_profile_id bigint, display_name character varying)
-    LANGUAGE plpgsql
-    AS $$
 DECLARE
     base_message CONSTANT text := 'Failed to authenticate torznab instance';
     errcode CONSTANT text := 'P0001';
@@ -30478,17 +28808,6 @@ $$;
 --
 
 CREATE FUNCTION public.torznab_instance_create(actor_user_public_id uuid, search_profile_public_id_input uuid, display_name_input character varying) RETURNS TABLE(torznab_instance_public_id uuid, api_key_plaintext character varying)
-    LANGUAGE sql
-    AS $$
-    SELECT * FROM torznab_instance_create_v1(actor_user_public_id => actor_user_public_id, search_profile_public_id_input => search_profile_public_id_input, display_name_input => display_name_input);
-$$;
-
-
---
--- Name: torznab_instance_create_v1(uuid, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.torznab_instance_create_v1(actor_user_public_id uuid, search_profile_public_id_input uuid, display_name_input character varying) RETURNS TABLE(torznab_instance_public_id uuid, api_key_plaintext character varying)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -30655,20 +28974,7 @@ $$;
 -- Name: torznab_instance_enable_disable(uuid, uuid, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.torznab_instance_enable_disable(actor_user_public_id uuid, torznab_instance_public_id_input uuid, is_enabled_input boolean) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM torznab_instance_enable_disable_v1(actor_user_public_id => actor_user_public_id, torznab_instance_public_id_input => torznab_instance_public_id_input, is_enabled_input => is_enabled_input);
-END;
-$$;
-
-
---
--- Name: torznab_instance_enable_disable_v1(uuid, uuid, boolean); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.torznab_instance_enable_disable_v1(actor_user_public_id uuid, torznab_instance_public_id_input uuid, is_enabled_input boolean) RETURNS void
+CREATE FUNCTION public.torznab_instance_enable_disable(actor_user_public_id uuid, torznab_instance_public_id_input uuid, is_enabled_input boolean) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -30795,6 +29101,7 @@ BEGIN
         actor_user_id,
         'torznab_instance_enable_disable'
     );
+RETURN true;
 END;
 $$;
 
@@ -30804,17 +29111,6 @@ $$;
 --
 
 CREATE FUNCTION public.torznab_instance_rotate_key(actor_user_public_id uuid, torznab_instance_public_id_input uuid) RETURNS character varying
-    LANGUAGE sql
-    AS $$
-    SELECT torznab_instance_rotate_key_v1(actor_user_public_id => actor_user_public_id, torznab_instance_public_id_input => torznab_instance_public_id_input);
-$$;
-
-
---
--- Name: torznab_instance_rotate_key_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.torznab_instance_rotate_key_v1(actor_user_public_id uuid, torznab_instance_public_id_input uuid) RETURNS character varying
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -30946,20 +29242,7 @@ $$;
 -- Name: torznab_instance_soft_delete(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.torznab_instance_soft_delete(actor_user_public_id uuid, torznab_instance_public_id_input uuid) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM torznab_instance_soft_delete_v1(actor_user_public_id => actor_user_public_id, torznab_instance_public_id_input => torznab_instance_public_id_input);
-END;
-$$;
-
-
---
--- Name: torznab_instance_soft_delete_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.torznab_instance_soft_delete_v1(actor_user_public_id uuid, torznab_instance_public_id_input uuid) RETURNS void
+CREATE FUNCTION public.torznab_instance_soft_delete(actor_user_public_id uuid, torznab_instance_public_id_input uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -31067,6 +29350,7 @@ BEGIN
         actor_user_id,
         'torznab_instance_soft_delete'
     );
+RETURN true;
 END;
 $$;
 
@@ -31075,45 +29359,7 @@ $$;
 -- Name: tracker_category_mapping_delete(uuid, character varying, integer, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.tracker_category_mapping_delete(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, tracker_category_input integer, tracker_subcategory_input integer) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM tracker_category_mapping_delete_v1(
-        actor_user_public_id,
-        indexer_definition_upstream_slug_input,
-        tracker_category_input,
-        tracker_subcategory_input
-    );
-END;
-$$;
-
-
---
--- Name: tracker_category_mapping_delete(uuid, uuid, character varying, uuid, integer, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.tracker_category_mapping_delete(actor_user_public_id uuid, torznab_instance_public_id_input uuid, indexer_definition_upstream_slug_input character varying, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM tracker_category_mapping_delete_v1(
-        actor_user_public_id,
-        torznab_instance_public_id_input,
-        indexer_definition_upstream_slug_input,
-        indexer_instance_public_id_input,
-        tracker_category_input,
-        tracker_subcategory_input
-    );
-END;
-$$;
-
-
---
--- Name: tracker_category_mapping_delete_v1(uuid, character varying, integer, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.tracker_category_mapping_delete_v1(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, tracker_category_input integer, tracker_subcategory_input integer) RETURNS void
+CREATE FUNCTION public.tracker_category_mapping_delete(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, tracker_category_input integer, tracker_subcategory_input integer) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -31195,15 +29441,16 @@ BEGIN
         actor_user_id,
         'tracker_category_mapping_delete'
     );
+RETURN true;
 END;
 $$;
 
 
 --
--- Name: tracker_category_mapping_delete_v1(uuid, uuid, character varying, uuid, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+-- Name: tracker_category_mapping_delete(uuid, uuid, character varying, uuid, integer, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.tracker_category_mapping_delete_v1(actor_user_public_id uuid, torznab_instance_public_id_input uuid, indexer_definition_upstream_slug_input character varying, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer) RETURNS void
+CREATE FUNCTION public.tracker_category_mapping_delete(actor_user_public_id uuid, torznab_instance_public_id_input uuid, indexer_definition_upstream_slug_input character varying, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -31354,6 +29601,7 @@ BEGIN
         actor_user_id,
         'tracker_category_mapping_delete'
     );
+RETURN true;
 END;
 $$;
 
@@ -31363,25 +29611,6 @@ $$;
 --
 
 CREATE FUNCTION public.tracker_category_mapping_resolve_feed(torznab_instance_public_id_input uuid, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer) RETURNS TABLE(torznab_cat_id integer)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RETURN QUERY
-    SELECT * FROM tracker_category_mapping_resolve_feed_v1(
-        torznab_instance_public_id_input,
-        indexer_instance_public_id_input,
-        tracker_category_input,
-        tracker_subcategory_input
-    );
-END;
-$$;
-
-
---
--- Name: tracker_category_mapping_resolve_feed_v1(uuid, uuid, integer, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.tracker_category_mapping_resolve_feed_v1(torznab_instance_public_id_input uuid, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer) RETURNS TABLE(torznab_cat_id integer)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -31471,42 +29700,7 @@ $$;
 -- Name: tracker_category_mapping_upsert(uuid, character varying, integer, integer, integer, character varying); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.tracker_category_mapping_upsert(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, tracker_category_input integer, tracker_subcategory_input integer, torznab_cat_id_input integer, media_domain_key_input character varying) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM tracker_category_mapping_upsert_v1(actor_user_public_id => actor_user_public_id, indexer_definition_upstream_slug_input => indexer_definition_upstream_slug_input, tracker_category_input => tracker_category_input, tracker_subcategory_input => tracker_subcategory_input, torznab_cat_id_input => torznab_cat_id_input, media_domain_key_input => media_domain_key_input);
-END;
-$$;
-
-
---
--- Name: tracker_category_mapping_upsert(uuid, uuid, character varying, uuid, integer, integer, integer, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.tracker_category_mapping_upsert(actor_user_public_id uuid, torznab_instance_public_id_input uuid, indexer_definition_upstream_slug_input character varying, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer, torznab_cat_id_input integer, media_domain_key_input character varying) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM tracker_category_mapping_upsert_v1(
-        actor_user_public_id,
-        torznab_instance_public_id_input,
-        indexer_definition_upstream_slug_input,
-        indexer_instance_public_id_input,
-        tracker_category_input,
-        tracker_subcategory_input,
-        torznab_cat_id_input,
-        media_domain_key_input
-    );
-END;
-$$;
-
-
---
--- Name: tracker_category_mapping_upsert_v1(uuid, character varying, integer, integer, integer, character varying); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.tracker_category_mapping_upsert_v1(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, tracker_category_input integer, tracker_subcategory_input integer, torznab_cat_id_input integer, media_domain_key_input character varying) RETURNS void
+CREATE FUNCTION public.tracker_category_mapping_upsert(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, tracker_category_input integer, tracker_subcategory_input integer, torznab_cat_id_input integer, media_domain_key_input character varying) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -31685,15 +29879,16 @@ BEGIN
         actor_user_id,
         'tracker_category_mapping_upsert'
     );
+RETURN true;
 END;
 $$;
 
 
 --
--- Name: tracker_category_mapping_upsert_v1(uuid, uuid, character varying, uuid, integer, integer, integer, character varying); Type: FUNCTION; Schema: public; Owner: -
+-- Name: tracker_category_mapping_upsert(uuid, uuid, character varying, uuid, integer, integer, integer, character varying); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.tracker_category_mapping_upsert_v1(actor_user_public_id uuid, torznab_instance_public_id_input uuid, indexer_definition_upstream_slug_input character varying, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer, torznab_cat_id_input integer, media_domain_key_input character varying) RETURNS void
+CREATE FUNCTION public.tracker_category_mapping_upsert(actor_user_public_id uuid, torznab_instance_public_id_input uuid, indexer_definition_upstream_slug_input character varying, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer, torznab_cat_id_input integer, media_domain_key_input character varying) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -31887,6 +30082,7 @@ BEGIN
         actor_user_id,
         'tracker_category_mapping_upsert'
     );
+RETURN true;
 END;
 $$;
 
@@ -31895,7 +30091,7 @@ $$;
 -- Name: trust_tier_seed_defaults(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.trust_tier_seed_defaults() RETURNS void
+CREATE FUNCTION public.trust_tier_seed_defaults() RETURNS boolean
     LANGUAGE plpgsql
     AS $$DECLARE
     base_message CONSTANT text := 'Failed to seed trust tiers';
@@ -31973,6 +30169,7 @@ BEGIN
             MESSAGE = base_message,
             DETAIL = 'seed_values_mismatch';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -31981,13 +30178,14 @@ $$;
 -- Name: bump_app_profile_version(uuid); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.bump_app_profile_version(_id uuid) RETURNS void
+CREATE FUNCTION revaer_config.bump_app_profile_version(_id uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     UPDATE public.app_profile
     SET version = version + 1
     WHERE id = _id;
+RETURN true;
 END;
 $$;
 
@@ -32018,13 +30216,14 @@ $$;
 -- Name: cleanup_expired_setup_tokens(); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.cleanup_expired_setup_tokens() RETURNS void
+CREATE FUNCTION revaer_config.cleanup_expired_setup_tokens() RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     DELETE FROM public.setup_tokens
     WHERE consumed_at IS NULL
       AND expires_at <= now();
+RETURN true;
 END;
 $$;
 
@@ -32033,13 +30232,14 @@ $$;
 -- Name: consume_setup_token(uuid); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.consume_setup_token(_token_id uuid) RETURNS void
+CREATE FUNCTION revaer_config.consume_setup_token(_token_id uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     UPDATE public.setup_tokens
     SET consumed_at = now()
     WHERE id = _token_id;
+RETURN true;
 END;
 $$;
 
@@ -32082,12 +30282,13 @@ $$;
 -- Name: factory_reset(); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.factory_reset() RETURNS void
+CREATE FUNCTION revaer_config.factory_reset() RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     PERFORM revaer_config.factory_reset_without_media_defaults_v1();
     PERFORM revaer_config.seed_media_configuration_defaults();
+RETURN true;
 END;
 $$;
 
@@ -32096,7 +30297,7 @@ $$;
 -- Name: factory_reset_without_media_defaults_v1(); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.factory_reset_without_media_defaults_v1() RETURNS void
+CREATE FUNCTION revaer_config.factory_reset_without_media_defaults_v1() RETURNS boolean
     LANGUAGE plpgsql
     SET lock_timeout TO '5s'
     AS $$
@@ -32540,6 +30741,7 @@ BEGIN
         )
     FROM seed_jobs
     ON CONFLICT (job_key) DO NOTHING;
+RETURN true;
 END;
 $$;
 
@@ -32961,7 +31163,7 @@ $$;
 -- Name: insert_api_key(text, text, text, boolean, integer, bigint, timestamp with time zone); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.insert_api_key(_key_id text, _hash text, _label text, _enabled boolean, _burst integer, _per_seconds bigint, _expires_at timestamp with time zone) RETURNS void
+CREATE FUNCTION revaer_config.insert_api_key(_key_id text, _hash text, _label text, _enabled boolean, _burst integer, _per_seconds bigint, _expires_at timestamp with time zone) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -32990,6 +31192,7 @@ BEGIN
         expires_at = EXCLUDED.expires_at,
         rate_limit_burst = EXCLUDED.rate_limit_burst,
         rate_limit_per_seconds = EXCLUDED.rate_limit_per_seconds;
+RETURN true;
 END;
 $$;
 
@@ -32998,12 +31201,13 @@ $$;
 -- Name: insert_setup_token(text, timestamp with time zone, text); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.insert_setup_token(_token_hash text, _expires_at timestamp with time zone, _issued_by text) RETURNS void
+CREATE FUNCTION revaer_config.insert_setup_token(_token_hash text, _expires_at timestamp with time zone, _issued_by text) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     INSERT INTO public.setup_tokens (token_hash, expires_at, issued_by)
     VALUES (_token_hash, _expires_at, _issued_by);
+RETURN true;
 END;
 $$;
 
@@ -33012,13 +31216,14 @@ $$;
 -- Name: invalidate_active_setup_tokens(); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.invalidate_active_setup_tokens() RETURNS void
+CREATE FUNCTION revaer_config.invalidate_active_setup_tokens() RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     UPDATE public.setup_tokens
     SET consumed_at = now()
     WHERE consumed_at IS NULL;
+RETURN true;
 END;
 $$;
 
@@ -33055,7 +31260,7 @@ $$;
 -- Name: replace_app_label_policies(uuid, text[], text[], text[], bigint[], bigint[], integer[], boolean[], double precision[], bigint[], double precision[], bigint[], boolean[]); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.replace_app_label_policies(_profile_id uuid, _kinds text[], _names text[], _download_dirs text[], _rate_limit_download_bps bigint[], _rate_limit_upload_bps bigint[], _queue_positions integer[], _auto_managed boolean[], _seed_ratio_limits double precision[], _seed_time_limits bigint[], _cleanup_seed_ratio_limits double precision[], _cleanup_seed_time_limits bigint[], _cleanup_remove_data boolean[]) RETURNS void
+CREATE FUNCTION revaer_config.replace_app_label_policies(_profile_id uuid, _kinds text[], _names text[], _download_dirs text[], _rate_limit_download_bps bigint[], _rate_limit_upload_bps bigint[], _queue_positions integer[], _auto_managed boolean[], _seed_ratio_limits double precision[], _seed_time_limits bigint[], _cleanup_seed_ratio_limits double precision[], _cleanup_seed_time_limits bigint[], _cleanup_remove_data boolean[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33118,6 +31323,7 @@ BEGIN
     )
     WHERE btrim(kind) <> ''
       AND btrim(name) <> '';
+RETURN true;
 END;
 $$;
 
@@ -33126,7 +31332,7 @@ $$;
 -- Name: seed_media_configuration_defaults(); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.seed_media_configuration_defaults() RETURNS void
+CREATE FUNCTION revaer_config.seed_media_configuration_defaults() RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33201,6 +31407,7 @@ BEGIN
         failed_diagnostic_limit = EXCLUDED.failed_diagnostic_limit,
         enabled = TRUE,
         updated_at = now();
+RETURN true;
 END;
 $$;
 
@@ -33209,7 +31416,7 @@ $$;
 -- Name: set_engine_alt_speed(uuid, bigint, bigint, integer, integer, text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.set_engine_alt_speed(_profile_id uuid, _download_bps bigint, _upload_bps bigint, _schedule_start_minutes integer, _schedule_end_minutes integer, _days text[]) RETURNS void
+CREATE FUNCTION revaer_config.set_engine_alt_speed(_profile_id uuid, _download_bps bigint, _upload_bps bigint, _schedule_start_minutes integer, _schedule_end_minutes integer, _days text[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33243,6 +31450,7 @@ BEGIN
            day
     FROM unnest(COALESCE(_days, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(day, ord)
     WHERE day IN ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun');
+RETURN true;
 END;
 $$;
 
@@ -33251,7 +31459,7 @@ $$;
 -- Name: set_engine_ip_filter(uuid, text, text, timestamp with time zone, text, text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.set_engine_ip_filter(_profile_id uuid, _blocklist_url text, _etag text, _last_updated_at timestamp with time zone, _last_error text, _cidrs text[]) RETURNS void
+CREATE FUNCTION revaer_config.set_engine_ip_filter(_profile_id uuid, _blocklist_url text, _etag text, _last_updated_at timestamp with time zone, _last_error text, _cidrs text[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33285,6 +31493,7 @@ BEGIN
            btrim(value)
     FROM unnest(COALESCE(_cidrs, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(value, ord)
     WHERE btrim(value) <> '';
+RETURN true;
 END;
 $$;
 
@@ -33293,7 +31502,7 @@ $$;
 -- Name: set_engine_list_values(uuid, text, text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.set_engine_list_values(_profile_id uuid, _kind text, _values text[]) RETURNS void
+CREATE FUNCTION revaer_config.set_engine_list_values(_profile_id uuid, _kind text, _values text[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33311,6 +31520,7 @@ BEGIN
            btrim(value)
     FROM unnest(COALESCE(_values, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(value, ord)
     WHERE btrim(value) <> '';
+RETURN true;
 END;
 $$;
 
@@ -33319,7 +31529,7 @@ $$;
 -- Name: set_fs_list(uuid, text, text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.set_fs_list(_policy_id uuid, _kind text, _values text[]) RETURNS void
+CREATE FUNCTION revaer_config.set_fs_list(_policy_id uuid, _kind text, _values text[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33337,6 +31547,7 @@ BEGIN
            btrim(value)
     FROM unnest(COALESCE(_values, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(value, ord)
     WHERE btrim(value) <> '';
+RETURN true;
 END;
 $$;
 
@@ -33345,7 +31556,7 @@ $$;
 -- Name: set_peer_classes(uuid, smallint[], text[], smallint[], smallint[], smallint[], boolean[], smallint[]); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.set_peer_classes(_profile_id uuid, _class_ids smallint[], _labels text[], _download_priorities smallint[], _upload_priorities smallint[], _connection_limit_factors smallint[], _ignore_unchoke_slots boolean[], _default_class_ids smallint[]) RETURNS void
+CREATE FUNCTION revaer_config.set_peer_classes(_profile_id uuid, _class_ids smallint[], _labels text[], _download_priorities smallint[], _upload_priorities smallint[], _connection_limit_factors smallint[], _ignore_unchoke_slots boolean[], _default_class_ids smallint[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33398,6 +31609,7 @@ BEGIN
           AND epc.class_id = class_id
     )
     ON CONFLICT (profile_id, class_id) DO NOTHING;
+RETURN true;
 END;
 $$;
 
@@ -33406,7 +31618,7 @@ $$;
 -- Name: set_tracker_config(uuid, text, text, text, integer, boolean, boolean, text, integer, text, text, text, boolean, text, text, text, boolean, text, text, text, text[], text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.set_tracker_config(_profile_id uuid, _user_agent text, _announce_ip text, _listen_interface text, _request_timeout_ms integer, _announce_to_all boolean, _replace_trackers boolean, _proxy_host text, _proxy_port integer, _proxy_kind text, _proxy_username_secret text, _proxy_password_secret text, _proxy_peers boolean, _ssl_cert text, _ssl_private_key text, _ssl_ca_cert text, _ssl_tracker_verify boolean, _auth_username_secret text, _auth_password_secret text, _auth_cookie_secret text, _default_urls text[], _extra_urls text[]) RETURNS void
+CREATE FUNCTION revaer_config.set_tracker_config(_profile_id uuid, _user_agent text, _announce_ip text, _listen_interface text, _request_timeout_ms integer, _announce_to_all boolean, _replace_trackers boolean, _proxy_host text, _proxy_port integer, _proxy_kind text, _proxy_username_secret text, _proxy_password_secret text, _proxy_peers boolean, _ssl_cert text, _ssl_private_key text, _ssl_ca_cert text, _ssl_tracker_verify boolean, _auth_username_secret text, _auth_password_secret text, _auth_cookie_secret text, _default_urls text[], _extra_urls text[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33494,6 +31706,7 @@ BEGIN
            ord
     FROM unnest(COALESCE(_extra_urls, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(url, ord)
     WHERE btrim(url) <> '';
+RETURN true;
 END;
 $$;
 
@@ -33502,7 +31715,7 @@ $$;
 -- Name: update_api_key_enabled(text, boolean); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_api_key_enabled(_key_id text, _enabled boolean) RETURNS void
+CREATE FUNCTION revaer_config.update_api_key_enabled(_key_id text, _enabled boolean) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33510,6 +31723,7 @@ BEGIN
     SET enabled = _enabled,
         updated_at = now()
     WHERE key_id = _key_id;
+RETURN true;
 END;
 $$;
 
@@ -33518,13 +31732,14 @@ $$;
 -- Name: update_api_key_expires_at(text, timestamp with time zone); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_api_key_expires_at(_key_id text, _expires_at timestamp with time zone) RETURNS void
+CREATE FUNCTION revaer_config.update_api_key_expires_at(_key_id text, _expires_at timestamp with time zone) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     UPDATE public.auth_api_keys
     SET expires_at = _expires_at
     WHERE key_id = _key_id;
+RETURN true;
 END;
 $$;
 
@@ -33533,7 +31748,7 @@ $$;
 -- Name: update_api_key_hash(text, text); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_api_key_hash(_key_id text, _hash text) RETURNS void
+CREATE FUNCTION revaer_config.update_api_key_hash(_key_id text, _hash text) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33541,6 +31756,7 @@ BEGIN
     SET hash = _hash,
         updated_at = now()
     WHERE key_id = _key_id;
+RETURN true;
 END;
 $$;
 
@@ -33549,7 +31765,7 @@ $$;
 -- Name: update_api_key_label(text, text); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_api_key_label(_key_id text, _label text) RETURNS void
+CREATE FUNCTION revaer_config.update_api_key_label(_key_id text, _label text) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33557,6 +31773,7 @@ BEGIN
     SET label = _label,
         updated_at = now()
     WHERE key_id = _key_id;
+RETURN true;
 END;
 $$;
 
@@ -33565,7 +31782,7 @@ $$;
 -- Name: update_api_key_rate_limit(text, integer, bigint); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_api_key_rate_limit(_key_id text, _burst integer, _per_seconds bigint) RETURNS void
+CREATE FUNCTION revaer_config.update_api_key_rate_limit(_key_id text, _burst integer, _per_seconds bigint) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33573,6 +31790,7 @@ BEGIN
     SET rate_limit_burst = _burst,
         rate_limit_per_seconds = _per_seconds
     WHERE key_id = _key_id;
+RETURN true;
 END;
 $$;
 
@@ -33581,13 +31799,14 @@ $$;
 -- Name: update_app_auth_mode(uuid, text); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_app_auth_mode(_id uuid, _auth_mode text) RETURNS void
+CREATE FUNCTION revaer_config.update_app_auth_mode(_id uuid, _auth_mode text) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     UPDATE public.app_profile
     SET auth_mode = _auth_mode
     WHERE id = _id;
+RETURN true;
 END;
 $$;
 
@@ -33596,13 +31815,14 @@ $$;
 -- Name: update_app_bind_addr(uuid, text); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_app_bind_addr(_id uuid, _bind_addr text) RETURNS void
+CREATE FUNCTION revaer_config.update_app_bind_addr(_id uuid, _bind_addr text) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     UPDATE public.app_profile
     SET bind_addr = _bind_addr::INET
     WHERE id = _id;
+RETURN true;
 END;
 $$;
 
@@ -33611,13 +31831,14 @@ $$;
 -- Name: update_app_http_port(uuid, integer); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_app_http_port(_id uuid, _port integer) RETURNS void
+CREATE FUNCTION revaer_config.update_app_http_port(_id uuid, _port integer) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     UPDATE public.app_profile
     SET http_port = _port
     WHERE id = _id;
+RETURN true;
 END;
 $$;
 
@@ -33626,7 +31847,7 @@ $$;
 -- Name: update_app_immutable_keys(uuid, text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_app_immutable_keys(_profile_id uuid, _keys text[]) RETURNS void
+CREATE FUNCTION revaer_config.update_app_immutable_keys(_profile_id uuid, _keys text[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33638,6 +31859,7 @@ BEGIN
            ord
     FROM unnest(COALESCE(_keys, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(value, ord)
     WHERE btrim(value) <> '';
+RETURN true;
 END;
 $$;
 
@@ -33646,13 +31868,14 @@ $$;
 -- Name: update_app_instance_name(uuid, text); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_app_instance_name(_id uuid, _instance_name text) RETURNS void
+CREATE FUNCTION revaer_config.update_app_instance_name(_id uuid, _instance_name text) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     UPDATE public.app_profile
     SET instance_name = _instance_name
     WHERE id = _id;
+RETURN true;
 END;
 $$;
 
@@ -33661,7 +31884,7 @@ $$;
 -- Name: update_app_local_networks(uuid, text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_app_local_networks(_profile_id uuid, _cidrs text[]) RETURNS void
+CREATE FUNCTION revaer_config.update_app_local_networks(_profile_id uuid, _cidrs text[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33673,6 +31896,7 @@ BEGIN
            ord
     FROM unnest(COALESCE(_cidrs, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(value, ord)
     WHERE btrim(value) <> '';
+RETURN true;
 END;
 $$;
 
@@ -33681,13 +31905,14 @@ $$;
 -- Name: update_app_mode(uuid, text); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_app_mode(_id uuid, _mode text) RETURNS void
+CREATE FUNCTION revaer_config.update_app_mode(_id uuid, _mode text) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     UPDATE public.app_profile
     SET mode = _mode
     WHERE id = _id;
+RETURN true;
 END;
 $$;
 
@@ -33696,7 +31921,7 @@ $$;
 -- Name: update_app_telemetry(uuid, text, text, boolean, text, text); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_app_telemetry(_id uuid, _level text, _format text, _otel_enabled boolean, _otel_service_name text, _otel_endpoint text) RETURNS void
+CREATE FUNCTION revaer_config.update_app_telemetry(_id uuid, _level text, _format text, _otel_enabled boolean, _otel_service_name text, _otel_endpoint text) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33707,6 +31932,7 @@ BEGIN
         telemetry_otel_service_name = _otel_service_name,
         telemetry_otel_endpoint = _otel_endpoint
     WHERE id = _id;
+RETURN true;
 END;
 $$;
 
@@ -33715,7 +31941,7 @@ $$;
 -- Name: update_engine_profile(uuid, text, integer, boolean, text, integer, bigint, bigint, double precision, bigint, boolean, boolean, boolean, boolean, boolean, text, text, boolean, integer, bigint, text, text, text, boolean, integer, integer, boolean, boolean, boolean, text, text, boolean, boolean, boolean, boolean, boolean, text, boolean, boolean, boolean, boolean, boolean, boolean, integer, integer, integer, integer, integer, integer, integer, integer); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_engine_profile(_id uuid, _implementation text, _listen_port integer, _dht boolean, _encryption text, _max_active integer, _max_download_bps bigint, _max_upload_bps bigint, _seed_ratio_limit double precision, _seed_time_limit bigint, _sequential_default boolean, _auto_managed boolean, _auto_manage_prefer_seeds boolean, _dont_count_slow_torrents boolean, _super_seeding boolean, _choking_algorithm text, _seed_choking_algorithm text, _strict_super_seeding boolean, _optimistic_unchoke_slots integer, _max_queued_disk_bytes bigint, _resume_dir text, _download_root text, _storage_mode text, _use_partfile boolean, _cache_size integer, _cache_expiry integer, _coalesce_reads boolean, _coalesce_writes boolean, _use_disk_cache_pool boolean, _disk_read_mode text, _disk_write_mode text, _verify_piece_hashes boolean, _lsd boolean, _upnp boolean, _natpmp boolean, _pex boolean, _ipv6_mode text, _anonymous_mode boolean, _force_proxy boolean, _prefer_rc4 boolean, _allow_multiple_connections_per_ip boolean, _enable_outgoing_utp boolean, _enable_incoming_utp boolean, _outgoing_port_min integer, _outgoing_port_max integer, _peer_dscp integer, _connections_limit integer, _connections_limit_per_torrent integer, _unchoke_slots integer, _half_open_limit integer, _stats_interval_ms integer) RETURNS void
+CREATE FUNCTION revaer_config.update_engine_profile(_id uuid, _implementation text, _listen_port integer, _dht boolean, _encryption text, _max_active integer, _max_download_bps bigint, _max_upload_bps bigint, _seed_ratio_limit double precision, _seed_time_limit bigint, _sequential_default boolean, _auto_managed boolean, _auto_manage_prefer_seeds boolean, _dont_count_slow_torrents boolean, _super_seeding boolean, _choking_algorithm text, _seed_choking_algorithm text, _strict_super_seeding boolean, _optimistic_unchoke_slots integer, _max_queued_disk_bytes bigint, _resume_dir text, _download_root text, _storage_mode text, _use_partfile boolean, _cache_size integer, _cache_expiry integer, _coalesce_reads boolean, _coalesce_writes boolean, _use_disk_cache_pool boolean, _disk_read_mode text, _disk_write_mode text, _verify_piece_hashes boolean, _lsd boolean, _upnp boolean, _natpmp boolean, _pex boolean, _ipv6_mode text, _anonymous_mode boolean, _force_proxy boolean, _prefer_rc4 boolean, _allow_multiple_connections_per_ip boolean, _enable_outgoing_utp boolean, _enable_incoming_utp boolean, _outgoing_port_min integer, _outgoing_port_max integer, _peer_dscp integer, _connections_limit integer, _connections_limit_per_torrent integer, _unchoke_slots integer, _half_open_limit integer, _stats_interval_ms integer) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33771,6 +31997,7 @@ BEGIN
         half_open_limit = _half_open_limit,
         stats_interval_ms = _stats_interval_ms
     WHERE id = _id;
+RETURN true;
 END;
 $$;
 
@@ -33779,11 +32006,12 @@ $$;
 -- Name: update_fs_array_field(uuid, text, text[]); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_fs_array_field(_id uuid, _column text, _values text[]) RETURNS void
+CREATE FUNCTION revaer_config.update_fs_array_field(_id uuid, _column text, _values text[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     PERFORM revaer_config.set_fs_list(_id, _column, _values);
+RETURN true;
 END;
 $$;
 
@@ -33792,7 +32020,7 @@ $$;
 -- Name: update_fs_boolean_field(uuid, text, boolean); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_fs_boolean_field(_id uuid, _column text, _value boolean) RETURNS void
+CREATE FUNCTION revaer_config.update_fs_boolean_field(_id uuid, _column text, _value boolean) RETURNS boolean
     LANGUAGE plpgsql
     AS $_$
 BEGIN
@@ -33802,6 +32030,7 @@ BEGIN
 
     EXECUTE format('UPDATE public.fs_policy SET %I = $1 WHERE id = $2', _column)
     USING _value, _id;
+RETURN true;
 END;
 $_$;
 
@@ -33810,7 +32039,7 @@ $_$;
 -- Name: update_fs_optional_string_field(uuid, text, text); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_fs_optional_string_field(_id uuid, _column text, _value text) RETURNS void
+CREATE FUNCTION revaer_config.update_fs_optional_string_field(_id uuid, _column text, _value text) RETURNS boolean
     LANGUAGE plpgsql
     AS $_$
 BEGIN
@@ -33820,6 +32049,7 @@ BEGIN
 
     EXECUTE format('UPDATE public.fs_policy SET %I = $1 WHERE id = $2', _column)
     USING _value, _id;
+RETURN true;
 END;
 $_$;
 
@@ -33828,7 +32058,7 @@ $_$;
 -- Name: update_fs_string_field(uuid, text, text); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.update_fs_string_field(_id uuid, _column text, _value text) RETURNS void
+CREATE FUNCTION revaer_config.update_fs_string_field(_id uuid, _column text, _value text) RETURNS boolean
     LANGUAGE plpgsql
     AS $_$
 BEGIN
@@ -33838,6 +32068,7 @@ BEGIN
 
     EXECUTE format('UPDATE public.fs_policy SET %I = $1 WHERE id = $2', _column)
     USING _value, _id;
+RETURN true;
 END;
 $_$;
 
@@ -33846,7 +32077,7 @@ $_$;
 -- Name: upsert_secret(text, bytea, text); Type: FUNCTION; Schema: revaer_config; Owner: -
 --
 
-CREATE FUNCTION revaer_config.upsert_secret(_name text, _ciphertext bytea, _actor text) RETURNS void
+CREATE FUNCTION revaer_config.upsert_secret(_name text, _ciphertext bytea, _actor text) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33857,6 +32088,7 @@ BEGIN
     SET ciphertext = EXCLUDED.ciphertext,
         created_by = EXCLUDED.created_by,
         created_at = now();
+RETURN true;
 END;
 $$;
 
@@ -33865,11 +32097,12 @@ $$;
 -- Name: delete_torrent(uuid); Type: FUNCTION; Schema: revaer_runtime; Owner: -
 --
 
-CREATE FUNCTION revaer_runtime.delete_torrent(_torrent_id uuid) RETURNS void
+CREATE FUNCTION revaer_runtime.delete_torrent(_torrent_id uuid) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
     DELETE FROM revaer_runtime.torrents WHERE torrent_id = _torrent_id;
+RETURN true;
 END;
 $$;
 
@@ -33956,7 +32189,7 @@ $$;
 -- Name: mark_fs_job_completed(uuid, text, text, text); Type: FUNCTION; Schema: revaer_runtime; Owner: -
 --
 
-CREATE FUNCTION revaer_runtime.mark_fs_job_completed(_torrent_id uuid, _src_path text, _dst_path text, _transfer_mode text) RETURNS void
+CREATE FUNCTION revaer_runtime.mark_fs_job_completed(_torrent_id uuid, _src_path text, _dst_path text, _transfer_mode text) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -33988,6 +32221,7 @@ BEGIN
         END,
         last_error = NULL,
         updated_at = now();
+RETURN true;
 END;
 $$;
 
@@ -33996,7 +32230,7 @@ $$;
 -- Name: mark_fs_job_failed(uuid, text); Type: FUNCTION; Schema: revaer_runtime; Owner: -
 --
 
-CREATE FUNCTION revaer_runtime.mark_fs_job_failed(_torrent_id uuid, _error text) RETURNS void
+CREATE FUNCTION revaer_runtime.mark_fs_job_failed(_torrent_id uuid, _error text) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -34007,6 +32241,7 @@ BEGIN
         last_error = _error,
         updated_at = now()
     WHERE torrent_id = _torrent_id;
+RETURN true;
 END;
 $$;
 
@@ -34015,7 +32250,7 @@ $$;
 -- Name: mark_fs_job_started(uuid, text); Type: FUNCTION; Schema: revaer_runtime; Owner: -
 --
 
-CREATE FUNCTION revaer_runtime.mark_fs_job_started(_torrent_id uuid, _src_path text) RETURNS void
+CREATE FUNCTION revaer_runtime.mark_fs_job_started(_torrent_id uuid, _src_path text) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -34058,6 +32293,7 @@ BEGIN
             ELSE NULL
         END,
         updated_at = now();
+RETURN true;
 END;
 $$;
 
@@ -34066,7 +32302,7 @@ $$;
 -- Name: upsert_torrent(uuid, text, text, text, bigint, bigint, bigint, bigint, bigint, double precision, boolean, text, text, text, text, boolean, integer[], text[], bigint[], bigint[], text[], boolean[], timestamp with time zone, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: revaer_runtime; Owner: -
 --
 
-CREATE FUNCTION revaer_runtime.upsert_torrent(_torrent_id uuid, _name text, _state text, _state_message text, _progress_bytes_downloaded bigint, _progress_bytes_total bigint, _progress_eta_seconds bigint, _download_bps bigint, _upload_bps bigint, _ratio double precision, _sequential boolean, _library_path text, _download_dir text, _comment text, _source text, _private boolean, _file_indexes integer[], _file_paths text[], _file_sizes bigint[], _file_bytes_completed bigint[], _file_priorities text[], _file_selected boolean[], _added_at timestamp with time zone, _completed_at timestamp with time zone, _updated_at timestamp with time zone) RETURNS void
+CREATE FUNCTION revaer_runtime.upsert_torrent(_torrent_id uuid, _name text, _state text, _state_message text, _progress_bytes_downloaded bigint, _progress_bytes_total bigint, _progress_eta_seconds bigint, _download_bps bigint, _upload_bps bigint, _ratio double precision, _sequential boolean, _library_path text, _download_dir text, _comment text, _source text, _private boolean, _file_indexes integer[], _file_paths text[], _file_sizes bigint[], _file_bytes_completed bigint[], _file_priorities text[], _file_selected boolean[], _added_at timestamp with time zone, _completed_at timestamp with time zone, _updated_at timestamp with time zone) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -34166,6 +32402,7 @@ BEGIN
         priority,
         selected
     );
+RETURN true;
 END;
 $$;
 
@@ -45172,7 +43409,7 @@ CREATE FUNCTION public.media_root_catalog_reconcile_slot_kind_v1(
     media_root_catalog_generation_public_id_input uuid,
     media_root_catalog_slot_public_id_input uuid, root_kind_input text
 )
-RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO pg_catalog, public
+RETURNS boolean LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO pg_catalog, public
 AS $$
 DECLARE
     generation_id bigint;
@@ -45194,6 +43431,7 @@ BEGIN
     END IF;
     INSERT INTO public.media_root_catalog_slot_kind (media_root_catalog_slot_attestation_id, media_root_kind_id)
     VALUES (attestation_id, kind_id);
+RETURN true;
 END;
 $$;
 
@@ -45294,7 +43532,7 @@ EXECUTE FUNCTION public.media_root_catalog_generation_commit_guard_v1();
 CREATE FUNCTION public.media_root_catalog_mark_unavailable_v1(
     source_state_input text, source_reason_code_input text
 )
-RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+RETURNS boolean LANGUAGE plpgsql VOLATILE SECURITY DEFINER
 SET search_path TO pg_catalog, public
 AS $$
 BEGIN
@@ -45319,13 +43557,14 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid',
             DETAIL = 'media_root_attestation_invalid';
     END IF;
+RETURN true;
 END;
 $$;
 
 CREATE FUNCTION public.media_root_catalog_mark_attestation_invalid_v1(
     attestation_reason_code_input text
 )
-RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+RETURNS boolean LANGUAGE plpgsql VOLATILE SECURITY DEFINER
 SET search_path TO pg_catalog, public
 AS $$
 BEGIN
@@ -45348,6 +43587,7 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid',
             DETAIL = 'media_root_attestation_invalid';
     END IF;
+RETURN true;
 END;
 $$;
 
@@ -46455,7 +44695,7 @@ CREATE TABLE public.media_configuration_import_audit (
     created_at timestamptz NOT NULL DEFAULT transaction_timestamp()
 );
 CREATE FUNCTION public.media_configuration_import_audit_v1(actor_input uuid, digest_input bytea, count_input integer)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
 BEGIN
     IF current_setting('transaction_isolation') <> 'serializable' OR digest_input IS NULL
         OR octet_length(digest_input) <> 32 OR count_input IS NULL OR count_input NOT BETWEEN 0 AND 128 THEN
@@ -46463,6 +44703,7 @@ BEGIN
     END IF;
     INSERT INTO public.media_configuration_import_audit(actor_user_id, payload_sha256, resource_count)
     VALUES (public.media_actor_id_for_public_id_v1(actor_input), digest_input, count_input);
+RETURN true;
 END;
 $$;
 REVOKE ALL ON FUNCTION public.media_configuration_import_audit_v1(uuid,bytea,integer) FROM PUBLIC;
@@ -46761,7 +45002,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.media_job_root_snapshot_complete_v1(media_job_id_input bigint) RETURNS void
+CREATE FUNCTION public.media_job_root_snapshot_complete_v1(media_job_id_input bigint) RETURNS boolean
 LANGUAGE plpgsql STABLE SET search_path TO pg_catalog, public AS $$
 DECLARE
     policy_row public.media_job_policy_behavior_snapshot%ROWTYPE;
@@ -46820,10 +45061,11 @@ BEGIN
     ) THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'media_root_attestation_invalid', DETAIL = 'media_root_attestation_invalid';
     END IF;
+RETURN true;
 END;
 $$;
 
-CREATE FUNCTION public.media_job_capture_roots_v1(job_id_input bigint) RETURNS void
+CREATE FUNCTION public.media_job_capture_roots_v1(job_id_input bigint) RETURNS boolean
 LANGUAGE plpgsql SET search_path TO pg_catalog, public AS $$
 DECLARE
     frame bytea;
@@ -46868,6 +45110,7 @@ BEGIN
         j.intent_desired_target_profile_id, j.intent_desired_target_version, 1, 5, octet_length(frame), sha256(frame)
     FROM public.media_job j JOIN public.media_profile_version v USING (media_profile_version_id)
     WHERE j.media_job_id = job_id_input;
+RETURN true;
 END;
 $$;
 REVOKE ALL ON FUNCTION public.media_job_root_snapshot_text_v1(text) FROM PUBLIC;
@@ -46974,7 +45217,7 @@ CREATE FUNCTION public.media_job_restored_source_refresh_v1(
     job_public_id_input uuid, generation_input bigint, source_path_input text,
     identity_input text, size_input bigint, modified_ns_input bigint,
     changed_ns_input bigint, sha256_input text)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
 DECLARE
     job public.media_job%ROWTYPE;
     attempt public.media_job_attempt%ROWTYPE;
@@ -47000,6 +45243,7 @@ BEGIN
         intent_source_modified_ns = modified_ns_input, intent_source_changed_ns = changed_ns_input
     WHERE media_job_id = job.media_job_id;
     PERFORM set_config('revaer.restored_source_job', '', true);
+RETURN true;
 END;
 $$;
 REVOKE ALL ON FUNCTION public.media_job_restored_source_refresh_v1(uuid, bigint, text, text, bigint, bigint, bigint, text) FROM PUBLIC;
@@ -47191,11 +45435,12 @@ CREATE TABLE public.media_discovery_rescan_reason_kind (
     reason_code text PRIMARY KEY
 );
 CREATE FUNCTION public.media_discovery_rescan_seed_reason_kinds_v1()
-RETURNS void LANGUAGE sql SET search_path TO pg_catalog, public AS $$
+RETURNS boolean LANGUAGE sql SET search_path TO pg_catalog, public AS $$
     INSERT INTO public.media_discovery_rescan_reason_kind(reason_code) VALUES
         ('manual'), ('schedule'), ('overflow'), ('watcher_uncertain'),
         ('directory_changed'), ('configuration_activated'), ('restart_reconcile')
     ON CONFLICT (reason_code) DO NOTHING;
+SELECT true;
 $$;
 REVOKE ALL ON FUNCTION public.media_discovery_rescan_seed_reason_kinds_v1() FROM PUBLIC;
 SELECT public.media_discovery_rescan_seed_reason_kinds_v1();
@@ -47349,7 +45594,7 @@ CREATE FUNCTION public.media_discovery_rescan_observe_paths_v1(
     public_id_input uuid, association_version_input integer, expected_generation_input bigint,
     expected_generation_sha256_input bytea, trigger_input text, captured_sequence_input bigint,
     paths_input text[]
-) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
 DECLARE version_id bigint; requested_value bigint; satisfied_value bigint;
 BEGIN
     version_id := public.media_discovery_rescan_fence_v1(public_id_input, association_version_input,
@@ -47368,6 +45613,7 @@ BEGIN
         last_seen_at = clock_timestamp(), absence_observations = 0,
         absence_observed_at = NULL, absence_generation = NULL
     WHERE media_discovery_association_version_id = version_id AND source_path = ANY(paths_input);
+RETURN true;
 END;
 $$;
 REVOKE ALL ON FUNCTION public.media_discovery_rescan_observe_paths_v1(uuid,integer,bigint,bytea,text,bigint,text[]) FROM PUBLIC;
@@ -47390,7 +45636,7 @@ CREATE FUNCTION public.media_discovery_rescan_satisfy_v1(
     public_id_input uuid, association_version_input integer,
     expected_generation_input bigint, expected_generation_sha256_input bytea,
     trigger_input text, captured_sequence_input bigint
-) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
 DECLARE
     version_id bigint;
     requested_value bigint;
@@ -47430,6 +45676,7 @@ BEGIN
         WHERE s.media_discovery_association_version_id = version_id;
     -- Reasons retain their last requested sequence. An acknowledgement of R
     -- cannot erase a newer reason or satisfy a request published after capture.
+RETURN true;
 END;
 $$;
 REVOKE ALL ON FUNCTION public.media_discovery_rescan_satisfy_v1(uuid,integer,bigint,bytea,text,bigint) FROM PUBLIC;
@@ -47729,7 +45976,7 @@ $$;
 
 CREATE FUNCTION public.media_job_step_checkpoint_write_v1(media_job_public_id_input uuid, claim_generation_input bigint,
     step_index_input integer, step_signature_input bytea, output_path_input text, size_bytes_input bigint, output_sha256_input bytea)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog, public AS $$
 DECLARE attempt_id bigint;
 BEGIN
     -- Serialize completion with cancellation and status changes on this job.
@@ -47745,155 +45992,92 @@ BEGIN
     ON CONFLICT (media_job_attempt_id, step_index) DO UPDATE SET
         step_signature = EXCLUDED.step_signature, output_path = EXCLUDED.output_path,
         size_bytes = EXCLUDED.size_bytes, output_sha256 = EXCLUDED.output_sha256, completed_at = now();
+RETURN true;
 END;
 $$;
 
 -- Generated authored routine security begins.
 ALTER FUNCTION public.policy_action_to_decision_type(public.policy_action) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.app_user_create(character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.app_user_create_v1(character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.app_user_update(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.app_user_update_v1(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.app_user_verify_email(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.app_user_verify_email_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.canonical_disambiguation_rule_create(uuid, public.disambiguation_rule_type, public.disambiguation_identity_type, character varying, uuid, public.disambiguation_identity_type, character varying, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.canonical_disambiguation_rule_create_v1(uuid, public.disambiguation_rule_type, public.disambiguation_identity_type, character varying, uuid, public.disambiguation_identity_type, character varying, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.canonical_merge_by_infohash(character, character) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.canonical_merge_by_infohash_v1(character, character) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.canonical_prune_low_confidence() SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.canonical_prune_low_confidence_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.canonical_recompute_best_source(uuid, public.scoring_context) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.canonical_recompute_best_source_v1(uuid, public.scoring_context) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.compute_title_size_hash(text, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.compute_title_size_hash_v1(text, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.deployment_init(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.deployment_init_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.derive_magnet_hash(text, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.derive_magnet_hash_v1(text, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.import_job_create(uuid, public.import_source, boolean, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.import_job_create_v1(uuid, public.import_source, boolean, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.import_job_get_status(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.import_job_get_status_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.import_job_list_results(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.import_job_list_results_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.import_job_run_prowlarr_api(uuid, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.import_job_run_prowlarr_api_v1(uuid, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.import_job_run_prowlarr_backup(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.import_job_run_prowlarr_backup_v1(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.import_job_worker_claim_next() SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.import_job_worker_claim_next_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.import_job_worker_mark_terminal(uuid, public.import_job_status, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.import_job_worker_mark_terminal_v1(uuid, public.import_job_status, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.import_job_worker_record_result(uuid, character varying, public.import_indexer_result_status, character varying, boolean, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.import_job_worker_record_result_v1(uuid, character varying, public.import_indexer_result_status, character varying, boolean, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_backup_assert_actor_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_backup_export_indexer_instance_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_backup_export_indexer_instance_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_backup_export_rate_limit_policy_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_backup_export_rate_limit_policy_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_backup_export_routing_policy_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_backup_export_routing_policy_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_backup_export_tag_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_backup_export_tag_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_cf_state_get(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_cf_state_get_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_cf_state_reset(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_cf_state_reset_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_connectivity_profile_get(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_connectivity_profile_get_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_definition_import_cardigann_begin(uuid, character varying, character varying, text, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_definition_import_cardigann_begin_v1(uuid, character varying, character varying, text, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_definition_import_cardigann_complete(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_definition_import_cardigann_complete_v1(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_definition_import_cardigann_field(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_definition_import_cardigann_field_v1(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_definition_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_definition_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_health_event_list(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_health_event_list_v1(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_health_notification_hook_create(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_health_notification_hook_create_v1(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_health_notification_hook_delete(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_health_notification_hook_delete_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_health_notification_hook_get(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_health_notification_hook_get_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_health_notification_hook_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_health_notification_hook_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_health_notification_hook_update(uuid, uuid, character varying, public.indexer_health_notification_threshold, character varying, character varying, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_health_notification_hook_update_v1(uuid, uuid, character varying, public.indexer_health_notification_threshold, character varying, character varying, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_instance_create(uuid, character varying, character varying, integer, public.trust_tier_key, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_instance_create_v1(uuid, character varying, character varying, integer, public.trust_tier_key, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_instance_field_bind_secret(uuid, uuid, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_instance_field_bind_secret_v1(uuid, uuid, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_instance_field_set_value(uuid, uuid, character varying, character varying, integer, numeric, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_instance_field_set_value_v1(uuid, uuid, character varying, character varying, integer, numeric, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_instance_set_media_domains(uuid, uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_instance_set_media_domains_v1(uuid, uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_instance_set_rate_limit_policy(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_instance_set_rate_limit_policy_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_instance_set_tags(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_instance_set_tags_v1(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_instance_test_finalize(uuid, uuid, boolean, public.error_class, character varying, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_instance_test_finalize_v1(uuid, uuid, boolean, public.error_class, character varying, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_instance_test_prepare(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_instance_test_prepare_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_instance_update(uuid, uuid, character varying, integer, public.trust_tier_key, uuid, boolean, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_instance_update_v1(uuid, uuid, character varying, integer, public.trust_tier_key, uuid, boolean, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_policy_set_rule_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_policy_set_rule_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_rss_item_seen_list(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_rss_item_seen_list_v1(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_rss_item_seen_mark(uuid, uuid, character varying, character, character, character) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_rss_item_seen_mark_v1(uuid, uuid, character varying, character, character, character) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_rss_subscription_disable(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_rss_subscription_disable_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_rss_subscription_get(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_rss_subscription_get_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_rss_subscription_set(uuid, uuid, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_rss_subscription_set_v1(uuid, uuid, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_search_profile_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_search_profile_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_source_reputation_list(uuid, uuid, public.reputation_window, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_source_reputation_list_v1(uuid, uuid, public.reputation_window, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_torznab_instance_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.indexer_torznab_instance_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_claim_lease_seconds(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_claim_lease_seconds_v1(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog;
 ALTER FUNCTION public.job_claim_next(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.job_claim_next_v1(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_base_score_refresh_recent() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_base_score_refresh_recent_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.job_run_base_score_refresh_recent_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_canonical_backfill_best_source() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_canonical_backfill_best_source_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.job_run_canonical_backfill_best_source_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_canonical_prune_low_confidence() SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.job_run_canonical_prune_low_confidence_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_connectivity_profile_refresh() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_connectivity_profile_refresh_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.job_run_connectivity_profile_refresh_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_policy_snapshot_gc() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_policy_snapshot_gc_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.job_run_policy_snapshot_gc_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_policy_snapshot_refcount_repair() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_policy_snapshot_refcount_repair_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.job_run_policy_snapshot_refcount_repair_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_rate_limit_state_purge() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_rate_limit_state_purge_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.job_run_rate_limit_state_purge_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_reputation_rollup(public.reputation_window) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_reputation_rollup_v1(public.reputation_window) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.job_run_reputation_rollup_v2(public.reputation_window) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_retention_purge() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_retention_purge_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.job_run_retention_purge_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_rss_subscription_backfill() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_run_rss_subscription_backfill_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.job_run_rss_subscription_backfill_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.job_schedule_mark_completed(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.job_schedule_mark_completed_v1(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.log_source_metadata_conflict(bigint, bigint, public.conflict_type, text, text, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.log_source_metadata_conflict_v1(bigint, bigint, public.conflict_type, text, text, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_actor_id_for_public_id_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_app_error_code_v1() SECURITY DEFINER SET search_path TO pg_catalog;
 ALTER FUNCTION public.media_audio_channel_layout_count_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
@@ -47940,9 +46124,7 @@ ALTER FUNCTION public.media_discovery_watcher_start_v1(uuid, text, bigint, bigin
 ALTER FUNCTION public.media_display_valid_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
 ALTER FUNCTION public.media_domain_seed_defaults() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_domain_to_torznab_category_delete(uuid, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.media_domain_to_torznab_category_delete_v1(uuid, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_domain_to_torznab_category_upsert(uuid, character varying, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.media_domain_to_torznab_category_upsert_v1(uuid, character varying, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_job_artifact_append_v1(uuid, bigint, integer, text, text, bigint, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_job_artifact_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.media_job_artifact_path_is_managed_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
@@ -48082,159 +46264,86 @@ ALTER FUNCTION public.media_video_color_value_known_v1(text, text) SECURITY DEFI
 ALTER FUNCTION public.media_video_level_known_v1(text, text) SECURITY DEFINER SET search_path TO pg_catalog;
 ALTER FUNCTION public.media_workspace_retention_snapshot_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.normalize_magnet_uri(text) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.normalize_magnet_uri_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
 ALTER FUNCTION public.normalize_title(text) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.normalize_title_v1(text) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.outbound_request_log_write(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.outbound_request_log_write_v1(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.policy_int_match(integer, public.policy_match_operator, integer, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.policy_int_match_v1(integer, public.policy_match_operator, integer, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.policy_release_group_match(bigint, text, public.policy_match_operator, text, bigint, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.policy_release_group_match_v1(bigint, text, public.policy_match_operator, text, bigint, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.policy_rule_create(uuid, uuid, public.policy_rule_type, public.policy_match_field, public.policy_match_operator, integer, character varying, integer, uuid, public.policy_rule_value_item[], public.policy_action, public.policy_severity, boolean, character varying, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.policy_rule_create_v1(uuid, uuid, public.policy_rule_type, public.policy_match_field, public.policy_match_operator, integer, character varying, integer, uuid, public.policy_rule_value_item[], public.policy_action, public.policy_severity, boolean, character varying, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.policy_rule_disable(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.policy_rule_disable_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.policy_rule_enable(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.policy_rule_enable_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.policy_rule_reorder(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.policy_rule_reorder_v1(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.policy_set_create(uuid, character varying, public.policy_scope, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.policy_set_create_v1(uuid, character varying, public.policy_scope, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.policy_set_disable(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.policy_set_disable_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.policy_set_enable(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.policy_set_enable_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.policy_set_reorder(uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.policy_set_reorder_v1(uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.policy_set_update(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.policy_set_update_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.policy_text_match(text, public.policy_match_operator, text, bigint, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.policy_text_match_v1(text, public.policy_match_operator, text, bigint, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.policy_uuid_match(uuid, public.policy_match_operator, uuid, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.policy_uuid_match_v1(uuid, public.policy_match_operator, uuid, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.random_jitter_seconds(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.rate_limit_policy_create(uuid, character varying, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.rate_limit_policy_create_v1(uuid, character varying, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.rate_limit_policy_soft_delete(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.rate_limit_policy_soft_delete_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.rate_limit_policy_update(uuid, uuid, character varying, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.rate_limit_policy_update_v1(uuid, uuid, character varying, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.rate_limit_try_consume(public.rate_limit_scope, bigint, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.rate_limit_try_consume_v1(public.rate_limit_scope, bigint, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.revaer_bump_revision() SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.revaer_touch_updated_at() SET search_path TO pg_catalog;
 ALTER FUNCTION public.routing_policy_bind_secret(uuid, uuid, public.routing_param_key, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.routing_policy_bind_secret_v1(uuid, uuid, public.routing_param_key, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.routing_policy_create(uuid, character varying, public.routing_policy_mode) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.routing_policy_create_v1(uuid, character varying, public.routing_policy_mode) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.routing_policy_get(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.routing_policy_get_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.routing_policy_set_param(uuid, uuid, public.routing_param_key, character varying, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.routing_policy_set_param_v1(uuid, uuid, public.routing_param_key, character varying, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.routing_policy_set_rate_limit_policy(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.routing_policy_set_rate_limit_policy_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.rss_poll_apply(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.rss_poll_apply_v1(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.rss_poll_claim(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.rss_poll_claim_v1(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_indexer_run_enqueue(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_indexer_run_enqueue_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_indexer_run_mark_canceled(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_indexer_run_mark_canceled_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_indexer_run_mark_failed(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_indexer_run_mark_failed_v1(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_indexer_run_mark_finished(uuid, uuid, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_indexer_run_mark_finished_v1(uuid, uuid, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_indexer_run_mark_started(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_indexer_run_mark_started_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_page_fetch(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_page_fetch_v1(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_page_list(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_page_list_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_profile_add_policy_set(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_profile_add_policy_set_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_profile_create(uuid, character varying, boolean, integer, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_profile_create_v1(uuid, character varying, boolean, integer, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_profile_indexer_allow(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_profile_indexer_allow_v1(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_profile_indexer_block(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_profile_indexer_block_v1(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_profile_remove_policy_set(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_profile_remove_policy_set_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_profile_set_default(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_profile_set_default_domain(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_profile_set_default_domain_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_profile_set_default_v1(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_profile_set_domain_allowlist(uuid, uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_profile_set_domain_allowlist_v1(uuid, uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_profile_tag_allow(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_profile_tag_allow_v1(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_profile_tag_block(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_profile_tag_block_v1(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_profile_tag_prefer(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_profile_tag_prefer_v1(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_profile_update(uuid, uuid, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_profile_update_v1(uuid, uuid, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_request_cancel(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_request_cancel_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_request_create(uuid, character varying, public.query_type, public.torznab_mode, character varying, integer, uuid, uuid, integer, integer, public.identifier_type[], text[], integer[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_request_create_v1(uuid, character varying, public.query_type, public.torznab_mode, character varying, integer, uuid, uuid, integer, integer, public.identifier_type[], text[], integer[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_request_explainability(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.search_request_explainability_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_request_finalize_on_runs_terminal_v1() SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_result_ingest(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_result_ingest_v1(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.secret_create(uuid, public.secret_type, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.secret_create_v1(uuid, public.secret_type, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.secret_metadata_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.secret_metadata_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.secret_read(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.secret_read_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.secret_revoke(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.secret_revoke_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.secret_rotate(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.secret_rotate_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.secret_session_configure(uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.secret_session_configure_v1(uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.source_metadata_conflict_list(uuid, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.source_metadata_conflict_list_v1(uuid, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.source_metadata_conflict_reopen(uuid, bigint, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.source_metadata_conflict_reopen_v1(uuid, bigint, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.source_metadata_conflict_resolve(uuid, bigint, public.conflict_resolution, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.source_metadata_conflict_resolve_v1(uuid, bigint, public.conflict_resolution, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.tag_create(uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.tag_create_v1(uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.tag_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.tag_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.tag_soft_delete(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.tag_soft_delete_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.tag_update(uuid, uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.tag_update_v1(uuid, uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.torznab_category_list() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.torznab_category_list_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.torznab_download_prepare(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.torznab_download_prepare_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.torznab_instance_authenticate(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.torznab_instance_authenticate_v1(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.torznab_instance_create(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.torznab_instance_create_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.torznab_instance_enable_disable(uuid, uuid, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.torznab_instance_enable_disable_v1(uuid, uuid, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.torznab_instance_rotate_key(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.torznab_instance_rotate_key_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.torznab_instance_soft_delete(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.torznab_instance_soft_delete_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.tracker_category_mapping_delete(uuid, character varying, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.tracker_category_mapping_delete(uuid, uuid, character varying, uuid, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.tracker_category_mapping_delete_v1(uuid, character varying, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.tracker_category_mapping_delete_v1(uuid, uuid, character varying, uuid, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.tracker_category_mapping_resolve_feed(uuid, uuid, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.tracker_category_mapping_resolve_feed_v1(uuid, uuid, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.tracker_category_mapping_upsert(uuid, character varying, integer, integer, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.tracker_category_mapping_upsert(uuid, uuid, character varying, uuid, integer, integer, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.tracker_category_mapping_upsert_v1(uuid, character varying, integer, integer, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.tracker_category_mapping_upsert_v1(uuid, uuid, character varying, uuid, integer, integer, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.trust_tier_seed_defaults() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION revaer_config.bump_app_profile_version(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
 ALTER FUNCTION revaer_config.bump_revision(text) SECURITY DEFINER SET search_path TO pg_catalog;
@@ -48457,149 +46566,85 @@ BEGIN
         -- Generated authored routine grants begin.
             'public.policy_action_to_decision_type(public.policy_action)',
             'public.app_user_create(character varying, character varying)',
-            'public.app_user_create_v1(character varying, character varying)',
             'public.app_user_update(uuid, character varying)',
-            'public.app_user_update_v1(uuid, character varying)',
             'public.app_user_verify_email(uuid)',
-            'public.app_user_verify_email_v1(uuid)',
             'public.canonical_disambiguation_rule_create(uuid, public.disambiguation_rule_type, public.disambiguation_identity_type, character varying, uuid, public.disambiguation_identity_type, character varying, uuid, character varying)',
-            'public.canonical_disambiguation_rule_create_v1(uuid, public.disambiguation_rule_type, public.disambiguation_identity_type, character varying, uuid, public.disambiguation_identity_type, character varying, uuid, character varying)',
             'public.canonical_merge_by_infohash(character, character)',
-            'public.canonical_merge_by_infohash_v1(character, character)',
             'public.canonical_prune_low_confidence()',
-            'public.canonical_prune_low_confidence_v1()',
             'public.canonical_recompute_best_source(uuid, public.scoring_context)',
-            'public.canonical_recompute_best_source_v1(uuid, public.scoring_context)',
             'public.compute_title_size_hash(text, bigint)',
-            'public.compute_title_size_hash_v1(text, bigint)',
             'public.deployment_init(uuid)',
-            'public.deployment_init_v1(uuid)',
             'public.derive_magnet_hash(text, text, text)',
-            'public.derive_magnet_hash_v1(text, text, text)',
             'public.import_job_create(uuid, public.import_source, boolean, uuid, uuid)',
-            'public.import_job_create_v1(uuid, public.import_source, boolean, uuid, uuid)',
             'public.import_job_get_status(uuid)',
-            'public.import_job_get_status_v1(uuid)',
             'public.import_job_list_results(uuid)',
-            'public.import_job_list_results_v1(uuid)',
             'public.import_job_run_prowlarr_api(uuid, character varying, uuid)',
-            'public.import_job_run_prowlarr_api_v1(uuid, character varying, uuid)',
             'public.import_job_run_prowlarr_backup(uuid, character varying)',
-            'public.import_job_run_prowlarr_backup_v1(uuid, character varying)',
             'public.import_job_worker_claim_next()',
-            'public.import_job_worker_claim_next_v1()',
             'public.import_job_worker_mark_terminal(uuid, public.import_job_status, character varying)',
-            'public.import_job_worker_mark_terminal_v1(uuid, public.import_job_status, character varying)',
             'public.import_job_worker_record_result(uuid, character varying, public.import_indexer_result_status, character varying, boolean, integer, integer)',
-            'public.import_job_worker_record_result_v1(uuid, character varying, public.import_indexer_result_status, character varying, boolean, integer, integer)',
             'public.indexer_backup_assert_actor_v1(uuid)',
             'public.indexer_backup_export_indexer_instance_list(uuid)',
-            'public.indexer_backup_export_indexer_instance_list_v1(uuid)',
             'public.indexer_backup_export_rate_limit_policy_list(uuid)',
-            'public.indexer_backup_export_rate_limit_policy_list_v1(uuid)',
             'public.indexer_backup_export_routing_policy_list(uuid)',
-            'public.indexer_backup_export_routing_policy_list_v1(uuid)',
             'public.indexer_backup_export_tag_list(uuid)',
-            'public.indexer_backup_export_tag_list_v1(uuid)',
             'public.indexer_cf_state_get(uuid, uuid)',
-            'public.indexer_cf_state_get_v1(uuid, uuid)',
             'public.indexer_cf_state_reset(uuid, uuid, character varying)',
-            'public.indexer_cf_state_reset_v1(uuid, uuid, character varying)',
             'public.indexer_connectivity_profile_get(uuid, uuid)',
-            'public.indexer_connectivity_profile_get_v1(uuid, uuid)',
             'public.indexer_definition_import_cardigann_begin(uuid, character varying, character varying, text, boolean)',
-            'public.indexer_definition_import_cardigann_begin_v1(uuid, character varying, character varying, text, boolean)',
             'public.indexer_definition_import_cardigann_complete(uuid, character varying)',
-            'public.indexer_definition_import_cardigann_complete_v1(uuid, character varying)',
             'public.indexer_definition_import_cardigann_field(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[])',
-            'public.indexer_definition_import_cardigann_field_v1(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[])',
             'public.indexer_definition_list(uuid)',
-            'public.indexer_definition_list_v1(uuid)',
             'public.indexer_health_event_list(uuid, uuid, integer)',
-            'public.indexer_health_event_list_v1(uuid, uuid, integer)',
             'public.indexer_health_notification_hook_create(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying)',
             'public.indexer_health_notification_hook_create_v1(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying)',
             'public.indexer_health_notification_hook_delete(uuid, uuid)',
-            'public.indexer_health_notification_hook_delete_v1(uuid, uuid)',
             'public.indexer_health_notification_hook_get(uuid, uuid)',
-            'public.indexer_health_notification_hook_get_v1(uuid, uuid)',
             'public.indexer_health_notification_hook_list(uuid)',
-            'public.indexer_health_notification_hook_list_v1(uuid)',
             'public.indexer_health_notification_hook_update(uuid, uuid, character varying, public.indexer_health_notification_threshold, character varying, character varying, boolean)',
             'public.indexer_health_notification_hook_update_v1(uuid, uuid, character varying, public.indexer_health_notification_threshold, character varying, character varying, boolean)',
             'public.indexer_instance_create(uuid, character varying, character varying, integer, public.trust_tier_key, uuid)',
-            'public.indexer_instance_create_v1(uuid, character varying, character varying, integer, public.trust_tier_key, uuid)',
             'public.indexer_instance_field_bind_secret(uuid, uuid, character varying, uuid)',
-            'public.indexer_instance_field_bind_secret_v1(uuid, uuid, character varying, uuid)',
             'public.indexer_instance_field_set_value(uuid, uuid, character varying, character varying, integer, numeric, boolean)',
-            'public.indexer_instance_field_set_value_v1(uuid, uuid, character varying, character varying, integer, numeric, boolean)',
             'public.indexer_instance_set_media_domains(uuid, uuid, text[])',
-            'public.indexer_instance_set_media_domains_v1(uuid, uuid, text[])',
             'public.indexer_instance_set_rate_limit_policy(uuid, uuid, uuid)',
-            'public.indexer_instance_set_rate_limit_policy_v1(uuid, uuid, uuid)',
             'public.indexer_instance_set_tags(uuid, uuid, uuid[], text[])',
-            'public.indexer_instance_set_tags_v1(uuid, uuid, uuid[], text[])',
             'public.indexer_instance_test_finalize(uuid, uuid, boolean, public.error_class, character varying, character varying, integer)',
-            'public.indexer_instance_test_finalize_v1(uuid, uuid, boolean, public.error_class, character varying, character varying, integer)',
             'public.indexer_instance_test_prepare(uuid, uuid)',
-            'public.indexer_instance_test_prepare_v1(uuid, uuid)',
             'public.indexer_instance_update(uuid, uuid, character varying, integer, public.trust_tier_key, uuid, boolean, boolean, boolean, boolean)',
-            'public.indexer_instance_update_v1(uuid, uuid, character varying, integer, public.trust_tier_key, uuid, boolean, boolean, boolean, boolean)',
             'public.indexer_policy_set_rule_list(uuid)',
-            'public.indexer_policy_set_rule_list_v1(uuid)',
             'public.indexer_rss_item_seen_list(uuid, uuid, integer)',
-            'public.indexer_rss_item_seen_list_v1(uuid, uuid, integer)',
             'public.indexer_rss_item_seen_mark(uuid, uuid, character varying, character, character, character)',
-            'public.indexer_rss_item_seen_mark_v1(uuid, uuid, character varying, character, character, character)',
             'public.indexer_rss_subscription_disable(uuid, uuid)',
-            'public.indexer_rss_subscription_disable_v1(uuid, uuid)',
             'public.indexer_rss_subscription_get(uuid, uuid)',
-            'public.indexer_rss_subscription_get_v1(uuid, uuid)',
             'public.indexer_rss_subscription_set(uuid, uuid, boolean, integer)',
-            'public.indexer_rss_subscription_set_v1(uuid, uuid, boolean, integer)',
             'public.indexer_search_profile_list(uuid)',
-            'public.indexer_search_profile_list_v1(uuid)',
             'public.indexer_source_reputation_list(uuid, uuid, public.reputation_window, integer)',
-            'public.indexer_source_reputation_list_v1(uuid, uuid, public.reputation_window, integer)',
             'public.indexer_torznab_instance_list(uuid)',
-            'public.indexer_torznab_instance_list_v1(uuid)',
             'public.job_claim_lease_seconds(public.job_key)',
             'public.job_claim_lease_seconds_v1(public.job_key)',
             'public.job_claim_next(public.job_key)',
-            'public.job_claim_next_v1(public.job_key)',
             'public.job_run_base_score_refresh_recent()',
             'public.job_run_base_score_refresh_recent_v1()',
-            'public.job_run_base_score_refresh_recent_v2()',
             'public.job_run_canonical_backfill_best_source()',
             'public.job_run_canonical_backfill_best_source_v1()',
-            'public.job_run_canonical_backfill_best_source_v2()',
             'public.job_run_canonical_prune_low_confidence()',
-            'public.job_run_canonical_prune_low_confidence_v2()',
             'public.job_run_connectivity_profile_refresh()',
             'public.job_run_connectivity_profile_refresh_v1()',
-            'public.job_run_connectivity_profile_refresh_v2()',
             'public.job_run_policy_snapshot_gc()',
             'public.job_run_policy_snapshot_gc_v1()',
-            'public.job_run_policy_snapshot_gc_v2()',
             'public.job_run_policy_snapshot_refcount_repair()',
             'public.job_run_policy_snapshot_refcount_repair_v1()',
-            'public.job_run_policy_snapshot_refcount_repair_v2()',
             'public.job_run_rate_limit_state_purge()',
             'public.job_run_rate_limit_state_purge_v1()',
-            'public.job_run_rate_limit_state_purge_v2()',
             'public.job_run_reputation_rollup(public.reputation_window)',
             'public.job_run_reputation_rollup_v1(public.reputation_window)',
-            'public.job_run_reputation_rollup_v2(public.reputation_window)',
             'public.job_run_retention_purge()',
             'public.job_run_retention_purge_v1()',
-            'public.job_run_retention_purge_v2()',
             'public.job_run_rss_subscription_backfill()',
             'public.job_run_rss_subscription_backfill_v1()',
-            'public.job_run_rss_subscription_backfill_v2()',
             'public.job_schedule_mark_completed(public.job_key)',
-            'public.job_schedule_mark_completed_v1(public.job_key)',
             'public.log_source_metadata_conflict(bigint, bigint, public.conflict_type, text, text, timestamp with time zone)',
-            'public.log_source_metadata_conflict_v1(bigint, bigint, public.conflict_type, text, text, timestamp with time zone)',
             'public.media_actor_id_for_public_id_v1(uuid)',
             'public.media_app_error_code_v1()',
             'public.media_audio_channel_layout_count_v1(text)',
@@ -48642,9 +46687,7 @@ BEGIN
             'public.media_display_valid_v1(text)',
             'public.media_domain_seed_defaults()',
             'public.media_domain_to_torznab_category_delete(uuid, character varying, integer)',
-            'public.media_domain_to_torznab_category_delete_v1(uuid, character varying, integer)',
             'public.media_domain_to_torznab_category_upsert(uuid, character varying, integer, boolean)',
-            'public.media_domain_to_torznab_category_upsert_v1(uuid, character varying, integer, boolean)',
             'public.media_job_artifact_append_v1(uuid, bigint, integer, text, text, bigint, text)',
             'public.media_job_artifact_list_v1(uuid)',
             'public.media_job_artifact_path_is_managed_v1(text)',
@@ -48787,156 +46830,83 @@ BEGIN
             'public.media_video_level_known_v1(text, text)',
             'public.media_workspace_retention_snapshot_v1()',
             'public.normalize_magnet_uri(text)',
-            'public.normalize_magnet_uri_v1(text)',
             'public.normalize_title(text)',
-            'public.normalize_title_v1(text)',
             'public.outbound_request_log_write(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying)',
-            'public.outbound_request_log_write_v1(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying)',
             'public.policy_int_match(integer, public.policy_match_operator, integer, bigint)',
-            'public.policy_int_match_v1(integer, public.policy_match_operator, integer, bigint)',
             'public.policy_release_group_match(bigint, text, public.policy_match_operator, text, bigint, boolean)',
-            'public.policy_release_group_match_v1(bigint, text, public.policy_match_operator, text, bigint, boolean)',
             'public.policy_rule_create(uuid, uuid, public.policy_rule_type, public.policy_match_field, public.policy_match_operator, integer, character varying, integer, uuid, public.policy_rule_value_item[], public.policy_action, public.policy_severity, boolean, character varying, timestamp with time zone)',
-            'public.policy_rule_create_v1(uuid, uuid, public.policy_rule_type, public.policy_match_field, public.policy_match_operator, integer, character varying, integer, uuid, public.policy_rule_value_item[], public.policy_action, public.policy_severity, boolean, character varying, timestamp with time zone)',
             'public.policy_rule_disable(uuid, uuid)',
-            'public.policy_rule_disable_v1(uuid, uuid)',
             'public.policy_rule_enable(uuid, uuid)',
-            'public.policy_rule_enable_v1(uuid, uuid)',
             'public.policy_rule_reorder(uuid, uuid, uuid[])',
-            'public.policy_rule_reorder_v1(uuid, uuid, uuid[])',
             'public.policy_set_create(uuid, character varying, public.policy_scope, boolean)',
-            'public.policy_set_create_v1(uuid, character varying, public.policy_scope, boolean)',
             'public.policy_set_disable(uuid, uuid)',
-            'public.policy_set_disable_v1(uuid, uuid)',
             'public.policy_set_enable(uuid, uuid)',
-            'public.policy_set_enable_v1(uuid, uuid)',
             'public.policy_set_reorder(uuid, uuid[])',
-            'public.policy_set_reorder_v1(uuid, uuid[])',
             'public.policy_set_update(uuid, uuid, character varying)',
-            'public.policy_set_update_v1(uuid, uuid, character varying)',
             'public.policy_text_match(text, public.policy_match_operator, text, bigint, boolean)',
-            'public.policy_text_match_v1(text, public.policy_match_operator, text, bigint, boolean)',
             'public.policy_uuid_match(uuid, public.policy_match_operator, uuid, bigint)',
-            'public.policy_uuid_match_v1(uuid, public.policy_match_operator, uuid, bigint)',
             'public.random_jitter_seconds(integer)',
             'public.rate_limit_policy_create(uuid, character varying, integer, integer, integer)',
-            'public.rate_limit_policy_create_v1(uuid, character varying, integer, integer, integer)',
             'public.rate_limit_policy_soft_delete(uuid, uuid)',
-            'public.rate_limit_policy_soft_delete_v1(uuid, uuid)',
             'public.rate_limit_policy_update(uuid, uuid, character varying, integer, integer, integer)',
-            'public.rate_limit_policy_update_v1(uuid, uuid, character varying, integer, integer, integer)',
             'public.rate_limit_try_consume(public.rate_limit_scope, bigint, integer, integer)',
-            'public.rate_limit_try_consume_v1(public.rate_limit_scope, bigint, integer, integer)',
             'public.routing_policy_bind_secret(uuid, uuid, public.routing_param_key, uuid)',
-            'public.routing_policy_bind_secret_v1(uuid, uuid, public.routing_param_key, uuid)',
             'public.routing_policy_create(uuid, character varying, public.routing_policy_mode)',
-            'public.routing_policy_create_v1(uuid, character varying, public.routing_policy_mode)',
             'public.routing_policy_get(uuid, uuid)',
-            'public.routing_policy_get_v1(uuid, uuid)',
             'public.routing_policy_set_param(uuid, uuid, public.routing_param_key, character varying, integer, boolean)',
-            'public.routing_policy_set_param_v1(uuid, uuid, public.routing_param_key, character varying, integer, boolean)',
             'public.routing_policy_set_rate_limit_policy(uuid, uuid, uuid)',
-            'public.routing_policy_set_rate_limit_policy_v1(uuid, uuid, uuid)',
             'public.rss_poll_apply(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[])',
-            'public.rss_poll_apply_v1(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[])',
             'public.rss_poll_claim(integer)',
-            'public.rss_poll_claim_v1(integer)',
             'public.search_indexer_run_enqueue(uuid, uuid)',
-            'public.search_indexer_run_enqueue_v1(uuid, uuid)',
             'public.search_indexer_run_mark_canceled(uuid, uuid)',
-            'public.search_indexer_run_mark_canceled_v1(uuid, uuid)',
             'public.search_indexer_run_mark_failed(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope)',
-            'public.search_indexer_run_mark_failed_v1(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope)',
             'public.search_indexer_run_mark_finished(uuid, uuid, integer, integer, integer)',
-            'public.search_indexer_run_mark_finished_v1(uuid, uuid, integer, integer, integer)',
             'public.search_indexer_run_mark_started(uuid, uuid)',
-            'public.search_indexer_run_mark_started_v1(uuid, uuid)',
             'public.search_page_fetch(uuid, uuid, integer)',
-            'public.search_page_fetch_v1(uuid, uuid, integer)',
             'public.search_page_list(uuid, uuid)',
-            'public.search_page_list_v1(uuid, uuid)',
             'public.search_profile_add_policy_set(uuid, uuid, uuid)',
-            'public.search_profile_add_policy_set_v1(uuid, uuid, uuid)',
             'public.search_profile_create(uuid, character varying, boolean, integer, character varying, uuid)',
-            'public.search_profile_create_v1(uuid, character varying, boolean, integer, character varying, uuid)',
             'public.search_profile_indexer_allow(uuid, uuid, uuid[])',
-            'public.search_profile_indexer_allow_v1(uuid, uuid, uuid[])',
             'public.search_profile_indexer_block(uuid, uuid, uuid[])',
-            'public.search_profile_indexer_block_v1(uuid, uuid, uuid[])',
             'public.search_profile_remove_policy_set(uuid, uuid, uuid)',
-            'public.search_profile_remove_policy_set_v1(uuid, uuid, uuid)',
             'public.search_profile_set_default(uuid, uuid, integer)',
             'public.search_profile_set_default_domain(uuid, uuid, character varying)',
-            'public.search_profile_set_default_domain_v1(uuid, uuid, character varying)',
-            'public.search_profile_set_default_v1(uuid, uuid, integer)',
             'public.search_profile_set_domain_allowlist(uuid, uuid, text[])',
-            'public.search_profile_set_domain_allowlist_v1(uuid, uuid, text[])',
             'public.search_profile_tag_allow(uuid, uuid, uuid[], text[])',
-            'public.search_profile_tag_allow_v1(uuid, uuid, uuid[], text[])',
             'public.search_profile_tag_block(uuid, uuid, uuid[], text[])',
-            'public.search_profile_tag_block_v1(uuid, uuid, uuid[], text[])',
             'public.search_profile_tag_prefer(uuid, uuid, uuid[], text[])',
-            'public.search_profile_tag_prefer_v1(uuid, uuid, uuid[], text[])',
             'public.search_profile_update(uuid, uuid, character varying, integer)',
-            'public.search_profile_update_v1(uuid, uuid, character varying, integer)',
             'public.search_request_cancel(uuid, uuid)',
-            'public.search_request_cancel_v1(uuid, uuid)',
             'public.search_request_create(uuid, character varying, public.query_type, public.torznab_mode, character varying, integer, uuid, uuid, integer, integer, public.identifier_type[], text[], integer[])',
-            'public.search_request_create_v1(uuid, character varying, public.query_type, public.torznab_mode, character varying, integer, uuid, uuid, integer, integer, public.identifier_type[], text[], integer[])',
             'public.search_request_explainability(uuid, uuid)',
-            'public.search_request_explainability_v1(uuid, uuid)',
             'public.search_result_ingest(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[])',
             'public.search_result_ingest_v1(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[])',
             'public.secret_create(uuid, public.secret_type, character varying)',
-            'public.secret_create_v1(uuid, public.secret_type, character varying)',
             'public.secret_metadata_list(uuid)',
-            'public.secret_metadata_list_v1(uuid)',
             'public.secret_read(uuid, uuid)',
-            'public.secret_read_v1(uuid, uuid)',
             'public.secret_revoke(uuid, uuid)',
-            'public.secret_revoke_v1(uuid, uuid)',
             'public.secret_rotate(uuid, uuid, character varying)',
-            'public.secret_rotate_v1(uuid, uuid, character varying)',
             'public.secret_session_configure(uuid, character varying, character varying)',
-            'public.secret_session_configure_v1(uuid, character varying, character varying)',
             'public.source_metadata_conflict_list(uuid, boolean, integer)',
-            'public.source_metadata_conflict_list_v1(uuid, boolean, integer)',
             'public.source_metadata_conflict_reopen(uuid, bigint, character varying)',
-            'public.source_metadata_conflict_reopen_v1(uuid, bigint, character varying)',
             'public.source_metadata_conflict_resolve(uuid, bigint, public.conflict_resolution, character varying)',
-            'public.source_metadata_conflict_resolve_v1(uuid, bigint, public.conflict_resolution, character varying)',
             'public.tag_create(uuid, character varying, character varying)',
-            'public.tag_create_v1(uuid, character varying, character varying)',
             'public.tag_list(uuid)',
-            'public.tag_list_v1(uuid)',
             'public.tag_soft_delete(uuid, uuid, character varying)',
-            'public.tag_soft_delete_v1(uuid, uuid, character varying)',
             'public.tag_update(uuid, uuid, character varying, character varying)',
-            'public.tag_update_v1(uuid, uuid, character varying, character varying)',
             'public.torznab_category_list()',
             'public.torznab_category_list_v1()',
             'public.torznab_download_prepare(uuid, uuid)',
-            'public.torznab_download_prepare_v1(uuid, uuid)',
             'public.torznab_instance_authenticate(uuid, character varying)',
-            'public.torznab_instance_authenticate_v1(uuid, character varying)',
             'public.torznab_instance_create(uuid, uuid, character varying)',
-            'public.torznab_instance_create_v1(uuid, uuid, character varying)',
             'public.torznab_instance_enable_disable(uuid, uuid, boolean)',
-            'public.torznab_instance_enable_disable_v1(uuid, uuid, boolean)',
             'public.torznab_instance_rotate_key(uuid, uuid)',
-            'public.torznab_instance_rotate_key_v1(uuid, uuid)',
             'public.torznab_instance_soft_delete(uuid, uuid)',
-            'public.torznab_instance_soft_delete_v1(uuid, uuid)',
             'public.tracker_category_mapping_delete(uuid, character varying, integer, integer)',
             'public.tracker_category_mapping_delete(uuid, uuid, character varying, uuid, integer, integer)',
-            'public.tracker_category_mapping_delete_v1(uuid, character varying, integer, integer)',
-            'public.tracker_category_mapping_delete_v1(uuid, uuid, character varying, uuid, integer, integer)',
             'public.tracker_category_mapping_resolve_feed(uuid, uuid, integer, integer)',
-            'public.tracker_category_mapping_resolve_feed_v1(uuid, uuid, integer, integer)',
             'public.tracker_category_mapping_upsert(uuid, character varying, integer, integer, integer, character varying)',
             'public.tracker_category_mapping_upsert(uuid, uuid, character varying, uuid, integer, integer, integer, character varying)',
-            'public.tracker_category_mapping_upsert_v1(uuid, character varying, integer, integer, integer, character varying)',
-            'public.tracker_category_mapping_upsert_v1(uuid, uuid, character varying, uuid, integer, integer, integer, character varying)',
             'public.trust_tier_seed_defaults()',
             'revaer_config.bump_app_profile_version(uuid)',
             'revaer_config.bump_revision(text)',

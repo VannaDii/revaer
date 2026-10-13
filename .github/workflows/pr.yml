@@ -152,6 +152,7 @@ jobs:
           path: |
             coverage/lcov.info
             coverage/workspace-lcov.info
+            coverage/rust-sonar-lcov.info
             coverage/llvm-cov.txt
             coverage/compile_commands.json
             coverage/cxxbridge/include/rust/cxx.h

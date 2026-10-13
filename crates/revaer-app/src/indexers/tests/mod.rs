@@ -681,7 +681,7 @@ fn assert_cardigann_default_population_helpers() {
     };
     populate_cardigann_default(
         &mut decimal_field,
-        Some(&YamlValue::Number(serde_norway::Number::from(3))),
+        Some(&YamlValue::Number(serde_yaml::Number::from(3))),
     )
     .expect("decimal default should populate");
     assert_eq!(decimal_field.default_value_decimal.as_deref(), Some("3"));

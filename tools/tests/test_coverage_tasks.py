@@ -308,9 +308,13 @@ pub fn recovery_value() -> u32 { 4243 }
         capture_output=True,
         timeout=30,
     )
+    subprocess.run(["git", "add", "crates/revaer-app"], check=True, capture_output=True, timeout=30)
     Coverage.run(context)
     lcov = (root / "coverage/lcov.info").read_text()
-    assert "src/fixture.cpp" in lcov
+    original = (root / "coverage/workspace-lcov.info").read_text()
+    assert "src/fixture.cpp" in original
+    assert "src/fixture.cpp" not in lcov
     assert "crates/pure/src/lib.rs" in lcov
+    assert "crates/revaer-app/src/lib.rs" in lcov
     report = json.loads((root / "coverage/crates/revaer-app.json").read_text())
     assert report["data"][0]["totals"]["lines"]["percent"] >= 90

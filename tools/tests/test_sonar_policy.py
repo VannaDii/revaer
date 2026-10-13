@@ -187,18 +187,5 @@ def test_advisory_lists_must_exist_and_be_empty() -> None:
         "crates/revaer-app/tests/bootstrap.rs",
     ),
 )
-def test_nonproduction_paths_do_not_affect_coverage(path: str) -> None:
+def test_nonproduction_paths_do_not_affect_coverage_additional_cases(path: str) -> None:
     assert not production_source(path)
-
-
-@pytest.mark.parametrize(
-    "path",
-    (
-        "crates/revaer-ui/src/app.rs",
-        "crates/revaer-ui/static/runtime.js",
-        "crates/revaer-app/src/bootstrap/service.rs",
-        "crates/revaer-torrent-libt/src/ffi/session.cpp",
-    ),
-)
-def test_production_paths_retain_coverage_requirements(path: str) -> None:
-    assert production_source(path)

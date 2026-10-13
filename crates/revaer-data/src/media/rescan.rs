@@ -25,11 +25,12 @@ pub struct RescanStateRow {
 /// # Errors
 /// Propagates storage/decoding failures. Empty means no current request.
 pub async fn read_rescan_state(pool: &PgPool, id: Uuid) -> Result<Vec<RescanStateRow>> {
-    sqlx::query_as("SELECT * FROM media_discovery_rescan_get_v1($1)")
-        .bind(id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("read coalesced discovery rescan request"))
+    try_op("read coalesced discovery rescan request", || {
+        sqlx::query_as("SELECT * FROM media_discovery_rescan_get_v1($1)")
+            .bind(id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Exact association and retained catalog used by one native scan.
@@ -51,16 +52,17 @@ pub struct RescanFence<'a> {
 /// # Errors
 /// Rejects stale, inactive, unready or disabled bindings and invalid reasons.
 pub async fn request_rescan(pool: &PgPool, fence: &RescanFence<'_>, reason: &str) -> Result<i64> {
-    sqlx::query_scalar("SELECT media_discovery_rescan_request_v1($1,$2,$3,$4,$5,$6)")
-        .bind(fence.association)
-        .bind(fence.version)
-        .bind(fence.generation)
-        .bind(fence.generation_sha256.as_slice())
-        .bind(fence.trigger)
-        .bind(reason)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("request fenced native discovery rescan"))
+    try_op("request fenced native discovery rescan", || {
+        sqlx::query_scalar("SELECT media_discovery_rescan_request_v1($1,$2,$3,$4,$5,$6)")
+            .bind(fence.association)
+            .bind(fence.version)
+            .bind(fence.generation)
+            .bind(fence.generation_sha256.as_slice())
+            .bind(fence.trigger)
+            .bind(reason)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Acknowledge only the high-water mark captured before a complete clean scan.
@@ -68,17 +70,18 @@ pub async fn request_rescan(pool: &PgPool, fence: &RescanFence<'_>, reason: &str
 /// # Errors
 /// Rejects changed fences and missing, invalid or future request sequences.
 pub async fn satisfy_rescan(pool: &PgPool, fence: &RescanFence<'_>, sequence: i64) -> Result<()> {
-    sqlx::query("SELECT media_discovery_rescan_satisfy_v1($1,$2,$3,$4,$5,$6)")
-        .bind(fence.association)
-        .bind(fence.version)
-        .bind(fence.generation)
-        .bind(fence.generation_sha256.as_slice())
-        .bind(fence.trigger)
-        .bind(sequence)
-        .execute(pool)
-        .await
-        .map(|_| ())
-        .map_err(try_op("acknowledge captured native discovery rescan"))
+    try_op("acknowledge captured native discovery rescan", || {
+        sqlx::query("SELECT media_discovery_rescan_satisfy_v1($1,$2,$3,$4,$5,$6)")
+            .bind(fence.association)
+            .bind(fence.version)
+            .bind(fence.generation)
+            .bind(fence.generation_sha256.as_slice())
+            .bind(fence.trigger)
+            .bind(sequence)
+            .execute(pool)
+    })
+    .await
+    .map(|_| ())
 }
 
 /// Presence observed during a captured scan, without acknowledging completion.
@@ -91,18 +94,19 @@ pub async fn observe_rescan_paths(
     sequence: i64,
     paths: &[String],
 ) -> Result<()> {
-    sqlx::query("SELECT media_discovery_rescan_observe_paths_v1($1,$2,$3,$4,$5,$6,$7)")
-        .bind(fence.association)
-        .bind(fence.version)
-        .bind(fence.generation)
-        .bind(fence.generation_sha256.as_slice())
-        .bind(fence.trigger)
-        .bind(sequence)
-        .bind(paths)
-        .execute(pool)
-        .await
-        .map(|_| ())
-        .map_err(try_op("observe captured native discovery source presence"))
+    try_op("observe captured native discovery source presence", || {
+        sqlx::query("SELECT media_discovery_rescan_observe_paths_v1($1,$2,$3,$4,$5,$6,$7)")
+            .bind(fence.association)
+            .bind(fence.version)
+            .bind(fence.generation)
+            .bind(fence.generation_sha256.as_slice())
+            .bind(fence.trigger)
+            .bind(sequence)
+            .bind(paths)
+            .execute(pool)
+    })
+    .await
+    .map(|_| ())
 }
 
 /// Diagnostic absence evidence; it never authorizes source or job deletion.
@@ -127,10 +131,11 @@ pub async fn read_source_diagnostics(
     id: Uuid,
     path: &str,
 ) -> Result<Option<SourceDiagnosticRow>> {
-    sqlx::query_as("SELECT * FROM media_discovery_source_diagnostics_get_v1($1,$2)")
-        .bind(id)
-        .bind(path)
-        .fetch_optional(pool)
-        .await
-        .map_err(try_op("read source absence diagnostics"))
+    try_op("read source absence diagnostics", || {
+        sqlx::query_as("SELECT * FROM media_discovery_source_diagnostics_get_v1($1,$2)")
+            .bind(id)
+            .bind(path)
+            .fetch_optional(pool)
+    })
+    .await
 }

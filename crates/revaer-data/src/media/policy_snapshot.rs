@@ -31,9 +31,10 @@ pub async fn list_operation_costs(
     pool: &PgPool,
     media_job_public_id: Uuid,
 ) -> Result<Vec<OperationCostSnapshotRow>> {
-    sqlx::query_as::<_, OperationCostSnapshotRow>(LIST_OPERATION_COSTS)
-        .bind(media_job_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media job operation cost snapshot list"))
+    try_op("media job operation cost snapshot list", || {
+        sqlx::query_as::<_, OperationCostSnapshotRow>(LIST_OPERATION_COSTS)
+            .bind(media_job_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }

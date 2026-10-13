@@ -28,15 +28,13 @@ pub async fn get_step_checkpoint(
     generation: i64,
     step_index: i32,
 ) -> Result<Option<StepCheckpoint>> {
-    sqlx::query_as::<_, StepCheckpoint>(
+    try_op("read media execution checkpoint", || { sqlx::query_as::<_, StepCheckpoint>(
         "SELECT * FROM media_job_step_checkpoint_get_v1(media_job_public_id_input => $1, claim_generation_input => $2, step_index_input => $3)",
     )
     .bind(job_id)
     .bind(generation)
     .bind(step_index)
-    .fetch_optional(pool)
-    .await
-    .map_err(try_op("read media execution checkpoint"))
+    .fetch_optional(pool) }).await
 }
 
 /// Persist evidence only after a writer exited and its output was synchronized.
@@ -50,7 +48,7 @@ pub async fn write_step_checkpoint(
     step_index: i32,
     checkpoint: &StepCheckpoint,
 ) -> Result<()> {
-    sqlx::query(
+    try_op("write media execution checkpoint", || { sqlx::query(
         "SELECT media_job_step_checkpoint_write_v1(media_job_public_id_input => $1, claim_generation_input => $2, step_index_input => $3, step_signature_input => $4, output_path_input => $5, size_bytes_input => $6, output_sha256_input => $7)",
     )
     .bind(job_id)
@@ -60,8 +58,6 @@ pub async fn write_step_checkpoint(
     .bind(&checkpoint.output_path)
     .bind(checkpoint.size_bytes)
     .bind(&checkpoint.output_sha256)
-    .execute(pool)
-    .await
-    .map_err(try_op("write media execution checkpoint"))?;
+    .execute(pool) }).await?;
     Ok(())
 }

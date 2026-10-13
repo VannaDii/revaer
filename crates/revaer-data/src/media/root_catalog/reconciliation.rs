@@ -1,10 +1,11 @@
 //! Transaction-owned bootstrap reconciliation of independently attested roots.
 
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgConnection, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::{Result, try_op};
+use crate::transaction::{begin_transaction_with, finish_transaction, rollback_transaction};
 
 /// Expected complete catalog identity, independently checked by `PostgreSQL`.
 pub struct RootCatalogGenerationInput {
@@ -85,34 +86,40 @@ pub struct ActivatedRootCatalog {
 ///
 /// Only injected bootstrap wiring may use this adapter. Keep process/root locks
 /// alive throughout and revalidate descriptors immediately before activation.
-/// Dropping an unfinished adapter invokes `SQLx` transaction rollback; explicit
-/// rollback is available when its completion must be observed before recovery.
-pub struct RootCatalogReconciliation {
-    transaction: Transaction<'static, Postgres>,
+/// Its caller owns the reserved connection and awaits activation or rollback
+/// before releasing that connection or its retained root locks.
+pub struct RootCatalogReconciliation<'a> {
+    transaction: Transaction<'a, Postgres>,
     candidate: Candidate,
 }
 
-impl RootCatalogReconciliation {
+impl<'a> RootCatalogReconciliation<'a> {
     /// Begin a serialized candidate, or identify the exactly current generation.
     ///
     /// # Errors
     /// Propagates connection, transaction, contract and locking failures.
-    pub async fn begin(pool: &PgPool, input: &RootCatalogGenerationInput) -> Result<Self> {
-        let mut transaction = pool
-            .begin_with("BEGIN ISOLATION LEVEL SERIALIZABLE")
-            .await
-            .map_err(try_op("begin root catalog reconciliation"))?;
-        let candidate = sqlx::query_as(
-            "SELECT * FROM media_root_catalog_reconcile_begin_v1($1, $2, $3, $4, $5)",
-        )
-        .bind(input.source_format_version)
-        .bind(input.source_sha256.as_slice())
-        .bind(input.attestation_sha256.as_slice())
-        .bind(input.generation_sha256.as_slice())
-        .bind(input.slot_count)
-        .fetch_one(&mut *transaction)
-        .await
-        .map_err(try_op("stage root catalog generation"))?;
+    pub async fn begin(
+        connection: &'a mut PgConnection,
+        input: &RootCatalogGenerationInput,
+    ) -> Result<Self> {
+        let mut transaction =
+            begin_transaction_with(connection, "BEGIN ISOLATION LEVEL SERIALIZABLE").await?;
+        let candidate = try_op("stage root catalog generation", || {
+            sqlx::query_as(
+                "SELECT * FROM media_root_catalog_reconcile_begin_v1($1, $2, $3, $4, $5)",
+            )
+            .bind(input.source_format_version)
+            .bind(input.source_sha256.as_slice())
+            .bind(input.attestation_sha256.as_slice())
+            .bind(input.generation_sha256.as_slice())
+            .bind(input.slot_count)
+            .fetch_one(&mut *transaction)
+        })
+        .await;
+        let candidate = match candidate {
+            Ok(candidate) => candidate,
+            Err(original) => return finish_transaction(transaction, Err(original)).await,
+        };
         Ok(Self {
             transaction,
             candidate,
@@ -136,7 +143,7 @@ impl RootCatalogReconciliation {
     /// # Errors
     /// Rejects idempotent/current writes, unordered, duplicate or invalid rows.
     pub async fn append_slot(&mut self, input: &RootCatalogSlotInput<'_>) -> Result<Uuid> {
-        sqlx::query_scalar("SELECT media_root_catalog_reconcile_slot_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)")
+        try_op("append root catalog slot", || { sqlx::query_scalar("SELECT media_root_catalog_reconcile_slot_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)")
             .bind(self.candidate.media_root_catalog_generation_public_id)
             .bind(input.logical_key).bind(input.requested_path).bind(input.canonical_path)
             .bind(input.filesystem_device.as_slice()).bind(input.filesystem_inode.as_slice())
@@ -146,8 +153,7 @@ impl RootCatalogReconciliation {
             .bind(input.capabilities[6]).bind(input.durability_class).bind(input.durability_evidence)
             .bind(input.sole_writer_class).bind(input.sole_writer_evidence)
             .bind(i64::from(input.owner_uid)).bind(i64::from(input.owner_gid)).bind(input.mode_bits)
-            .bind(input.root_identity_sha256.as_slice()).fetch_one(&mut *self.transaction).await
-            .map_err(try_op("append root catalog slot"))
+            .bind(input.root_identity_sha256.as_slice()).fetch_one(&mut *self.transaction) }).await
     }
 
     /// Append one approved kind in ordinal order to a slot in this candidate.
@@ -155,13 +161,14 @@ impl RootCatalogReconciliation {
     /// # Errors
     /// Rejects unknown, duplicate, unordered and foreign-slot kinds.
     pub async fn append_kind(&mut self, slot: Uuid, kind: &str) -> Result<()> {
-        sqlx::query("SELECT media_root_catalog_reconcile_slot_kind_v1($1, $2, $3)")
-            .bind(self.candidate.media_root_catalog_generation_public_id)
-            .bind(slot)
-            .bind(kind)
-            .execute(&mut *self.transaction)
-            .await
-            .map_err(try_op("append root catalog kind"))?;
+        try_op("append root catalog kind", || {
+            sqlx::query("SELECT media_root_catalog_reconcile_slot_kind_v1($1, $2, $3)")
+                .bind(self.candidate.media_root_catalog_generation_public_id)
+                .bind(slot)
+                .bind(kind)
+                .execute(&mut *self.transaction)
+        })
+        .await?;
         Ok(())
     }
 
@@ -171,17 +178,13 @@ impl RootCatalogReconciliation {
     /// # Errors
     /// Propagates incomplete proof, identity, serialization and commit failures.
     pub async fn activate(mut self) -> Result<ActivatedRootCatalog> {
-        let activated =
+        let activated = try_op("activate root catalog", || {
             sqlx::query_as("SELECT * FROM media_root_catalog_reconcile_activate_v1($1)")
                 .bind(self.candidate.media_root_catalog_generation_public_id)
                 .fetch_one(&mut *self.transaction)
-                .await
-                .map_err(try_op("activate root catalog"))?;
-        self.transaction
-            .commit()
-            .await
-            .map_err(try_op("commit root catalog reconciliation"))?;
-        Ok(activated)
+        })
+        .await;
+        finish_transaction(self.transaction, activated).await
     }
 
     /// Finish rollback before attempting a separate fail-closed state mutation.
@@ -189,9 +192,6 @@ impl RootCatalogReconciliation {
     /// # Errors
     /// Propagates rollback failure; it is never treated as successful cleanup.
     pub async fn rollback(self) -> Result<()> {
-        self.transaction
-            .rollback()
-            .await
-            .map_err(try_op("rollback root catalog reconciliation"))
+        rollback_transaction(self.transaction).await
     }
 }

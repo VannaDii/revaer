@@ -4,6 +4,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::{Result, try_op};
+use crate::transaction::{begin_transaction_with, finish_transaction, release_connection};
 
 const CREATE: &str = "SELECT media_discovery_association_create_v1(actor_public_id_input => $1, association_key_input => $2, media_profile_public_id_input => $3, profile_version_input => $4, source_root_key_input => $5, root_relative_path_input => $6, manual_enabled_input => $7, watcher_enabled_input => $8, schedule_enabled_input => $9)";
 const GET: &str = "SELECT * FROM media_discovery_association_get_v1(public_id_input => $1)";
@@ -18,9 +19,8 @@ pub async fn read_association_page(
     key: Option<&str>,
     id: Option<Uuid>,
 ) -> Result<Vec<AssociationRow>> {
-    sqlx::query_as("SELECT * FROM media_discovery_association_page_v1(limit_input => $1, cursor_key_input => $2, cursor_id_input => $3)")
-        .bind(i32::from(limit)).bind(key).bind(id).fetch_all(pool).await
-        .map_err(try_op("read discovery association page"))
+    try_op("read discovery association page", || { sqlx::query_as("SELECT * FROM media_discovery_association_page_v1(limit_input => $1, cursor_key_input => $2, cursor_id_input => $3)")
+        .bind(i32::from(limit)).bind(key).bind(id).fetch_all(pool) }).await
 }
 
 /// Exact validated association fields; no inferred version, scope or mode.
@@ -101,11 +101,10 @@ pub struct AssociationModes {
 /// # Errors
 /// Propagates storage and decoding failures; an unknown identity returns `None`.
 pub async fn read_association(pool: &PgPool, id: Uuid) -> Result<Option<AssociationRow>> {
-    sqlx::query_as(GET)
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .map_err(try_op("read discovery association"))
+    try_op("read discovery association", || {
+        sqlx::query_as(GET).bind(id).fetch_optional(pool)
+    })
+    .await
 }
 
 /// Create and read version 1 in one serializable transaction.
@@ -117,60 +116,81 @@ pub async fn create_association(
     pool: &PgPool,
     input: &CreateAssociationInput<'_>,
 ) -> Result<AssociationRow> {
-    let mut retries = 0;
-    loop {
-        let result = create_once(pool, input).await;
-        if let Err(error) = &result
-            && retries < 2
-            && matches!(error.database_code().as_deref(), Some("40001" | "40P01"))
-        {
-            retries += 1;
-            continue;
+    let pool = pool.clone();
+    let actor_public_id = input.actor_public_id;
+    let association_key = input.association_key.to_owned();
+    let media_profile_public_id = input.media_profile_public_id;
+    let profile_version = input.profile_version;
+    let source_root_key = input.source_root_key.to_owned();
+    let root_relative_path = input.root_relative_path.to_owned();
+    let manual_enabled = input.manual_enabled;
+    let watcher_enabled = input.watcher_enabled;
+    let schedule_enabled = input.schedule_enabled;
+    // The worker owns BEGIN and cleanup even when its caller stops waiting.
+    tokio::spawn(async move {
+        let input = CreateAssociationInput {
+            actor_public_id,
+            association_key: &association_key,
+            media_profile_public_id,
+            profile_version,
+            source_root_key: &source_root_key,
+            root_relative_path: &root_relative_path,
+            manual_enabled,
+            watcher_enabled,
+            schedule_enabled,
+        };
+
+        let mut retries = 0;
+        loop {
+            let result = create_once(&pool, &input).await;
+            if let Err(error) = &result
+                && retries < 2
+                && matches!(error.database_code().as_deref(), Some("40001" | "40P01"))
+            {
+                retries += 1;
+                continue;
+            }
+            return result;
         }
-        return result;
-    }
+    })
+    .await
+    .map_err(|source| crate::error::DataError::BoundaryFailed {
+        operation: "create_association",
+        source: Box::new(source),
+    })?
 }
 
 async fn create_once(pool: &PgPool, input: &CreateAssociationInput<'_>) -> Result<AssociationRow> {
-    let mut transaction = pool
-        .begin_with("BEGIN ISOLATION LEVEL SERIALIZABLE")
-        .await
-        .map_err(try_op("begin discovery association creation"))?;
-    let write = sqlx::query_scalar::<_, Uuid>(CREATE)
-        .bind(input.actor_public_id)
-        .bind(input.association_key)
-        .bind(input.media_profile_public_id)
-        .bind(input.profile_version)
-        .bind(input.source_root_key)
-        .bind(input.root_relative_path)
-        .bind(input.manual_enabled)
-        .bind(input.watcher_enabled)
-        .bind(input.schedule_enabled)
-        .fetch_one(&mut *transaction)
-        .await;
-    let row = match write {
-        Ok(id) => {
-            sqlx::query_as(GET)
-                .bind(id)
+    let mut connection = try_op("transaction acquire", || pool.acquire()).await?;
+    let completed = async {
+        let mut transaction =
+            begin_transaction_with(&mut connection, "BEGIN ISOLATION LEVEL SERIALIZABLE").await?;
+        let row = try_op("create discovery association", || async {
+            let write = sqlx::query_scalar::<_, Uuid>(CREATE)
+                .bind(input.actor_public_id)
+                .bind(input.association_key)
+                .bind(input.media_profile_public_id)
+                .bind(input.profile_version)
+                .bind(input.source_root_key)
+                .bind(input.root_relative_path)
+                .bind(input.manual_enabled)
+                .bind(input.watcher_enabled)
+                .bind(input.schedule_enabled)
                 .fetch_one(&mut *transaction)
-                .await
-        }
-        Err(error) => Err(error),
-    };
-    match row {
-        Ok(row) => {
-            transaction
-                .commit()
-                .await
-                .map_err(try_op("commit discovery association creation"))?;
-            Ok(row)
-        }
-        Err(error) => {
-            transaction
-                .rollback()
-                .await
-                .map_err(try_op("rollback discovery association creation"))?;
-            Err(try_op("create discovery association")(error))
-        }
+                .await;
+            match write {
+                Ok(id) => {
+                    sqlx::query_as(GET)
+                        .bind(id)
+                        .fetch_one(&mut *transaction)
+                        .await
+                }
+                Err(error) => Err(error),
+            }
+        })
+        .await;
+        finish_transaction(transaction, row).await
     }
+    .await;
+    release_connection(connection, completed).await
 }

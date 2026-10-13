@@ -182,6 +182,21 @@ pub(super) async fn start(
     config: &ConfigService,
     source: RootCatalogLoad,
 ) -> AppResult<Option<RetainedRootCatalog>> {
+    let config = config.clone();
+    tokio::spawn(async move { start_owned(&config, source).await })
+        .await
+        .map_err(|source| {
+            super::storage(revaer_data::DataError::BoundaryFailed {
+                operation: "root catalog bootstrap",
+                source: Box::new(source),
+            })
+        })?
+}
+
+async fn start_owned(
+    config: &ConfigService,
+    source: RootCatalogLoad,
+) -> AppResult<Option<RetainedRootCatalog>> {
     let mounts = ProcRootMountSource;
     let roots = match mounts
         .snapshot()
@@ -236,26 +251,66 @@ async fn reconcile(
         generation_sha256: proof.identity.generation_sha256(),
         slot_count: i16::try_from(claims.len()).map_err(|_| ProofError::Changed)?,
     };
-    let mut transaction = RootCatalogReconciliation::begin(config.pool(), &input).await?;
-    if !transaction.already_current() {
-        for (claim, encoded) in claims.iter().zip(proof.identity.slots()) {
-            let slot = transaction
-                .append_slot(&slot_input(claim, encoded.root_identity_sha256())?)
-                .await?;
-            for kind in claim.declaration.allowed_kinds() {
-                transaction.append_kind(slot, kind_name(*kind)).await?;
+    let mut connection =
+        config
+            .pool()
+            .acquire()
+            .await
+            .map_err(|source| revaer_data::DataError::QueryFailed {
+                operation: "transaction acquire",
+                source,
+            })?;
+    let completed = async {
+        let mut transaction = RootCatalogReconciliation::begin(&mut connection, &input).await?;
+        let prepared = async {
+            if !transaction.already_current() {
+                for (claim, encoded) in claims.iter().zip(proof.identity.slots()) {
+                    let slot = transaction
+                        .append_slot(&slot_input(claim, encoded.root_identity_sha256())?)
+                        .await?;
+                    for kind in claim.declaration.allowed_kinds() {
+                        transaction.append_kind(slot, kind_name(*kind)).await?;
+                    }
+                }
             }
+            revalidate(source, roots, mounts, &proof.observations)
+        }
+        .await;
+        if let Err(original) = prepared {
+            return match transaction.rollback().await {
+                Ok(()) => Err(original),
+                Err(cleanup) => Err(ProofError::Storage(
+                    revaer_data::DataError::RollbackFailed {
+                        original: Box::new(revaer_data::DataError::BoundaryFailed {
+                            operation: "root catalog reconciliation",
+                            source: Box::new(original),
+                        }),
+                        cleanup: Box::new(cleanup),
+                    },
+                )),
+            };
+        }
+        let activated = transaction.activate().await?;
+        Ok(SourceGeneration {
+            number: activated.attestation_generation,
+            sha256: input.generation_sha256,
+        })
+    }
+    .await;
+    match completed {
+        Ok(value) => revaer_data::transaction::release_connection(connection, Ok(value))
+            .await
+            .map_err(Into::into),
+        Err(ProofError::Storage(error)) => {
+            revaer_data::transaction::release_connection::<SourceGeneration>(connection, Err(error))
+                .await
+                .map_err(Into::into)
+        }
+        Err(error) => {
+            revaer_data::transaction::release_connection(connection, Ok(())).await?;
+            Err(error)
         }
     }
-    if let Err(error) = revalidate(source, roots, mounts, &proof.observations) {
-        transaction.rollback().await?;
-        return Err(error);
-    }
-    let activated = transaction.activate().await?;
-    Ok(SourceGeneration {
-        number: activated.attestation_generation,
-        sha256: input.generation_sha256,
-    })
 }
 
 struct ProofSnapshot {

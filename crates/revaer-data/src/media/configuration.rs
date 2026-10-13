@@ -1,17 +1,18 @@
 //! Stored-procedure access for media configuration catalogs.
 
 use crate::error::{Result, try_op};
-use sqlx::{Executor, PgPool, Postgres};
+use sqlx::{Executor, PgConnection, PgPool, Postgres};
 use uuid::Uuid;
 
 /// Open the single serializable transaction required for configuration import.
 ///
 /// # Errors
 /// Propagates transaction setup and connection failures.
-pub async fn begin_import_transaction(pool: &PgPool) -> Result<sqlx::Transaction<'_, Postgres>> {
-    pool.begin_with("BEGIN ISOLATION LEVEL SERIALIZABLE")
+pub async fn begin_import_transaction(
+    connection: &mut PgConnection,
+) -> Result<sqlx::Transaction<'_, Postgres>> {
+    crate::transaction::begin_transaction_with(connection, "BEGIN ISOLATION LEVEL SERIALIZABLE")
         .await
-        .map_err(try_op("begin media configuration import"))
 }
 
 /// One explicit resource intent checked under the import's parent locks.
@@ -47,9 +48,9 @@ pub async fn prepare_import(
         .map(|row| row.expected_version)
         .collect::<Vec<_>>();
     // The held catalog lock pins this generation, including legitimate absence.
-    let _generation = sqlx::query_scalar::<_, Option<i64>>("SELECT media_configuration_import_prepare_v1(actor_public_id_input => $1, kinds_input => $2, keys_input => $3, create_intents_input => $4, expected_versions_input => $5, source_keys_input => $6)")
+    let _generation = try_op("prepare media configuration import", || { sqlx::query_scalar::<_, Option<i64>>("SELECT media_configuration_import_prepare_v1(actor_public_id_input => $1, kinds_input => $2, keys_input => $3, create_intents_input => $4, expected_versions_input => $5, source_keys_input => $6)")
         .bind(actor_public_id).bind(kinds).bind(keys).bind(creates).bind(versions).bind(source_keys)
-        .fetch_one(&mut **transaction).await.map_err(try_op("prepare media configuration import"))?;
+        .fetch_one(&mut **transaction) }).await?;
     Ok(())
 }
 
@@ -74,13 +75,13 @@ pub async fn import_profile(
     row: &super::portable::PortableProfileRow,
     expected_head: Option<i32>,
 ) -> Result<ImportedProfile> {
-    sqlx::query_as("SELECT * FROM media_profile_version_import_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)")
+    try_op("import native media profile", || { sqlx::query_as("SELECT * FROM media_profile_version_import_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)")
         .bind(actor).bind(&row.profile_key).bind(row.version).bind(expected_head)
         .bind(&row.display_name).bind(&row.description).bind(row.enabled)
         .bind(&row.desired_target_key).bind(row.desired_target_version)
         .bind(&row.policy_key).bind(row.policy_version).bind(&row.output_root_key)
         .bind(&row.workspace_root_key).bind(&row.backup_root_key).bind(&row.quarantine_root_key)
-        .fetch_one(&mut **transaction).await.map_err(try_op("import native media profile"))
+        .fetch_one(&mut **transaction) }).await
 }
 
 /// Import one exact association pin without following the latest profile head.
@@ -93,22 +94,23 @@ pub async fn import_association(
     row: &super::portable::PortableAssociationRow,
     expected_head: Option<i32>,
 ) -> Result<Uuid> {
-    sqlx::query_scalar(
-        "SELECT media_discovery_association_import_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
-    )
-    .bind(actor)
-    .bind(&row.association_key)
-    .bind(expected_head)
-    .bind(&row.profile_key)
-    .bind(row.profile_version)
-    .bind(&row.source_root_key)
-    .bind(&row.root_relative_path)
-    .bind(row.manual_enabled)
-    .bind(row.watcher_enabled)
-    .bind(row.schedule_enabled)
-    .fetch_one(&mut **transaction)
+    try_op("import native media association", || {
+        sqlx::query_scalar(
+            "SELECT media_discovery_association_import_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+        )
+        .bind(actor)
+        .bind(&row.association_key)
+        .bind(expected_head)
+        .bind(&row.profile_key)
+        .bind(row.profile_version)
+        .bind(&row.source_root_key)
+        .bind(&row.root_relative_path)
+        .bind(row.manual_enabled)
+        .bind(row.watcher_enabled)
+        .bind(row.schedule_enabled)
+        .fetch_one(&mut **transaction)
+    })
     .await
-    .map_err(try_op("import native media association"))
 }
 
 /// Record one bounded import fact inside the same transaction as all writes.
@@ -121,13 +123,14 @@ pub async fn audit_import(
     digest: &[u8],
     resource_count: i32,
 ) -> Result<()> {
-    sqlx::query("SELECT media_configuration_import_audit_v1($1,$2,$3)")
-        .bind(actor)
-        .bind(digest)
-        .bind(resource_count)
-        .execute(&mut **transaction)
-        .await
-        .map_err(try_op("audit native media import"))?;
+    try_op("audit native media import", || {
+        sqlx::query("SELECT media_configuration_import_audit_v1($1,$2,$3)")
+            .bind(actor)
+            .bind(digest)
+            .bind(resource_count)
+            .execute(&mut **transaction)
+    })
+    .await?;
     Ok(())
 }
 
@@ -197,7 +200,7 @@ pub async fn append_media_policy_operation_cost(
     version: i32,
     row: &super::policy_snapshot::OperationCostSnapshotRow,
 ) -> Result<()> {
-    sqlx::query("SELECT media_policy_operation_cost_append_v1(actor_public_id_input => $1, policy_key_input => $2, version_input => $3, operation_kind_input => $4, cost_weight_input => $5, sort_order_input => $6, enabled_input => $7)")
+    try_op("media policy operation cost append", || { sqlx::query("SELECT media_policy_operation_cost_append_v1(actor_public_id_input => $1, policy_key_input => $2, version_input => $3, operation_kind_input => $4, cost_weight_input => $5, sort_order_input => $6, enabled_input => $7)")
         .bind(actor)
         .bind(policy_key)
         .bind(version)
@@ -205,9 +208,7 @@ pub async fn append_media_policy_operation_cost(
         .bind(row.cost_weight)
         .bind(row.sort_order)
         .bind(row.enabled)
-        .execute(pool)
-        .await
-        .map_err(try_op("media policy operation cost append"))?;
+        .execute(pool) }).await?;
     Ok(())
 }
 
@@ -523,10 +524,11 @@ pub struct MediaJobRetentionPolicyRow {
 pub async fn list_media_compatibility_targets(
     pool: &PgPool,
 ) -> Result<Vec<MediaCompatibilityTargetRow>> {
-    sqlx::query_as::<_, MediaCompatibilityTargetRow>(MEDIA_COMPATIBILITY_TARGET_LIST_V1)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media compatibility target list"))
+    try_op("media compatibility target list", || {
+        sqlx::query_as::<_, MediaCompatibilityTargetRow>(MEDIA_COMPATIBILITY_TARGET_LIST_V1)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Create or replace a compatibility target version.
@@ -553,19 +555,20 @@ pub async fn upsert_media_compatibility_target_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query_as::<_, MediaCompatibilityTargetRow>(MEDIA_COMPATIBILITY_TARGET_UPSERT_V1)
-        .bind(input.actor_public_id)
-        .bind(input.compatibility_target_key)
-        .bind(input.version)
-        .bind(input.display_name)
-        .bind(input.video_codec)
-        .bind(input.audio_codec)
-        .bind(input.audio_channels)
-        .bind(input.audio_channel_layout)
-        .bind(input.subtitle_policy)
-        .fetch_one(executor)
-        .await
-        .map_err(try_op("media compatibility target upsert"))
+    try_op("media compatibility target upsert", || {
+        sqlx::query_as::<_, MediaCompatibilityTargetRow>(MEDIA_COMPATIBILITY_TARGET_UPSERT_V1)
+            .bind(input.actor_public_id)
+            .bind(input.compatibility_target_key)
+            .bind(input.version)
+            .bind(input.display_name)
+            .bind(input.video_codec)
+            .bind(input.audio_codec)
+            .bind(input.audio_channels)
+            .bind(input.audio_channel_layout)
+            .bind(input.subtitle_policy)
+            .fetch_one(executor)
+    })
+    .await
 }
 
 /// List enabled policy profile versions.
@@ -574,10 +577,10 @@ where
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn list_media_policy_profiles(pool: &PgPool) -> Result<Vec<MediaPolicyProfileRow>> {
-    sqlx::query_as::<_, MediaPolicyProfileRow>(MEDIA_POLICY_PROFILE_LIST_V1)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media policy profile list"))
+    try_op("media policy profile list", || {
+        sqlx::query_as::<_, MediaPolicyProfileRow>(MEDIA_POLICY_PROFILE_LIST_V1).fetch_all(pool)
+    })
+    .await
 }
 
 /// Create or replace a policy profile version.
@@ -604,26 +607,27 @@ pub async fn upsert_media_policy_profile_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query_as::<_, MediaPolicyProfileRow>(MEDIA_POLICY_PROFILE_UPSERT_V1)
-        .bind(input.actor_public_id)
-        .bind(input.policy_key)
-        .bind(input.version)
-        .bind(input.display_name)
-        .bind(input.video_intent)
-        .bind(input.verification_strictness)
-        .bind(input.verification_duration_tolerance_millis)
-        .bind(input.verification_mux_validation.enabled())
-        .bind(input.verification_decode_all_streams.enabled())
-        .bind(input.verification_keyframe_seek.enabled())
-        .bind(input.verification_playback_probe.enabled())
-        .bind(input.output.dry_run)
-        .bind(input.output.replacement_mode)
-        .bind(input.output.quarantine_enabled)
-        .bind(input.output.preservation.preserve_permissions)
-        .bind(input.output.preservation.preserve_ownership)
-        .fetch_one(executor)
-        .await
-        .map_err(try_op("media policy profile upsert"))
+    try_op("media policy profile upsert", || {
+        sqlx::query_as::<_, MediaPolicyProfileRow>(MEDIA_POLICY_PROFILE_UPSERT_V1)
+            .bind(input.actor_public_id)
+            .bind(input.policy_key)
+            .bind(input.version)
+            .bind(input.display_name)
+            .bind(input.video_intent)
+            .bind(input.verification_strictness)
+            .bind(input.verification_duration_tolerance_millis)
+            .bind(input.verification_mux_validation.enabled())
+            .bind(input.verification_decode_all_streams.enabled())
+            .bind(input.verification_keyframe_seek.enabled())
+            .bind(input.verification_playback_probe.enabled())
+            .bind(input.output.dry_run)
+            .bind(input.output.replacement_mode)
+            .bind(input.output.quarantine_enabled)
+            .bind(input.output.preservation.preserve_permissions)
+            .bind(input.output.preservation.preserve_ownership)
+            .fetch_one(executor)
+    })
+    .await
 }
 
 /// Read the active job retention policy.
@@ -634,10 +638,11 @@ where
 pub async fn get_media_job_retention_policy(
     pool: &PgPool,
 ) -> Result<Option<MediaJobRetentionPolicyRow>> {
-    sqlx::query_as::<_, MediaJobRetentionPolicyRow>(MEDIA_JOB_RETENTION_POLICY_GET_V2)
-        .fetch_optional(pool)
-        .await
-        .map_err(try_op("media job retention policy get"))
+    try_op("media job retention policy get", || {
+        sqlx::query_as::<_, MediaJobRetentionPolicyRow>(MEDIA_JOB_RETENTION_POLICY_GET_V2)
+            .fetch_optional(pool)
+    })
+    .await
 }
 
 /// Update the active job retention policy.
@@ -649,17 +654,18 @@ pub async fn update_media_job_retention_policy(
     pool: &PgPool,
     input: UpdateMediaJobRetentionPolicyInput,
 ) -> Result<MediaJobRetentionPolicyRow> {
-    sqlx::query_as::<_, MediaJobRetentionPolicyRow>(MEDIA_JOB_RETENTION_POLICY_UPDATE_V2)
-        .bind(input.actor_public_id)
-        .bind(input.completed_enabled)
-        .bind(input.completed_mode)
-        .bind(input.completed_limit)
-        .bind(input.failed_diagnostic_enabled)
-        .bind(input.failed_diagnostic_mode)
-        .bind(input.failed_diagnostic_limit)
-        .fetch_one(pool)
-        .await
-        .map_err(try_op("media job retention policy update"))
+    try_op("media job retention policy update", || {
+        sqlx::query_as::<_, MediaJobRetentionPolicyRow>(MEDIA_JOB_RETENTION_POLICY_UPDATE_V2)
+            .bind(input.actor_public_id)
+            .bind(input.completed_enabled)
+            .bind(input.completed_mode)
+            .bind(input.completed_limit)
+            .bind(input.failed_diagnostic_enabled)
+            .bind(input.failed_diagnostic_mode)
+            .bind(input.failed_diagnostic_limit)
+            .fetch_one(pool)
+    })
+    .await
 }
 
 /// Create one immutable desired-target version.
@@ -686,15 +692,16 @@ pub async fn create_media_desired_target_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query_scalar::<_, Uuid>(MEDIA_DESIRED_TARGET_CREATE_V1)
-        .bind(input.actor_public_id)
-        .bind(input.target_key)
-        .bind(input.version)
-        .bind(input.display_name)
-        .bind(input.container_format)
-        .fetch_one(executor)
-        .await
-        .map_err(try_op("media desired target create"))
+    try_op("media desired target create", || {
+        sqlx::query_scalar::<_, Uuid>(MEDIA_DESIRED_TARGET_CREATE_V1)
+            .bind(input.actor_public_id)
+            .bind(input.target_key)
+            .bind(input.version)
+            .bind(input.display_name)
+            .bind(input.container_format)
+            .fetch_one(executor)
+    })
+    .await
 }
 
 /// Append one ordered stream before a desired-target version is assigned.
@@ -721,36 +728,37 @@ pub async fn append_media_desired_target_stream_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query(MEDIA_DESIRED_TARGET_STREAM_APPEND_V5)
-        .bind(input.media_desired_target_profile_public_id)
-        .bind(input.stream_key)
-        .bind(input.stream_kind)
-        .bind(input.semantic_role)
-        .bind(input.language_code)
-        .bind(input.optional)
-        .bind(input.sort_order)
-        .bind(input.codec)
-        .bind(input.channel_count)
-        .bind(input.channel_layout)
-        .bind(input.audio_bitrate_bps)
-        .bind(input.audio_sample_rate_hz)
-        .bind(input.audio_loudness_profile)
-        .bind(input.audio_dynamic_range)
-        .bind(input.video_profile)
-        .bind(input.video_level)
-        .bind(input.video_bitrate_bps)
-        .bind(input.color_primaries)
-        .bind(input.color_transfer)
-        .bind(input.color_space)
-        .bind(input.hdr_format)
-        .bind(input.title)
-        .bind(input.default_disposition)
-        .bind(input.forced_disposition)
-        .bind(input.subtitle_placement)
-        .bind(input.image_subtitle_action)
-        .execute(executor)
-        .await
-        .map_err(try_op("media desired target stream append"))?;
+    try_op("media desired target stream append", || {
+        sqlx::query(MEDIA_DESIRED_TARGET_STREAM_APPEND_V5)
+            .bind(input.media_desired_target_profile_public_id)
+            .bind(input.stream_key)
+            .bind(input.stream_kind)
+            .bind(input.semantic_role)
+            .bind(input.language_code)
+            .bind(input.optional)
+            .bind(input.sort_order)
+            .bind(input.codec)
+            .bind(input.channel_count)
+            .bind(input.channel_layout)
+            .bind(input.audio_bitrate_bps)
+            .bind(input.audio_sample_rate_hz)
+            .bind(input.audio_loudness_profile)
+            .bind(input.audio_dynamic_range)
+            .bind(input.video_profile)
+            .bind(input.video_level)
+            .bind(input.video_bitrate_bps)
+            .bind(input.color_primaries)
+            .bind(input.color_transfer)
+            .bind(input.color_space)
+            .bind(input.hdr_format)
+            .bind(input.title)
+            .bind(input.default_disposition)
+            .bind(input.forced_disposition)
+            .bind(input.subtitle_placement)
+            .bind(input.image_subtitle_action)
+            .execute(executor)
+    })
+    .await?;
     Ok(())
 }
 
@@ -760,10 +768,10 @@ where
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn list_media_desired_targets(pool: &PgPool) -> Result<Vec<MediaDesiredTargetRow>> {
-    sqlx::query_as::<_, MediaDesiredTargetRow>(MEDIA_DESIRED_TARGET_LIST_V1)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media desired target list"))
+    try_op("media desired target list", || {
+        sqlx::query_as::<_, MediaDesiredTargetRow>(MEDIA_DESIRED_TARGET_LIST_V1).fetch_all(pool)
+    })
+    .await
 }
 
 /// Read one bounded desired-target page and all bounded child streams in one query.
@@ -775,11 +783,12 @@ pub async fn list_media_desired_target_graph_page(
     pool: &PgPool,
     limit: i32,
 ) -> Result<Vec<MediaDesiredTargetGraphRow>> {
-    sqlx::query_as::<_, MediaDesiredTargetGraphRow>(MEDIA_DESIRED_TARGET_GRAPH_PAGE_V1)
-        .bind(limit)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media desired target graph page"))
+    try_op("media desired target graph page", || {
+        sqlx::query_as::<_, MediaDesiredTargetGraphRow>(MEDIA_DESIRED_TARGET_GRAPH_PAGE_V1)
+            .bind(limit)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// List the ordered stream graph for one desired-target version.
@@ -791,11 +800,12 @@ pub async fn list_media_desired_target_streams(
     pool: &PgPool,
     media_desired_target_profile_public_id: Uuid,
 ) -> Result<Vec<MediaDesiredTargetStreamRow>> {
-    sqlx::query_as::<_, MediaDesiredTargetStreamRow>(MEDIA_DESIRED_TARGET_STREAM_LIST_V5)
-        .bind(media_desired_target_profile_public_id)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("media desired target stream list"))
+    try_op("media desired target stream list", || {
+        sqlx::query_as::<_, MediaDesiredTargetStreamRow>(MEDIA_DESIRED_TARGET_STREAM_LIST_V5)
+            .bind(media_desired_target_profile_public_id)
+            .fetch_all(pool)
+    })
+    .await
 }
 
 /// Pin a profile to one immutable desired-target version, or clear its target.
@@ -835,14 +845,15 @@ pub async fn set_media_profile_desired_target_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query_scalar::<_, Uuid>(MEDIA_PROFILE_DESIRED_TARGET_SET_V1)
-        .bind(actor_public_id)
-        .bind(media_profile_public_id)
-        .bind(target_key.unwrap_or_default())
-        .bind(version.unwrap_or_default())
-        .fetch_one(executor)
-        .await
-        .map_err(try_op("media profile desired target set"))
+    try_op("media profile desired target set", || {
+        sqlx::query_scalar::<_, Uuid>(MEDIA_PROFILE_DESIRED_TARGET_SET_V1)
+            .bind(actor_public_id)
+            .bind(media_profile_public_id)
+            .bind(target_key.unwrap_or_default())
+            .bind(version.unwrap_or_default())
+            .fetch_one(executor)
+    })
+    .await
 }
 
 #[cfg(test)]

@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::config::run_migrations;
 use revaer_test_support::postgres::start_postgres;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Row};
@@ -746,7 +745,7 @@ struct TestDb {
 }
 
 async fn setup_db() -> anyhow::Result<TestDb> {
-    let postgres = match start_postgres() {
+    let mut postgres = match start_postgres() {
         Ok(db) => db,
         Err(err) => {
             eprintln!("skipping indexer schema tests: {err}");
@@ -754,6 +753,9 @@ async fn setup_db() -> anyhow::Result<TestDb> {
         }
     };
 
+    postgres
+        .initialize_runtime(include_str!("../../init.sql"))
+        .await?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .after_connect(|conn, _meta| {
@@ -770,10 +772,9 @@ async fn setup_db() -> anyhow::Result<TestDb> {
                 Ok(())
             })
         })
-        .connect(postgres.connection_string())
+        .connect_with(postgres.fixture_connect_options()?)
         .await?;
 
-    run_migrations(&pool).await?;
     Ok(TestDb {
         _db: postgres,
         pool,
@@ -918,7 +919,7 @@ async fn indexer_schema_registers_expected_enums() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn indexer_schema_registers_versioned_and_stable_procedures() -> anyhow::Result<()> {
+async fn indexer_schema_registers_canonical_procedures() -> anyhow::Result<()> {
     let Ok(test_db) = setup_db().await else {
         return Ok(());
     };
@@ -926,10 +927,6 @@ async fn indexer_schema_registers_versioned_and_stable_procedures() -> anyhow::R
 
     let procedures = fetch_proc_names(pool).await?;
     for versioned in VERSIONED_PROCS {
-        assert!(
-            procedures.contains(*versioned),
-            "missing versioned proc {versioned}"
-        );
         let stable = stable_proc_name(versioned);
         assert!(procedures.contains(stable), "missing stable proc {stable}");
     }

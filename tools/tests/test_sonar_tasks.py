@@ -251,11 +251,11 @@ def test_result_queries_exact_analysis_and_correct_backlog_scope(
             assert "statuses" not in query
             assert "inNewCodePeriod" not in query
             assert "status" not in query
-            if query["ps"] == ["500"]:
-                assert "pullRequest" not in query
-                assert "sinceLeakPeriod" not in query
-            elif pull_request:
+            if pull_request:
                 assert query["pullRequest"] == [pull_request]
+                assert "sinceLeakPeriod" not in query
+            elif query["ps"] == ["500"]:
+                assert "pullRequest" not in query
                 assert "sinceLeakPeriod" not in query
             else:
                 assert "pullRequest" not in query

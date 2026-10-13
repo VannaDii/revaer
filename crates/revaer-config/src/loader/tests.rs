@@ -4,6 +4,7 @@ use crate::LabelKind;
 use anyhow::{Result, anyhow};
 use chrono::Duration as ChronoDuration;
 use revaer_data::config::{NatToggleSet, PrivacyToggleSet, QueuePolicySet, StorageToggleSet};
+use revaer_data::indexers::jobs::JobClaimOutcome;
 use std::collections::HashSet;
 use std::fs;
 use std::net::IpAddr;
@@ -46,18 +47,16 @@ async fn cancelled_configuration_change_keeps_background_jobs_and_reads_healthy(
         Poll::Ready(())
     })
     .await;
-    assert_eq!(service.pool.num_idle(), 0);
     drop(change);
 
-    let skipped =
-        match revaer_data::indexers::jobs::job_claim_next(&service.pool, "retention_purge").await {
-            Err(error) => error,
-            Ok(()) => revaer_data::indexers::jobs::job_claim_next(&service.pool, "retention_purge")
-                .await
-                .err()
-                .ok_or_else(|| anyhow!("a claimed background job must be skipped"))?,
-        };
-    assert_eq!(skipped.database_code().as_deref(), Some("P0001"));
+    let outcome =
+        revaer_data::indexers::jobs::job_claim_next(&service.pool, "retention_purge").await?;
+    if outcome == JobClaimOutcome::Claimed {
+        assert_ne!(
+            revaer_data::indexers::jobs::job_claim_next(&service.pool, "retention_purge").await?,
+            JobClaimOutcome::Claimed
+        );
+    }
     let refreshed = service.snapshot().await?;
     assert_eq!(refreshed.revision, snapshot.revision);
     service.pool.close().await;

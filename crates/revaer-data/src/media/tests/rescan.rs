@@ -352,7 +352,8 @@ async fn qualify_automatic_mode_writers(pool: &PgPool, profile: uuid::Uuid) -> a
         );
         assert_activation_request(pool, row.media_discovery_association_public_id).await?;
     }
-    let mut transaction = begin_import_transaction(pool).await?;
+    let mut import_connection = pool.acquire().await?;
+    let mut transaction = begin_import_transaction(&mut import_connection).await?;
     prepare_import(
         &mut transaction,
         actor,
@@ -390,7 +391,8 @@ async fn qualify_automatic_mode_writers(pool: &PgPool, profile: uuid::Uuid) -> a
     )
     .await?;
     audit_import(&mut transaction, actor, &[0x61; 32], 1).await?;
-    transaction.commit().await?;
+    crate::transaction::commit_transaction(transaction).await?;
+    import_connection.return_to_pool().await;
     let row = read_association(pool, imported)
         .await?
         .ok_or_else(|| anyhow::anyhow!("imported association missing"))?;

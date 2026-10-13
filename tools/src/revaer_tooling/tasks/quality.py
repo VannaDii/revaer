@@ -137,20 +137,18 @@ class CiQualify(Task):
             or e2e.retries != 0
             or not e2e.browser_coverage
             or set(e2e.phases(media=uses_single_init(context)))
-            != set(
-                (
-                    "api-none",
-                    "api-api-key",
-                    "ui-chromium",
-                    "ui-firefox",
-                    "ui-webkit",
-                    *(
-                        ("api-none-missing-catalog", "api-api-key-missing-catalog")
-                        if uses_single_init(context)
-                        else ()
-                    ),
-                )
-            )
+            != {
+                "api-none",
+                "api-api-key",
+                "ui-chromium",
+                "ui-firefox",
+                "ui-webkit",
+                *(
+                    ("api-none-missing-catalog", "api-api-key-missing-catalog")
+                    if uses_single_init(context)
+                    else ()
+                ),
+            }
         ):
             raise ToolingError(
                 "ci-qualify requires all API/browser phases, coverage and no retries"

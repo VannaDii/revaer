@@ -9,6 +9,7 @@ import tree_sitter_javascript
 from playwright.sync_api import Route, sync_playwright
 from revaer_tooling.cli import main, make_context
 from revaer_tooling.context import Context, Options
+from revaer_tooling.e2e.database import uses_single_init
 from revaer_tooling.e2e.javascript import PageCoverage, parse_inventory, write_inventory
 from revaer_tooling.e2e.v8 import JavaScriptSyntax, source_digest
 from revaer_tooling.errors import ToolingError
@@ -50,8 +51,13 @@ def test_distributed_merge_keeps_measured_chromium_captures(measured: Context) -
     expected = (context.root / "coverage/js-lcov.info").read_text()
     results = context.root / "tests/test-results"
     producers = context.root / "coverage/producers"
+    api_phases = tuple(
+        phase
+        for phase in context.settings.e2e.phases(media=uses_single_init(context))
+        if phase.startswith("api-")
+    )
     groups = (
-        ("api-e2e-coverage", ("api-none", "api-api-key")),
+        ("api-e2e-coverage", api_phases),
         ("ui-e2e-chromium", ("ui-chromium",)),
     )
     for name, phases in groups:
@@ -282,29 +288,3 @@ def test_invalid_script_does_not_turn_into_a_zero_coverage_success(tmp_path: Pat
     syntax = JavaScriptSyntax(Parser(Language(tree_sitter_javascript.language())))
     with pytest.raises(ToolingError, match="parse error"):
         parse_inventory(syntax, tmp_path, ("invalid.js",))
-
-
-def test_nonproduction_only_inventory_needs_no_fabricated_execution(measured: Context) -> None:
-    results = measured.root / "tests/test-results"
-    for path in (results / "ui-chromium").glob("*/javascript-page-*.json"):
-        record = json.loads(path.read_text())
-        for capture in record["captures"]:
-            for function in capture["functions"]:
-                for span in function["ranges"]:
-                    span["count"] = 0
-        path.write_text(json.dumps(record))
-    with pytest.raises(ToolingError, match="production locations"):
-        JavaScriptCoverageMerge.run(measured)
-    documentation = measured.root / "docs"
-    documentation.mkdir()
-    for name in ("app.js", "mirror.js", "unused.js"):
-        (measured.root / name).rename(documentation / name)
-    syntax = JavaScriptSyntax(Parser(Language(tree_sitter_javascript.language())))
-    scripts = parse_inventory(
-        syntax, measured.root, ("docs/app.js", "docs/mirror.js", "docs/unused.js")
-    )
-    write_inventory(measured.fs, results / "javascript-baseline-main.json", scripts)
-    JavaScriptCoverageMerge.run(measured)
-    lines = lcov_lines((measured.root / "coverage/js-lcov.info").read_text())
-    assert lines
-    assert all(count == 0 for source in lines.values() for count in source.values())

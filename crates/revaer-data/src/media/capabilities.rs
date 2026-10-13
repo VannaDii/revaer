@@ -1,6 +1,7 @@
 //! Stored-procedure access for media capability snapshots.
 
 use crate::error::{Result, try_op};
+use crate::transaction::{begin_transaction_with, finish_transaction, release_connection};
 use sqlx::{Executor, PgPool, Postgres};
 use uuid::Uuid;
 
@@ -175,17 +176,18 @@ pub async fn record_capability_snapshot_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query_scalar::<_, i64>(MEDIA_CAPABILITY_SNAPSHOT_RECORD_V2)
-        .bind(input.actor_public_id)
-        .bind(input.snapshot_run_public_id)
-        .bind(input.ffmpeg_version)
-        .bind(input.ffprobe_version)
-        .bind(input.codec_name)
-        .bind(input.encode_supported)
-        .bind(input.decode_supported)
-        .fetch_one(executor)
-        .await
-        .map_err(try_op("media capability snapshot record"))
+    try_op("media capability snapshot record", || {
+        sqlx::query_scalar::<_, i64>(MEDIA_CAPABILITY_SNAPSHOT_RECORD_V2)
+            .bind(input.actor_public_id)
+            .bind(input.snapshot_run_public_id)
+            .bind(input.ffmpeg_version)
+            .bind(input.ffprobe_version)
+            .bind(input.codec_name)
+            .bind(input.encode_supported)
+            .bind(input.decode_supported)
+            .fetch_one(executor)
+    })
+    .await
 }
 
 /// Record one concrete encoder for a snapshot run.
@@ -212,13 +214,14 @@ pub async fn record_capability_encoder_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query_scalar::<_, i64>(MEDIA_CAPABILITY_SNAPSHOT_ENCODER_RECORD_V1)
-        .bind(input.actor_public_id)
-        .bind(input.snapshot_run_public_id)
-        .bind(input.encoder_name)
-        .fetch_one(executor)
-        .await
-        .map_err(try_op("media capability encoder record"))
+    try_op("media capability encoder record", || {
+        sqlx::query_scalar::<_, i64>(MEDIA_CAPABILITY_SNAPSHOT_ENCODER_RECORD_V1)
+            .bind(input.actor_public_id)
+            .bind(input.snapshot_run_public_id)
+            .bind(input.encoder_name)
+            .fetch_one(executor)
+    })
+    .await
 }
 
 /// Record one feature row for a snapshot run.
@@ -245,16 +248,17 @@ pub async fn record_capability_feature_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query_scalar::<_, i64>(MEDIA_CAPABILITY_SNAPSHOT_FEATURE_RECORD_V1)
-        .bind(input.actor_public_id)
-        .bind(input.snapshot_run_public_id)
-        .bind(input.feature_family)
-        .bind(input.feature_name)
-        .bind(input.supported)
-        .bind(input.detail_text.unwrap_or_default())
-        .fetch_one(executor)
-        .await
-        .map_err(try_op("media capability feature record"))
+    try_op("media capability feature record", || {
+        sqlx::query_scalar::<_, i64>(MEDIA_CAPABILITY_SNAPSHOT_FEATURE_RECORD_V1)
+            .bind(input.actor_public_id)
+            .bind(input.snapshot_run_public_id)
+            .bind(input.feature_family)
+            .bind(input.feature_name)
+            .bind(input.supported)
+            .bind(input.detail_text.unwrap_or_default())
+            .fetch_one(executor)
+    })
+    .await
 }
 
 /// Mark a capability refresh run as started.
@@ -270,13 +274,14 @@ pub async fn start_capability_snapshot_run_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query(MEDIA_CAPABILITY_SNAPSHOT_RUN_START_V1)
-        .bind(actor_public_id)
-        .bind(snapshot_run_public_id)
-        .execute(executor)
-        .await
-        .map(|_| ())
-        .map_err(try_op("media capability snapshot run start"))
+    try_op("media capability snapshot run start", || {
+        sqlx::query(MEDIA_CAPABILITY_SNAPSHOT_RUN_START_V1)
+            .bind(actor_public_id)
+            .bind(snapshot_run_public_id)
+            .execute(executor)
+    })
+    .await
+    .map(|_| ())
 }
 
 /// Mark a capability refresh run as completed.
@@ -291,12 +296,13 @@ pub async fn complete_capability_snapshot_run_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query(MEDIA_CAPABILITY_SNAPSHOT_RUN_COMPLETE_V1)
-        .bind(snapshot_run_public_id)
-        .execute(executor)
-        .await
-        .map(|_| ())
-        .map_err(try_op("media capability snapshot run complete"))
+    try_op("media capability snapshot run complete", || {
+        sqlx::query(MEDIA_CAPABILITY_SNAPSHOT_RUN_COMPLETE_V1)
+            .bind(snapshot_run_public_id)
+            .execute(executor)
+    })
+    .await
+    .map(|_| ())
 }
 
 /// Read the latest capability snapshot row.
@@ -305,42 +311,68 @@ where
 ///
 /// Returns an error when query execution fails.
 pub async fn latest_capability_snapshot(pool: &PgPool) -> Result<Option<CapabilitySnapshotRow>> {
-    let rows =
-        sqlx::query_as::<_, CapabilitySnapshotCodecDbRow>(MEDIA_CAPABILITY_SNAPSHOT_LATEST_V2)
-            .fetch_all(pool)
-            .await
-            .map_err(try_op("media capability snapshot latest"))?;
-    let Some(mut snapshot) = build_capability_snapshot(rows, Vec::new()) else {
-        return Ok(None);
-    };
-    let encoder_rows = sqlx::query_as::<_, CapabilitySnapshotEncoderDbRow>(
-        MEDIA_CAPABILITY_SNAPSHOT_ENCODER_LIST_V1,
-    )
-    .bind(snapshot.snapshot_run_public_id)
-    .fetch_all(pool)
+    let pool = pool.clone();
+    tokio::spawn(async move {
+        let mut connection = try_op("transaction acquire", || pool.acquire()).await?;
+        let completed = async {
+            let mut transaction = begin_transaction_with(
+                &mut connection,
+                "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
+            )
+            .await?;
+            let read = async {
+                let rows = try_op("media capability snapshot latest", || {
+                    sqlx::query_as::<_, CapabilitySnapshotCodecDbRow>(
+                        MEDIA_CAPABILITY_SNAPSHOT_LATEST_V2,
+                    )
+                    .fetch_all(&mut *transaction)
+                })
+                .await?;
+                let Some(mut snapshot) = build_capability_snapshot(rows, Vec::new()) else {
+                    return Ok(None);
+                };
+                let encoder_rows = try_op("media capability encoder list", || {
+                    sqlx::query_as::<_, CapabilitySnapshotEncoderDbRow>(
+                        MEDIA_CAPABILITY_SNAPSHOT_ENCODER_LIST_V1,
+                    )
+                    .bind(snapshot.snapshot_run_public_id)
+                    .fetch_all(&mut *transaction)
+                })
+                .await?;
+                for row in encoder_rows {
+                    snapshot.observed_at = snapshot.observed_at.max(row.observed_at);
+                    snapshot.encoders.push(row.encoder_name);
+                }
+                let feature_rows = try_op("media capability feature list", || {
+                    sqlx::query_as::<_, CapabilitySnapshotFeatureDbRow>(
+                        MEDIA_CAPABILITY_SNAPSHOT_FEATURE_LIST_V1,
+                    )
+                    .bind(snapshot.snapshot_run_public_id)
+                    .fetch_all(&mut *transaction)
+                })
+                .await?;
+                for row in feature_rows {
+                    snapshot.observed_at = snapshot.observed_at.max(row.observed_at);
+                    snapshot.features.push(CapabilityFeatureRow {
+                        feature_family: row.feature_family,
+                        feature_name: row.feature_name,
+                        supported: row.supported,
+                        detail_text: row.detail_text,
+                    });
+                }
+                Ok(Some(snapshot))
+            }
+            .await;
+            finish_transaction(transaction, read).await
+        }
+        .await;
+        release_connection(connection, completed).await
+    })
     .await
-    .map_err(try_op("media capability encoder list"))?;
-    for row in encoder_rows {
-        snapshot.observed_at = snapshot.observed_at.max(row.observed_at);
-        snapshot.encoders.push(row.encoder_name);
-    }
-    let feature_rows = sqlx::query_as::<_, CapabilitySnapshotFeatureDbRow>(
-        MEDIA_CAPABILITY_SNAPSHOT_FEATURE_LIST_V1,
-    )
-    .bind(snapshot.snapshot_run_public_id)
-    .fetch_all(pool)
-    .await
-    .map_err(try_op("media capability feature list"))?;
-    for row in feature_rows {
-        snapshot.observed_at = snapshot.observed_at.max(row.observed_at);
-        snapshot.features.push(CapabilityFeatureRow {
-            feature_family: row.feature_family,
-            feature_name: row.feature_name,
-            supported: row.supported,
-            detail_text: row.detail_text,
-        });
-    }
-    Ok(Some(snapshot))
+    .map_err(|source| crate::error::DataError::BoundaryFailed {
+        operation: "read capability snapshot",
+        source: Box::new(source),
+    })?
 }
 
 fn build_capability_snapshot(

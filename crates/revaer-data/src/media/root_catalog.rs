@@ -49,8 +49,8 @@ pub struct RootCatalogReadinessRow {
 /// # Errors
 /// Returns the database failure; no fallback state or counts are synthesized.
 pub async fn read_root_catalog_readiness(pool: &PgPool) -> Result<Vec<RootCatalogReadinessRow>> {
-    sqlx::query_as(READINESS)
-        .fetch_all(pool)
-        .await
-        .map_err(try_op("read root catalog readiness"))
+    try_op("read root catalog readiness", || {
+        sqlx::query_as(READINESS).fetch_all(pool)
+    })
+    .await
 }

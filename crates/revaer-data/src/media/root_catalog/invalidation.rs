@@ -3,6 +3,7 @@
 use sqlx::PgPool;
 
 use crate::error::{Result, try_op};
+use crate::transaction::{begin_transaction_with, finish_transaction, release_connection};
 
 /// Closed source failure states from ADR 557.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,21 +72,31 @@ pub async fn mark_root_catalog_unavailable(
     pool: &PgPool,
     state: RootCatalogUnavailable,
 ) -> Result<()> {
-    let mut transaction = pool
-        .begin_with("BEGIN ISOLATION LEVEL SERIALIZABLE")
-        .await
-        .map_err(try_op("begin root source invalidation"))?;
-    let (state, reason) = state.fields();
-    sqlx::query("SELECT media_root_catalog_mark_unavailable_v1($1, $2)")
-        .bind(state)
-        .bind(reason)
-        .execute(&mut *transaction)
-        .await
-        .map_err(try_op("invalidate root catalog source"))?;
-    transaction
-        .commit()
-        .await
-        .map_err(try_op("commit root source invalidation"))
+    let pool = pool.clone();
+    tokio::spawn(async move {
+        let mut connection = try_op("transaction acquire", || pool.acquire()).await?;
+        let completed = async {
+            let mut transaction =
+                begin_transaction_with(&mut connection, "BEGIN ISOLATION LEVEL SERIALIZABLE")
+                    .await?;
+            let (state, reason) = state.fields();
+            let result = try_op("invalidate root catalog source", || {
+                sqlx::query("SELECT media_root_catalog_mark_unavailable_v1($1, $2)")
+                    .bind(state)
+                    .bind(reason)
+                    .execute(&mut *transaction)
+            })
+            .await;
+            finish_transaction(transaction, result.map(|_| ())).await
+        }
+        .await;
+        release_connection(connection, completed).await
+    })
+    .await
+    .map_err(|source| crate::error::DataError::BoundaryFailed {
+        operation: "mark_root_catalog_unavailable",
+        source: Box::new(source),
+    })?
 }
 
 /// Clear current generation continuity after attestation fails, without
@@ -97,17 +108,27 @@ pub async fn mark_root_attestation_invalid(
     pool: &PgPool,
     failure: RootAttestationFailure,
 ) -> Result<()> {
-    let mut transaction = pool
-        .begin_with("BEGIN ISOLATION LEVEL SERIALIZABLE")
-        .await
-        .map_err(try_op("begin root attestation invalidation"))?;
-    sqlx::query("SELECT media_root_catalog_mark_attestation_invalid_v1($1)")
-        .bind(failure.reason())
-        .execute(&mut *transaction)
-        .await
-        .map_err(try_op("invalidate root catalog attestation"))?;
-    transaction
-        .commit()
-        .await
-        .map_err(try_op("commit root attestation invalidation"))
+    let pool = pool.clone();
+    tokio::spawn(async move {
+        let mut connection = try_op("transaction acquire", || pool.acquire()).await?;
+        let completed = async {
+            let mut transaction =
+                begin_transaction_with(&mut connection, "BEGIN ISOLATION LEVEL SERIALIZABLE")
+                    .await?;
+            let result = try_op("invalidate root catalog attestation", || {
+                sqlx::query("SELECT media_root_catalog_mark_attestation_invalid_v1($1)")
+                    .bind(failure.reason())
+                    .execute(&mut *transaction)
+            })
+            .await;
+            finish_transaction(transaction, result.map(|_| ())).await
+        }
+        .await;
+        release_connection(connection, completed).await
+    })
+    .await
+    .map_err(|source| crate::error::DataError::BoundaryFailed {
+        operation: "mark_root_attestation_invalid",
+        source: Box::new(source),
+    })?
 }

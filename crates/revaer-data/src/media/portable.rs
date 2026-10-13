@@ -6,7 +6,8 @@ use super::configuration::{
     MediaCompatibilityTargetRow, MediaDesiredTargetRow, MediaDesiredTargetStreamRow,
     MediaPolicyProfileRow,
 };
-use crate::error::{Result, try_op};
+use crate::error::{DataError, Result, try_op};
+use crate::transaction::{begin_transaction_with, finish_transaction, release_connection};
 
 /// Complete immutable profile body with logical bindings and its exact version.
 #[derive(sqlx::FromRow)]
@@ -140,64 +141,67 @@ async fn read_export_snapshot(
     pool: &PgPool,
     include_local_paths: bool,
 ) -> Result<(PortableSnapshot, Vec<LocalRootPathRow>)> {
-    let mut transaction = pool
-        .begin_with("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .await
-        .map_err(try_op("begin portable media snapshot"))?;
-    let result = async {
-        let snapshot = read_rows(&mut transaction).await?;
-        let paths = if include_local_paths {
-            sqlx::query_as("SELECT * FROM media_local_root_paths_v1()")
-                .fetch_all(&mut *transaction)
-                .await
-                .map_err(try_op("read local diagnostic root paths"))?
-        } else {
-            Vec::new()
-        };
-        Ok((snapshot, paths))
-    }
-    .await;
-    match result {
-        Ok(snapshot) => {
-            transaction
-                .commit()
-                .await
-                .map_err(try_op("commit portable media snapshot"))?;
-            Ok(snapshot)
+    let pool = pool.clone();
+    tokio::spawn(async move {
+        let mut connection = try_op("transaction acquire", || pool.acquire()).await?;
+        let completed = async {
+            let mut transaction = begin_transaction_with(
+                &mut connection,
+                "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
+            )
+            .await?;
+            let result = async {
+                let snapshot = read_rows(&mut transaction).await?;
+                let paths = if include_local_paths {
+                    try_op("read local diagnostic root paths", || {
+                        sqlx::query_as("SELECT * FROM media_local_root_paths_v1()")
+                            .fetch_all(&mut *transaction)
+                    })
+                    .await?
+                } else {
+                    Vec::new()
+                };
+                Ok((snapshot, paths))
+            }
+            .await;
+            finish_transaction(transaction, result).await
         }
-        Err(error) => {
-            transaction
-                .rollback()
-                .await
-                .map_err(try_op("rollback portable media snapshot"))?;
-            Err(error)
-        }
-    }
+        .await;
+        release_connection(connection, completed).await
+    })
+    .await
+    .map_err(|source| crate::error::DataError::BoundaryFailed {
+        operation: "read_export_snapshot",
+        source: Box::new(source),
+    })?
 }
 
 async fn read_rows(transaction: &mut Transaction<'_, Postgres>) -> Result<PortableSnapshot> {
-    let profiles = sqlx::query_as("SELECT * FROM media_portable_profile_versions_v1()")
-        .fetch_all(&mut **transaction)
-        .await
-        .map_err(try_op("read portable profiles"))?;
-    let associations = sqlx::query_as("SELECT * FROM media_portable_associations_v1()")
-        .fetch_all(&mut **transaction)
-        .await
-        .map_err(try_op("read portable associations"))?;
-    let compatibility_targets =
+    let profiles = try_op("read portable profiles", || {
+        sqlx::query_as("SELECT * FROM media_portable_profile_versions_v1()")
+            .fetch_all(&mut **transaction)
+    })
+    .await?;
+    let associations = try_op("read portable associations", || {
+        sqlx::query_as("SELECT * FROM media_portable_associations_v1()")
+            .fetch_all(&mut **transaction)
+    })
+    .await?;
+    let compatibility_targets = try_op("read portable compatibility targets", || {
         sqlx::query_as("SELECT * FROM media_compatibility_target_list_v1() LIMIT 129")
             .fetch_all(&mut **transaction)
-            .await
-            .map_err(try_op("read portable compatibility targets"))?;
-    let policies = sqlx::query_as("SELECT * FROM media_policy_profile_list_v1() LIMIT 129")
-        .fetch_all(&mut **transaction)
-        .await
-        .map_err(try_op("read portable policies"))?;
-    let targets: Vec<MediaDesiredTargetRow> =
+    })
+    .await?;
+    let policies = try_op("read portable policies", || {
+        sqlx::query_as("SELECT * FROM media_policy_profile_list_v1() LIMIT 129")
+            .fetch_all(&mut **transaction)
+    })
+    .await?;
+    let targets: Vec<MediaDesiredTargetRow> = try_op("read portable target headers", || {
         sqlx::query_as("SELECT * FROM media_desired_target_list_v1() LIMIT 129")
             .fetch_all(&mut **transaction)
-            .await
-            .map_err(try_op("read portable target headers"))?;
+    })
+    .await?;
     let mut snapshot = PortableSnapshot {
         profiles,
         associations,
@@ -213,14 +217,13 @@ async fn read_rows(transaction: &mut Transaction<'_, Postgres>) -> Result<Portab
     }
     let mut remaining = 4_097 - snapshot.child_count();
     for (target, streams) in &mut snapshot.targets {
-        let limit = i64::try_from(remaining).map_err(|_| {
-            try_op("portable stream read bound")(sqlx::Error::Protocol(
-                "invalid portable bound".into(),
-            ))
+        let limit = i64::try_from(remaining).map_err(|_| DataError::QueryFailed {
+            operation: "portable stream read bound",
+            source: sqlx::Error::Protocol("invalid portable bound".into()),
         })?;
-        *streams = sqlx::query_as("SELECT * FROM media_desired_target_stream_list_v5(media_desired_target_profile_public_id_input => $1) LIMIT $2")
+        *streams = try_op("read portable target streams", || { sqlx::query_as("SELECT * FROM media_desired_target_stream_list_v5(media_desired_target_profile_public_id_input => $1) LIMIT $2")
             .bind(target.media_desired_target_profile_public_id).bind(limit)
-            .fetch_all(&mut **transaction).await.map_err(try_op("read portable target streams"))?;
+            .fetch_all(&mut **transaction) }).await?;
         remaining -= streams.len();
         if remaining == 0 {
             break;
