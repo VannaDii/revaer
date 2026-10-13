@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "coal";
-            window.path_to_searchindex_js = "../searchindex-9ee63611.js";
+            window.path_to_searchindex_js = "../searchindex-ff3ee6e9.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-cef10c91.js"></script>
@@ -185,6 +185,16 @@
 <h2 id="motivation"><a class="header" href="#motivation">Motivation</a></h2>
 <p>Consolidate authored development and CI tooling in Python and replace Just and Node-based release/test tooling. The user approved the architecture and execution in the task conversation.</p>
 <h2 id="design-notes"><a class="header" href="#design-notes">Design notes</a></h2>
+<h3 id="main-sonar-result-contract"><a class="header" href="#main-sonar-result-contract">Main Sonar result contract</a></h3>
+<p>On 2026-10-13 the operator approved checking new issues rather than the historical
+main backlog. This is a permanent contract change with no expiry. Main’s
+post-scan issue and hotspot queries use SonarCloud’s supported
+<code>sinceLeakPeriod=true</code> parameter and require zero new unresolved issues and zero
+new hotspots. PR queries retain every current issue and hotspot in that PR.
+The unsupported <code>inNewCodePeriod</code> parameter is removed. Scanner scope, server
+criteria, coverage thresholds, warning failures and exact-analysis verification
+remain unchanged. Historical main debt remains open and is not accepted,
+suppressed or reclassified by this decision.</p>
 <p>The <code>rv</code> CLI maps command strings to static <code>Task.run(context)</code> methods. Typed
 external-tool classes verify executables and construct argument arrays through an
 injected process runner. Settings and command options are immutable; environment
