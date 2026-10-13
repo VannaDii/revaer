@@ -188,6 +188,22 @@ def test_scanner_rejects_missing_duplicate_and_reordered_execution(fixture: Fixt
     assert scanner_workflow_findings({})
 
 
+@pytest.mark.parametrize(("workflow", "job_name"), (("pr", "coverage"), ("sonar", "sonar")))
+@pytest.mark.parametrize("value", (None, "0"))
+def test_scanner_requires_canonical_bytecode_environment(
+    fixture: Fixture, workflow: str, job_name: str, value: str | None
+) -> None:
+    environment = mapping(fixture.job(workflow, job_name)["env"])
+    if value is None:
+        environment.pop("PYTHONDONTWRITEBYTECODE")
+    else:
+        environment["PYTHONDONTWRITEBYTECODE"] = value
+    assert any(
+        "PYTHONDONTWRITEBYTECODE=1" in error
+        for error in scanner_workflow_findings(fixture.documents)
+    )
+
+
 def test_exact_sonar_checkout_toolchain_and_main_result_scope(fixture: Fixture) -> None:
     job = fixture.job("sonar", "sonar")
     original = copy.deepcopy(job)

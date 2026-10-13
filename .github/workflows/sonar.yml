@@ -25,6 +25,7 @@ jobs:
       DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer
       SONAR_AUTH_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
       REVAER_REQUIRE_NATIVE_COVERAGE: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
       E2E_BROWSERS: chromium,firefox,webkit
     services:
       postgres:

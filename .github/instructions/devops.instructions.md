@@ -380,8 +380,9 @@ actual Python/V8 measurements. The native producer retains compiler commands and
 generated headers at paths valid in the scanner's matching Linux checkout/SDK.
 The scanner waits for all producers; UI route coverage waits only for API/browser
 execution. Both image and release packaging wait for every required quality gate.
-The aggregate scanner job disables Python bytecode writes so runtime caches do
-not enter authored source directories. Keep authored Python analysis intact.
+Both PR and main scanner jobs set `PYTHONDONTWRITEBYTECODE=1` before executing
+separate CLI steps, so runtime caches cannot reappear after source preparation.
+Keep authored Python analysis intact and remove only untracked prior-run caches.
 Database URLs must match each job's isolated service.
 
 Chart regression gates need both Helm and ORAS. The Python coverage producer runs

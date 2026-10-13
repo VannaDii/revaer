@@ -38,8 +38,10 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
   scanner log. It changes diagnostics only; scanner criteria remain canonical.
   Keep normal SCM analysis and complete checkout history; do not force a full
   blame reload for each scan.
-- Remove untracked Python bytecode beside authored Python sources before scanning;
-  disabling future bytecode writes does not remove caches from earlier runs.
+- PR and main scanner jobs disable Python bytecode writes for every CLI process.
+  Remove untracked prior-run bytecode beside authored Python sources before scanning;
+  the environment setting does not remove caches from earlier runs. Verify the
+  separate prepare/SCM/scan commands with the same environment locally.
 - Remove untracked UI build output after browser measurement and before scanning;
   refuse tracked content rather than treating generated WASM as authored text.
 - Reject a stale local target branch that shadows the exact event base. Use an
