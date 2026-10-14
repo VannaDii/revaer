@@ -262,8 +262,16 @@ def test_production_worker_coverage_preserves_workspace_native_profiles(
     root = coverage_workspace.root
     mounted = root / "mounted"
     mounted.mkdir()
-    context: Context = replace(
-        coverage_workspace, host=replace(coverage_workspace.host, system="linux")
+    context: Context = Context(
+        root=coverage_workspace.root,
+        settings=coverage_workspace.settings,
+        options=coverage_workspace.options,
+        tools=coverage_workspace.tools,
+        fs=coverage_workspace.fs,
+        emit=coverage_workspace.emit,
+        host=replace(coverage_workspace.host, system="linux"),
+        invoked_at=coverage_workspace.invoked_at,
+        command_names=coverage_workspace.command_names,
     )
     if managed:
 
@@ -273,12 +281,19 @@ def test_production_worker_coverage_preserves_workspace_native_profiles(
 
         monkeypatch.setattr(e2e, "media_fixture", fixture)
     else:
-        context = replace(
-            context,
+        context = Context(
+            root=context.root,
             settings=replace(
                 context.settings,
                 coverage=replace(context.settings.coverage, native_recovery_root=mounted),
             ),
+            options=context.options,
+            tools=context.tools,
+            fs=context.fs,
+            emit=context.emit,
+            host=context.host,
+            invoked_at=context.invoked_at,
+            command_names=context.command_names,
         )
     app = root / "crates/revaer-app"
     (app / "src").mkdir(parents=True)

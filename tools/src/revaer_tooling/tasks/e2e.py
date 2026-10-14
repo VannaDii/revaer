@@ -327,6 +327,36 @@ def run_phases(
         outcomes[phase] = "passed"
 
 
+def configure_media_auth(
+    context: Context,
+    paths: RunPaths,
+    executable: ServingExecutable,
+    database_url: str,
+    missing: Path,
+    coverage: RouteCoverage,
+    schema: ApiSchema,
+    phase: str,
+    session: ApiSession | None,
+) -> ApiSession:
+    with running_services(
+        context,
+        replace(paths, logs=paths.logs / "setup"),
+        executable,
+        database_url,
+        False,
+        missing,
+    ):
+        client = ApiClient(
+            context.tools.http,
+            context.settings.e2e.api_url,
+            coverage,
+            schema,
+            session.headers() if session is not None else None,
+        )
+        mode = "none" if phase.startswith("api-none") else "api_key"
+        return configure_auth(client, mode, str(paths.filesystem))
+
+
 def run_media_phases(
     context: Context,
     paths: RunPaths,
@@ -359,23 +389,17 @@ def run_media_phases(
             context.fs,
         )
         if not ui or session is None:
-            with running_services(
+            session = configure_media_auth(
                 context,
-                replace(selected_paths, logs=selected_paths.logs / "setup"),
+                selected_paths,
                 executable,
                 database_url,
-                False,
                 missing,
-            ):
-                client = ApiClient(
-                    context.tools.http,
-                    settings.api_url,
-                    coverage,
-                    schema,
-                    session.headers() if session is not None else None,
-                )
-                mode = "none" if phase.startswith("api-none") else "api_key"
-                session = configure_auth(client, mode, str(paths.filesystem))
+                coverage,
+                schema,
+                phase,
+                session,
+            )
         context.tools.listeners.require_free(urlsplit(settings.api_url).port or 80)
         with running_services(
             context,

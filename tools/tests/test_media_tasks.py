@@ -302,12 +302,19 @@ def test_conversion_requires_executed_production_worker(
         capture_output=True,
         timeout=30,
     )
-    context = replace(
-        context,
+    context = Context(
+        root=context.root,
         settings=replace(
             context.settings,
             database=replace(context.settings.database, test_url="postgresql://localhost/fixture"),
         ),
+        options=context.options,
+        tools=context.tools,
+        fs=context.fs,
+        emit=context.emit,
+        host=context.host,
+        invoked_at=context.invoked_at,
+        command_names=context.command_names,
     )
     if worker == "pass":
         MediaConversion.run(context)

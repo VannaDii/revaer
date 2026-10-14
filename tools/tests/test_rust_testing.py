@@ -81,12 +81,30 @@ def observations(context: Context) -> dict[str, str]:
 def test_native_service_recipe_requires_linux_and_one_real_selection(
     test_workspace: Context,
 ) -> None:
-    unsupported: Context = replace(
-        test_workspace, host=replace(test_workspace.host, system="darwin")
+    unsupported: Context = Context(
+        root=test_workspace.root,
+        settings=test_workspace.settings,
+        options=test_workspace.options,
+        tools=test_workspace.tools,
+        fs=test_workspace.fs,
+        emit=test_workspace.emit,
+        host=replace(test_workspace.host, system="darwin"),
+        invoked_at=test_workspace.invoked_at,
+        command_names=test_workspace.command_names,
     )
     with pytest.raises(ToolingError, match="requires Linux"):
         TestMediaServiceRecovery.run(unsupported)
-    selected: Context = replace(test_workspace, host=replace(test_workspace.host, system="linux"))
+    selected: Context = Context(
+        root=test_workspace.root,
+        settings=test_workspace.settings,
+        options=test_workspace.options,
+        tools=test_workspace.tools,
+        fs=test_workspace.fs,
+        emit=test_workspace.emit,
+        host=replace(test_workspace.host, system="linux"),
+        invoked_at=test_workspace.invoked_at,
+        command_names=test_workspace.command_names,
+    )
     with pytest.raises(ToolingError, match="did not execute one passing test"):
         TestMediaServiceRecovery.run(selected)
     source = test_workspace.root / "revaer-app/src/lib.rs"
@@ -248,7 +266,17 @@ def test_media_recovery_requires_actual_tests_and_propagates_failure(
     test_workspace: Context,
     system: str,
 ) -> None:
-    context: Context = replace(test_workspace, host=replace(test_workspace.host, system=system))
+    context: Context = Context(
+        root=test_workspace.root,
+        settings=test_workspace.settings,
+        options=test_workspace.options,
+        tools=test_workspace.tools,
+        fs=test_workspace.fs,
+        emit=test_workspace.emit,
+        host=replace(test_workspace.host, system=system),
+        invoked_at=test_workspace.invoked_at,
+        command_names=test_workspace.command_names,
+    )
     source = context.root / "revaer-app/src/lib.rs"
     source.write_text(r"""
 #[cfg(test)] mod media_discovery_fingerprint { mod tests {
