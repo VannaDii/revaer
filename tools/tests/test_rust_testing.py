@@ -338,9 +338,9 @@ def test_media_recovery_requires_actual_tests_and_propagates_failure(
         "workspace": "executed",
         "data": "executed",
     }
-    if test_workspace.host.system == "linux":
+    if context.host.system == "linux":
         expected["native-roots"] = "executed"
-    assert observations(test_workspace) == expected
+    assert observations(context) == expected
     source.write_text("")
     with pytest.raises(ToolingError, match="ran no passing tests"):
         TestMediaRecovery.run(context)
