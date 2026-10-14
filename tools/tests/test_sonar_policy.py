@@ -54,6 +54,8 @@ def test_production_paths_retain_coverage_requirements(path: str) -> None:
         ("vendor/gloo/src/lib.rs", True),
         ("crates/revaer-ui/ui_vendor/nexus-html@3.1.0/src/styles/app.css", True),
         ("crates/revaer-ui/static/nexus/assets/app.css", True),
+        ("docs/mermaid.min.js", True),
+        ("docs/mermaid-init.js", False),
         ("crates/revaer-ui/static/style.css", False),
         ("crates/revaer-torrent-libt/src/ffi/session.cpp", False),
         ("crates/revaer-data/init.sql", False),

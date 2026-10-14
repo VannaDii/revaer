@@ -7,6 +7,7 @@ from revaer_tooling.errors import ToolingError
 from revaer_tooling.sonar.inputs import (
     NATIVE_SOURCE,
     LineCounts,
+    javascript_sonar_lcov,
     lcov_counts,
     rust_sonar_lcov,
     verify_bootstrap_coverage,
@@ -117,6 +118,17 @@ BOOTSTRAP = (
     '<lineToCover lineNumber="2" covered="true"/>'
     '<lineToCover lineNumber="3" covered="false"/></file></coverage>'
 )
+
+
+def test_javascript_scanner_input_preserves_first_party_and_complete_original() -> None:
+    authored = lcov("crates/example/static/runtime.js", 3, 2)
+    upstream = lcov("crates/revaer-ui/static/nexus/js/app.js", 2, 1)
+    copied_library = lcov("docs/mermaid.min.js", 2, 0)
+    full = authored + upstream + copied_library
+    assert javascript_sonar_lcov(full) == authored
+    assert upstream in full and copied_library in full
+    with pytest.raises(ToolingError, match="first-party source lines"):
+        javascript_sonar_lcov(upstream + copied_library)
 
 
 def test_bootstrap_generic_coverage_keeps_unexecuted_lines() -> None:

@@ -30,6 +30,7 @@ VENDOR_EXCLUSIONS = (
     "vendor/**",
     "crates/revaer-ui/ui_vendor/**",
     "crates/revaer-ui/static/nexus/**",
+    "docs/mermaid.min.js",
 )
 ANALYSIS_EXCLUSIONS = (
     "scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml",
@@ -134,7 +135,7 @@ REQUIRED_VALUES = {
     "sonar.sca.cfamily": "true",
     "sonar.rust.clippy.enabled": "true",
     "sonar.rust.lcov.reportPaths": "coverage/rust-sonar-lcov.info",
-    "sonar.javascript.lcov.reportPaths": "coverage/js-lcov.info",
+    "sonar.javascript.lcov.reportPaths": "coverage/js-sonar-lcov.info",
     "sonar.python.coverage.reportPaths": "coverage/python.xml",
     "sonar.python.version": "3.13",
     "sonar.coverageReportPaths": "coverage/script-coverage.xml",

@@ -35,6 +35,7 @@ COVERAGE_PATHS = (
     "coverage/rust-sonar-lcov.info",
     "coverage/llvm-cov.txt",
     "coverage/js-lcov.info",
+    "coverage/js-sonar-lcov.info",
     "coverage/python.xml",
     SCRIPT_COVERAGE_PATH,
     "coverage/compile_commands.json",

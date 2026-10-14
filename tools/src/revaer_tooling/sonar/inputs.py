@@ -112,6 +112,24 @@ def lcov_counts(document: str, suffix: str = "", *, production: bool = False) ->
     return LineCounts(len(hits), sum(count > 0 for count in hits))
 
 
+def javascript_sonar_lcov(document: str) -> str:
+    """Keep complete first-party measurements in the scanner's vendor-free input."""
+    lcov_counts(document)
+    output: list[str] = []
+    vendor = False
+    for line in document.splitlines():
+        if line.startswith("SF:"):
+            vendor = vendor_source(line[3:])
+        if not vendor:
+            output.append(line)
+        if line == "end_of_record":
+            vendor = False
+    result = "\n".join(output) + "\n"
+    if not lcov_counts(result).total:
+        raise ToolingError("Sonar JavaScript LCOV must retain first-party source lines")
+    return result
+
+
 def verify_lcov(rust: str, browser: str) -> None:
     rust_counts = lcov_counts(rust, ".rs")
     if not rust_counts.covered:

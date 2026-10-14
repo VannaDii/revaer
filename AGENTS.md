@@ -120,7 +120,8 @@ containing no production sources requires no fabricated execution counts.
 The operator-approved source exclusions are the intentionally malformed YAML
 fixture `scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml` and vendor
 packages/assets: `vendor/**`, `crates/revaer-ui/ui_vendor/**`, and
-`crates/revaer-ui/static/nexus/**`. Vendor code is not scanned or patched.
+`crates/revaer-ui/static/nexus/**`, plus the copied `docs/mermaid.min.js` library.
+Vendor code is not scanned or patched.
 First-party wrappers, the runtime SQL initializer, FFI code, tests and tools remain
 in analysis. Keep dependency security audits and complete native coverage gates.
 The exact exclusions are enforced by `tools/src/revaer_tooling/policy/sonar.py`;

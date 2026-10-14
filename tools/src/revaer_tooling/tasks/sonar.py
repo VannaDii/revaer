@@ -20,6 +20,7 @@ from ..external.sonar import ScanArgs
 from ..json_data import JsonObject, array_value, object_value, string_value
 from ..sonar.inputs import (
     NATIVE_SOURCE,
+    javascript_sonar_lcov,
     rust_sonar_lcov,
     verify_bootstrap_coverage,
     verify_lcov,
@@ -44,6 +45,8 @@ class SonarVerifyInputs(Task):
         directory = _evidence_path(context, settings.coverage)
         adapted = directory / "rust-sonar-lcov.info"
         context.fs.remove_owned(adapted, context.root)
+        javascript = directory / "js-sonar-lcov.info"
+        context.fs.remove_owned(javascript, context.root)
         names = (
             RUST_LCOV,
             "js-lcov.info",
@@ -71,6 +74,7 @@ class SonarVerifyInputs(Task):
             adapted,
             rust_sonar_lcov(reports[RUST_LCOV], context.root, context.tools.git.files()),
         )
+        context.fs.write(javascript, javascript_sonar_lcov(reports["js-lcov.info"]))
         return TaskResult("Sonar coverage and native analyzer inputs verified")
 
 

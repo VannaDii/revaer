@@ -1998,7 +1998,8 @@ then. We don’t scan vendor code, we don’t patch vendor code.”
 
 Apply this permanent source policy to `vendor/**`,
 `crates/revaer-ui/ui_vendor/**`, and the synchronized
-`crates/revaer-ui/static/nexus/**` assets. Keep first-party code in analysis,
+`crates/revaer-ui/static/nexus/**` assets and copied `docs/mermaid.min.js` library.
+Keep first-party code in analysis,
 including runtime SQL, FFI wrappers, tests and tools. Dependency security audits,
 complete execution coverage, coverage thresholds and first-party issue/hotspot
 gates remain required. The exact scanner exclusion allowlist enforces this boundary.

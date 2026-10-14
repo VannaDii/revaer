@@ -93,3 +93,7 @@ complete source and YAML inventories when files change; do not narrow scope.
 Local PR qualification supplies only explicit pull-request identity (key, base,
 head branch) to the scanner; quality criteria remain exclusively in
 `sonar-project.properties`. Local analysis must never default to the main branch.
+
+- Vendor-free Rust and JavaScript scanner LCOV inputs are derived by
+  `sonar-verify-inputs`. Keep complete measured original reports and native records;
+  retain every first-party counter unchanged in the scanner inputs.
