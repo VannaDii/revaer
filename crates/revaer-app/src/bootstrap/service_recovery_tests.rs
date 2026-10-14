@@ -977,7 +977,7 @@ fn settled<T>(result: Result<T>, shutdown: Result<()>) -> Result<T> {
         (Ok(value), Ok(())) => Ok(value),
         (Err(error), Ok(())) | (Ok(_), Err(error)) => Err(error),
         (Err(error), Err(shutdown)) => {
-            Err(error.with_context(|| format!("service shutdown also failed: {shutdown}")))
+            Err(error).with_context(|| format!("service shutdown also failed: {shutdown}"))
         }
     }
 }
