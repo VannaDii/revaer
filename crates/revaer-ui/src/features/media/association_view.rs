@@ -289,12 +289,12 @@ fn scope_option(
 ) -> Html {
     let selected = draft.scope == scope;
     let draft = draft.clone();
-    let onchange = Callback::from(move |_| {
+    let onclick = Callback::from(move |_| {
         let mut updated = (*draft).clone();
         updated.scope = scope;
         draft.set(updated);
     });
-    html! { <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="association-scope" checked={selected} {onchange} />{label}</label> }
+    html! { <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="association-scope" checked={selected} {onclick} />{label}</label> }
 }
 
 fn mode_option(
