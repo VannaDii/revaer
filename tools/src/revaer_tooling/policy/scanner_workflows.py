@@ -85,6 +85,10 @@ def scanner_workflow_findings(documents: Mapping[str, Document]) -> list[str]:
             mapping(job.get("env")).get("REVAER_REQUIRE_NATIVE_COVERAGE") == "1",
             "hosted Linux must require authored native coverage",
         )
+        policy.require(
+            mapping(job.get("env")).get("PYTHONDONTWRITEBYTECODE") == "1",
+            "scanner jobs must set PYTHONDONTWRITEBYTECODE=1 for every CLI step",
+        )
         producer_steps = (
             "Coverage",
             PYTHON_COVERAGE_STEP,
