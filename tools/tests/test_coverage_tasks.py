@@ -262,7 +262,9 @@ def test_production_worker_coverage_preserves_workspace_native_profiles(
     root = coverage_workspace.root
     mounted = root / "mounted"
     mounted.mkdir()
-    context = replace(coverage_workspace, host=replace(coverage_workspace.host, system="linux"))
+    context: Context = replace(
+        coverage_workspace, host=replace(coverage_workspace.host, system="linux")
+    )
     if managed:
 
         @contextmanager

@@ -23,6 +23,30 @@ class LineCounts:
     covered: int
 
 
+def rust_source(path: Path, root: Path, inventory: set[str]) -> str:
+    absolute = Path(os.path.normpath(path if path.is_absolute() else root / path))
+    source = absolute.relative_to(root).as_posix() if absolute.is_relative_to(root) else ""
+    if source.endswith(".rs") and source not in inventory and not source.startswith("target/"):
+        raise ToolingError("Rust LCOV contains an untracked checkout source: " + source)
+    return source
+
+
+def rust_branch(line: str) -> str:
+    if not line.startswith("BRDA:"):
+        return line
+    fields = line[5:].split(",")
+    if (
+        len(fields) != 4
+        or not all(value.isdecimal() for value in fields[:3])
+        or not (fields[3].isdecimal() or fields[3] == "-")
+    ):
+        raise ToolingError("Rust LCOV contains an invalid branch record")
+    # Preserve unexecuted branches and their uncovered denominator.
+    if fields[3] == "-":
+        return "BRDA:" + ",".join((*fields[:3], "0"))
+    return line
+
+
 def rust_sonar_lcov(document: str, root: Path, tracked: tuple[str, ...]) -> str:
     """Adapt complete LLVM records to Sonar without changing authored measurements."""
     lcov_counts(document)
@@ -32,15 +56,7 @@ def rust_sonar_lcov(document: str, root: Path, tracked: tuple[str, ...]) -> str:
     source = ""
     for line in document.splitlines():
         if line.startswith("SF:"):
-            path = Path(line[3:])
-            absolute = Path(os.path.normpath(path if path.is_absolute() else root / path))
-            source = absolute.relative_to(root).as_posix() if absolute.is_relative_to(root) else ""
-            if (
-                source.endswith(".rs")
-                and source not in inventory
-                and not source.startswith("target/")
-            ):
-                raise ToolingError("Rust LCOV contains an untracked checkout source: " + source)
+            source = rust_source(Path(line[3:]), root, inventory)
             record = ["SF:" + source]
         elif line == "end_of_record":
             if source in inventory:
@@ -48,19 +64,7 @@ def rust_sonar_lcov(document: str, root: Path, tracked: tuple[str, ...]) -> str:
             record = []
             source = ""
         elif source in inventory:
-            if line.startswith("BRDA:"):
-                fields = line[5:].split(",")
-                if (
-                    len(fields) != 4
-                    or not all(value.isdecimal() for value in fields[:3])
-                    or not (fields[3].isdecimal() or fields[3] == "-")
-                ):
-                    raise ToolingError("Rust LCOV contains an invalid branch record")
-                # LCOV's unexecuted-block marker means zero hits. Keep the
-                # branch and its uncovered denominator for Sonar's integer parser.
-                if fields[3] == "-":
-                    line = "BRDA:" + ",".join((*fields[:3], "0"))
-            record.append(line)
+            record.append(rust_branch(line))
     result = "\n".join(output) + "\n"
     if not lcov_counts(result, ".rs").covered:
         raise ToolingError("Sonar Rust LCOV must retain executed authored Rust records")

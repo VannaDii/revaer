@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    ApiKeyRateLimit, ApiState, Arc, CoreEvent, Duration, EventBus, HashMap, Metrics,
+    TorrentHandles, TorrentMetadata, TorrentState, TorrentStatus, Uuid,
+};
 use crate::app::indexers::test_indexers;
 use crate::http::handlers::indexers::test_support::StubConfig;
 use anyhow::Result;

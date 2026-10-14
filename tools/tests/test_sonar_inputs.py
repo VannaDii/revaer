@@ -63,10 +63,12 @@ def test_rust_scanner_input_normalizes_tracked_source_paths(tmp_path: Path, abso
 
 
 def test_rust_scanner_input_rejects_untracked_checkout_sources(tmp_path: Path) -> None:
+    untracked = lcov("crates/example/src/lib.rs", 1, 1)
+    dependency = lcov("/registry/dependency.rs", 1, 1)
     with pytest.raises(ToolingError, match="untracked checkout source"):
-        rust_sonar_lcov(lcov("crates/example/src/lib.rs", 1, 1), tmp_path, ())
+        rust_sonar_lcov(untracked, tmp_path, ())
     with pytest.raises(ToolingError, match="executed authored Rust"):
-        rust_sonar_lcov(lcov("/registry/dependency.rs", 1, 1), tmp_path, ())
+        rust_sonar_lcov(dependency, tmp_path, ())
 
 
 def test_coverage_requires_execution_of_production_sources_only() -> None:

@@ -243,6 +243,8 @@ pub(crate) fn detail_from_components(
         auto_managed,
         queue_position,
         pex_enabled,
+        replace_trackers: _,
+        replace_web_seeds: _,
         ..
     } = metadata;
     detail.summary = detail.summary.with_metadata(

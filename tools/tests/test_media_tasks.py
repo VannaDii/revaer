@@ -247,7 +247,7 @@ fn selected_ignored_integration_runs() -> Result<(), Box<dyn std::error::Error>>
 
 
 def test_native_cargo_runs_ignored_integration_with_all_features(cargo_context: Context) -> None:
-    context = cargo_context
+    context: Context = cargo_context
     result = MediaConversion.run(context)
     assert "positive audio/video actions" in result.message
     assert (context.root / context.settings.fixtures.report).read_text() == REPORT
@@ -272,7 +272,7 @@ def test_native_cargo_runs_ignored_integration_with_all_features(cargo_context: 
 def test_conversion_requires_executed_production_worker(
     cargo_context: Context, worker: str
 ) -> None:
-    context = cargo_context
+    context: Context = cargo_context
     manifest = context.root / "Cargo.toml"
     manifest.write_text(manifest.read_text().replace("[workspace]", '[workspace]\nmembers=["app"]'))
     app = context.root / "app"
@@ -321,7 +321,7 @@ def test_conversion_requires_executed_production_worker(
 
 
 def test_foundation_reports_only_fixture_verification(cargo_context: Context) -> None:
-    context = cargo_context
+    context: Context = cargo_context
     manifest = context.root / "Cargo.toml"
     manifest.write_text(
         manifest.read_text().replace('name="revaer-media-runtime"', 'name="foundation"')

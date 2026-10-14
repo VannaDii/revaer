@@ -19,6 +19,10 @@ applyTo:
   caller-selected database without repair. Preserve administrative test endpoints
   and owned cleanup. Cargo lock reconciliation remains offline without registry
   upgrades.
+- PR feature and scanner fixture commands use `uv run --locked --no-build`
+  with the existing exact `python-semantic-release` source-build exception
+  after setup has synchronized the locked environment. Other package builds
+  remain disabled during runtime fixture execution.
 - PR feature and scanner jobs exercise sealed application fixtures in the
   accepted feature-development phase. Their guardrail requires that fixture
   gate before feature tests and rejects historical migration replay.

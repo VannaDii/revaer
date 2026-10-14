@@ -86,13 +86,12 @@ def test_managed_media_fixture_cleanup_preserves_mount_failure(
             run()
     else:
         run()
-    assert events == (
-        ["format"]
-        if failure == "format"
-        else ["format", "mount"]
-        if failure == "mount"
-        else ["format", "mount", "unmount"]
-    )
+    expected = ["format", "mount", "unmount"]
+    if failure == "format":
+        expected = ["format"]
+    elif failure == "mount":
+        expected = ["format", "mount"]
+    assert events == expected
     assert created[0].exists() == (failure == "unmount")
 
 

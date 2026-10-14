@@ -73,9 +73,7 @@ def test_ci_holds_connection_until_gates_finish_and_never_builds_after_failure(
     @contextmanager
     def connection(active: Context) -> Iterator[str]:
         if single_init:
-            calls.append("start")
-            if failure == "start":
-                raise ToolingError("start failure")
+            start(active)
         with active.fs.lock(lock):
             yield normalized
 

@@ -77,15 +77,19 @@ class E2eSettings:
         if self.browser_coverage and "ui-chromium" not in selected:
             raise ToolingError("Browser line coverage requires the Chromium phase")
         if not self.no_dependencies:
-            if any(project.startswith("ui-") for project in selected):
-                selected.add("api-api-key")
-            if "api-api-key" in selected:
-                selected.add("api-none")
-            if media:
-                for phase in ("api-none", "api-api-key"):
-                    if phase in selected:
-                        selected.add(phase + "-missing-catalog")
+            self.add_dependencies(selected, media=media)
         return tuple(phase for phase in available if phase in selected)
+
+    @staticmethod
+    def add_dependencies(selected: set[str], *, media: bool) -> None:
+        if any(project.startswith("ui-") for project in selected):
+            selected.add("api-api-key")
+        if "api-api-key" in selected:
+            selected.add("api-none")
+        if media:
+            for phase in ("api-none", "api-api-key"):
+                if phase in selected:
+                    selected.add(phase + "-missing-catalog")
 
 
 def integer(environment: Mapping[str, str], name: str, default: int, minimum: int = 1) -> int:

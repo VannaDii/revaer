@@ -33,6 +33,16 @@ from .base import Task
 from .build import SyncAssets
 from .database import database_connection
 
+OPENAPI_PATH = "docs/api/openapi.json"
+
+
+def require_media_readiness(client: ApiClient, logs: Path) -> None:
+    readiness = client.request(ApiRequest(Method.GET, "/v1/media/root-catalog/readiness")).object()
+    if readiness.get("source_state") != "ready" or readiness.get("attestation_state") != "ready":
+        raise ToolingError(
+            "Media E2E requires a real active Linux root catalog; inspect " + str(logs)
+        )
+
 
 @contextmanager
 def media_fixture(context: Context, paths: "RunPaths") -> Iterator[tuple["RunPaths", Path | None]]:
@@ -291,9 +301,7 @@ def run_phases(
     initial_session: ApiSession | None = None,
 ) -> None:
     settings = context.settings.e2e
-    schema = ApiSchema(
-        object_value(decode(context.fs.read(context.root / "docs/api/openapi.json")))
-    )
+    schema = ApiSchema(object_value(decode(context.fs.read(context.root / OPENAPI_PATH))))
     session = initial_session
     for phase in phases:
         outcomes[phase] = "failed"
@@ -340,9 +348,7 @@ def run_media_phases(
     if missing.exists() or missing.is_symlink():
         raise ToolingError("The missing-catalog fixture path must be absent")
     settings = context.settings.e2e
-    schema = ApiSchema(
-        object_value(decode(context.fs.read(context.root / "docs/api/openapi.json")))
-    )
+    schema = ApiSchema(object_value(decode(context.fs.read(context.root / OPENAPI_PATH))))
     session: ApiSession | None = None
     for phase in phases:
         outcomes[phase] = "failed"
@@ -385,17 +391,7 @@ def run_media_phases(
                 client = ApiClient(
                     context.tools.http, settings.api_url, coverage, schema, session.headers()
                 )
-                readiness = client.request(
-                    ApiRequest(Method.GET, "/v1/media/root-catalog/readiness")
-                ).object()
-                if (
-                    readiness.get("source_state") != "ready"
-                    or readiness.get("attestation_state") != "ready"
-                ):
-                    raise ToolingError(
-                        "Media E2E requires a real active Linux root catalog; inspect "
-                        + str(selected_paths.logs)
-                    )
+                require_media_readiness(client, selected_paths.logs)
             run_phases(context, paths, (phase,), services, outcomes, session)
 
 
@@ -468,7 +464,7 @@ class UiE2eCoverage(Task):
                 context.options.expected_shards,
             )
             directory = context.root / "coverage/producers"
-        required = required_api_operations(context.fs.read(context.root / "docs/api/openapi.json"))
+        required = required_api_operations(context.fs.read(context.root / OPENAPI_PATH))
         verify_routes(context.fs, directory, "API", required)
         configuration = defaults(context).get("ui")
         routes = configuration.get("required_routes") if isinstance(configuration, dict) else None

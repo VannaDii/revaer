@@ -158,7 +158,7 @@ class TestMediaRecovery(Task):
             result = context.tools.cargo.execute(selection, test_environment(context), capture=True)
             context.emit(result.stdout)
             if not re.search(
-                r"(?m)^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored;", result.stdout
+                r"(?m)^test result: ok\. [1-9]\d* passed; 0 failed; 0 ignored;", result.stdout
             ):
                 raise ToolingError("Media recovery regression selection ran no passing tests")
         return TaskResult()

@@ -81,10 +81,12 @@ def observations(context: Context) -> dict[str, str]:
 def test_native_service_recipe_requires_linux_and_one_real_selection(
     test_workspace: Context,
 ) -> None:
-    unsupported = replace(test_workspace, host=replace(test_workspace.host, system="darwin"))
+    unsupported: Context = replace(
+        test_workspace, host=replace(test_workspace.host, system="darwin")
+    )
     with pytest.raises(ToolingError, match="requires Linux"):
         TestMediaServiceRecovery.run(unsupported)
-    selected = replace(test_workspace, host=replace(test_workspace.host, system="linux"))
+    selected: Context = replace(test_workspace, host=replace(test_workspace.host, system="linux"))
     with pytest.raises(ToolingError, match="did not execute one passing test"):
         TestMediaServiceRecovery.run(selected)
     source = test_workspace.root / "revaer-app/src/lib.rs"
@@ -246,8 +248,8 @@ def test_media_recovery_requires_actual_tests_and_propagates_failure(
     test_workspace: Context,
     system: str,
 ) -> None:
-    test_workspace = replace(test_workspace, host=replace(test_workspace.host, system=system))
-    source = test_workspace.root / "revaer-app/src/lib.rs"
+    context: Context = replace(test_workspace, host=replace(test_workspace.host, system=system))
+    source = context.root / "revaer-app/src/lib.rs"
     source.write_text(r"""
 #[cfg(test)] mod media_discovery_fingerprint { mod tests {
     #[test] fn cancellable_source_read() -> Result<(), Box<dyn std::error::Error>> {
@@ -290,7 +292,7 @@ def test_media_recovery_requires_actual_tests_and_propagates_failure(
     }
 } } } }
 """)
-    runtime = test_workspace.root / "revaer-media-runtime"
+    runtime = context.root / "revaer-media-runtime"
     (runtime / "src").mkdir(parents=True)
     (runtime / "Cargo.toml").write_text(
         '[package]\nname="revaer-media-runtime"\nversion="0.1.0"\nedition="2024"\n'
@@ -304,8 +306,8 @@ def test_media_recovery_requires_actual_tests_and_propagates_failure(
     }
 } }
 """)
-    manifest = test_workspace.root / "Cargo.toml"
-    data = test_workspace.root / "revaer-data"
+    manifest = context.root / "Cargo.toml"
+    data = context.root / "revaer-data"
     (data / "src").mkdir(parents=True)
     (data / "Cargo.toml").write_text(
         '[package]\nname="revaer-data"\nversion="0.1.0"\nedition="2024"\n'
@@ -327,7 +329,7 @@ def test_media_recovery_requires_actual_tests_and_propagates_failure(
     subprocess.run(
         ["cargo", "generate-lockfile", "--offline"], check=True, capture_output=True, timeout=30
     )
-    TestMediaRecovery.run(test_workspace)
+    TestMediaRecovery.run(context)
     expected = {
         "production": "executed",
         "fingerprint": "executed",
@@ -341,10 +343,10 @@ def test_media_recovery_requires_actual_tests_and_propagates_failure(
     assert observations(test_workspace) == expected
     source.write_text("")
     with pytest.raises(ToolingError, match="ran no passing tests"):
-        TestMediaRecovery.run(test_workspace)
+        TestMediaRecovery.run(context)
     source.write_text(
         "#[cfg(test)] mod media_job_runtime { mod tests { #[test] "
         'fn media_job_runtime_failure() -> Result<(), String> { Err("failure".into()) } } }'
     )
     with pytest.raises(ToolingError):
-        TestMediaRecovery.run(test_workspace)
+        TestMediaRecovery.run(context)

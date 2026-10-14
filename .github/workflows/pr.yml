@@ -137,7 +137,7 @@ jobs:
           apt-profile: coverage
           cargo-tools: cargo-llvm-cov,sqlx-cli
       - name: Single-init application fixtures
-        run: uv run --locked -- rv ui-e2e-app-test
+        run: uv run --locked --no-build --no-binary-package python-semantic-release -- rv ui-e2e-app-test
       - name: Coverage
         env:
           E2E_MANAGED_MEDIA_ROOTS: '1'
@@ -436,7 +436,7 @@ jobs:
           cargo-tools: sqlx-cli
 
       - name: Single-init application fixtures
-        run: uv run --locked -- rv ui-e2e-app-test
+        run: uv run --locked --no-build --no-binary-package python-semantic-release -- rv ui-e2e-app-test
 
       - name: Feature matrix tests (no default features)
         env:
