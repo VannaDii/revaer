@@ -31,16 +31,21 @@ def test_rust_scanner_input_preserves_authored_measurements(tmp_path: Path) -> N
     )
     full = (
         authored
+        + lcov(str(tmp_path / "vendor/gloo/src/lib.rs"), 2, 2)
         + lcov("/registry/dependency.rs", 2, 2)
         + lcov(str(tmp_path / "target/generated.rs"), 2, 2)
         + lcov("crates/native/session.cpp", 2, 2)
     )
-    adapted = rust_sonar_lcov(full, tmp_path, (name, "crates/native/session.cpp"))
+    adapted = rust_sonar_lcov(
+        full, tmp_path, (name, "vendor/gloo/src/lib.rs", "crates/native/session.cpp")
+    )
     assert adapted == authored.replace(str(tmp_path / name), name).replace(
         "BRDA:2,0,0,-", "BRDA:2,0,0,0"
     )
     assert lcov_counts(adapted) == lcov_counts(authored)
     assert "BRDA:2,0,0,-" in full
+    assert "vendor/gloo/src/lib.rs" in full
+    assert "vendor/gloo/src/lib.rs" not in adapted
 
 
 @pytest.mark.parametrize("branch", ["BRDA:1,0,0,bad", "BRDA:1,0,-,0", "BRDA:1,0,0"])

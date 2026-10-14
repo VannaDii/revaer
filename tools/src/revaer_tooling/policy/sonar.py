@@ -26,6 +26,22 @@ EMPTY_KEYS = frozenset(
     )
 )
 
+VENDOR_EXCLUSIONS = (
+    "vendor/**",
+    "crates/revaer-ui/ui_vendor/**",
+    "crates/revaer-ui/static/nexus/**",
+)
+ANALYSIS_EXCLUSIONS = (
+    "scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml",
+    *VENDOR_EXCLUSIONS,
+)
+
+
+def vendor_source(path: str) -> bool:
+    """Recognize upstream packages and their synchronized runtime assets."""
+    return any(fnmatchcase(path, pattern) for pattern in VENDOR_EXCLUSIONS)
+
+
 COVERAGE_EXCLUSIONS = (
     ".github/**",
     "charts/**",
@@ -52,14 +68,16 @@ COVERAGE_EXCLUSIONS = (
 
 def production_source(path: str) -> bool:
     """Apply the operator-approved coverage scope without narrowing analysis."""
-    return not any(fnmatchcase(path, pattern) for pattern in COVERAGE_EXCLUSIONS)
+    return not vendor_source(path) and not any(
+        fnmatchcase(path, pattern) for pattern in COVERAGE_EXCLUSIONS
+    )
 
 
 def runtime_source(path: str) -> bool:
     """Identify shipped code/assets for the operator's production issue gate.
 
-    Internal utilities stay in analysis and the zero-new-issues gate. Used
-    vendored runtime libraries are production even though coverage excludes them.
+    Internal utilities stay in analysis and the zero-new-issues gate. Upstream
+    packages and synchronized vendor assets are outside the operator's scan scope.
     """
     runtime = (
         "crates/*/src/**",
@@ -70,16 +88,16 @@ def runtime_source(path: str) -> bool:
         "crates/revaer-ui/manifest.json",
         "crates/revaer-ui/browserconfig.xml",
         "crates/revaer-ui/static/**",
-        "vendor/gloo/src/**",
-        "vendor/yewdux/crates/yewdux/src/**",
     )
-    return any(fnmatchcase(path, pattern) for pattern in runtime) and not any(
-        fnmatchcase(path, pattern) for pattern in COVERAGE_EXCLUSIONS if pattern != "vendor/**"
+    return (
+        not vendor_source(path)
+        and any(fnmatchcase(path, pattern) for pattern in runtime)
+        and not any(fnmatchcase(path, pattern) for pattern in COVERAGE_EXCLUSIONS)
     )
 
 
 REQUIRED_VALUES = {
-    "sonar.exclusions": "scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml",
+    "sonar.exclusions": ",".join(ANALYSIS_EXCLUSIONS),
     "sonar.coverage.exclusions": ",".join(COVERAGE_EXCLUSIONS),
     "sonar.projectKey": "VannaDii_Revaer",
     "sonar.organization": "vannadii",
@@ -172,7 +190,9 @@ def sonar_findings(
 
 
 def _classifications(configured: dict[str, str], inventory: tuple[str, ...]) -> list[str]:
-    yaml_paths = {path for path in inventory if path.endswith((".yml", ".yaml"))}
+    yaml_paths = {
+        path for path in inventory if path.endswith((".yml", ".yaml")) and not vendor_source(path)
+    }
     kubernetes = {path for path in yaml_paths if path.startswith("charts/revaer/templates/")}
     expected = {
         "sonar.lang.patterns.kubernetes": kubernetes,

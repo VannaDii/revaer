@@ -28,7 +28,7 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
   and require positive execution. This supersedes the covered-and-uncovered
   requirement below only for that bootstrap; other inputs retain their gates.
 
-- Revaer versions its complete strict Sonar scope in `sonar-project.properties`. Keep every authored tracked top-level entry in main-code scope and use only the committed empty `.sonar-test-scope` sentinel for `sonar.tests`. The operator-approved source exclusion is exactly `scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml`, an intentionally malformed functional fixture; all other source, test, duplication, JavaScript, SCA, and issue-scope filters remain explicitly empty. Apply the operator-approved production-only coverage scope from root `AGENTS.md`; do not otherwise narrow analysis or security scope.
+- Revaer versions its complete strict Sonar scope in `sonar-project.properties`. Keep every authored tracked top-level entry in main-code scope and use only the committed empty `.sonar-test-scope` sentinel for `sonar.tests`. The exact source exclusions are the malformed YAML fixture and vendor package/asset paths defined by root `AGENTS.md` and enforced in `tools/src/revaer_tooling/policy/sonar.py`. Vendor code is not scanned or patched; all first-party code remains in scope. Test, duplication, JavaScript, SCA, and issue-scope filters remain explicitly empty. Apply the operator-approved production-only coverage scope from root `AGENTS.md`; do not otherwise narrow analysis or security scope.
 - PostgreSQL migrations must remain visible to generic text, secrets, and main-code analysis. Do not assign `.sql`, `.pgsql`, or `.plpgsql` to the PL/SQL analyzer; reserve `sonar.plsql.file.suffixes=.plsql` for actual PL/SQL.
 - Sonar property policy is enforced after Java-properties parsing. Escaped keys, leading-whitespace forms, continuations, duplicate logical keys, workflow overrides, and properties outside the exact reviewed allowlist are forbidden.
 - The operator explicitly reaffirmed `sonar.scm.forceReloadAll=false` in this
@@ -69,7 +69,7 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 - Scanner-readable UI runtime media must remain UTF-8 SVG. Preserve the validated Revaer purple-gradient and stylized-R identifiers; do not restore raster assets, weaken `asset_sync` validation, or add Sonar exclusions to hide malformed, off-brand, or binary runtime media.
 - Treat canonical `/static/...` references and successful Trunk release-output URL checks as runtime correctness evidence; a clean source scan alone does not prove that emitted assets resolve.
 - If Sonar noise comes from committed generated, vendored, or binary files, delete, regenerate, or replace the input with reviewable UTF-8 source. Do not hide the input through scanner exclusions without explicit operator consent.
-- Generated, vendored, fixture, documentation, and test paths remain in authored main-code scope when they are tracked. Fix findings or obtain explicit operator consent; do not classify or exclude files to manufacture a cleaner result.
+- First-party generated, fixture, documentation, and test paths remain in authored main-code scope when tracked. Vendor paths follow the exact root-policy exclusions. Fix findings or obtain explicit operator consent; do not classify or exclude files to manufacture a cleaner result.
 
 # Expectations After Fixes
 

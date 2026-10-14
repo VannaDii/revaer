@@ -22,7 +22,7 @@ applyTo:
   - `tests/node_modules/**`
   - `tests/logs/**`
   - `tests/test-results/**`
-- Do not hand-edit vendored or generated assets unless the task is explicitly about vendor ingestion, asset synchronization, or generated output shape.
+- Do not patch vendor code. Regenerate synchronized assets only for an authorized vendor ingestion or asset synchronization change. Vendor sources and synchronized Nexus assets follow the root Sonar exclusions; first-party UI code remains scanned.
 
 # UI Architecture
 

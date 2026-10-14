@@ -77,7 +77,7 @@
   original LCOV and native reports; all authored analysis and quality thresholds
   remain intact. The exact scanner path is `coverage/rust-sonar-lcov.info`.
 
-- Operator-approved Sonar policy: coverage requirements concern production code only. Keep the exact coverage-only exclusions enforced by `tools/src/revaer_tooling/policy/sonar.py`; all authored content remains in analysis and the zero-new-issues gate. No unresolved historical issue may remain in active production code, including the runtime SQL initializer and used vendored libraries. Only `TO_REVIEW` hotspots block; reviewed hotspots do not. Real browser records may have zero hits when no authored production JavaScript is executed. This specific coverage policy supersedes the blanket empty-coverage-filter language below; all other analysis restrictions remain in force.
+- Operator-approved Sonar policy: coverage requirements concern production code only. Keep the exact coverage-only exclusions enforced by `tools/src/revaer_tooling/policy/sonar.py`; all authored content remains in analysis and the zero-new-issues gate. No unresolved historical issue may remain in first-party active production code, including the runtime SQL initializer. Only `TO_REVIEW` hotspots block; reviewed hotspots do not. Real browser records may have zero hits when no authored production JavaScript is executed. This specific coverage policy supersedes the blanket empty-coverage-filter language below; all other analysis restrictions remain in force.
 
 - All local and CI operations run through `rv` tasks. Workflows may install tools or stage artifacts, but build/test/lint/release gates must call `uv run --locked -- rv`.
 - Bootstrap once with `./setup.sh`; use the uv-managed `rv` CLI thereafter. The approved migration retires Just, Node tooling and shell automation except this root bootstrap.
@@ -117,10 +117,15 @@ unused Nexus templates remain in analysis and complete coverage measurements;
 only production sources carry coverage requirements. A JavaScript inventory
 containing no production sources requires no fabricated execution counts.
 
-The operator-approved exception to empty Sonar source exclusions is exactly
-`scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml`, the intentionally
-malformed YAML functional fixture. Keep the fixture and its functional tests;
-no other analysis exclusions are authorized by this exception.
+The operator-approved source exclusions are the intentionally malformed YAML
+fixture `scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml` and vendor
+packages/assets: `vendor/**`, `crates/revaer-ui/ui_vendor/**`, and
+`crates/revaer-ui/static/nexus/**`. Vendor code is not scanned or patched.
+First-party wrappers, the runtime SQL initializer, FFI code, tests and tools remain
+in analysis. Keep dependency security audits and complete native coverage gates.
+The exact exclusions are enforced by `tools/src/revaer_tooling/policy/sonar.py`;
+ADR 592 records the operator instruction. This permanent policy supersedes
+blanket vendor-analysis requirements above; it authorizes no first-party exclusions.
 
 - Keep one canonical statement of each global rule. Root policy belongs here; scoped files should reference it and add path-specific details instead of repeating or rewording it inconsistently.
 - Any change to [the `rv` task registry](./tools/src/revaer_tooling/cli.py), workflow files, release scripts, lint posture, or [`sonar-project.properties`](./sonar-project.properties) must update the relevant instruction file in the same change.

@@ -382,7 +382,13 @@ def run_media_phases(
     session: ApiSession | None = None
     for phase in phases:
         outcomes[phase] = "failed"
-        selected_paths = replace(paths, logs=paths.logs / phase)
+        selected_paths = RunPaths(
+            results=paths.results,
+            report=paths.report,
+            logs=paths.logs / phase,
+            runtime=paths.runtime,
+            filesystem=paths.filesystem,
+        )
         ui = phase.startswith("ui-")
         coverage = RouteCoverage(
             paths.results / f"api-coverage-{phase}{settings.shard_suffix}-setup.json",

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from revaer_tooling.policy.advisories import advisory_findings
-from revaer_tooling.policy.sonar import SBOM_PATH, production_source, sonar_findings
+from revaer_tooling.policy.sonar import SBOM_PATH, production_source, sonar_findings, vendor_source
 
 INVENTORY = (
     ".github/workflows/ci.yml",
@@ -46,6 +46,22 @@ def test_nonproduction_paths_do_not_affect_coverage(path: str) -> None:
 )
 def test_production_paths_retain_coverage_requirements(path: str) -> None:
     assert production_source(path)
+
+
+@pytest.mark.parametrize(
+    "path,vendor",
+    (
+        ("vendor/gloo/src/lib.rs", True),
+        ("crates/revaer-ui/ui_vendor/nexus-html@3.1.0/src/styles/app.css", True),
+        ("crates/revaer-ui/static/nexus/assets/app.css", True),
+        ("crates/revaer-ui/static/style.css", False),
+        ("crates/revaer-torrent-libt/src/ffi/session.cpp", False),
+        ("crates/revaer-data/init.sql", False),
+        ("tools/src/revaer_tooling/cli.py", False),
+    ),
+)
+def test_vendor_scope_preserves_first_party_boundaries(path: str, vendor: bool) -> None:
+    assert vendor_source(path) is vendor
 
 
 @pytest.fixture

@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 from xml.etree import ElementTree
 
 from ..errors import ToolingError
-from ..policy.sonar import production_source
+from ..policy.sonar import production_source, vendor_source
 
 NATIVE_SOURCE = "crates/revaer-torrent-libt/src/ffi/session.cpp"
 
@@ -59,7 +59,7 @@ def rust_sonar_lcov(document: str, root: Path, tracked: tuple[str, ...]) -> str:
             source = rust_source(Path(line[3:]), root, inventory)
             record = ["SF:" + source]
         elif line == "end_of_record":
-            if source in inventory:
+            if source in inventory and not vendor_source(source):
                 output.extend((*record, line))
             record = []
             source = ""

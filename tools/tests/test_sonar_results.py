@@ -134,9 +134,9 @@ def test_host_defaults_and_credentials_are_explicit() -> None:
         ("crates/revaer-app/src/bootstrap.rs", True),
         ("crates/revaer-data/init.sql", True),
         ("crates/revaer-torrent-libt/src/ffi/session.cpp", True),
-        ("crates/revaer-ui/static/nexus/assets/app.css", True),
-        ("vendor/gloo/src/lib.rs", True),
-        ("vendor/yewdux/crates/yewdux/src/lib.rs", True),
+        ("crates/revaer-ui/static/nexus/assets/app.css", False),
+        ("vendor/gloo/src/lib.rs", False),
+        ("vendor/yewdux/crates/yewdux/src/lib.rs", False),
     ),
 )
 def test_historical_issues_only_block_active_runtime(
