@@ -58,8 +58,10 @@ Cargo owns installed-package receipts, version replacement and feature tracking.
 Matching installations are retained. Kcov/scanner caches are verified before reuse;
 a cache hit cannot substitute for archive identity or required analyzer inputs.
 
-Cargo downloads are shared across jobs. Installed-tool caches include the selected
-packages, version manifest and Rust toolchain, including Cargo's native receipts.
+Cargo downloads are shared across jobs. Each pinned tool has its own installation
+prefix and cache, including Cargo's native receipts. Cache keys include the version
+manifest and Rust toolchain, but never depend on the other tools selected by a job.
+Setup supplies sccache settings to the current installers and subsequent steps.
 sccache has a separate rolling cache keyed by the build inputs and producer, with
 compatible cross-job restore keys. Cache hits never replace tests or coverage.
 
@@ -74,3 +76,21 @@ separate checks in the [migration inventory](../../../tools/migration.md).
 - [setup-uv inputs](https://github.com/astral-sh/setup-uv/tree/v9.0.0)
 - [uv in containers](https://docs.astral.sh/uv/guides/integration/docker/)
 - [GitHub environment files](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#environment-files)
+
+## Test concurrency
+
+Pinned cargo-nextest supplies process-per-test isolation and resource groups;
+this avoids an authored test executor or an in-process environment lock across
+unrelated tests. `.config/nextest.toml` keeps native libtorrent sessions serial,
+bounds database-heavy work to two processes, and admits two independent recovery
+scenarios. Each scenario keeps its own ordered restart/fault steps and private
+fixture. Pure tests use the runner's available CPUs. Existing Cargo doctest and
+feature gates remain required.
+
+Coverage collections keep one workspace/all-features selection, including ignored
+recovery tests, so feature unification does not force a second package build.
+The engine clears profiles and workspace artifacts before collection; the rolling
+instrumented-target cache retains compatible dependency builds. No execution data
+from a cache can satisfy a test or coverage gate. Cargo determines compiler
+parallelism unless the operator supplies `CARGO_BUILD_JOBS`. Python tooling tests
+use two isolated workers with file-level scheduling and Coverage.py merging.

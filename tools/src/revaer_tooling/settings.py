@@ -5,6 +5,7 @@ receive these values instead of interpreting environment variables themselves.
 Credentials are omitted from dataclass representations as well as process logs.
 """
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -131,7 +132,7 @@ def positive_integer(environment: Mapping[str, str], name: str, default: int) ->
 
 def cargo_jobs(environment: Mapping[str, str]) -> int | Literal["default"]:
     """Preserve Cargo's negative CPU offsets and explicit default setting."""
-    value = environment.get("CARGO_BUILD_JOBS") or "1"
+    value = environment.get("CARGO_BUILD_JOBS") or "default"
     if value == "default":
         return "default"
     try:
@@ -237,7 +238,9 @@ def load_settings(environment: Mapping[str, str], *, linux: bool = False) -> Set
             ),
         ),
         coverage=CoverageSettings(
-            test_threads=positive_integer(environment, "RUST_TEST_THREADS", 1),
+            test_threads=positive_integer(
+                environment, "RUST_TEST_THREADS", os.process_cpu_count() or 1
+            ),
             build_jobs=cargo_jobs(environment),
             native_recovery_root=(Path(recovery_root) if recovery_root else None),
         ),

@@ -15,6 +15,18 @@ applyTo:
 
 # Workflow And Release Rules
 
+- Cache pinned Cargo tools in independent per-package installation prefixes with
+  native Cargo receipts. Propagate sccache into current setup installers as well
+  as later steps. Cache hits never replace current-source tests or coverage.
+- Coverage uses pinned nextest process isolation and `.config/nextest.toml`
+  resource groups. Preserve serial native sessions, bounded private database and
+  recovery scenarios, every scenario's internal ordering, and all nine recovery
+  cases. Keep workspace/all-feature compilation consistent across collections.
+  Compiler parallelism is independent of test resource limits; explicit operator
+  overrides remain supported. Python tooling uses two isolated workers and the
+  supported raw coverage merge.
+
+
 - API and browser E2E jobs explicitly provision FFmpeg for real capability probes
   and e2fsprogs for managed media roots. Do not rely on runner-image tools or the
   installed tools of a developer checkout to satisfy these job dependencies.

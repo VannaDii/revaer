@@ -42,7 +42,16 @@ from .external.packages import Apk, Apt
 from .external.postgres import PostgresDocker
 from .external.python import Python, Uv
 from .external.release import SemanticRelease
-from .external.rust import Cargo, CargoUdeps, Lychee, Mdbook, MdbookMermaid, Rustup, Trunk
+from .external.rust import (
+    Cargo,
+    CargoNextest,
+    CargoUdeps,
+    Lychee,
+    Mdbook,
+    MdbookMermaid,
+    Rustup,
+    Trunk,
+)
 from .external.serving import Application, Listeners
 from .external.sonar import SonarApi, SonarScanner
 from .filesystem import FileSystem
@@ -397,6 +406,8 @@ def parser() -> argparse.ArgumentParser:
 def make_context(options: Options) -> Context:
     root = checkout(Path.cwd().resolve(), source_archive=options.source_archive)
     environment = dict(os.environ)
+    if environment.get("CARGO_BUILD_JOBS") == "default":
+        environment.pop("CARGO_BUILD_JOBS")
     runner = ProcessRunner(stderr_message)
     env = MappingProxyType(environment)
     settings = load_settings(env, linux=sys.platform == "linux")
@@ -481,6 +492,7 @@ def make_context(options: Options) -> Context:
         cargo_audit=ExternalTool("cargo-audit", runner, root, env),
         cargo_deny=ExternalTool("cargo-deny", runner, root, env),
         cargo_llvm_cov=CargoLlvmCov("cargo-llvm-cov", runner, root, env),
+        cargo_nextest=CargoNextest("cargo-nextest", runner, root, env),
         cargo_udeps=CargoUdeps("cargo-udeps", runner, root, env),
         sqlx=Sqlx("sqlx", runner, root, env),
         mdbook_mermaid=MdbookMermaid("mdbook-mermaid", runner, root, env),

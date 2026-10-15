@@ -22,6 +22,8 @@ from revaer_tooling.tasks.setup import Setup
 
 @pytest.fixture
 def python_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Context:
+    # The parent's focused selection must not filter this child project's tests.
+    monkeypatch.delenv("PYTEST_ADDOPTS", raising=False)
     source = Path(__file__).resolve().parents[2]
     for name in ("pyproject.toml", "uv.lock", ".uv-version", ".python-version"):
         shutil.copy2(source / name, tmp_path / name)
@@ -373,6 +375,45 @@ def test_ci_apt_selection_exports_cache_settings_after_installation(
     assert output.read_text().startswith("existing=value\nRUSTC_WRAPPER<<")
     assert str(context.host.home / ".cache/sccache") in output.read_text()
     assert (context.host.home / ".cache/sccache").is_dir()
+
+
+def test_ci_cargo_install_receives_cache_settings_and_private_receipts(
+    python_project: Context,
+) -> None:
+    source = Path(__file__).resolve().parents[2]
+    for name in ("rust-toolchain.toml", "tools/versions.toml"):
+        shutil.copy2(source / name, python_project.root / name)
+    template = python_project.tools.cargo
+    boundary = InstallationBoundary(template.runner, False)
+    output = python_project.root / "github-environment"
+    output.touch()
+    context = replace(
+        python_project,
+        options=Options(
+            profile="ci",
+            install_launcher=False,
+            apt_profile="base",
+            cargo_tools=("sqlx-cli",),
+            browsers=(),
+        ),
+        host=replace(python_project.host, system="linux", home=python_project.root / "host"),
+        settings=load_settings({"GITHUB_ENV": str(output)}),
+        tools=replace(
+            python_project.tools,
+            apt=Apt(sys.executable, boundary, template.root, template.environment, None),
+            rustup=Rustup("rustup", boundary, template.root, template.environment),
+            cargo=Cargo(template.name, boundary, template.root, template.environment),
+        ),
+    )
+    Setup.run(context)
+    installed = next(
+        call for call in boundary.installs if call.argv[1] == "install" and "--locked" in call.argv
+    )
+    prefix = context.host.home / ".local/revaer/cargo-tools/sqlx-cli"
+    assert installed.argv[-2:] == ("--root", str(prefix))
+    assert installed.env["RUSTC_WRAPPER"] == "sccache"
+    assert installed.env["SCCACHE_DIR"] == str(context.host.home / ".cache/sccache")
+    assert str(prefix / "bin") in output.read_text()
 
 
 def test_setup_rejects_wrong_platform_and_incompatible_profile_before_installing(

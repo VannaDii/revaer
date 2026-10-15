@@ -48,36 +48,76 @@ struct Fixture {
 
 #[tokio::test]
 #[ignore = "requires just test-media-service-recovery and an owned persistent Linux mount"]
-async fn native_service_shutdown_resumes_active_ffmpeg() -> Result<()> {
+async fn native_service_recovery_operator() -> Result<()> {
     let fixture = Fixture::create_with_duration("0.1").await?;
     let result = operator::qualify(&fixture).await;
-    finish_fixture(fixture, result).await?;
+    finish_fixture(fixture, result).await
+}
+
+#[tokio::test]
+#[ignore = "requires just test-media-service-recovery and an owned persistent Linux mount"]
+async fn native_service_recovery_scratch() -> Result<()> {
     let fixture = Fixture::create_with_duration("0.1").await?;
     let result = operator::scratch(&fixture).await;
-    finish_fixture(fixture, result).await?;
-    for mode in [discovery::Mode::Watcher, discovery::Mode::Schedule] {
-        let fixture = Fixture::create_with_duration("0.1").await?;
-        let result = discovery::qualify(&fixture, mode).await;
-        finish_fixture(fixture, result).await?;
-    }
+    finish_fixture(fixture, result).await
+}
+
+#[tokio::test]
+#[ignore = "requires just test-media-service-recovery and an owned persistent Linux mount"]
+async fn native_service_recovery_watcher() -> Result<()> {
+    let fixture = Fixture::create_with_duration("0.1").await?;
+    let result = discovery::qualify(&fixture, discovery::Mode::Watcher).await;
+    finish_fixture(fixture, result).await
+}
+
+#[tokio::test]
+#[ignore = "requires just test-media-service-recovery and an owned persistent Linux mount"]
+async fn native_service_recovery_schedule() -> Result<()> {
+    let fixture = Fixture::create_with_duration("0.1").await?;
+    let result = discovery::qualify(&fixture, discovery::Mode::Schedule).await;
+    finish_fixture(fixture, result).await
+}
+
+#[tokio::test]
+#[ignore = "requires just test-media-service-recovery and an owned persistent Linux mount"]
+async fn native_service_recovery_ffmpeg() -> Result<()> {
     let fixture = Fixture::create().await?;
     let result = qualify(&fixture).await;
-    finish_fixture(fixture, result).await?;
-    for fault in [
-        CheckpointFault::Missing,
-        CheckpointFault::Corrupt,
-        CheckpointFault::PreparedReplacement,
-        CheckpointFault::CommittedReplacement,
-    ] {
-        let mut fixture = Fixture::create().await?;
-        let result = async {
-            embed_subtitles(&mut fixture)?;
-            checkpoint_fault_restart(&fixture, fault).await
-        }
-        .await;
-        finish_fixture(fixture, result).await?;
+    finish_fixture(fixture, result).await
+}
+
+#[tokio::test]
+#[ignore = "requires just test-media-service-recovery and an owned persistent Linux mount"]
+async fn native_service_recovery_checkpoint_missing() -> Result<()> {
+    checkpoint_scenario(CheckpointFault::Missing).await
+}
+
+#[tokio::test]
+#[ignore = "requires just test-media-service-recovery and an owned persistent Linux mount"]
+async fn native_service_recovery_checkpoint_corrupt() -> Result<()> {
+    checkpoint_scenario(CheckpointFault::Corrupt).await
+}
+
+#[tokio::test]
+#[ignore = "requires just test-media-service-recovery and an owned persistent Linux mount"]
+async fn native_service_recovery_checkpoint_prepared() -> Result<()> {
+    checkpoint_scenario(CheckpointFault::PreparedReplacement).await
+}
+
+#[tokio::test]
+#[ignore = "requires just test-media-service-recovery and an owned persistent Linux mount"]
+async fn native_service_recovery_checkpoint_committed() -> Result<()> {
+    checkpoint_scenario(CheckpointFault::CommittedReplacement).await
+}
+
+async fn checkpoint_scenario(fault: CheckpointFault) -> Result<()> {
+    let mut fixture = Fixture::create().await?;
+    let result = async {
+        embed_subtitles(&mut fixture)?;
+        checkpoint_fault_restart(&fixture, fault).await
     }
-    Ok(())
+    .await;
+    finish_fixture(fixture, result).await
 }
 
 async fn finish_fixture(fixture: Fixture, result: Result<()>) -> Result<()> {

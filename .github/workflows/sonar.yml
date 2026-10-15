@@ -48,7 +48,7 @@ jobs:
         with:
           apt-profile: coverage
           sonar-scanner: 'true'
-          cargo-tools: cargo-audit,cargo-deny,cargo-llvm-cov,cargo-udeps,sqlx-cli,trunk,mdbook,mdbook-mermaid,lychee
+          cargo-tools: cargo-audit,cargo-deny,cargo-llvm-cov,cargo-nextest,cargo-udeps,sqlx-cli,trunk,mdbook,mdbook-mermaid,lychee
           helm: 'true'
           oras: 'true'
           trivy: 'true'

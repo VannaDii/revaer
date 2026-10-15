@@ -97,3 +97,6 @@ head branch) to the scanner; quality criteria remain exclusively in
 - Vendor-free Rust and JavaScript scanner LCOV inputs are derived by
   `sonar-verify-inputs`. Keep complete measured original reports and native records;
   retain every first-party counter unchanged in the scanner inputs.
+
+- Keep the nextest resource configuration in authored main-code analysis scope;
+  adding test scheduling configuration does not narrow coverage or issue gates.

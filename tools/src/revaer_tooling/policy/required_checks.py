@@ -208,7 +208,7 @@ def _udeps(policy: Contract) -> None:
     policy.require(
         cache.get("with")
         == {
-            "path": "~/.cargo/bin/cargo-udeps",
+            "path": "~/.local/revaer/cargo-tools/cargo-udeps",
             "key": (
                 "${{ runner.os }}-cargo-udeps-${{ env.REVAER_UDEPS_VERSION }}-"
                 "${{ env.REVAER_UDEPS_TOOLCHAIN }}"

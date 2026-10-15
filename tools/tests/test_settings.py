@@ -7,6 +7,7 @@ from revaer_tooling.settings import load_settings
 
 def test_release_defaults_preserve_optional_helm_assets() -> None:
     settings = load_settings({})
+    assert settings.coverage.build_jobs == "default"
     assert not settings.helm_release_assets
     assert settings.chart.sign
     assert settings.chart.repository == "VannaDii/Revaer"

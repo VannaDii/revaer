@@ -226,13 +226,19 @@ def test_missing_executable_is_actionable(tmp_path: Path) -> None:
 def test_cargo_owns_installation_tracking_and_collision_checks(tmp_path: Path) -> None:
     runner = RecordingRunner()
     cargo = Cargo(sys.executable, runner, tmp_path, {})
-    cargo.install(CargoInstallArgs("sqlx-cli", "0.8.6", ("postgres",), True))
+    prefix = tmp_path / "sqlx-cli"
+    cargo.install(
+        CargoInstallArgs("sqlx-cli", "0.8.6", ("postgres",), True, prefix),
+        {"RUSTC_WRAPPER": "sccache", "SCCACHE_DIR": str(tmp_path / "cache")},
+    )
     call = runner.calls[0].argv
     assert "--force" not in call
     assert "--locked" in call
     assert call[call.index("--version") + 1] == "0.8.6"
     assert call[call.index("--features") + 1] == "postgres"
     assert "--no-default-features" in call
+    assert call[call.index("--root") + 1] == str(prefix)
+    assert runner.calls[0].env["RUSTC_WRAPPER"] == "sccache"
 
 
 @pytest.mark.parametrize(

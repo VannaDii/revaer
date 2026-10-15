@@ -94,6 +94,7 @@ class Tools:
     cargo_audit: ExternalTool
     cargo_deny: ExternalTool
     cargo_llvm_cov: CargoLlvmCov
+    cargo_nextest: ExternalTool
     cargo_udeps: ExternalTool
     sqlx: Sqlx
     mdbook_mermaid: MdbookMermaid

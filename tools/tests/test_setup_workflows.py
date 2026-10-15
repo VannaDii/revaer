@@ -3,6 +3,7 @@
 import copy
 import re
 import shlex
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -83,6 +84,18 @@ def test_committed_setup_action_uses_official_uv_and_valid_commands(action: Docu
             parsed = parser().parse_args(argv)
             assert parsed.task == "setup"
             assert parsed.no_launcher
+
+
+def test_tool_caches_reuse_independent_native_installation_roots(action: Document) -> None:
+    pins = tomllib.loads((Path(__file__).parents[2] / "tools/versions.toml").read_text())
+    caches = {
+        step.get("name"): mapping(step.get("with")) for step in steps(mapping(action["runs"]))
+    }
+    for package in pins["cargo"]:
+        cache = caches[f"Cache pinned {package}"]
+        assert cache["path"] == f"~/.local/revaer/cargo-tools/{package}"
+        assert "inputs.cargo-tools" not in str(cache["key"])
+        assert package in str(cache["key"])
 
 
 @pytest.mark.parametrize("name", ("docs", "helm-oci-verify", "build-images", "ci"))

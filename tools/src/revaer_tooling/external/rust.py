@@ -70,6 +70,7 @@ class CargoInstallArgs:
     version: str
     features: tuple[str, ...] = ()
     no_default_features: bool = False
+    root: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -98,7 +99,31 @@ class CargoUdeps(ExternalTool):
     version_args = ("udeps", "--version")
 
 
+class CargoNextest(ExternalTool):
+    version_args = ("nextest", "--version")
+
+
 class Cargo(ExternalTool):
+    def recovery_scenarios(self, environment: Mapping[str, str]) -> Completed:
+        return self._invoke(
+            (
+                "--config",
+                'build.rustflags=["-Dwarnings"]',
+                "nextest",
+                "run",
+                "--workspace",
+                "--all-features",
+                "--locked",
+                "--no-tests=fail",
+                "--run-ignored",
+                "only",
+                "-E",
+                "test(bootstrap::service_recovery_tests::native_service_recovery_)",
+            ),
+            env=environment,
+            capture=True,
+        )
+
     def database_probe(self, args: DatabaseProbeArgs) -> Completed:
         result = self._invoke(
             (
@@ -356,7 +381,9 @@ class Cargo(ExternalTool):
             args.append("--release")
         return self._invoke(tuple(args), env=env)
 
-    def install(self, args: CargoInstallArgs) -> Completed:
+    def install(
+        self, args: CargoInstallArgs, environment: Mapping[str, str] | None = None
+    ) -> Completed:
         # Cargo tracks package versions, features and installed binaries. Let it
         # skip an identical install and reject collisions instead of forcing it.
         command = [
@@ -370,7 +397,9 @@ class Cargo(ExternalTool):
             command.extend(("--features", ",".join(args.features)))
         if args.no_default_features:
             command.append("--no-default-features")
-        return self._invoke(tuple(command))
+        if args.root is not None:
+            command.extend(("--root", str(args.root)))
+        return self._invoke(tuple(command), env=environment)
 
     def audit(self) -> Completed:
         return self._invoke(("audit", "--deny", "warnings"))
