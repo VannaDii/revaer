@@ -14,13 +14,13 @@ runs:
   using: composite
   steps:
     - name: Save compiler results
-      if: inputs.kind == 'compiler'
+      if: inputs.kind == 'compiler' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
       uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
         path: ~/.cache/sccache
         key: ${{ inputs.key }}
     - name: Save instrumented dependencies
-      if: inputs.kind == 'coverage'
+      if: inputs.kind == 'coverage' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
       uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
         path: |
@@ -37,8 +37,11 @@ runs:
           !target/llvm-cov-target/debug/build/asset_sync-*
           !target/llvm-cov-target/debug/.fingerprint/revaer-*
           !target/llvm-cov-target/debug/.fingerprint/asset_sync-*
+          !target/llvm-cov-target/**/*.profraw
+          !target/llvm-cov-target/**/*.profdata
         key: ${{ inputs.key }}
     - name: Bound published cache family
+      if: github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}

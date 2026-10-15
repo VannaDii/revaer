@@ -24,7 +24,8 @@ applyTo:
   unused-dependency job are the compiler writers; Rust coverage jobs alone write
   instrumented dependencies. Limit each compiler cache to 512 MiB locally and
   retain at most two snapshots and 1 GiB per family within the current workflow
-  ref. Never prune tools, another ref, or a newer publisher's snapshots. Keep
+  ref. Skip privileged publication on fork/Dependabot runs. Never prune tools,
+  another ref, or a newer publisher's snapshots. Keep
   Cargo manifests, target configuration, toolchain and native pins in compatible
   restore keys; Cargo and sccache still validate actual compilation inputs.
 - Coverage uses pinned nextest process isolation and `.config/nextest.toml`

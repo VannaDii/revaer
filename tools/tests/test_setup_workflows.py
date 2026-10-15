@@ -193,9 +193,21 @@ def test_cache_publisher_reuses_the_restored_paths_and_native_transport(action: 
     stages = steps(mapping(document["runs"]))
     restored = {step.get("id"): step for step in steps(mapping(action["runs"]))}
     for kind in ("compiler", "coverage"):
-        saved = next(step for step in stages if step.get("if") == f"inputs.kind == '{kind}'")
+        saved = next(
+            step
+            for step in stages
+            if str(step.get("if", "")).startswith(f"inputs.kind == '{kind}' && ")
+        )
         assert str(saved["uses"]).startswith("actions/cache/save@")
         assert mapping(saved["with"])["path"] == mapping(restored[kind + "_cache"]["with"])["path"]
+    for stage in stages:
+        condition = str(stage.get("if", ""))
+        assert "github.actor != 'dependabot[bot]'" in condition
+        assert "github.event_name != 'pull_request' ||" in condition
+        assert "github.event.pull_request.head.repo.full_name == github.repository" in condition
+    paths = str(mapping(stages[1]["with"])["path"]).splitlines()
+    assert "!target/llvm-cov-target/**/*.profraw" in paths
+    assert "!target/llvm-cov-target/**/*.profdata" in paths
     prune = stages[-1]
     assert "workflow-cache-prune" in str(prune["run"])
     assert mapping(prune["env"])["CACHE_REF"] == "${{ github.ref }}"

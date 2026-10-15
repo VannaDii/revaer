@@ -70,7 +70,8 @@ failures do not discard reusable tools. Cache hits retain their native receipts.
 Build-cache consumers restore only. The PR check job and main release job publish
 stable compiler snapshots; unused-dependency analysis publishes nightly snapshots.
 Rust coverage producers publish instrumented dependencies. The shared publisher
-action runs only after a successful producer and uses the setup action's returned
+action skips fork/Dependabot runs with potentially read-only tokens and runs only
+after a successful producer and uses the setup action's returned
 key and prefix, so a consumer cannot create another copy of the same snapshot.
 
 Compatible keys include OS/architecture, Cargo lock and authored manifests,

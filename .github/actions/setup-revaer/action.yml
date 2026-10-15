@@ -194,6 +194,8 @@ runs:
           !target/llvm-cov-target/debug/build/asset_sync-*
           !target/llvm-cov-target/debug/.fingerprint/revaer-*
           !target/llvm-cov-target/debug/.fingerprint/asset_sync-*
+          !target/llvm-cov-target/**/*.profraw
+          !target/llvm-cov-target/**/*.profdata
         key: ${{ runner.os }}-${{ runner.arch }}-revaer-coverage-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', '.cargo/**', 'rust-toolchain.toml', 'tools/versions.toml', '.github/build-inputs.env', 'tools/src/revaer_tooling/external/coverage.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
           ${{ runner.os }}-${{ runner.arch }}-revaer-coverage-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', '.cargo/**', 'rust-toolchain.toml', 'tools/versions.toml', '.github/build-inputs.env', 'tools/src/revaer_tooling/external/coverage.py') }}-
