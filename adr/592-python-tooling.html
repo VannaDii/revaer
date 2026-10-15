@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "coal";
-            window.path_to_searchindex_js = "../searchindex-ff3ee6e9.js";
+            window.path_to_searchindex_js = "../searchindex-b3d5508e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-cef10c91.js"></script>
@@ -1921,6 +1921,16 @@ The root document changes only JSON ordering; its schema remains semantically
 identical. The app-local copy was stale at 91 paths and now matches the same
 101-path generated contract used by the API tests. Retained the generated
 documents so analysis and source attribution use the committed contract.</p>
+<h2 id="operator-vendor-analysis-policy--2026-10-14"><a class="header" href="#operator-vendor-analysis-policy--2026-10-14">Operator vendor-analysis policy — 2026-10-14</a></h2>
+<p>The operator instructed: “Exclude anything we get from a vendor from being scanned
+then. We don’t scan vendor code, we don’t patch vendor code.”</p>
+<p>Apply this permanent source policy to <code>vendor/**</code>,
+<code>crates/revaer-ui/ui_vendor/**</code>, and the synchronized
+<code>crates/revaer-ui/static/nexus/**</code> assets and copied <code>docs/mermaid.min.js</code> library.
+Keep first-party code in analysis,
+including runtime SQL, FFI wrappers, tests and tools. Dependency security audits,
+complete execution coverage, coverage thresholds and first-party issue/hotspot
+gates remain required. The exact scanner exclusion allowlist enforces this boundary.</p>
 
                     </main>
 

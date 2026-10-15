@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-10-14T01:19:45.746869269+00:00",
+  "generated": "2026-10-15T14:46:57.749615864+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -2948,7 +2948,7 @@
     {
       "id": "adr/317-supply-chain-advisory-baseline",
       "title": "Supply Chain Advisory Baseline",
-      "summary": "Status: Accepted Date: 2026-07-27 Context: PR chain validation must fail closed on RustSec and cargo-deny findings before media runtime work is layered on top. The previous dependency graph carried stale advisory ignores for proc-macro-error, bincode, and rand 0.8.5. Decision: Vendor patched gloo and yew-macro sources to remove gloo-worker and bincode. Replace proc-macro-error usage in vendored Yew/Yewdux macros with local syn::Error handling. Remove the direct postgres test-support dependency and reuse SQLx bootstrap calls with explicitly safe raw SQL. Keep native libtorrent optional unless REVAER_NATIVE_IT is set, reject unsupported 2.1+ headers, and preserve Sonar compile-command header staging. Consequences: cargo audit and cargo",
+      "summary": "Status: Accepted Date: 2026-07-27 Context: PR chain validation must fail closed on RustSec and cargo-deny findings before media runtime work is layered on top. The previous dependency graph carried stale advisory ignores for proc-macro-error, bincode, and rand 0.8.5. Decision: On 2026-10-09, Vanna approved CC0-1.0 as an allowed license and extended the exact Windows duplicate allowances in deny.toml through 2027-04-09. Other duplicate and advisory rules remain unchanged; remove these exact tolerances when upstream Windows support versions converge. Vendor patched gloo and yew-macro sources to remove gloo-worker and bincode. Replace proc-macro-error usage in vendored Yew/Yewdux macros with local syn::Error handling. Remove the",
       "tags": [
         "task-record"
       ],
@@ -3100,6 +3100,7 @@
         "design-notes",
         "motivation",
         "observability-updates",
+        "operator-vendor-analysis-policy-2026-10-14",
         "risk-and-rollback-plan",
         "stale-policy-check",
         "test-coverage-summary"

@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "coal";
-            window.path_to_searchindex_js = "../searchindex-ff3ee6e9.js";
+            window.path_to_searchindex_js = "../searchindex-b3d5508e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-cef10c91.js"></script>
@@ -266,7 +266,7 @@
 <ul>
 <li>Connects to <code>/v1/torrents/events</code> (falls back to <code>/v1/events/stream</code>).</li>
 <li>Filters match the API query parameters and enforce UUID/event-kind validation before the request is made.</li>
-<li>When <code>--resume-file</code> is supplied, the CLI persists the last event ID across reconnects so the stream can resume after transient failures.</li>
+<li>When <code>--resume-file</code> is supplied, the CLI persists the last event ID across reconnects so the stream can resume after transient failures. A missing file starts a fresh stream; an unreadable file or malformed event ID fails explicitly.</li>
 <li><code>--retry-secs</code> controls the backoff between reconnect attempts (default: 5 seconds).</li>
 </ul>
 <p>All torrent commands require an API key. The CLI surfaces API problems exactly as the server returns them, including RFC9457 validation errors and rate-limit responses (<code>429 Too Many Requests</code> with retry metadata in the body).</p>
