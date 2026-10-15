@@ -15,6 +15,10 @@ applyTo:
 
 # Workflow And Release Rules
 
+- API and browser E2E jobs explicitly provision FFmpeg for real capability probes
+  and e2fsprogs for managed media roots. Do not rely on runner-image tools or the
+  installed tools of a developer checkout to satisfy these job dependencies.
+
 - Composed validation provisions an owned single-init fixture or verifies the
   caller-selected database without repair. Preserve administrative test endpoints
   and owned cleanup. Cargo lock reconciliation remains offline without registry

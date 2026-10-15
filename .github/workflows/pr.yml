@@ -491,6 +491,7 @@ jobs:
         timeout-minutes: 20
         with:
           apt-profile: db
+          apt-packages: libtorrent-rasterbar-dev pkg-config sccache libpq-dev postgresql-client ffmpeg e2fsprogs
           cargo-tools: sqlx-cli
           browsers: ''
       - name: API E2E coverage
