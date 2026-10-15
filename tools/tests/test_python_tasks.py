@@ -387,8 +387,12 @@ def test_ci_cargo_install_receives_cache_settings_and_private_receipts(
     boundary = InstallationBoundary(template.runner, False)
     output = python_project.root / "github-environment"
     output.touch()
-    context = replace(
-        python_project,
+    context = Context(
+        root=python_project.root,
+        fs=python_project.fs,
+        emit=python_project.emit,
+        invoked_at=python_project.invoked_at,
+        command_names=python_project.command_names,
         options=Options(
             profile="ci",
             install_launcher=False,

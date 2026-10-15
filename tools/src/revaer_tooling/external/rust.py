@@ -63,6 +63,22 @@ class CargoArgs:
     test_filter: str | None = None
     include_ignored: bool = False
 
+    def validate(self) -> None:
+        selectors = (self.test_binary, self.test_filter)
+        if (
+            any(value is not None for value in selectors) or self.include_ignored
+        ) and self.operation != CargoOperation.TEST:
+            raise ToolingError("Test selectors require a Cargo test operation")
+        if any(
+            value is not None and (not value or value.startswith("-") or "\x00" in value)
+            for value in selectors
+        ):
+            raise ToolingError("Cargo test selectors must be nonempty literal names")
+        if self.test_threads is not None and (
+            self.operation != CargoOperation.TEST or self.test_threads < 1
+        ):
+            raise ToolingError("Test threads require a test operation and a positive count")
+
 
 @dataclass(frozen=True)
 class CargoInstallArgs:
@@ -270,16 +286,7 @@ class Cargo(ExternalTool):
     def execute(
         self, args: CargoArgs, env: Mapping[str, str] | None = None, *, capture: bool = False
     ) -> Completed:
-        selectors = (args.test_binary, args.test_filter)
-        if (
-            any(value is not None for value in selectors) or args.include_ignored
-        ) and args.operation != CargoOperation.TEST:
-            raise ToolingError("Test selectors require a Cargo test operation")
-        if any(
-            value is not None and (not value or value.startswith("-") or "\x00" in value)
-            for value in selectors
-        ):
-            raise ToolingError("Cargo test selectors must be nonempty literal names")
+        args.validate()
         command = ["--config", 'build.rustflags=["-Dwarnings"]', args.operation.value, "--locked"]
         if args.packages:
             for package in args.packages:
@@ -302,8 +309,6 @@ class Cargo(ExternalTool):
         if args.include_ignored:
             harness.append("--include-ignored")
         if args.test_threads is not None:
-            if args.operation != CargoOperation.TEST or args.test_threads < 1:
-                raise ToolingError("Test threads require a test operation and a positive count")
             harness.append(f"--test-threads={args.test_threads}")
         if harness:
             command.extend(("--", *harness))

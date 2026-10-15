@@ -723,25 +723,25 @@ impl Fixture {
         let mut engine = config.get_engine_profile().await?;
         engine.listen_port = Some(i32::from(engine_address.port()));
         engine.listen_interfaces = vec![engine_address.to_string()];
-        engine.resume_dir = directory
+        directory
             .path()
             .join("resume")
             .to_str()
             .context("resume path")?
-            .to_owned();
-        engine.download_root = directory
+            .clone_into(&mut engine.resume_dir);
+        directory
             .path()
             .join("downloads")
             .to_str()
             .context("download path")?
-            .to_owned();
+            .clone_into(&mut engine.download_root);
         let mut policy = config.get_fs_policy().await?;
-        policy.library_root = directory
+        directory
             .path()
             .join("library")
             .to_str()
             .context("library path")?
-            .to_owned();
+            .clone_into(&mut policy.library_root);
         config
             .apply_changeset(
                 "tester",
