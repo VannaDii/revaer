@@ -88,14 +88,34 @@ def test_committed_setup_action_uses_official_uv_and_valid_commands(action: Docu
 
 def test_tool_caches_reuse_independent_native_installation_roots(action: Document) -> None:
     pins = tomllib.loads((Path(__file__).parents[2] / "tools/versions.toml").read_text())
-    caches = {
-        step.get("name"): mapping(step.get("with")) for step in steps(mapping(action["runs"]))
-    }
+    stages = steps(mapping(action["runs"]))
+    caches = {step.get("name"): step for step in stages}
+    installed = next(
+        index
+        for index, step in enumerate(stages)
+        if step.get("name") == "Set up selected Revaer tools"
+    )
     for package in pins["cargo"]:
-        cache = caches[f"Cache pinned {package}"]
+        restore = caches[f"Cache pinned {package}"]
+        cache = mapping(restore.get("with"))
         assert cache["path"] == f"~/.local/revaer/cargo-tools/{package}"
         assert "inputs.cargo-tools" not in str(cache["key"])
         assert package in str(cache["key"])
+        assert str(restore.get("uses")).startswith("actions/cache/restore@")
+        saved = caches[f"Save pinned {package}"]
+        assert stages.index(restore) < installed < stages.index(saved)
+        assert str(saved.get("uses")).startswith("actions/cache/save@")
+        assert mapping(saved.get("with"))["path"] == cache["path"]
+        assert str(restore["id"]) in str(mapping(saved.get("with"))["key"])
+        assert "cache-hit != 'true'" in str(saved.get("if"))
+    kcov = caches["Cache pinned kcov source and installation"]
+    saved_kcov = caches["Save pinned kcov"]
+    assert str(kcov.get("uses")).startswith("actions/cache/restore@")
+    assert str(saved_kcov.get("uses")).startswith("actions/cache/save@")
+    assert (
+        stages.index(kcov) < stages.index(caches["Install pinned kcov"]) < stages.index(saved_kcov)
+    )
+    assert mapping(saved_kcov.get("with"))["path"] == mapping(kcov.get("with"))["path"]
 
 
 @pytest.mark.parametrize("name", ("docs", "helm-oci-verify", "build-images", "ci"))

@@ -64,71 +64,81 @@ runs:
           ${{ runner.os }}-${{ runner.arch }}-cargo-downloads-
 
     - name: Cache pinned cargo-audit
+      id: cargo_audit_cache
       if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-audit,')
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
         path: ~/.local/revaer/cargo-tools/cargo-audit
         key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-cargo-audit-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
 
     - name: Cache pinned cargo-deny
+      id: cargo_deny_cache
       if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-deny,')
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
         path: ~/.local/revaer/cargo-tools/cargo-deny
         key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-cargo-deny-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
 
     - name: Cache pinned cargo-llvm-cov
+      id: cargo_llvm_cov_cache
       if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-llvm-cov,')
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
         path: ~/.local/revaer/cargo-tools/cargo-llvm-cov
         key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-cargo-llvm-cov-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
 
     - name: Cache pinned cargo-nextest
+      id: cargo_nextest_cache
       if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-nextest,')
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
         path: ~/.local/revaer/cargo-tools/cargo-nextest
         key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-cargo-nextest-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
 
     - name: Cache pinned cargo-udeps
+      id: cargo_udeps_cache
       if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-udeps,')
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
         path: ~/.local/revaer/cargo-tools/cargo-udeps
         key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-cargo-udeps-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
 
     - name: Cache pinned sqlx-cli
+      id: sqlx_cli_cache
       if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',sqlx-cli,')
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
         path: ~/.local/revaer/cargo-tools/sqlx-cli
         key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-sqlx-cli-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
 
     - name: Cache pinned trunk
+      id: trunk_cache
       if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',trunk,')
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
         path: ~/.local/revaer/cargo-tools/trunk
         key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-trunk-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
 
     - name: Cache pinned mdbook
+      id: mdbook_cache
       if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',mdbook,')
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
         path: ~/.local/revaer/cargo-tools/mdbook
         key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-mdbook-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
 
     - name: Cache pinned mdbook-mermaid
+      id: mdbook_mermaid_cache
       if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',mdbook-mermaid,')
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
         path: ~/.local/revaer/cargo-tools/mdbook-mermaid
         key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-mdbook-mermaid-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
 
     - name: Cache pinned lychee
+      id: lychee_cache
       if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',lychee,')
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
         path: ~/.local/revaer/cargo-tools/lychee
         key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-lychee-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
@@ -200,9 +210,80 @@ runs:
         --apt-profile "$RV_SETUP_APT_PROFILE"
         --apt-packages "$RV_SETUP_APT_PACKAGES"
 
+    - name: Save pinned cargo-audit
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-audit,') && steps.cargo_audit_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/cargo-audit
+        key: ${{ steps.cargo_audit_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned cargo-deny
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-deny,') && steps.cargo_deny_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/cargo-deny
+        key: ${{ steps.cargo_deny_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned cargo-llvm-cov
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-llvm-cov,') && steps.cargo_llvm_cov_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/cargo-llvm-cov
+        key: ${{ steps.cargo_llvm_cov_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned cargo-nextest
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-nextest,') && steps.cargo_nextest_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/cargo-nextest
+        key: ${{ steps.cargo_nextest_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned cargo-udeps
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-udeps,') && steps.cargo_udeps_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/cargo-udeps
+        key: ${{ steps.cargo_udeps_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned sqlx-cli
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',sqlx-cli,') && steps.sqlx_cli_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/sqlx-cli
+        key: ${{ steps.sqlx_cli_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned trunk
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',trunk,') && steps.trunk_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/trunk
+        key: ${{ steps.trunk_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned mdbook
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',mdbook,') && steps.mdbook_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/mdbook
+        key: ${{ steps.mdbook_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned mdbook-mermaid
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',mdbook-mermaid,') && steps.mdbook_mermaid_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/mdbook-mermaid
+        key: ${{ steps.mdbook_mermaid_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned lychee
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',lychee,') && steps.lychee_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/lychee
+        key: ${{ steps.lychee_cache.outputs.cache-primary-key }}
+
     - name: Cache pinned kcov source and installation
+      id: kcov_cache
       if: inputs.apt-profile == 'coverage'
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: ~/.local/revaer/kcov
         key: ${{ runner.os }}-${{ runner.arch }}-kcov-${{ hashFiles('tools/versions.toml') }}
@@ -211,6 +292,13 @@ runs:
       if: inputs.apt-profile == 'coverage'
       shell: bash
       run: uv run --locked -- rv setup --profile python --no-launcher --kcov
+
+    - name: Save pinned kcov
+      if: inputs.apt-profile == 'coverage' && steps.kcov_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/kcov
+        key: ${{ steps.kcov_cache.outputs.cache-primary-key }}
 
     - name: Cache scanner and analyzers
       if: inputs.sonar-scanner == 'true'

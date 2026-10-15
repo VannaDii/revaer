@@ -23,6 +23,7 @@ def coverage_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Conte
     source = Path(__file__).resolve().parents[2]
     channel = tomllib.loads((source / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
     monkeypatch.setenv("RUSTUP_TOOLCHAIN", channel)
+    monkeypatch.setenv("CARGO_TERM_COLOR", "always")
     monkeypatch.setenv("REVAER_TEST_DATABASE_URL", "postgres://fixture.invalid/unused")
     for name in ("CARGO_TARGET_DIR", "CARGO_LLVM_COV_TARGET_DIR", "RUSTC_COMMAND", "RUSTC"):
         monkeypatch.delenv(name, raising=False)

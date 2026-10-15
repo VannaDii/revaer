@@ -30,6 +30,7 @@ def test_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Context:
     source = Path(__file__).resolve().parents[2]
     channel = tomllib.loads((source / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
     monkeypatch.setenv("RUSTUP_TOOLCHAIN", channel)
+    monkeypatch.setenv("CARGO_TERM_COLOR", "always")
     monkeypatch.delenv("CARGO_TARGET_DIR", raising=False)
     monkeypatch.delenv("REVAER_NATIVE_IT", raising=False)
     monkeypatch.setenv("REVAER_TEST_DATABASE_URL", "postgres://tests.invalid/admin")

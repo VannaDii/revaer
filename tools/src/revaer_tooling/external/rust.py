@@ -136,7 +136,7 @@ class Cargo(ExternalTool):
                 "-E",
                 "test(bootstrap::service_recovery_tests::native_service_recovery_)",
             ),
-            env=environment,
+            env={**environment, "CARGO_TERM_COLOR": "never"},
             capture=True,
         )
 

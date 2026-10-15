@@ -136,7 +136,7 @@ class CargoLlvmCov(ExternalTool):
                 environment.get("RUST_TEST_THREADS", "num-cpus"),
                 *(("--run-ignored", "only", "-E", f"test({test_filter})") if test_filter else ()),
             ),
-            env={**environment, **flags},
+            env={**environment, **flags, "CARGO_TERM_COLOR": "never"},
             capture=test_filter is not None,
         )
 

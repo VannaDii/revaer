@@ -18,6 +18,8 @@ applyTo:
 - Cache pinned Cargo tools in independent per-package installation prefixes with
   native Cargo receipts. Propagate sccache into current setup installers as well
   as later steps. Cache hits never replace current-source tests or coverage.
+  Save validated tool installations during setup, before later test failures can
+  prevent cache publication. Parse nextest summaries without terminal colouring.
 - Coverage uses pinned nextest process isolation and `.config/nextest.toml`
   resource groups. Preserve serial native sessions, bounded private database and
   recovery scenarios, every scenario's internal ordering, and all nine recovery

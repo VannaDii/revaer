@@ -62,6 +62,8 @@ Cargo downloads are shared across jobs. Each pinned tool has its own installatio
 prefix and cache, including Cargo's native receipts. Cache keys include the version
 manifest and Rust toolchain, but never depend on the other tools selected by a job.
 Setup supplies sccache settings to the current installers and subsequent steps.
+Validated Cargo and kcov installations are saved during setup, so later test
+failures do not discard reusable tools. Cache hits retain their native receipts.
 sccache has a separate rolling cache keyed by the build inputs and producer, with
 compatible cross-job restore keys. Cache hits never replace tests or coverage.
 
