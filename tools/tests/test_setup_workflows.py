@@ -210,6 +210,7 @@ def test_cache_publisher_reuses_the_restored_paths_and_native_transport(action: 
     assert "!target/llvm-cov-target/**/*.profdata" in paths
     prune = stages[-1]
     assert "workflow-cache-prune" in str(prune["run"])
+    assert shlex.split(str(prune["run"]))[:5] == ["uv", "run", "--locked", "--no-build", "--"]
     assert mapping(prune["env"])["CACHE_REF"] == "${{ github.ref }}"
 
 

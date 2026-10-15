@@ -48,4 +48,4 @@ runs:
         CACHE_PREFIX: ${{ inputs.prefix }}
         CACHE_KEY: ${{ inputs.key }}
         CACHE_REF: ${{ github.ref }}
-      run: uv run --locked -- rv workflow-cache-prune --cache-prefix "$CACHE_PREFIX" --cache-key "$CACHE_KEY" --cache-ref "$CACHE_REF"
+      run: uv run --locked --no-build -- rv workflow-cache-prune --cache-prefix "$CACHE_PREFIX" --cache-key "$CACHE_KEY" --cache-ref "$CACHE_REF"

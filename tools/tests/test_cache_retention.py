@@ -49,8 +49,9 @@ def test_an_older_publisher_cannot_prune_a_newer_publisher() -> None:
 
 
 def test_missing_published_cache_prevents_deletion() -> None:
+    entries = (entry(1),)
     with pytest.raises(ToolingError, match="published cache"):
-        cache_evictions((entry(1),), PREFIX, REF, PREFIX + "2", 1024)
+        cache_evictions(entries, PREFIX, REF, PREFIX + "2", 1024)
 
 
 @pytest.mark.parametrize("prefix", ("", "Linux-X64-", "Linux-X64-cargo-tool-"))
@@ -97,12 +98,18 @@ def response(entries: tuple[CacheEntry, ...]) -> str:
     )
 
 
-def cache_context(runner: CacheRunner, tmp_path: Path) -> Context:
-    context = make_context(Options(cache_prefix=PREFIX, cache_ref=REF, cache_key=PREFIX + "3"))
-    return replace(
-        context,
+def cache_context(runner: CacheRunner, tmp_path: Path, *, ref: str = REF) -> Context:
+    context = make_context(Options(cache_prefix=PREFIX, cache_ref=ref, cache_key=PREFIX + "3"))
+    return Context(
+        root=context.root,
         settings=replace(context.settings, workflow=replace(context.settings.workflow, ref=REF)),
+        options=context.options,
         tools=replace(context.tools, github=GitHub(sys.executable, runner, tmp_path, {})),
+        fs=context.fs,
+        emit=context.emit,
+        host=context.host,
+        invoked_at=context.invoked_at,
+        command_names=context.command_names,
     )
 
 
@@ -138,8 +145,7 @@ def test_cache_deletion_failure_is_not_suppressed(tmp_path: Path) -> None:
 
 def test_cache_retention_cannot_select_another_workflow_ref(tmp_path: Path) -> None:
     runner = CacheRunner(response((entry(1), entry(2), entry(3))))
-    context = cache_context(runner, tmp_path)
-    context = replace(context, options=replace(context.options, cache_ref="refs/heads/main"))
+    context = cache_context(runner, tmp_path, ref="refs/heads/main")
     with pytest.raises(ToolingError, match="current workflow ref"):
         WorkflowCachePrune.run(context)
     assert not runner.calls

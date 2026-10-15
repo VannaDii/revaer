@@ -342,6 +342,8 @@ applyTo:
 
 # Shell Safety
 
+- Cache publication runs the installed CLI with `uv run --locked --no-build`;
+  it must not invoke source build hooks while using its scoped cache token.
 - Never interpolate untrusted `${{ inputs.* }}` or comparable expression values directly into `run:` blocks.
 - Map user-controlled inputs into environment variables first, validate or whitelist them, then consume them in shell.
 - When writing validated values to `$GITHUB_OUTPUT`, use the multiline heredoc form so output parsing stays safe even if the value surface changes later.
