@@ -20,6 +20,13 @@ applyTo:
   as later steps. Cache hits never replace current-source tests or coverage.
   Save validated tool installations during setup, before later test failures can
   prevent cache publication. Parse nextest summaries without terminal colouring.
+- Build-cache consumers restore only. The stable check/release job and nightly
+  unused-dependency job are the compiler writers; Rust coverage jobs alone write
+  instrumented dependencies. Limit each compiler cache to 512 MiB locally and
+  retain at most two snapshots and 1 GiB per family within the current workflow
+  ref. Never prune tools, another ref, or a newer publisher's snapshots. Keep
+  Cargo manifests, target configuration, toolchain and native pins in compatible
+  restore keys; Cargo and sccache still validate actual compilation inputs.
 - Coverage uses pinned nextest process isolation and `.config/nextest.toml`
   resource groups. Preserve serial native sessions, bounded private database and
   recovery scenarios, every scenario's internal ordering, and all nine recovery

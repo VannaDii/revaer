@@ -7,12 +7,13 @@ when the caller could overwrite it: a published tag must identify one artifact.
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
 from ..artifacts import digest_file
 from ..errors import ToolingError
-from ..json_data import array_value, decode, object_value
+from ..json_data import Json, array_value, decode, object_value
 from .base import ExternalTool
 from .release import ReleaseRepository
 
@@ -46,7 +47,79 @@ class GraphqlArgs:
     cursor: str | None = None
 
 
+@dataclass(frozen=True)
+class CacheEntry:
+    identifier: int
+    key: str
+    ref: str
+    size: int
+    created: datetime
+
+    @staticmethod
+    def parse(value: Json) -> "CacheEntry":
+        item = object_value(value)
+        identifier, size = item.get("id"), item.get("size_in_bytes")
+        key, ref, created = item.get("key"), item.get("ref"), item.get("created_at")
+        if (
+            type(identifier) is not int
+            or identifier < 1
+            or type(size) is not int
+            or size < 0
+            or not isinstance(key, str)
+            or not key
+            or not isinstance(ref, str)
+            or not ref
+            or not isinstance(created, str)
+        ):
+            raise ToolingError("GitHub returned a malformed cache entry")
+        try:
+            timestamp = datetime.fromisoformat(created)
+        except ValueError as error:
+            raise ToolingError("GitHub returned an invalid cache timestamp") from error
+        if timestamp.tzinfo is None:
+            raise ToolingError("GitHub cache timestamp requires a timezone")
+        return CacheEntry(identifier, key, ref, size, timestamp)
+
+
 class GitHub(ExternalTool):
+    def caches(
+        self, repository: ReleaseRepository, prefix: str, ref: str
+    ) -> tuple[CacheEntry, ...]:
+        response = self._invoke(
+            (
+                "api",
+                "--method",
+                "GET",
+                "--paginate",
+                "--slurp",
+                f"repos/{repository.name}/actions/caches",
+                "--raw-field",
+                "key=" + prefix,
+                "--raw-field",
+                "ref=" + ref,
+                "--field",
+                "per_page=100",
+            ),
+            env=self._environment(repository),
+            capture=True,
+            timeout=60,
+        )
+        return tuple(
+            CacheEntry.parse(value)
+            for page in array_value(decode(response.stdout))
+            for value in array_value(object_value(page).get("actions_caches"))
+        )
+
+    def delete_cache(self, repository: ReleaseRepository, identifier: int) -> None:
+        if identifier < 1:
+            raise ToolingError("GitHub cache deletion requires a positive cache ID")
+        self._invoke(
+            ("api", "--method", "DELETE", f"repos/{repository.name}/actions/caches/{identifier}"),
+            env=self._environment(repository),
+            capture=True,
+            timeout=60,
+        )
+
     def graphql(self, args: GraphqlArgs) -> str:
         """Return one provider page unchanged for the caller's strict decoder."""
         if (

@@ -17,6 +17,9 @@ env:
 jobs:
   sonar:
     name: SonarQube
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -44,8 +47,10 @@ jobs:
           fetch-depth: '0'
           ref: ${{ github.sha }}
       - uses: ./.github/actions/setup-revaer
+        id: build_cache
         timeout-minutes: 40
         with:
+          coverage-cache: "true"
           apt-profile: coverage
           sonar-scanner: 'true'
           cargo-tools: cargo-audit,cargo-deny,cargo-llvm-cov,cargo-nextest,cargo-udeps,sqlx-cli,trunk,mdbook,mdbook-mermaid,lychee
@@ -137,3 +142,10 @@ jobs:
             artifacts/sonar/api/*.json
             coverage/llvm-cov.txt
           if-no-files-found: error
+
+      - name: Publish coverage cache
+        uses: ./.github/actions/publish-revaer-cache
+        with:
+          kind: coverage
+          key: ${{ steps.build_cache.outputs.coverage-key }}
+          prefix: ${{ steps.build_cache.outputs.coverage-prefix }}

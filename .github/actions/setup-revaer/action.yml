@@ -19,6 +19,15 @@ inputs:
   cargo-cache:
     description: Restore and save Cargo tools, downloads and compiler artifacts.
     default: "true"
+  compiler-family:
+    description: Compatible compiler cache family (stable or nightly).
+    default: stable
+  compiler-cache:
+    description: Restore compiler results only for jobs that compile.
+    default: "true"
+  coverage-cache:
+    description: Restore instrumented dependency outputs for a Rust coverage producer.
+    default: "false"
   helm:
     description: Install the supported Helm CLI.
     default: "false"
@@ -31,6 +40,19 @@ inputs:
   sonar-scanner:
     description: Install the pinned scanner and retain its analyzer cache.
     default: "false"
+outputs:
+  compiler-key:
+    description: Compiler snapshot key for the designated publisher.
+    value: ${{ steps.compiler_cache.outputs.cache-primary-key }}
+  compiler-prefix:
+    description: Current architecture and compiler family retention scope.
+    value: ${{ runner.os }}-${{ runner.arch }}-revaer-compiler-${{ inputs.compiler-family }}-
+  coverage-key:
+    description: Instrumented dependency snapshot key for the coverage publisher.
+    value: ${{ steps.coverage_cache.outputs.cache-primary-key }}
+  coverage-prefix:
+    description: Current architecture instrumented dependency retention scope.
+    value: ${{ runner.os }}-${{ runner.arch }}-revaer-coverage-
 runs:
   using: composite
   steps:
@@ -143,19 +165,20 @@ runs:
         path: ~/.local/revaer/cargo-tools/lychee
         key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-lychee-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
 
-    - name: Cache compiler results
-      if: inputs.cargo-cache == 'true'
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+    - name: Restore compiler results
+      id: compiler_cache
+      if: inputs.cargo-cache == 'true' && inputs.compiler-cache == 'true'
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
         path: ~/.cache/sccache
-        key: ${{ runner.os }}-${{ runner.arch }}-sccache-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.github/build-inputs.env') }}-${{ github.job }}-${{ matrix.browser || 'none' }}-${{ github.run_id }}-${{ github.run_attempt }}
+        key: ${{ runner.os }}-${{ runner.arch }}-revaer-compiler-${{ inputs.compiler-family }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', '.cargo/**', 'rust-toolchain.toml', 'tools/versions.toml', '.github/build-inputs.env') }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          ${{ runner.os }}-${{ runner.arch }}-sccache-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.github/build-inputs.env') }}-${{ github.job }}-${{ matrix.browser || 'none' }}-
-          ${{ runner.os }}-${{ runner.arch }}-sccache-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.github/build-inputs.env') }}-
+          ${{ runner.os }}-${{ runner.arch }}-revaer-compiler-${{ inputs.compiler-family }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', '.cargo/**', 'rust-toolchain.toml', 'tools/versions.toml', '.github/build-inputs.env') }}-
 
-    - name: Cache instrumented dependencies
-      if: inputs.cargo-cache == 'true' && contains(inputs.cargo-tools, 'cargo-llvm-cov')
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+    - name: Restore instrumented dependencies
+      id: coverage_cache
+      if: inputs.cargo-cache == 'true' && inputs.coverage-cache == 'true'
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
         path: |
           target/llvm-cov-target/debug/deps/*.rlib
@@ -171,9 +194,9 @@ runs:
           !target/llvm-cov-target/debug/build/asset_sync-*
           !target/llvm-cov-target/debug/.fingerprint/revaer-*
           !target/llvm-cov-target/debug/.fingerprint/asset_sync-*
-        key: ${{ runner.os }}-${{ runner.arch }}-coverage-deps-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.github/build-inputs.env', 'tools/src/revaer_tooling/external/coverage.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
+        key: ${{ runner.os }}-${{ runner.arch }}-revaer-coverage-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', '.cargo/**', 'rust-toolchain.toml', 'tools/versions.toml', '.github/build-inputs.env', 'tools/src/revaer_tooling/external/coverage.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          ${{ runner.os }}-${{ runner.arch }}-coverage-deps-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.github/build-inputs.env', 'tools/src/revaer_tooling/external/coverage.py') }}-
+          ${{ runner.os }}-${{ runner.arch }}-revaer-coverage-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', '.cargo/**', 'rust-toolchain.toml', 'tools/versions.toml', '.github/build-inputs.env', 'tools/src/revaer_tooling/external/coverage.py') }}-
 
     - name: Install Helm
       if: inputs.helm == 'true'

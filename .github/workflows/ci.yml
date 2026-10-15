@@ -21,6 +21,9 @@ jobs:
   build-release:
     name: Build Release
     if: github.ref_type != 'tag' || !contains(github.ref_name, '-')
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-latest
     timeout-minutes: 90
     outputs:
@@ -28,6 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
+        id: build_cache
         timeout-minutes: 20
         with:
           apt-profile: base
@@ -45,6 +49,13 @@ jobs:
           name: revaer-release-${{ steps.source.outputs.short_sha }}
           path: dist
           if-no-files-found: error
+
+      - name: Publish compiler cache
+        uses: ./.github/actions/publish-revaer-cache
+        with:
+          kind: compiler
+          key: ${{ steps.build_cache.outputs.compiler-key }}
+          prefix: ${{ steps.build_cache.outputs.compiler-prefix }}
 
   release-dev:
     name: Publish Dev Release

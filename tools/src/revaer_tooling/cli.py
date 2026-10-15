@@ -94,6 +94,7 @@ from .tasks.build import (
     UiBuild,
     UiServe,
 )
+from .tasks.cache import WorkflowCachePrune
 from .tasks.charts import (
     ComplianceChartTest,
     HelmAnnotationTest,
@@ -216,6 +217,7 @@ COMMANDS: dict[str, Callable[[Context], TaskResult]] = {
     "test-fixture-scripts": TestFixtureScripts.run,
     "fixture-cache-key": FixtureCacheKey.run,
     "workflow-metadata": WorkflowMetadata.run,
+    "workflow-cache-prune": WorkflowCachePrune.run,
     "workflow-chart-versions": WorkflowChartVersions.run,
     "workflow-matrix": WorkflowMatrix.run,
     "workflow-report": WorkflowReport.run,
@@ -393,6 +395,10 @@ def parser() -> argparse.ArgumentParser:
         if name == "instruction-drift":
             command.add_argument("--base", help="Base Git revision; defaults to the branch diff")
             command.add_argument("--head", help="Head Git revision; defaults to HEAD")
+        if name == "workflow-cache-prune":
+            command.add_argument("--cache-prefix", required=True)
+            command.add_argument("--cache-key", required=True)
+            command.add_argument("--cache-ref", required=True)
         if name in ("stack-changed-lines", "db-init-assembly-changed-lines"):
             command.add_argument("--base", required=True, help="Base commit or ref")
             command.add_argument("--head", required=True, help="Head commit or ref")
@@ -606,6 +612,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         bundle=getattr(args, "bundle", None),
         output=getattr(args, "output", None),
         source_archive=getattr(args, "source_archive", False),
+        cache_prefix=getattr(args, "cache_prefix", ""),
+        cache_key=getattr(args, "cache_key", ""),
+        cache_ref=getattr(args, "cache_ref", ""),
     )
 
     def interrupted(number: int, frame: object) -> None:

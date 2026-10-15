@@ -62,6 +62,9 @@ class Options:
     output: Path | None = None
     database_name: str = ""
     source_archive: bool = False
+    cache_prefix: str = ""
+    cache_key: str = ""
+    cache_ref: str = ""
 
 
 @dataclass(frozen=True)

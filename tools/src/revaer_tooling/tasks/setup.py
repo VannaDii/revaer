@@ -45,7 +45,7 @@ class Setup(Task):
                     {
                         "RUSTC_WRAPPER": "sccache",
                         "SCCACHE_DIR": str(cache),
-                        "SCCACHE_CACHE_SIZE": "5G",
+                        "SCCACHE_CACHE_SIZE": "512M",
                     }
                 )
                 write_values(context.fs, context.settings.workflow.environment, install_environment)

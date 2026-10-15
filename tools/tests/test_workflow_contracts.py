@@ -90,6 +90,8 @@ def test_distributed_workflow_preserves_required_checks_and_rejects_missing_inpu
     root = Path(__file__).parents[2]
     path = ".github/workflows/pr.yml"
     fixture.documents[path] = yaml_document((root / path).read_text(), path)
+    setup = ".github/actions/setup-revaer/action.yml"
+    fixture.documents[setup] = yaml_document((root / setup).read_text(), setup)
     assert not scanner_workflow_findings(fixture.documents)
     assert not required_check_findings(fixture.documents, fixture.contexts, False)
     assert not image_workflow_findings(fixture.documents, fixture.matrix)
@@ -471,3 +473,22 @@ def test_single_init_workflow_requires_fixture_gate_and_rejects_migration(fixtur
     findings = required_check_findings(fixture.documents, fixture.contexts, True, single_init=True)
     assert any("initialized application fixtures" in item for item in findings)
     assert any("historical migrations" in item for item in findings)
+
+
+@pytest.mark.parametrize("field", ("path", "key"))
+def test_shared_udeps_cache_cannot_drop_native_receipts_or_pins(
+    fixture: Fixture, field: str
+) -> None:
+    root = Path(__file__).parents[2]
+    for path in (".github/workflows/pr.yml", ".github/actions/setup-revaer/action.yml"):
+        fixture.documents[path] = yaml_document((root / path).read_text(), path)
+    assert not required_check_findings(fixture.documents, fixture.contexts, False)
+    action = fixture.documents[".github/actions/setup-revaer/action.yml"]
+    cache = next(
+        stage for stage in steps(mapping(action["runs"])) if stage.get("id") == "cargo_udeps_cache"
+    )
+    mapping(cache["with"])[field] = "unreviewed"
+    assert any(
+        "shared cache" in error
+        for error in required_check_findings(fixture.documents, fixture.contexts, False)
+    )

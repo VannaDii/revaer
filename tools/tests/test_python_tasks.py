@@ -431,6 +431,7 @@ def test_ci_cargo_install_receives_cache_settings_and_private_receipts(
     prefix = context.host.home / ".local/revaer/cargo-tools/sqlx-cli"
     assert installed.argv[-2:] == ("--root", str(prefix))
     assert installed.env["RUSTC_WRAPPER"] == "sccache"
+    assert installed.env["SCCACHE_CACHE_SIZE"] == "512M"
     assert installed.env["SCCACHE_DIR"] == str(context.host.home / ".cache/sccache")
     assert str(prefix / "bin") in output.read_text()
 

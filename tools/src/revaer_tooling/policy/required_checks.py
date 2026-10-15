@@ -9,7 +9,7 @@ from collections.abc import Mapping
 
 from .contracts import Contract, runs, workflow
 from .formats import Document
-from .workflows import mapping, needs, steps
+from .workflows import SETUP_PATH, mapping, needs, steps
 
 DOWNLOAD_API_COVERAGE = "Download API E2E coverage"
 VERIFY_UI_COVERAGE = "Verify all UI E2E shard coverage inputs"
@@ -102,7 +102,7 @@ def required_check_findings(
         policy.require(name in emitted, f"required PR context is not emitted: {name}")
     _supply_chain(policy)
     _media_conversion(policy)
-    _udeps(policy)
+    _udeps(policy, documents)
     _ui_coverage(policy)
     if single_init:
         feature = policy.job("feature-matrix")
@@ -194,7 +194,7 @@ def _media_conversion(policy: Contract) -> None:
     )
 
 
-def _udeps(policy: Contract) -> None:
+def _udeps(policy: Contract, documents: Mapping[str, Document]) -> None:
     job = policy.job("udeps")
     policy.require(
         job.get("env")
@@ -204,18 +204,21 @@ def _udeps(policy: Contract) -> None:
         },
         "cargo-udeps version and nightly toolchain must remain exact",
     )
-    cache = policy.step(job, "Restore exact cargo-udeps binary")
-    policy.require(
-        cache.get("with")
-        == {
-            "path": "~/.local/revaer/cargo-tools/cargo-udeps",
-            "key": (
-                "${{ runner.os }}-cargo-udeps-${{ env.REVAER_UDEPS_VERSION }}-"
-                "${{ env.REVAER_UDEPS_TOOLCHAIN }}"
-            ),
-        },
-        "cargo-udeps cache must include both exact version pins",
-    )
+    if "rust-coverage" in mapping(policy.document.get("jobs")):
+        _shared_udeps_cache(policy, job, documents)
+    else:
+        cache = policy.step(job, "Restore exact cargo-udeps binary")
+        policy.require(
+            cache.get("with")
+            == {
+                "path": "~/.local/revaer/cargo-tools/cargo-udeps",
+                "key": (
+                    "${{ runner.os }}-cargo-udeps-${{ env.REVAER_UDEPS_VERSION }}-"
+                    "${{ env.REVAER_UDEPS_TOOLCHAIN }}"
+                ),
+            },
+            "cargo-udeps cache must include both exact version pins",
+        )
     evidence = policy.step(job, "Upload cargo-udeps toolchain evidence")
     policy.require(
         evidence.get("if") == "always()"
@@ -226,6 +229,34 @@ def _udeps(policy: Contract) -> None:
             "if-no-files-found": "error",
         },
         "cargo-udeps evidence must be retained fail closed",
+    )
+
+
+def _shared_udeps_cache(policy: Contract, job: Document, documents: Mapping[str, Document]) -> None:
+    setup = [stage for stage in steps(job) if stage.get("uses") == "./.github/actions/setup-revaer"]
+    policy.require(
+        len(setup) == 1
+        and mapping(setup[0].get("with")).get("cargo-tools") == "cargo-udeps"
+        and mapping(setup[0].get("with")).get("compiler-family") == "nightly",
+        "cargo-udeps must use its pinned shared installer and nightly compiler cache",
+    )
+    restored = [
+        stage
+        for stage in steps(mapping(documents.get(SETUP_PATH, {}).get("runs")))
+        if stage.get("id") == "cargo_udeps_cache"
+    ]
+    policy.require(
+        len(restored) == 1
+        and str(restored[0].get("uses", "")).startswith("actions/cache/restore@")
+        and mapping(restored[0].get("with"))
+        == {
+            "path": "~/.local/revaer/cargo-tools/cargo-udeps",
+            "key": (
+                "${{ runner.os }}-${{ runner.arch }}-cargo-tool-cargo-udeps-"
+                "${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}"
+            ),
+        },
+        "cargo-udeps shared cache must include both exact version pins and native receipts",
     )
 
 

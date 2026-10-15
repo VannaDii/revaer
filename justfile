@@ -89,6 +89,9 @@ fixture-cache-key *args:
 workflow-metadata *args:
     uv run --locked -- rv workflow-metadata {{args}}
 
+workflow-cache-prune *args:
+    uv run --locked -- rv workflow-cache-prune {{args}}
+
 workflow-chart-versions *args:
     uv run --locked -- rv workflow-chart-versions {{args}}
 
