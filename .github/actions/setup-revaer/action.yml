@@ -147,7 +147,20 @@ runs:
       if: inputs.cargo-cache == 'true' && contains(inputs.cargo-tools, 'cargo-llvm-cov')
       uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
-        path: target/llvm-cov-target
+        path: |
+          target/llvm-cov-target/debug/deps/*.rlib
+          target/llvm-cov-target/debug/deps/*.rmeta
+          target/llvm-cov-target/debug/deps/*.d
+          target/llvm-cov-target/debug/deps/*.so
+          target/llvm-cov-target/debug/deps/*.dylib
+          target/llvm-cov-target/debug/build
+          target/llvm-cov-target/debug/.fingerprint
+          !target/llvm-cov-target/debug/deps/*revaer_*
+          !target/llvm-cov-target/debug/deps/*asset_sync*
+          !target/llvm-cov-target/debug/build/revaer-*
+          !target/llvm-cov-target/debug/build/asset_sync-*
+          !target/llvm-cov-target/debug/.fingerprint/revaer-*
+          !target/llvm-cov-target/debug/.fingerprint/asset_sync-*
         key: ${{ runner.os }}-${{ runner.arch }}-coverage-deps-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.github/build-inputs.env', 'tools/src/revaer_tooling/external/coverage.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
           ${{ runner.os }}-${{ runner.arch }}-coverage-deps-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.github/build-inputs.env', 'tools/src/revaer_tooling/external/coverage.py') }}-
