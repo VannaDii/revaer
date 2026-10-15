@@ -511,7 +511,9 @@ jobs:
             tests/test-results/api-coverage-*.json
             tests/test-results/python-e2e-summary.json
             tests/test-results/selection-*.json
+            coverage/e2e/api-none-missing-catalog/.coverage
             coverage/e2e/api-none/.coverage
+            coverage/e2e/api-api-key-missing-catalog/.coverage
             coverage/e2e/api-api-key/.coverage
           include-hidden-files: true
           if-no-files-found: error

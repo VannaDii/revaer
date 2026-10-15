@@ -32,6 +32,14 @@ def test_media_api_producer_runs_every_phase_required_by_aggregation() -> None:
     assert selected.phases(media=True) == tuple(
         phase for phase in required.phases(media=True) if phase.startswith("api-")
     )
+    upload = next(
+        step
+        for step in steps(mapping(jobs["api-e2e"]))
+        if step.get("name") == "Upload API E2E coverage"
+    )
+    paths = str(mapping(upload["with"])["path"]).splitlines()
+    for phase in selected.phases(media=True):
+        assert f"coverage/e2e/{phase}/.coverage" in paths
 
 
 @pytest.mark.parametrize("job_name", ("api-e2e", "ui-e2e"))

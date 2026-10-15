@@ -140,7 +140,8 @@ applyTo:
   producers include both missing-catalog phases alongside anonymous/authenticated
   phases; merging must verify their complete selections and route coverage.
   Explicit API project selections must include all four phases even when
-  dependency expansion is disabled.
+  dependency expansion is disabled. Upload each phase's raw Python coverage
+  database for the distributed scanner merge.
   Assign records to their complete declared phase names, so missing-catalog
   prefixes cannot satisfy or invalidate a different phase's evidence.
 - PostgreSQL readiness treats a timed-out probe as not ready within the existing

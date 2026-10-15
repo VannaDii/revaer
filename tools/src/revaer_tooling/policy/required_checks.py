@@ -321,7 +321,9 @@ def _distributed_ui_coverage(policy: Contract) -> None:
             (
                 "tests/test-results/python-e2e-summary.json",
                 "tests/test-results/selection-*.json",
+                "coverage/e2e/api-none-missing-catalog/.coverage",
                 "coverage/e2e/api-none/.coverage",
+                "coverage/e2e/api-api-key-missing-catalog/.coverage",
                 "coverage/e2e/api-api-key/.coverage",
             ),
         ),
