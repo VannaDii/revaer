@@ -3,6 +3,8 @@
 import json
 import subprocess
 import tomllib
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 
@@ -11,7 +13,13 @@ from revaer_tooling.cli import make_context
 from revaer_tooling.context import Context, Options
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.external.rust import Cargo
-from revaer_tooling.tasks.testing import LintRuntimeShutdown, TestRuntimeShutdown
+from revaer_tooling.tasks import e2e
+from revaer_tooling.tasks.testing import (
+    LintRuntimeShutdown,
+    TestMediaRecovery,
+    TestMediaServiceRecovery,
+    TestRuntimeShutdown,
+)
 from revaer_tooling.tasks.testing import Test as RustTest
 from revaer_tooling.tasks.testing import TestFeaturesMinimal as MinimalFeatures
 from revaer_tooling.tasks.testing import TestNative as NativeTest
@@ -70,6 +78,52 @@ def observations(context: Context) -> dict[str, str]:
     return {path.name: path.read_text() for path in (context.root / "observations").iterdir()}
 
 
+def test_native_service_recipe_requires_linux_and_one_real_selection(
+    test_workspace: Context,
+) -> None:
+    unsupported: Context = Context(
+        root=test_workspace.root,
+        settings=test_workspace.settings,
+        options=test_workspace.options,
+        tools=test_workspace.tools,
+        fs=test_workspace.fs,
+        emit=test_workspace.emit,
+        host=replace(test_workspace.host, system="darwin"),
+        invoked_at=test_workspace.invoked_at,
+        command_names=test_workspace.command_names,
+    )
+    with pytest.raises(ToolingError, match="requires Linux"):
+        TestMediaServiceRecovery.run(unsupported)
+    selected: Context = Context(
+        root=test_workspace.root,
+        settings=test_workspace.settings,
+        options=test_workspace.options,
+        tools=test_workspace.tools,
+        fs=test_workspace.fs,
+        emit=test_workspace.emit,
+        host=replace(test_workspace.host, system="linux"),
+        invoked_at=test_workspace.invoked_at,
+        command_names=test_workspace.command_names,
+    )
+    with pytest.raises(ToolingError, match="did not execute one passing test"):
+        TestMediaServiceRecovery.run(selected)
+    source = test_workspace.root / "revaer-app/src/lib.rs"
+    source.write_text(r"""
+#[cfg(test)] mod bootstrap { mod service_recovery_tests {
+    #[test] #[ignore = "explicit selection"]
+    fn native_service_shutdown_resumes_active_ffmpeg() -> Result<(), Box<dyn std::error::Error>> {
+        assert!(cfg!(feature = "extended"));
+        assert_eq!(std::env::var("REVAER_TEST_DATABASE_URL")?, "postgres://tests.invalid/admin");
+        Ok(())
+    }
+} }
+""")
+    TestMediaServiceRecovery.run(selected)
+    source.write_text(source.read_text().replace("Ok(())", 'Err("fixture failure".into())'))
+    with pytest.raises(ToolingError):
+        TestMediaServiceRecovery.run(selected)
+
+
 def test_variants_execute_the_required_packages_and_feature_sets(test_workspace: Context) -> None:
     RustTest.run(test_workspace)
     assert observations(test_workspace) == dict.fromkeys(
@@ -84,6 +138,41 @@ def test_variants_execute_the_required_packages_and_feature_sets(test_workspace:
     assert observations(test_workspace) == dict.fromkeys(
         ("revaer-api", "revaer-app"), "extended=false;native="
     )
+
+
+@pytest.mark.parametrize("fail", (False, True))
+def test_native_fixture_lives_until_rust_tests_finish(
+    test_workspace: Context, monkeypatch: pytest.MonkeyPatch, fail: bool
+) -> None:
+    mounted = test_workspace.root / "mounted"
+    mounted.mkdir()
+    catalog = mounted / "catalog.json"
+    catalog.touch()
+    source = test_workspace.root / "revaer-app/src/lib.rs"
+    source.write_text(
+        source.read_text().replace(
+            'assert_eq!(std::env::var("DATABASE_URL")?, "postgres://tests.invalid/application");',
+            'assert_eq!(std::env::var("DATABASE_URL")?, "postgres://tests.invalid/application");'
+            '\nassert!(std::path::Path::new(&std::env::var("REVAER_NATIVE_RECOVERY_ROOT")?).exists());'
+            f'\nassert!(!{str(fail).lower()}, "fixture test failure");',
+        )
+    )
+
+    @contextmanager
+    def fixture(context: Context, paths: e2e.RunPaths) -> Iterator[tuple[e2e.RunPaths, Path]]:
+        try:
+            yield replace(paths, filesystem=mounted), catalog
+        finally:
+            catalog.unlink()
+            mounted.rmdir()
+
+    monkeypatch.setattr(e2e, "media_fixture", fixture)
+    if fail:
+        with pytest.raises(ToolingError):
+            MinimalFeatures.run(test_workspace)
+    else:
+        MinimalFeatures.run(test_workspace)
+    assert not mounted.exists()
 
 
 def test_a_failed_rust_test_is_a_failed_task(test_workspace: Context) -> None:
@@ -170,3 +259,122 @@ def test_shutdown_clippy_checks_minimal_configuration(test_workspace: Context) -
     (crate / "src/lib.rs").write_text('#[cfg(not(feature="extended"))] fn unused_minimal_only() {}')
     with pytest.raises(ToolingError):
         LintRuntimeShutdown.run(test_workspace)
+
+
+@pytest.mark.parametrize("system", ["linux", "darwin"])
+def test_media_recovery_requires_actual_tests_and_propagates_failure(
+    test_workspace: Context,
+    system: str,
+) -> None:
+    context: Context = Context(
+        root=test_workspace.root,
+        settings=test_workspace.settings,
+        options=test_workspace.options,
+        tools=test_workspace.tools,
+        fs=test_workspace.fs,
+        emit=test_workspace.emit,
+        host=replace(test_workspace.host, system=system),
+        invoked_at=test_workspace.invoked_at,
+        command_names=test_workspace.command_names,
+    )
+    source = context.root / "revaer-app/src/lib.rs"
+    source.write_text(r"""
+#[cfg(test)] mod media_discovery_fingerprint { mod tests {
+    #[test] fn cancellable_source_read() -> Result<(), Box<dyn std::error::Error>> {
+        assert!(!cfg!(feature = "extended"));
+        std::fs::write(std::path::PathBuf::from(std::env::var("RV_FIXTURE_OUTPUT")?)
+            .join("fingerprint"), "executed")?;
+        Ok(())
+    }
+} }
+#[cfg(test)] mod media {
+    #[test] fn native_association_yield() -> Result<(), Box<dyn std::error::Error>> {
+        assert!(!cfg!(feature = "extended"));
+        std::fs::write(std::path::PathBuf::from(std::env::var("RV_FIXTURE_OUTPUT")?)
+            .join("admission"), "executed")?;
+        Ok(())
+    }
+}
+#[cfg(test)] mod media_job_runtime { mod tests {
+    #[test] #[ignore = "explicit production-runtime selection"]
+    fn production_media_job_runtime_executes_and_persists_verified_replacement()
+    -> Result<(), Box<dyn std::error::Error>> {
+        assert!(cfg!(feature = "extended"));
+        std::fs::write(std::path::PathBuf::from(std::env::var("RV_FIXTURE_OUTPUT")?)
+            .join("production"), "executed")?;
+        Ok(())
+    }
+    #[test] fn media_job_runtime_interrupted() -> Result<(), Box<dyn std::error::Error>> {
+        assert!(!cfg!(feature = "extended"));
+        std::fs::write(std::path::PathBuf::from(std::env::var("RV_FIXTURE_OUTPUT")?)
+            .join("recovery"), "executed")?;
+        Ok(())
+    }
+} }
+#[cfg(test)] mod bootstrap { mod root_catalog { mod native { mod tests {
+    #[test] fn retained_inventory() -> Result<(), Box<dyn std::error::Error>> {
+        assert!(!cfg!(feature = "extended"));
+        std::fs::write(std::path::PathBuf::from(std::env::var("RV_FIXTURE_OUTPUT")?)
+            .join("native-roots"), "executed")?;
+        Ok(())
+    }
+} } } }
+""")
+    runtime = context.root / "revaer-media-runtime"
+    (runtime / "src").mkdir(parents=True)
+    (runtime / "Cargo.toml").write_text(
+        '[package]\nname="revaer-media-runtime"\nversion="0.1.0"\nedition="2024"\n'
+    )
+    (runtime / "src/lib.rs").write_text(r"""
+#[cfg(test)] mod workspace { mod tests {
+    #[test] fn reopen_stopped_workspace() -> Result<(), Box<dyn std::error::Error>> {
+        std::fs::write(std::path::PathBuf::from(std::env::var("RV_FIXTURE_OUTPUT")?)
+            .join("workspace"), "executed")?;
+        Ok(())
+    }
+} }
+""")
+    manifest = context.root / "Cargo.toml"
+    data = context.root / "revaer-data"
+    (data / "src").mkdir(parents=True)
+    (data / "Cargo.toml").write_text(
+        '[package]\nname="revaer-data"\nversion="0.1.0"\nedition="2024"\n'
+    )
+    (data / "src/lib.rs").write_text(r"""
+#[cfg(test)] mod media {
+    #[test] fn stopped_attempt() -> Result<(), Box<dyn std::error::Error>> {
+        std::fs::write(std::path::PathBuf::from(std::env::var("RV_FIXTURE_OUTPUT")?)
+            .join("data"), "executed")?;
+        Ok(())
+    }
+}
+""")
+    manifest.write_text(
+        manifest.read_text().replace(
+            '"revaer-app"', '"revaer-app", "revaer-media-runtime", "revaer-data"'
+        )
+    )
+    subprocess.run(
+        ["cargo", "generate-lockfile", "--offline"], check=True, capture_output=True, timeout=30
+    )
+    TestMediaRecovery.run(context)
+    expected = {
+        "production": "executed",
+        "fingerprint": "executed",
+        "admission": "executed",
+        "recovery": "executed",
+        "workspace": "executed",
+        "data": "executed",
+    }
+    if context.host.system == "linux":
+        expected["native-roots"] = "executed"
+    assert observations(context) == expected
+    source.write_text("")
+    with pytest.raises(ToolingError, match="ran no passing tests"):
+        TestMediaRecovery.run(context)
+    source.write_text(
+        "#[cfg(test)] mod media_job_runtime { mod tests { #[test] "
+        'fn media_job_runtime_failure() -> Result<(), String> { Err("failure".into()) } } }'
+    )
+    with pytest.raises(ToolingError):
+        TestMediaRecovery.run(context)

@@ -15,11 +15,32 @@ applyTo:
 
 # Database Rules
 
+- The operator-approved runtime database is PostgreSQL 18.6, pinned by digest
+  in `.github/build-inputs.env`. Sealing and read-only baseline verification
+  require that exact server release; retain restricted-owner/runtime checks.
+
+- Configuration bootstrap verifies the packaged baseline without applying
+  migrations. Runtime stores construct from the verified caller-owned pool;
+  their construction performs no database operations.
+
+- Packaged baseline verification is read-only and checks the exact initializer
+  digest and restricted runtime identity. It does not adopt or repair databases.
+  Root catalog and immutable profile adapters retain stored-procedure access.
+- Capability, profile and import adapters use the complete sealed initializer
+  in their database regressions, including restricted runtime verification.
+- Job admission, discovery associations, rescan fences and step checkpoints
+  retain their normalized stored-procedure contracts and recovery regressions.
 - Transaction-owning request operations run to an awaited commit or rollback even
   when their caller stops waiting. Do not abort their owning tasks or return
   through an error before cleanup. Preserve both operation and cleanup errors.
   Reuse connections after successful rollback; close only connections whose
   cleanup cannot establish a clean boundary.
+- Media transaction owners retain their reserved connection through awaited
+  completion. Request and bootstrap workers retain input/root ownership when a
+  caller stops waiting; root reconciliation borrows that reserved connection.
+  Fixture-only administrative controls must not grant the runtime login extra
+  privileges. The single initializer carries canonical routine implementations
+  and explicit success/claim outcomes without adding to the frozen migrations.
 - `try_op` executes the supplied fallible call; do not use it as a `.map_err`
   mapper. Scheduling skips are typed outcomes, not database exceptions.
 - The data and test-support crates use the already-resolved SQLx core transaction manager so a

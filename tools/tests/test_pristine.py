@@ -121,7 +121,7 @@ def test_native_identity_statistics_and_temporary_relations_normalize(
 ) -> None:
     snapshot, other = catalogs.fresh(), catalogs.fresh()
     baseline = snapshot.read()
-    assert baseline == other.read() == (ROOT / "config/postgres-pristine-16.14.tsv").read_bytes()
+    assert baseline == other.read() == (ROOT / "config/postgres-pristine-18.6.tsv").read_bytes()
     assert baseline.decode("utf-8").encode("utf-8") == baseline
     assert baseline.endswith(b"\n") and b"\r" not in baseline
     assert baseline.splitlines() == sorted(baseline.splitlines())
@@ -269,12 +269,12 @@ def test_commands_validate_exact_bytes_and_invalidate_stale_success_on_failure(
     context.fs.write_bytes(
         tmp_path / ".github/build-inputs.env", (ROOT / ".github/build-inputs.env").read_bytes()
     )
-    expected = tmp_path / "config/postgres-pristine-16.14.tsv"
-    baseline = (ROOT / "config/postgres-pristine-16.14.tsv").read_bytes()
+    expected = tmp_path / "config/postgres-pristine-18.6.tsv"
+    baseline = (ROOT / "config/postgres-pristine-18.6.tsv").read_bytes()
     context.fs.write_bytes(expected, baseline)
     assert COMMANDS["db-pristine-catalog-generate"] is PristineGenerate.run
     assert COMMANDS["db-pristine-catalog-validate"] is PristineValidate.run
-    assert "validated: 8456 lines" in COMMANDS["db-pristine-catalog-validate"](context).message
+    assert "validated: 8512 lines" in COMMANDS["db-pristine-catalog-validate"](context).message
     output = Workspace.load(tmp_path, context.fs).output
     generated, evidence = output / expected.name, output / "provenance.json"
     assert generated.read_bytes() == expected.read_bytes() == baseline

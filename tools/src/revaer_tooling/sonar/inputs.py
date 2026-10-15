@@ -5,13 +5,14 @@ requirements. Python replaces the retired Ruby/Node tooling coverage producer;
 every authored Python file must have an unambiguous checkout-relative record.
 """
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from xml.etree import ElementTree
 
 from ..errors import ToolingError
-from ..policy.sonar import production_source
+from ..policy.sonar import production_source, vendor_source
 
 NATIVE_SOURCE = "crates/revaer-torrent-libt/src/ffi/session.cpp"
 
@@ -20,6 +21,54 @@ NATIVE_SOURCE = "crates/revaer-torrent-libt/src/ffi/session.cpp"
 class LineCounts:
     total: int
     covered: int
+
+
+def rust_source(path: Path, root: Path, inventory: set[str]) -> str:
+    absolute = Path(os.path.normpath(path if path.is_absolute() else root / path))
+    source = absolute.relative_to(root).as_posix() if absolute.is_relative_to(root) else ""
+    if source.endswith(".rs") and source not in inventory and not source.startswith("target/"):
+        raise ToolingError("Rust LCOV contains an untracked checkout source: " + source)
+    return source
+
+
+def rust_branch(line: str) -> str:
+    if not line.startswith("BRDA:"):
+        return line
+    fields = line[5:].split(",")
+    if (
+        len(fields) != 4
+        or not all(value.isdecimal() for value in fields[:3])
+        or not (fields[3].isdecimal() or fields[3] == "-")
+    ):
+        raise ToolingError("Rust LCOV contains an invalid branch record")
+    # Preserve unexecuted branches and their uncovered denominator.
+    if fields[3] == "-":
+        return "BRDA:" + ",".join((*fields[:3], "0"))
+    return line
+
+
+def rust_sonar_lcov(document: str, root: Path, tracked: tuple[str, ...]) -> str:
+    """Adapt complete LLVM records to Sonar without changing authored measurements."""
+    lcov_counts(document)
+    inventory = {name for name in tracked if name.endswith(".rs")}
+    output: list[str] = []
+    record: list[str] = []
+    source = ""
+    for line in document.splitlines():
+        if line.startswith("SF:"):
+            source = rust_source(Path(line[3:]), root, inventory)
+            record = ["SF:" + source]
+        elif line == "end_of_record":
+            if source in inventory and not vendor_source(source):
+                output.extend((*record, line))
+            record = []
+            source = ""
+        elif source in inventory:
+            record.append(rust_branch(line))
+    result = "\n".join(output) + "\n"
+    if not lcov_counts(result, ".rs").covered:
+        raise ToolingError("Sonar Rust LCOV must retain executed authored Rust records")
+    return result
 
 
 def lcov_counts(document: str, suffix: str = "", *, production: bool = False) -> LineCounts:
@@ -61,6 +110,24 @@ def lcov_counts(document: str, suffix: str = "", *, production: bool = False) ->
         if path.endswith(suffix) and (not production or production_source(path))
     ]
     return LineCounts(len(hits), sum(count > 0 for count in hits))
+
+
+def javascript_sonar_lcov(document: str) -> str:
+    """Keep complete first-party measurements in the scanner's vendor-free input."""
+    lcov_counts(document)
+    output: list[str] = []
+    vendor = False
+    for line in document.splitlines():
+        if line.startswith("SF:"):
+            vendor = vendor_source(line[3:])
+        if not vendor:
+            output.append(line)
+        if line == "end_of_record":
+            vendor = False
+    result = "\n".join(output) + "\n"
+    if not lcov_counts(result).total:
+        raise ToolingError("Sonar JavaScript LCOV must retain first-party source lines")
+    return result
 
 
 def verify_lcov(rust: str, browser: str) -> None:

@@ -8,7 +8,7 @@
 > 4. **The `rv` CLI is canonical**. Local and CI build/test/lint/release gates run through the [Python task registry](./tools/src/revaer_tooling/cli.py).
 > 5. **Stored procedures or bust**. Runtime database access goes through stored procedures; raw SQL belongs only in migrations and tightly scoped operational bootstrap scripts.
 > 6. **Deterministic, panic-free production code**. No `panic!`, `unwrap()`, `expect()`, `unreachable!()`, or silent error suppression in authored production or bootstrap code.
-> 7. **No source-level lint suppressions**. `#[allow(...)]` and `#[expect(...)]` are not permitted in authored code.
+> 7. **No source-level lint suppressions**. `#[allow(...)]` and `#[expect(...)]` are not permitted in authored code, except for the operator-approved generated CXX documentation exception defined in the FFI instructions.
 > 8. **`rv ci` and `rv ui-e2e` before every hand-off**. A task is not complete until both pass cleanly.
 > 9. **Dependencies are injected**. Runtime logic receives collaborators from callers; only bootstrap/wiring code constructs concrete implementations or reads the environment.
 >
@@ -20,6 +20,7 @@
 
 - [`AGENTS.md`](./AGENTS.md) is the non-negotiable root contract.
 - Scoped instruction files under [`.github/instructions/`](./.github/instructions/) may only tighten or specialize the root contract for their matching paths. They may not relax root policy.
+- Product documentation, generated documentation indexes, dated plans, ADR implementation notes, examples, and test fixtures are reference material, not independent authorization or agent operating rules. Preserve accepted product decisions; check the source's status, date, and current implementation before treating historical completion claims or next steps as current work.
 - If two instruction files appear to conflict, precedence is:
   1. [`AGENTS.md`](./AGENTS.md)
   2. the most specific scoped instruction file
@@ -64,11 +65,19 @@
 - `Option<T>` is allowed only for legitimate absence semantics or partial-function domains where `None` is the complete, expected result.
 - `Result<T, E>` is required for recoverable failure. Do not hide failure in `Option`, booleans, sentinel values, or logs.
 - `std::panic::catch_unwind` is forbidden everywhere except documented FFI boundary shims covered by [`.github/instructions/ffi.instructions.md`](./.github/instructions/ffi.instructions.md).
-- If a rule cannot be satisfied cleanly, redesign, split, delete, or isolate the code behind the documented FFI boundary. Do not silence the rule.
+- If a rule cannot be satisfied cleanly, redesign, split, delete, or isolate the code behind the documented FFI boundary. Do not silence the rule. The sole approved generated-code exception is `clippy::missing_errors_doc` on the CXX bridge module, as scoped in [`.github/instructions/ffi.instructions.md`](./.github/instructions/ffi.instructions.md); authored Rust remains subject to the lint.
 
 ---
 
 ## 3) Quality Gates
+
+- Operator-approved Rust Sonar input: retain every tracked Rust source record from
+  the complete LLVM LCOV report, converting only unexecuted branch markers to
+  zero hits. Third-party and untracked generated coverage remains in the complete
+  original LCOV and native reports; all authored analysis and quality thresholds
+  remain intact. The exact scanner path is `coverage/rust-sonar-lcov.info`.
+
+- Operator-approved Sonar policy: coverage requirements concern production code only. Keep the exact coverage-only exclusions enforced by `tools/src/revaer_tooling/policy/sonar.py`; all authored content remains in analysis and the zero-new-issues gate. No unresolved historical issue may remain in first-party active production code, including the runtime SQL initializer. Only `TO_REVIEW` hotspots block; reviewed hotspots do not. Real browser records may have zero hits when no authored production JavaScript is executed. This specific coverage policy supersedes the blanket empty-coverage-filter language below; all other analysis restrictions remain in force.
 
 - All local and CI operations run through `rv` tasks. Workflows may install tools or stage artifacts, but build/test/lint/release gates must call `uv run --locked -- rv`.
 - Bootstrap once with `./setup.sh`; use the uv-managed `rv` CLI thereafter. The approved migration retires Just, Node tooling and shell automation except this root bootstrap.
@@ -108,10 +117,16 @@ unused Nexus templates remain in analysis and complete coverage measurements;
 only production sources carry coverage requirements. A JavaScript inventory
 containing no production sources requires no fabricated execution counts.
 
-The operator-approved exception to empty Sonar source exclusions is exactly
-`scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml`, the intentionally
-malformed YAML functional fixture. Keep the fixture and its functional tests;
-no other analysis exclusions are authorized by this exception.
+The operator-approved source exclusions are the intentionally malformed YAML
+fixture `scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml` and vendor
+packages/assets: `vendor/**`, `crates/revaer-ui/ui_vendor/**`, and
+`crates/revaer-ui/static/nexus/**`, plus the copied `docs/mermaid.min.js` library.
+Vendor code is not scanned or patched.
+First-party wrappers, the runtime SQL initializer, FFI code, tests and tools remain
+in analysis. Keep dependency security audits and complete native coverage gates.
+The exact exclusions are enforced by `tools/src/revaer_tooling/policy/sonar.py`;
+ADR 592 records the operator instruction. This permanent policy supersedes
+blanket vendor-analysis requirements above; it authorizes no first-party exclusions.
 
 - Keep one canonical statement of each global rule. Root policy belongs here; scoped files should reference it and add path-specific details instead of repeating or rewording it inconsistently.
 - Any change to [the `rv` task registry](./tools/src/revaer_tooling/cli.py), workflow files, release scripts, lint posture, or [`sonar-project.properties`](./sonar-project.properties) must update the relevant instruction file in the same change.
@@ -120,26 +135,15 @@ no other analysis exclusions are authorized by this exception.
 
 ---
 
-## 5) Task Record And ADR Rules
+## 5) No substantiating artifacts
 
-- Every task persists a task record alongside the change as an ADR under [`docs/adr/`](./docs/adr/).
-- Start from [`docs/adr/template.md`](./docs/adr/template.md), number sequentially, and keep the file name concise and searchable.
-- Architectural decisions use `Proposed` until the operator gives explicit, decision-specific approval. Only then may the ADR use `Accepted`, and its operator-approval field must record the approval evidence and date.
-- Completed nonarchitectural task records use `Recorded` with `Operator approval: Not applicable: nonarchitectural task record`. `Recorded` documents completed corrective work; it does not imply an architectural decision or operator approval.
-- `Superseded` identifies a record replaced by a later ADR and must name the replacement. Do not use status changes to imply approval that was not given.
-- Every task record must include:
-  - Motivation
-  - Design notes
-  - Test coverage summary
-  - Observability updates
-  - Risk and rollback plan
-  - Dependency rationale
-  - Stale-policy check
-- The stale-policy check must record:
-  - which instruction files were reviewed
-  - whether drift was found
-  - which contradictions or stale references were removed
-- Update [`docs/adr/index.md`](./docs/adr/index.md) and [`docs/SUMMARY.md`](./docs/SUMMARY.md) in the same change that adds the ADR.
+- Do not create proof reports, evidence bundles, qualification reports, verification documents, audit packages, saved test transcripts, screenshots used as proof, redundant checklists, verification manifests, per-file hash inventories, copied logs, coverage exports, checkpoint files, or duplicate completion records unless Vanna explicitly requests that specific artifact. A request to implement, fix, test, qualify, or complete work is not a request for an evidence package.
+- Do not create independent auditors, duplicate verification frameworks, or bespoke evidence generators. Do not add acceptance gates or expand task scope to justify substantiating artifacts.
+- Use focused functional regression tests and existing checks. Report results, limitations and relevant commit hashes briefly in chat. Extra paperwork is not an acceptance gate.
+- Keep normal command output temporary; do not copy it into the workspace or commit it. Do not copy, package, or retain it as a separate evidence collection. Remove disposable task artifacts when finished without deleting caller-owned work or needed persistent state.
+- Do not create an ADR or task record for routine implementation, fixes, testing, cleanup, or instruction edits. Use an ADR only for an architectural decision requiring operator approval or when Vanna explicitly requests one. Keep it concise and use the existing ADR template and indexes only when an ADR is actually warranted.
+- Update existing documentation when behavior or an operating contract changes. Do not add documentation, ledger entries, index entries, or status files merely to substantiate completed work.
+- Only an explicit user request for a specific substantiating artifact authorizes an exception. A task, skill, old document, previous habit, or agent interpretation of a requirement does not grant permission. This section overrides blanket evidence-retention and per-task record requirements in scoped instructions and supporting documents. Product records used by the application as domain evidence, required contracts, and functional test fixtures must remain intact. Existing functional quality gates remain required.
 
 Local PR qualification supplies only explicit pull-request identity (key, base,
 head branch) to the scanner; quality criteria remain exclusively in

@@ -89,7 +89,7 @@ pub(crate) async fn handle_torrent_add(ctx: &AppContext, args: TorrentAddArgs) -
         request.magnet = Some(source.to_string());
     } else {
         let path = Path::new(source);
-        let bytes = std::fs::read(path).map_err(|err| {
+        let bytes = tokio::fs::read(path).await.map_err(|err| {
             CliError::failure(anyhow!(
                 "failed to read torrent file '{}': {err}",
                 path.display()
@@ -99,7 +99,7 @@ pub(crate) async fn handle_torrent_add(ctx: &AppContext, args: TorrentAddArgs) -
         if request.name.is_none() {
             request.name = path
                 .file_name()
-                .and_then(|name| name.to_str())
+                .and_then(std::ffi::OsStr::to_str)
                 .map(str::to_string);
         }
     }

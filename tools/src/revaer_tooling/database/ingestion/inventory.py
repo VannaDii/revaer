@@ -54,8 +54,8 @@ class VerifiedInventory:
 
 
 def routines(snapshot: JsonObject) -> dict[str, JsonObject]:
-    if snapshot.get("version") != "160014":
-        raise ToolingError("Ingestion proof requires PostgreSQL 16.14")
+    if snapshot.get("version") != "180006":
+        raise ToolingError("Ingestion proof requires PostgreSQL 18.6")
     rows = [object_value(row) for row in array_value(snapshot.get("routines"))]
     names = [string_value(row.get("name")) for row in rows]
     if sorted(names) != sorted(HELPERS):

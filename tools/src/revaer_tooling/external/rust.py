@@ -242,7 +242,9 @@ class Cargo(ExternalTool):
         ).stdout
         return select_executable(output, self.root, kind)
 
-    def execute(self, args: CargoArgs, env: Mapping[str, str] | None = None) -> Completed:
+    def execute(
+        self, args: CargoArgs, env: Mapping[str, str] | None = None, *, capture: bool = False
+    ) -> Completed:
         selectors = (args.test_binary, args.test_filter)
         if (
             any(value is not None for value in selectors) or args.include_ignored
@@ -280,7 +282,7 @@ class Cargo(ExternalTool):
             harness.append(f"--test-threads={args.test_threads}")
         if harness:
             command.extend(("--", *harness))
-        return self._invoke(tuple(command), env=env)
+        return self._invoke(tuple(command), env=env, capture=capture)
 
     def fmt(self, fix: bool = False) -> Completed:
         return self._invoke(("fmt", "--all") + (() if fix else ("--check",)))
@@ -336,15 +338,23 @@ class Cargo(ExternalTool):
             )
         )
 
+    def lock_workspace(self) -> Completed:
+        """Reconcile workspace metadata offline without upgrading registry dependencies."""
+        return self._invoke(("update", "--workspace", "--offline"))
+
     def run_binary(
-        self, package: str, binary: str | None = None, release: bool = False
+        self,
+        package: str,
+        binary: str | None = None,
+        release: bool = False,
+        env: Mapping[str, str] | None = None,
     ) -> Completed:
         args = ["run", "--locked", "--package", package]
         if binary:
             args.extend(("--bin", binary))
         if release:
             args.append("--release")
-        return self._invoke(tuple(args))
+        return self._invoke(tuple(args), env=env)
 
     def install(self, args: CargoInstallArgs) -> Completed:
         # Cargo tracks package versions, features and installed binaries. Let it

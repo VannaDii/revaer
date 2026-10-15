@@ -5,6 +5,8 @@ import os
 import shutil
 import subprocess
 import tomllib
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 
@@ -12,6 +14,7 @@ import pytest
 from revaer_tooling.cli import make_context
 from revaer_tooling.context import Context, Options
 from revaer_tooling.errors import ToolingError
+from revaer_tooling.tasks import e2e
 from revaer_tooling.tasks.coverage import Coverage, CoverageReport, rust_lcov, rust_line_gate
 
 
@@ -248,3 +251,87 @@ def test_rust_sensor_merges_separately_compiled_source_measurements(tmp_path: Pa
     assert merged.count("SF:") == 1
     assert "DA:1,7\nDA:2,5\n" in merged
     assert "LF:2\nLH:2\n" in merged
+
+
+@pytest.mark.parametrize("managed", (False, True))
+def test_production_worker_coverage_preserves_workspace_native_profiles(
+    coverage_workspace: Context,
+    monkeypatch: pytest.MonkeyPatch,
+    managed: bool,
+) -> None:
+    root = coverage_workspace.root
+    mounted = root / "mounted"
+    mounted.mkdir()
+    context: Context = Context(
+        root=coverage_workspace.root,
+        settings=coverage_workspace.settings,
+        options=coverage_workspace.options,
+        tools=coverage_workspace.tools,
+        fs=coverage_workspace.fs,
+        emit=coverage_workspace.emit,
+        host=replace(coverage_workspace.host, system="linux"),
+        invoked_at=coverage_workspace.invoked_at,
+        command_names=coverage_workspace.command_names,
+    )
+    if managed:
+
+        @contextmanager
+        def fixture(selected: Context, paths: e2e.RunPaths) -> Iterator[tuple[e2e.RunPaths, Path]]:
+            yield replace(paths, filesystem=mounted), mounted / "catalog.json"
+
+        monkeypatch.setattr(e2e, "media_fixture", fixture)
+    else:
+        context = Context(
+            root=context.root,
+            settings=replace(
+                context.settings,
+                coverage=replace(context.settings.coverage, native_recovery_root=mounted),
+            ),
+            options=context.options,
+            tools=context.tools,
+            fs=context.fs,
+            emit=context.emit,
+            host=context.host,
+            invoked_at=context.invoked_at,
+            command_names=context.command_names,
+        )
+    app = root / "crates/revaer-app"
+    (app / "src").mkdir(parents=True)
+    (app / "Cargo.toml").write_text(
+        '[package]\nname="revaer-app"\nversion="0.1.0"\nedition="2024"\n[features]\nextra=[]\n'
+    )
+    (app / "src/lib.rs").write_text("""
+pub fn production_value() -> u32 { 4242 }
+pub fn recovery_value() -> u32 { 4243 }
+#[cfg(test)] mod media_job_runtime { mod tests {
+    #[test] #[ignore = "production selection"]
+    fn production_media_job_runtime_executes_and_persists_verified_replacement() {
+        assert!(cfg!(feature = "extra"));
+        assert_eq!(crate::production_value(), 4242);
+    }
+} }
+#[cfg(test)] mod bootstrap { mod service_recovery_tests {
+    #[test] #[ignore = "recovery selection"]
+    fn native_service_shutdown_resumes_active_ffmpeg() -> Result<(), Box<dyn std::error::Error>> {
+        assert!(std::path::Path::new(&std::env::var("REVAER_NATIVE_RECOVERY_ROOT")?).is_dir());
+        assert_eq!(crate::recovery_value(), 4243);
+        Ok(())
+    }
+} }
+""")
+    subprocess.run(
+        ["cargo", "generate-lockfile", "--offline"],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    subprocess.run(["git", "add", "crates/revaer-app"], check=True, capture_output=True, timeout=30)
+    Coverage.run(context)
+    lcov = (root / "coverage/lcov.info").read_text()
+    original = (root / "coverage/workspace-lcov.info").read_text()
+    assert "src/fixture.cpp" in original
+    assert "src/fixture.cpp" not in lcov
+    assert "crates/pure/src/lib.rs" in lcov
+    assert "crates/revaer-app/src/lib.rs" in lcov
+    report = json.loads((root / "coverage/crates/revaer-app.json").read_text())
+    assert report["data"][0]["totals"]["lines"]["percent"] >= 90

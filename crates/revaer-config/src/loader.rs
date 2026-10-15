@@ -10,9 +10,7 @@ use argon2::password_hash::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, Utc, Weekday};
-use rand::Rng;
-use rand::distr::Alphanumeric;
-use rand_core::OsRng;
+use rand::distr::{Alphanumeric, SampleString};
 use revaer_data::config::{
     self as data_config, AppProfileRow, EngineProfileRow, FsArrayField, FsBooleanField,
     FsOptionalStringField, FsPolicyRow, FsStringField, LabelPolicyRow, NewSetupToken,
@@ -20,7 +18,7 @@ use revaer_data::config::{
 };
 use revaer_data::transaction::{commit_transaction, rollback_transaction};
 use sqlx::pool::PoolConnection;
-use sqlx::postgres::{PgListener, PgNotification, PgPoolOptions};
+use sqlx::postgres::{PgConnectOptions, PgListener, PgNotification, PgPoolOptions};
 use sqlx::{Executor, Postgres, Transaction};
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -74,6 +72,12 @@ impl DbSessionConfig {
 }
 
 const SYSTEM_ACTOR_PUBLIC_ID: Uuid = Uuid::nil();
+const SECRET_SALT_BYTES: usize = 16;
+const FACTORY_RESET_MAX_ATTEMPTS: u8 = 3;
+const FACTORY_RESET_RETRY_BASE_DELAY: Duration = Duration::from_millis(100);
+const POSTGRES_DEADLOCK_DETECTED: &str = "40P01";
+const POSTGRES_SERIALIZATION_FAILURE: &str = "40001";
+const POSTGRES_LOCK_NOT_AVAILABLE: &str = "55P03";
 
 #[async_trait]
 /// Abstraction over configuration backends used by the application service.
@@ -140,23 +144,23 @@ pub struct ConfigService {
 }
 
 impl ConfigService {
-    /// Establish a connection pool and ensure migrations are applied.
+    /// Establish a connection pool and verify its packaged database baseline.
     ///
     /// # Errors
     ///
     /// Returns an error if the `PostgreSQL` connection cannot be established or
-    /// migrations fail to run.
+    /// the runtime database does not match this artifact.
     #[instrument(name = "config_service.new", skip(database_url))]
     pub async fn new(database_url: impl Into<String>) -> ConfigResult<Self> {
         Self::new_with_session(database_url, None).await
     }
 
-    /// Establish a connection pool and ensure migrations are applied with session settings.
+    /// Verify the packaged baseline, then establish a pool with session settings.
     ///
     /// # Errors
     ///
     /// Returns an error if the `PostgreSQL` connection cannot be established or
-    /// migrations fail to run.
+    /// the runtime database does not match this artifact.
     #[instrument(
         name = "config_service.new_with_session",
         skip(database_url, session_config)
@@ -173,16 +177,29 @@ impl ConfigService {
             }
             None => None,
         };
-        let migrator_pool = PgPoolOptions::new()
+        let options = PgConnectOptions::from_str(&database_url).map_err(|_| {
+            tracing::error!(
+                reason = "invalid_configuration",
+                "database baseline configuration failed"
+            );
+            ConfigError::InvalidField {
+                section: "database".to_owned(),
+                field: "connection".to_owned(),
+                value: None,
+                reason: "invalid_configuration",
+            }
+        })?;
+        let verification_pool = PgPoolOptions::new()
             .max_connections(1)
             .acquire_timeout(Duration::from_secs(10))
-            .connect(&database_url)
-            .await
-            .map_err(map_sqlx_err("config.connect.migrations"))?;
+            .connect_lazy_with(options.clone().options([("statement_timeout", "10000")]));
 
-        let migration_result = apply_migrations(&migrator_pool).await;
-        migrator_pool.close().await;
-        migration_result?;
+        let verified = data_config::verify_database(&verification_pool).await;
+        verification_pool.close().await;
+        verified.map_err(|source| ConfigError::DataAccess {
+            operation: "config.baseline",
+            source,
+        })?;
 
         let pool = PgPoolOptions::new()
             .max_connections(8)
@@ -202,7 +219,7 @@ impl ConfigService {
                     Ok(())
                 })
             })
-            .connect(&database_url)
+            .connect_with(options)
             .await
             .map_err(map_sqlx_err("config.connect"))?;
 
@@ -571,11 +588,36 @@ impl SettingsFacade for ConfigService {
     }
 
     async fn factory_reset(&self) -> Result<()> {
-        data_config::factory_reset(&self.pool)
-            .await
-            .map_err(map_db_err("config.factory_reset"))?;
-        info!("factory reset completed");
-        Ok(())
+        let service = self.clone();
+        tokio::spawn(async move {
+            let mut attempt = 1;
+            loop {
+                match data_config::factory_reset(&service.pool).await {
+                    Ok(()) => {
+                        info!("factory reset completed");
+                        return Ok(());
+                    }
+                    Err(source) => {
+                        let sqlstate = source.database_code();
+                        let Some(delay) = factory_reset_retry_delay(attempt, sqlstate.as_deref())
+                        else {
+                            return Err(map_db_err("config.factory_reset")(source));
+                        };
+                        warn!(
+                            attempt,
+                            max_attempts = FACTORY_RESET_MAX_ATTEMPTS,
+                            sqlstate = sqlstate.as_deref().unwrap_or("unknown"),
+                            delay_ms = delay.as_millis(),
+                            "factory reset hit transient database contention; retrying"
+                        );
+                        sleep(delay).await;
+                        attempt += 1;
+                    }
+                }
+            }
+        })
+        .await
+        .map_err(|source| ConfigError::TransactionTask { source })?
     }
 }
 
@@ -863,14 +905,24 @@ impl ConfigService {
     }
 }
 
-async fn apply_migrations(pool: &sqlx::PgPool) -> Result<()> {
-    data_config::run_migrations(pool)
-        .await
-        .map_err(|source| ConfigError::DataAccess {
-            operation: "config.migrations",
-            source,
-        })?;
-    Ok(())
+fn factory_reset_sqlstate_is_retryable(sqlstate: Option<&str>) -> bool {
+    matches!(
+        sqlstate,
+        Some(
+            POSTGRES_DEADLOCK_DETECTED
+                | POSTGRES_SERIALIZATION_FAILURE
+                | POSTGRES_LOCK_NOT_AVAILABLE,
+        )
+    )
+}
+
+fn factory_reset_retry_delay(attempt: u8, sqlstate: Option<&str>) -> Option<Duration> {
+    if !(1..FACTORY_RESET_MAX_ATTEMPTS).contains(&attempt)
+        || !factory_reset_sqlstate_is_retryable(sqlstate)
+    {
+        return None;
+    }
+    Some(FACTORY_RESET_RETRY_BASE_DELAY.saturating_mul(u32::from(attempt)))
 }
 
 async fn fetch_app_profile(pool: &sqlx::PgPool) -> Result<AppProfile> {
@@ -2600,11 +2652,11 @@ async fn insert_api_key(
         enabled: enabled_flag,
         burst: update
             .rate_limit
-            .and_then(|limit| limit.as_ref())
+            .and_then(Option::as_ref)
             .and_then(|limit| i32::try_from(limit.burst).ok()),
         per_seconds: update
             .rate_limit
-            .and_then(|limit| limit.as_ref())
+            .and_then(Option::as_ref)
             .and_then(|limit| i64::try_from(limit.replenish_period.as_secs()).ok()),
         expires_at: Some(expires_at),
     };
@@ -2646,14 +2698,14 @@ async fn apply_secret_patches(
 }
 
 fn generate_token(length: usize) -> String {
-    let mut rng = rand::rng();
-    std::iter::repeat_with(|| rng.sample(Alphanumeric) as char)
-        .take(length)
-        .collect()
+    Alphanumeric.sample_string(&mut rand::rng(), length)
 }
 
 fn hash_secret(input: &str) -> Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
+    let mut salt_bytes = [0_u8; SECRET_SALT_BYTES];
+    rand::fill(&mut salt_bytes);
+    let salt = SaltString::encode_b64(&salt_bytes)
+        .map_err(|detail| ConfigError::SecretHashFailed { detail })?;
     let argon = Argon2::default();
     let hash = argon
         .hash_password(input.as_bytes(), &salt)

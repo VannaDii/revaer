@@ -218,7 +218,7 @@ def test_native_postgresql_transaction_warning_and_storage_lifecycle(contract_ro
     )
     runtime.docker.verify_image(contract.postgres)
     with runtime.open(contract, user="fixture", database="fixture") as connection:
-        assert connection.sql("SHOW server_version_num") == "160014"
+        assert connection.sql("SHOW server_version_num") == "180006"
         connection.sql("CREATE TABLE item (id integer)")
         with pytest.raises(ToolingError, match="query failed"):
             connection.sql("INSERT INTO item VALUES (1); SELECT 1 / 0;", transaction=True)

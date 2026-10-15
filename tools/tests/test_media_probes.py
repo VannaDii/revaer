@@ -100,7 +100,8 @@ def test_exact_profiles_retain_native_bytes_and_never_replace_f1(
     assert (evidence / "probe.stderr").read_bytes() == DIAGNOSTIC
     assert (evidence / "ffprobe-version.txt").read_bytes() == version
     metadata = json.loads((evidence / "classification.json").read_text())
-    assert metadata["count"] == 1 and metadata["contract"] == "adr578-f1"
+    assert metadata["count"] == 1
+    assert metadata["contract"] == "adr578-f1"
     assert metadata["version_report_sha256"] == hashlib.sha256(version).hexdigest()
     assert evidence.stat().st_mode & 0o777 == 0o700
     assert all(path.stat().st_mode & 0o777 == 0o600 for path in evidence.iterdir())

@@ -75,11 +75,18 @@ class Python(ExternalTool):
     def e2e(self, args: E2ePytestArgs, env: Mapping[str, str]) -> Completed:
         settings = args.settings
         ui = args.phase.startswith("ui-")
+        suite = "ui" if ui else "api"
+        paths = [f"tests/specs/{suite}"]
+        if args.phase.endswith("-missing-catalog"):
+            paths = ["tests/specs/media/api/test_root_readiness.py"]
+        elif args.include_media:
+            paths.append(f"tests/specs/media/{suite}")
+            if not ui:
+                paths.append("--ignore=tests/specs/media/api/test_root_readiness.py")
         command = [
             "-m",
             "pytest",
-            "tests/specs/ui" if ui else "tests/specs/api",
-            *((f"tests/specs/media/{'ui' if ui else 'api'}",) if args.include_media else ()),
+            *paths,
             "--reruns",
             str(settings.retries),
             "--timeout",

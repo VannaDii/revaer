@@ -6,12 +6,14 @@ use sqlx::postgres::PgPoolOptions;
 
 #[tokio::test]
 async fn failed_transaction_rolls_back_before_reusing_connection() -> anyhow::Result<()> {
-    let database = start_postgres()?;
+    let mut database = start_postgres()?;
+    database
+        .initialize_runtime(include_str!("../../init.sql"))
+        .await?;
     let pool = PgPoolOptions::new()
         .max_connections(1)
-        .connect(database.connection_string())
+        .connect_with(database.fixture_connect_options()?)
         .await?;
-    crate::config::run_migrations(&pool).await?;
     sqlx::query("UPDATE job_schedule SET enabled = false WHERE job_key = 'retention_purge'")
         .execute(&pool)
         .await?;
@@ -65,12 +67,14 @@ async fn failed_transaction_rolls_back_before_reusing_connection() -> anyhow::Re
 
 #[tokio::test]
 async fn expected_job_outcomes_keep_the_transaction_usable() -> anyhow::Result<()> {
-    let database = start_postgres()?;
+    let mut database = start_postgres()?;
+    database
+        .initialize_runtime(include_str!("../../init.sql"))
+        .await?;
     let pool = PgPoolOptions::new()
         .max_connections(1)
-        .connect(database.connection_string())
+        .connect_with(database.fixture_connect_options()?)
         .await?;
-    crate::config::run_migrations(&pool).await?;
     let mut connection = pool.acquire().await?;
     let backend: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
         .fetch_one(connection.as_mut())
@@ -102,10 +106,13 @@ async fn expected_job_outcomes_keep_the_transaction_usable() -> anyhow::Result<(
 
 #[tokio::test]
 async fn failed_commit_rolls_back_before_reusing_connection() -> anyhow::Result<()> {
-    let database = start_postgres()?;
+    let mut database = start_postgres()?;
+    database
+        .initialize_runtime(include_str!("../../init.sql"))
+        .await?;
     let pool = PgPoolOptions::new()
         .max_connections(1)
-        .connect(database.connection_string())
+        .connect_with(database.fixture_connect_options()?)
         .await?;
     let backend: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
         .fetch_one(&pool)
@@ -148,24 +155,64 @@ async fn failed_commit_rolls_back_before_reusing_connection() -> anyhow::Result<
 #[tokio::test]
 async fn stored_routine_boundaries_have_explicit_outcomes_and_no_forwarders() -> anyhow::Result<()>
 {
-    let database = start_postgres()?;
+    let mut database = start_postgres()?;
+    database
+        .initialize_runtime(include_str!("../../init.sql"))
+        .await?;
     let pool = PgPoolOptions::new()
         .max_connections(1)
-        .connect(database.connection_string())
+        .connect_with(database.fixture_connect_options()?)
         .await?;
-    crate::config::run_migrations(&pool).await?;
     let void_routines: Vec<String> = sqlx::query_scalar("SELECT p.oid::regprocedure::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname IN ('public', 'revaer_config', 'revaer_runtime') AND p.prokind = 'f' AND p.prorettype = 'void'::regtype AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')")
         .fetch_all(&pool).await?;
     assert!(
         void_routines.is_empty(),
         "routines without an explicit outcome: {void_routines:?}"
     );
-    let forwarders: Vec<String> = sqlx::query_scalar(r"SELECT p.oid::regprocedure::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname IN ('public', 'revaer_config', 'revaer_runtime') AND p.prosrc ~* '^\s*(BEGIN\s+)?(SELECT\s+(\*\s+FROM\s+)?|PERFORM\s+|RETURN\s+QUERY\s+SELECT\s+(\*\s+FROM\s+)?)[a-z_][a-z_0-9]*\([^;]*\);?\s*(END;?)?\s*$' AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')")
+    let forwarders: Vec<String> = sqlx::query_scalar(r"SELECT p.oid::regprocedure::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname IN ('public', 'revaer_config', 'revaer_runtime') AND p.prosrc ~* '^\s*(BEGIN\s+)?(SELECT\s+(\*\s+FROM\s+)?|PERFORM\s+|RETURN\s+QUERY\s+SELECT\s+(\*\s+FROM\s+)?)[a-z_][a-z_0-9]*\(\s*([a-z_][a-z_0-9]*(\s*=>\s*[a-z_][a-z_0-9]*)?(\s*,\s*[a-z_][a-z_0-9]*(\s*=>\s*[a-z_][a-z_0-9]*)?)*)?\s*\);?\s*(END;?)?\s*$' AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')")
         .fetch_all(&pool).await?;
     assert!(
         forwarders.is_empty(),
         "pure routine forwarding layers: {forwarders:?}"
     );
+    pool.close().await;
+    database.close()?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_cleanup_closes_connection_before_pool_replacement() -> anyhow::Result<()> {
+    let mut database = start_postgres()?;
+    database
+        .initialize_runtime(include_str!("../../init.sql"))
+        .await?;
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(database.connection_string())
+        .await?;
+    let mut connection = pool.acquire().await?;
+    let backend: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(connection.as_mut())
+        .await?;
+    let mut transaction = begin_transaction(&mut connection).await?;
+    let mut control = database.admin_connection().await?;
+    let terminated: bool = sqlx::query_scalar("SELECT pg_terminate_backend($1)")
+        .bind(backend)
+        .fetch_one(&mut control)
+        .await?;
+    assert!(terminated);
+    let failed = job_claim_next(transaction.as_mut(), "retention_purge").await;
+    let finished = finish_transaction(transaction, failed).await;
+    let error = release_connection(connection, finished)
+        .await
+        .expect_err("a terminated backend must preserve operation and cleanup failure");
+    assert!(matches!(error, DataError::RollbackFailed { .. }), "{error}");
+    let replacement: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&pool)
+        .await?;
+    assert_ne!(backend, replacement);
+    crate::config::fetch_revision(&pool).await?;
+    sqlx::Connection::close(control).await?;
     pool.close().await;
     database.close()?;
     Ok(())

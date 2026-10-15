@@ -6,7 +6,9 @@ import shlex
 from pathlib import Path
 
 import pytest
+from revaer_tooling.bootstrap.selection import apt_selection
 from revaer_tooling.cli import COMMANDS, parser
+from revaer_tooling.e2e.settings import load_e2e_settings
 from revaer_tooling.policy.formats import Document, yaml_document
 from revaer_tooling.policy.setup_workflows import setup_workflow_findings
 from revaer_tooling.policy.workflows import SETUP_PATH, mapping, steps, workflow_findings
@@ -16,6 +18,45 @@ from revaer_tooling.policy.workflows import SETUP_PATH, mapping, steps, workflow
 def action() -> Document:
     root = Path(__file__).parents[2]
     return yaml_document((root / SETUP_PATH).read_text(), SETUP_PATH)
+
+
+def test_media_api_producer_runs_every_phase_required_by_aggregation() -> None:
+    root = Path(__file__).parents[2]
+    path = ".github/workflows/pr.yml"
+    document = yaml_document((root / path).read_text(), path)
+    jobs = mapping(document["jobs"])
+    producer = mapping(mapping(jobs["api-e2e"])["env"])
+    aggregate = mapping(mapping(jobs["ui-e2e-coverage"])["env"])
+    selected = load_e2e_settings({key: str(value) for key, value in producer.items()})
+    required = load_e2e_settings({key: str(value) for key, value in aggregate.items()})
+    assert selected.phases(media=True) == tuple(
+        phase for phase in required.phases(media=True) if phase.startswith("api-")
+    )
+    upload = next(
+        step
+        for step in steps(mapping(jobs["api-e2e"]))
+        if step.get("name") == "Upload API E2E coverage"
+    )
+    paths = str(mapping(upload["with"])["path"]).splitlines()
+    for phase in selected.phases(media=True):
+        assert f"coverage/e2e/{phase}/.coverage" in paths
+
+
+@pytest.mark.parametrize("job_name", ("api-e2e", "ui-e2e"))
+def test_media_e2e_jobs_provision_capability_and_mount_tools(job_name: str) -> None:
+    root = Path(__file__).parents[2]
+    path = ".github/workflows/pr.yml"
+    document = yaml_document((root / path).read_text(), path)
+    job = mapping(mapping(document["jobs"])[job_name])
+    setup = [step for step in steps(job) if step.get("uses") == "./.github/actions/setup-revaer"]
+    assert len(setup) == 1
+    values = mapping(setup[0].get("with"))
+    packages = apt_selection(
+        str(values.get("apt-profile", "")),
+        tuple(str(values.get("apt-packages", "")).split()),
+    )
+    assert "ffmpeg" in packages
+    assert "e2fsprogs" in packages
 
 
 def test_committed_setup_action_uses_official_uv_and_valid_commands(action: Document) -> None:

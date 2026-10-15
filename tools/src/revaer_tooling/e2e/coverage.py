@@ -28,7 +28,11 @@ def distributed_runs(
         return ()
     api_phases = tuple(phase for phase in expected if phase.startswith("api-"))
     browsers = tuple(phase for phase in expected if phase.startswith("ui-"))
-    if api_phases != ("api-none", "api-api-key") or not browsers:
+    complete_api_phases = (
+        ("api-none", "api-api-key"),
+        ("api-none-missing-catalog", "api-none", "api-api-key-missing-catalog", "api-api-key"),
+    )
+    if api_phases not in complete_api_phases or not browsers:
         raise ToolingError(
             "Distributed analysis requires anonymous, authenticated and browser phases"
         )

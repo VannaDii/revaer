@@ -37,7 +37,9 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 - `scripts/policy-guardrails.sh` currently enforces empty advisory-ignore lists, no source-level lint suppressions, no authored stubs, FFI-only `unsafe`/`catch_unwind`, and the stored-procedure-only runtime SQL boundary. The `sqlx::query*` scan allows only `crates/revaer-data/src/**` plus the disposable test-database provisioning helper at `crates/revaer-test-support/src/postgres.rs` and its integration test. The inline DDL/DML scan is case-insensitive, excludes test-only sidecar modules at `crates/**/src/**/tests.rs`, and must keep working when `rg` is unavailable by falling back to the tracked Rust file list.
 - `just lint` also runs a production-target Clippy pass on workspace libs, bins, and examples that forbids `panic!`, `unwrap()`, `expect()`, `unreachable!()`, `todo!()`, and `unimplemented!()` without applying those restrictions to test targets.
 - Keep repo-level Clippy exceptions in `just lint`, not in crate source. Today that includes the ADR-backed `clippy::multiple_crate_versions` exception and the workspace `pub(crate)` style exception for `clippy::redundant_pub_crate`. The owning `clippy::cargo` and `clippy::nursery` groups are enforced from the Justfile for the same reason.
-- `#[allow(...)]` and `#[expect(...)]` are not permitted in authored code. Split or redesign the code instead.
+- `#[allow(...)]` and `#[expect(...)]` are not permitted in authored code, except
+  for the exact generated CXX documentation exception in `ffi.instructions.md`.
+  Split or redesign authored code instead.
 - Committed vendored Rust is part of the Sonar source gate. Fix reported vendor findings with behavior-preserving private refactors and upstream-compatible public APIs; vendored ownership is not permission to exclude paths, suppress issues, or accept open findings.
 - If custom cfgs are introduced, register them with `cargo::rustc-check-cfg` in `build.rs` or the manifest lint configuration. Do not silence `unexpected_cfgs`.
 - Prefer `#[must_use]` for important return values and `pub(crate)` for internal APIs.
@@ -45,6 +47,21 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 
 # CI And Recipe Maintenance
 
+- Source inspection retains the bounded ffprobe frame sample and attributes
+  frame side data only to its reported stream index; unindexed frames are ignored.
+  Attachments use their stable kind marker when ffprobe omits or varies the
+  codec name; other missing codecs still fail graph or sidecar validation.
+
+- The application's default `compat-qb` feature forwards the API compatibility
+  feature explicitly. Disable API dependency defaults so the application's
+  no-default-feature gate exercises the actual compatibility-free configuration.
+
+- Native discovery must invalidate Cargo when `PATH`, pkg-config search variables,
+  or target-qualified pkg-config variables change.
+
+- Keep the workspace MSRV aligned with the pinned Rust toolchain. Release build
+  dependencies retain symbols (`strip = "none"`) for the pinned Rust 1.96 LLVM
+  loader workaround; this setting applies only to build dependencies.
 - Cardigann import uses `serde_norway` to retain its Serde YAML data model without
   the archived `unsafe-libyaml` dependency. Preserve valid import normalization
   and malformed-input rejection when updating the parser.
@@ -67,6 +84,9 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 
 # Documentation
 
+- The media fixture catalog retains all 30 declared fixtures and their expected
+  probe snapshots so runtime integration tests use the complete qualified inputs.
+
 - Public crates need crate-level rustdoc that explains purpose, invariants, and a realistic usage example.
 - Externally consumed public items should document:
   - behavior
@@ -77,6 +97,40 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 - Prefer examples that use `?` and explicit error handling over `unwrap()`/`expect()`.
 
 # Maintainability And Layout
+
+- Media execution retains checkpoint replay, verified replacement, cooperative
+  shutdown and protected scratch cleanup. Filesystem capacity probing is shared
+  by media admission and filesystem post-processing.
+
+- The application media facade and discovery runtime receive the existing media
+  store, native capability detector, catalog source and watcher. `notify` provides
+  the native watcher, `rustix` retains descriptor identity, `sha2` computes aggregate
+  identities, and `yaml-rust2` validates portable configuration before persistence.
+
+- `revaer-media-runtime` owns injected native process, capability and inspection
+  adapters. Its restored `rustix` dependency provides safe Unix descriptor and
+  process operations without authored unsafe code.
+- Root catalogs retain descriptor, mount, source identity and root-lock checks.
+  Their restored `sha2` dependency computes canonical identities; `tempfile`
+  isolates functional filesystem regression fixtures.
+- Command execution and managed scratch workspaces retain cooperative cancellation,
+  live resource limits, capacity admission and terminal cleanup policy.
+- Job planning, output verification and replacement retain source-identity and
+  recovery checks. The `media_fixtures` integration target executes real conversions
+  and verifies their resulting media graphs.
+- `just test-media-recovery` explicitly executes the retained production worker
+  H.264 metadata-replacement regression with real FFmpeg/FFprobe and all features.
+  Its synthetic catalog admission is distinct from the Linux mounted-service test.
+- `just cov` includes that production worker regression after workspace collection
+  with matching all-feature FFI instrumentation, without clearing prior profiles.
+  An explicitly selected Linux recovery root also exercises the existing native
+  service workflow; each opt-in selection must execute one passing test.
+  Coverage must use the mounted root supplied by the managed fixture as well as
+  a caller-selected root; fixture setup must not silently skip service recovery.
+
+- `revaer-media-core` owns deterministic media graph compilation, planning,
+  compliance and verification. Keep filesystem, process and database access in
+  injected runtime adapters.
 
 - Keep files single-purpose and cohesive.
 - Target roughly 300-400 non-test LOC per production file. Split large files instead of silencing `too_many_lines`.

@@ -21,6 +21,21 @@ def scenario_list(value: Json) -> list[str]:
     return scenarios
 
 
+def phase_files(
+    directory: Path, prefix: str, phase: str, suffix: str, phases: tuple[str, ...]
+) -> tuple[Path, ...]:
+    """Assign overlapping phase prefixes to their complete declared names."""
+    return tuple(
+        path
+        for path in sorted(directory.glob(f"{prefix}-{phase}{suffix}-*.json"))
+        if not any(
+            other != phase and path.name.startswith(f"{prefix}-{other}{suffix}-")
+            for other in phases
+            if other.startswith(phase + "-")
+        )
+    )
+
+
 def verify_shards(
     filesystem: FileSystem,
     directory: Path,
@@ -46,7 +61,7 @@ def verify_shards(
         ):
             raise ToolingError(f"Shard {index} did not complete every expected phase")
         for phase in phases:
-            files = sorted(current.glob(f"selection-{phase}{suffix}-*.json"))
+            files = phase_files(current, "selection", phase, suffix, phases)
             if not files:
                 raise ToolingError(f"Shard {index} did not provide {phase} selection evidence")
             # xdist workers collect the complete phase before distributing its
@@ -66,7 +81,7 @@ def verify_shards(
                     raise ToolingError(f"Shard {index} has inconsistent {phase} selection evidence")
             if universe[index - 1 :: total]:
                 label = "ui" if phase.startswith("ui-") else "api"
-                coverage_files = sorted(current.glob(f"{label}-coverage-{phase}{suffix}-*.json"))
+                coverage_files = phase_files(current, label + "-coverage", phase, suffix, phases)
                 # Setup requests do not prove the phase's selected tests ran.
                 recorded = {
                     string_value(item)

@@ -10,6 +10,8 @@ import pytest
 from revaer_tooling.e2e.api import ApiClient, ApiRequest, Method
 from revaer_tooling.json_data import JsonObject, array_value, object_value, string_value
 
+from tests.support.media_profiles import native_profile_request
+
 PROFILE = "/v1/media/profiles/{media_profile_public_id}"
 CREATE_HEADERS = {"If-None-Match": "*"}
 
@@ -25,30 +27,58 @@ class ProfileFixture:
 
 
 @pytest.fixture
-def profile(tmp_path: Path) -> Iterator[ProfileFixture]:
-    # pytest retains its tmp_path on failure; own a nested context so media
-    # source files are removed immediately after every outcome.
-    with tempfile.TemporaryDirectory(prefix="media-profile-", dir=tmp_path) as directory:
-        source = Path(directory) / "source"
-        output = Path(directory) / "output"
-        source.mkdir()
-        output.mkdir()
-        path = source / "source.mkv"
+def profile(api: ApiClient, fs_root: Path) -> Iterator[ProfileFixture]:
+    suffix = uuid.uuid4().hex
+    request = native_profile_request(api, suffix)
+    # Own only files within the real catalog's source slot. The fixture never
+    # creates catalog authority or manufactures runtime attestation.
+    with tempfile.TemporaryDirectory(prefix="media-profile-", dir=fs_root / "source") as directory:
+        path = Path(directory) / "source.mkv"
         content = b"profile-create source must remain unchanged"
         path.write_bytes(content)
         yield ProfileFixture(
             path,
             content,
-            {
-                "profile_key": f"profile-create-{uuid.uuid4()}",
-                "source_root": str(source),
-                "output_root": str(output),
-                "dry_run_only": True,
-                "retention_days": 30,
-                "schedule_enabled": False,
-                "watcher_enabled": False,
-            },
+            request,
         )
+
+
+def association(api: ApiClient, profile: ProfileFixture, created: JsonObject) -> JsonObject:
+    response = api.request(
+        ApiRequest(
+            Method.POST,
+            "/v1/media/discovery-associations",
+            {
+                "association_key": f"association-{uuid.uuid4().hex}",
+                "media_profile_public_id": created["media_profile_public_id"],
+                "profile_version": created["latest_version"],
+                "source_root_key": "ui-source",
+                "root_relative_path": profile.source.parent.name,
+                "manual_enabled": True,
+                "watcher_enabled": False,
+                "schedule_enabled": False,
+            },
+            headers=CREATE_HEADERS,
+        )
+    )
+    assert response.status == 201, response.object()
+    assert response.object()["binding_ready"] is True
+    return response.object()
+
+
+def discovery_body(association: JsonObject, profile: ProfileFixture) -> JsonObject:
+    return {
+        "media_discovery_association_public_id": association[
+            "media_discovery_association_public_id"
+        ],
+        "source_paths": [f"{profile.source.parent.name}/{profile.source.name}"],
+    }
+
+
+def replace_headers(api: ApiClient, created: JsonObject) -> dict[str, str]:
+    response = api.request(ApiRequest(Method.GET, PROFILE, path=path_for(created)))
+    assert response.status == 200
+    return {"If-Match": response.headers["etag"]}
 
 
 def create(api: ApiClient, profile: ProfileFixture) -> JsonObject:
@@ -69,7 +99,7 @@ def read(api: ApiClient, profile: JsonObject) -> JsonObject:
     return response.object()
 
 
-def test_creation_forces_dry_run_and_duplicate_preserves_state(
+def test_policy_forces_dry_run_and_duplicate_preserves_state(
     api: ApiClient,
     profile: ProfileFixture,
 ) -> None:
@@ -83,15 +113,22 @@ def test_creation_forces_dry_run_and_duplicate_preserves_state(
     )
     assert response.status == 201
     created = response.object()
-    assert all(created[key] == value for key, value in profile.request.items())
-    assert created["policy_key"] == "safe_dry_run"
-    assert created.get("schedule_interval_minutes") is None
+    assert all(
+        created[key] == value for key, value in profile.request.items() if key != "dry_run_only"
+    )
+    assert created["dry_run_only"] is False
+    bound = association(api, profile, created)
+    preview = api.request(
+        ApiRequest(Method.POST, "/v1/media/discovery/preview", discovery_body(bound, profile))
+    )
+    assert preview.status == 200
+    assert object_value(array_value(preview.object()["previews"])[0])["dry_run"] is True
     assert read(api, created) == created
     duplicate = api.request(
         ApiRequest(
             Method.POST,
             "/v1/media/profiles",
-            {**profile.request, "retention_days": 31},
+            {**profile.request, "description": "Duplicate must preserve state"},
             headers=CREATE_HEADERS,
         )
     )
@@ -104,7 +141,7 @@ def test_creation_forces_dry_run_and_duplicate_preserves_state(
 
 
 @pytest.mark.parametrize("automation", ("schedule", "watcher"))
-def test_creation_requires_verified_identity_for_automation(
+def test_retired_profile_automation_body_is_rejected_without_writes(
     api: ApiClient,
     profile: ProfileFixture,
     automation: str,
@@ -117,9 +154,7 @@ def test_creation_requires_verified_identity_for_automation(
     )
     assert response.status == 400
     assert response.object()["context"] == [
-        {"name": "operation", "value": "media_profile_upsert"},
-        {"name": "error_code", "value": "media_profile_filesystem_identity_required"},
-        {"name": "sqlstate", "value": "P0001"},
+        {"name": "error_code", "value": "media_configuration_invalid"},
     ]
     listed = api.request(ApiRequest(Method.GET, "/v1/media/profiles"))
     assert listed.status == 200
@@ -135,14 +170,23 @@ def test_metadata_update_preserves_roots_and_disabled_automation(
     profile: ProfileFixture,
 ) -> None:
     created = create(api, profile)
-    body = {key: value for key, value in profile.request.items() if key != "profile_key"}
-    body["retention_days"] = 31
-    response = api.request(ApiRequest(Method.PATCH, PROFILE, body, path=path_for(created)))
+    expected: JsonObject = {**profile.request, "description": "Updated metadata"}
+    response = api.request(
+        ApiRequest(
+            Method.PUT,
+            PROFILE,
+            expected,
+            path=path_for(created),
+            headers=replace_headers(api, created),
+        )
+    )
     assert response.status == 200
-    expected = {**profile.request, "retention_days": 31}
     assert all(response.object()[key] == value for key, value in expected.items())
-    assert response.object().get("schedule_interval_minutes") is None
+    assert response.object()["latest_version"] == 2
     assert read(api, created) == response.object()
+    bound = association(api, profile, response.object())
+    assert bound["schedule_enabled"] is False
+    assert bound["watcher_enabled"] is False
     profile.unchanged()
 
 
@@ -163,13 +207,17 @@ def test_unverified_updates_preserve_existing_profile(
 ) -> None:
     created = create(api, profile)
     response = api.request(
-        ApiRequest(Method.PATCH, PROFILE, {**update, "retention_days": 31}, path=path_for(created))
+        ApiRequest(
+            Method.PUT,
+            PROFILE,
+            {**profile.request, **update},
+            path=path_for(created),
+            headers=replace_headers(api, created),
+        )
     )
     assert response.status == 400
     assert response.object()["context"] == [
-        {"name": "operation", "value": "media_profile_patch"},
-        {"name": "error_code", "value": "media_profile_filesystem_identity_required"},
-        {"name": "sqlstate", "value": "P0001"},
+        {"name": "error_code", "value": "media_configuration_invalid"},
     ]
     assert read(api, created) == created
     profile.unchanged()
@@ -187,28 +235,41 @@ def test_manual_discovery_and_diagnostics_preserve_dry_run(
         object_value(readiness.object()["profile"])["media_profile_public_id"]
         == path["media_profile_public_id"]
     )
-    assert isinstance(readiness.object()["ready"], bool)
+    assert readiness.object()["binding_ready"] is True
+    bound = association(api, profile, created)
+    body = discovery_body(bound, profile)
+    relative_source = string_value(array_value(body["source_paths"])[0])
     planning = api.request(
         ApiRequest(
-            Method.POST, "/v1/media/planning/preview", {**path, "source_path": str(profile.source)}
+            Method.POST,
+            "/v1/media/planning/preview",
+            {
+                "media_discovery_association_public_id": bound[
+                    "media_discovery_association_public_id"
+                ],
+                "source_path": relative_source,
+            },
         )
     )
-    assert planning.status == 200 and planning.object()["accepted"] is True
-    body: JsonObject = {**path, "source_paths": [str(profile.source)]}
+    assert planning.status == 200
+    assert planning.object()["accepted"] is True
     preview = api.request(ApiRequest(Method.POST, "/v1/media/discovery/preview", body))
     assert preview.status == 200
     assert object_value(array_value(preview.object()["previews"])[0])["accepted"] is True
     run = api.request(ApiRequest(Method.POST, "/v1/media/discovery/runs", body))
-    assert run.status == 201 and run.object()["skipped"] == []
+    assert run.status == 201
+    assert run.object()["skipped"] == []
     queued = array_value(run.object()["queued_jobs"])
     assert len(queued) == 1
     job = object_value(queued[0])
-    assert job["source_path"] == str(profile.source) and job["dry_run"] is True
+    assert job["source_path"] == relative_source
+    assert job["dry_run"] is True
     job_id = string_value(job["media_job_public_id"])
     duplicate = api.request(ApiRequest(Method.POST, "/v1/media/discovery/runs", body))
-    assert duplicate.status == 201 and duplicate.object()["queued_jobs"] == []
+    assert duplicate.status == 201
+    assert duplicate.object()["queued_jobs"] == []
     assert duplicate.object()["skipped"] == [
-        {"source_path": str(profile.source), "reason": "media_discovery_source_unchanged"}
+        {"source_path": relative_source, "reason": "media_discovery_source_unchanged"}
     ]
     jobs = api.request(ApiRequest(Method.GET, "/v1/media/jobs", query=path))
     assert jobs.status == 200
@@ -218,7 +279,8 @@ def test_manual_discovery_and_diagnostics_preserve_dry_run(
     route = "/v1/media/jobs/{media_job_public_id}"
     job_path = {"media_job_public_id": job_id}
     detail = api.request(ApiRequest(Method.GET, route, path=job_path))
-    assert detail.status == 200 and detail.object()["source_path"] == str(profile.source)
+    assert detail.status == 200
+    assert detail.object()["source_path"] == relative_source
     for suffix, collection in (
         ("phases", "phases"),
         ("operations", "operations"),
@@ -248,12 +310,9 @@ def test_disabled_automation_admits_no_jobs(
 ) -> None:
     created = create(api, profile)
     path = path_for(created)
+    bound = association(api, profile, created)
     response = api.request(
-        ApiRequest(
-            Method.POST,
-            f"/v1/media/discovery/{automation}",
-            {**path, "source_paths": [str(profile.source)]},
-        )
+        ApiRequest(Method.POST, f"/v1/media/discovery/{automation}", discovery_body(bound, profile))
     )
     assert response.status == 400
     assert {
@@ -261,5 +320,6 @@ def test_disabled_automation_admits_no_jobs(
         "value": f"media_discovery_{automation[:-1]}_disabled",
     } in array_value(response.object()["context"])
     jobs = api.request(ApiRequest(Method.GET, "/v1/media/jobs", query=path))
-    assert jobs.status == 200 and jobs.object()["jobs"] == []
+    assert jobs.status == 200
+    assert jobs.object()["jobs"] == []
     profile.unchanged()

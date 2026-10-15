@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ..context import Context, TaskResult
 from ..e2e.coverage import distributed_runs, verify_analysis_run
+from ..e2e.database import uses_single_init
 from ..errors import ToolingError
 from ..external.python import PythonCoverageArgs
 from ..json_data import decode, object_value
@@ -25,7 +26,7 @@ def authored_python(context: Context) -> tuple[str, ...]:
 
 def coverage_inputs(context: Context) -> tuple[Path, ...]:
     """Select only the completed run's named phases, never glob stale phase data."""
-    expected = context.settings.e2e.phases()
+    expected = context.settings.e2e.phases(media=uses_single_init(context))
     distributed = distributed_runs(
         context.fs, context.root, expected, context.options.expected_shards
     )

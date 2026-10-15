@@ -37,15 +37,29 @@ from revaer_tooling.tasks.sonar import (
 
 @pytest.mark.parametrize("failure", [None, "start", "gate", "build"])
 @pytest.mark.parametrize("explicit", [False, True])
+@pytest.mark.parametrize("single_init", [False, True])
 def test_ci_holds_connection_until_gates_finish_and_never_builds_after_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str | None, explicit: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str | None,
+    explicit: bool,
+    single_init: bool,
 ) -> None:
     context = make_context(Options())
     database = replace(
         context.settings.database,
         test_url="postgres://tests@disposable/postgres" if explicit else None,
     )
-    context = replace(context, settings=replace(context.settings, database=database))
+    # This matrix supplies its own database selection; the caller's E2E admin
+    # endpoint must not supply a different fallback in the unit fixture.
+    context = replace(
+        context,
+        settings=replace(
+            context.settings,
+            database=database,
+            e2e=replace(context.settings.e2e, admin_url=None),
+        ),
+    )
     calls: list[str] = []
     lock = tmp_path / "database.lock"
     normalized = "postgres://local@127.0.0.1:5441/revaer?sslmode=disable"
@@ -58,6 +72,8 @@ def test_ci_holds_connection_until_gates_finish_and_never_builds_after_failure(
 
     @contextmanager
     def connection(active: Context) -> Iterator[str]:
+        if single_init:
+            start(active)
         with active.fs.lock(lock):
             yield normalized
 
@@ -83,6 +99,8 @@ def test_ci_holds_connection_until_gates_finish_and_never_builds_after_failure(
                 raise ToolingError("build failure")
         return TaskResult()
 
+    monkeypatch.setattr(quality, "uses_single_init", lambda active: single_init)
+    monkeypatch.setattr(quality, "single_init_database", connection)
     monkeypatch.setattr(DatabaseStart, "run", start)
     monkeypatch.setattr(quality, "database_connection", connection)
     monkeypatch.setattr(quality, "VALIDATION_STEPS", {"first": gate, "second": gate})

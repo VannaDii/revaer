@@ -10,7 +10,6 @@ use tokio::sync::oneshot;
 use uuid::Uuid;
 
 /// Command definitions and runtime configuration inputs for the libtorrent worker.
-
 #[derive(Debug)]
 pub enum EngineCommand {
     /// Add a torrent to the session.
@@ -52,6 +51,8 @@ pub enum EngineCommand {
         id: Option<Uuid>,
         /// Rate limit configuration.
         limits: TorrentRateLimit,
+        /// Channel that receives the completed worker limit-update result.
+        respond_to: oneshot::Sender<TorrentResult<()>>,
     },
     /// Update file selection rules for a torrent.
     UpdateSelection {
@@ -98,8 +99,13 @@ pub enum EngineCommand {
         /// Unique torrent identifier.
         id: Uuid,
     },
-    /// Apply a new runtime configuration profile.
-    ApplyConfig(Box<EngineRuntimeConfig>),
+    /// Apply a new runtime configuration profile and acknowledge its result.
+    ApplyConfig {
+        /// Runtime configuration to apply.
+        config: Box<EngineRuntimeConfig>,
+        /// Channel that receives the completed worker application result.
+        respond_to: oneshot::Sender<TorrentResult<()>>,
+    },
     /// Inspect peers connected to a torrent.
     QueryPeers {
         /// Unique torrent identifier.
@@ -140,7 +146,7 @@ impl EngineCommand {
             Self::Reannounce { .. } => "reannounce",
             Self::MoveStorage { .. } => "move_torrent",
             Self::Recheck { .. } => "recheck",
-            Self::ApplyConfig(_) => "apply_config",
+            Self::ApplyConfig { .. } => "apply_config",
             Self::QueryPeers { .. } => "query_peers",
             Self::SetPieceDeadline { .. } => "set_piece_deadline",
             Self::InspectSettings { .. } => "inspect_settings",
@@ -164,9 +170,9 @@ impl EngineCommand {
             | Self::QueryPeers { id, .. }
             | Self::SetPieceDeadline { id, .. } => Some(*id),
             Self::UpdateLimits { id, .. } => *id,
-            Self::CreateTorrent { .. } | Self::ApplyConfig(_) | Self::InspectSettings { .. } => {
-                None
-            }
+            Self::CreateTorrent { .. }
+            | Self::ApplyConfig { .. }
+            | Self::InspectSettings { .. } => None,
         }
     }
 }

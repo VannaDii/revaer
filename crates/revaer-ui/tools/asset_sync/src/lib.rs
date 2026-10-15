@@ -1353,4 +1353,193 @@ mod tests {
         assert!(matches!(err, AssetSyncError::Io { .. }));
         Ok(())
     }
+
+    #[test]
+    fn svg_envelope_rejections_preserve_path_and_reason() {
+        let path = Path::new("invalid.svg");
+        for (contents, expected_reason) in [
+            (" \n\t", "SVG is empty"),
+            ("<svg\0></svg>", "SVG contains a NUL byte"),
+            ("<html></html>", "SVG root element is missing"),
+            ("<svg", "SVG root element is malformed"),
+            ("<svgx></svgx>", "SVG root element is malformed"),
+            ("<svg ", "SVG root element is malformed"),
+            (
+                "<svg xmlns='http://www.w3.org/2000/svg'",
+                "SVG root opening tag is incomplete",
+            ),
+            (
+                "<svg xmlns='http://www.w3.org/2000/svg'/>",
+                "SVG root element is self-closing",
+            ),
+            ("<svg></svg>", "SVG root is missing the SVG namespace"),
+            (
+                "<svg xmlns='http://www.w3.org/2000/svg'><path/>",
+                "SVG root closing tag is missing",
+            ),
+        ] {
+            let result = validate_svg_structure(path, contents);
+            assert!(
+                matches!(&result, Err(AssetSyncError::RuntimeAssetInvalid { path: actual, reason })
+                    if actual == path && reason == expected_reason),
+                "{contents:?}: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn svg_envelope_accepts_both_namespace_quotes_and_whitespace() -> TestResult {
+        for contents in [
+            svg_fixture().to_string(),
+            " \n<svg\txmlns='http://www.w3.org/2000/svg'><path/></svg>\n ".to_string(),
+        ] {
+            validate_svg_structure(Path::new("valid.svg"), &contents)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_asset_extensions_reject_rasters_and_leave_other_bytes_alone() -> TestResult {
+        let root = TempRoot::new()?;
+        for extension in FORBIDDEN_RASTER_EXTENSIONS {
+            let path = root
+                .path
+                .join(format!("asset.{}", extension.to_ascii_uppercase()));
+            fs::write(&path, b"raster")?;
+            let result = validate_runtime_asset_file(&path);
+            assert!(
+                matches!(&result, Err(AssetSyncError::RuntimeAssetInvalid { path: actual, reason })
+                    if actual == &path && reason == &format!("forbidden raster extension .{extension}")),
+                "{result:?}"
+            );
+        }
+        for name in ["LICENSE", "font.woff2"] {
+            let path = root.path.join(name);
+            fs::write(&path, [0xff])?;
+            validate_runtime_asset_file(&path)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runtime_asset_extension_rejects_non_utf8_filename() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let path = PathBuf::from(OsString::from_vec(b"asset.\xff".to_vec()));
+        let result = validate_runtime_asset_file(&path);
+        assert!(
+            matches!(&result, Err(AssetSyncError::RuntimeAssetInvalid { path: actual, reason })
+                if actual == &path && reason == "asset extension is not valid UTF-8"),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn runtime_text_read_error_retains_io_source() -> TestResult {
+        let root = TempRoot::new()?;
+        let path = root.path.join("missing.svg");
+        let error = read_utf8_text(&path)
+            .err()
+            .ok_or("missing read unexpectedly succeeded")?;
+        assert!(
+            matches!(&error, AssetSyncError::Io { path: actual, source }
+                if actual == &path && source.kind() == std::io::ErrorKind::NotFound),
+            "{error:?}"
+        );
+        assert!(error.source().is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn datatables_read_rejects_invalid_utf8_without_rewriting() -> TestResult {
+        let root = TempRoot::new()?;
+        let path = root.path.join(DATATABLES_JS);
+        write_fixture_file(&path, &[0xff])?;
+        let result = canonicalize_js_asset_references(&root.path);
+        assert!(
+            matches!(&result, Err(AssetSyncError::Io { path: actual, source })
+                if actual == &path && source.kind() == std::io::ErrorKind::InvalidData),
+            "{result:?}"
+        );
+        assert_eq!(fs::read(path)?, [0xff]);
+        Ok(())
+    }
+
+    #[test]
+    fn datatables_validation_rejects_legacy_and_missing_runtime_urls() -> TestResult {
+        let root = TempRoot::new()?;
+        let path = root.path.join(DATATABLES_JS);
+        write_fixture_file(&path, b"/images/avatars/1.png")?;
+        let result = validate_datatables_references(&path);
+        assert!(
+            matches!(&result, Err(AssetSyncError::JsInvalid { path: actual, reason })
+                if actual == &path && reason == "non-canonical DataTables avatar URL"),
+            "{result:?}"
+        );
+
+        let mut contents = String::new();
+        for index in 1..DATATABLES_AVATAR_COUNT {
+            writeln!(
+                contents,
+                "{RUNTIME_AVATAR_DIRECTORY}{index}{RUNTIME_AVATAR_EXTENSION}"
+            )?;
+        }
+        fs::write(&path, &contents)?;
+        let result = validate_datatables_references(&path);
+        assert!(
+            matches!(&result, Err(AssetSyncError::JsInvalid { path: actual, reason })
+                if actual == &path && reason == "missing DataTables avatar URL /static/nexus/images/avatars/10.svg"),
+            "{result:?}"
+        );
+        writeln!(
+            contents,
+            "{RUNTIME_AVATAR_DIRECTORY}10{RUNTIME_AVATAR_EXTENSION}"
+        )?;
+        fs::write(&path, &contents)?;
+        validate_datatables_references(&path)?;
+        canonicalize_js_asset_references(&root.path)?;
+        assert_eq!(fs::read_to_string(path)?, contents);
+        Ok(())
+    }
+
+    #[test]
+    fn copy_dir_rejects_parentless_destination_without_copying() -> TestResult {
+        let root = TempRoot::new()?;
+        let source = root.path.join("source");
+        fs::create_dir(&source)?;
+        fs::write(source.join("asset.txt"), "asset")?;
+        let destination = Path::new("");
+        let result = copy_dir(&source, destination);
+        assert!(
+            matches!(&result, Err(AssetSyncError::MissingPath { path }) if path == destination),
+            "{result:?}"
+        );
+        assert_eq!(fs::read_to_string(source.join("asset.txt"))?, "asset");
+        Ok(())
+    }
+
+    #[test]
+    fn sync_rejects_missing_last_avatar_reference_without_publishing_lock() -> TestResult {
+        let root = TempRoot::new()?;
+        write_vendor_fixture(&root.path, &css_fixture())?;
+        let vendor_js = root
+            .path
+            .join(VENDOR_ROOT)
+            .join("public/js")
+            .join(DATATABLES_JS);
+        let contents = fs::read_to_string(&vendor_js)?.replace("/images/avatars/10.png", "missing");
+        fs::write(vendor_js, contents)?;
+        let result = sync_assets(&root.path);
+        let output_root = root.path.join(OUTPUT_ROOT);
+        let output_js = output_root.join("js").join(DATATABLES_JS);
+        assert!(
+            matches!(&result, Err(AssetSyncError::JsInvalid { path, reason })
+                if path == &output_js && reason == "missing DataTables avatar URL /static/nexus/images/avatars/10.svg"),
+            "{result:?}"
+        );
+        assert!(!output_root.join("ASSET_LOCK.txt").exists());
+        Ok(())
+    }
 }

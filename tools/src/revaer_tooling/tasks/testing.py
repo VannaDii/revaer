@@ -4,6 +4,10 @@ These commands use the caller's available database. Provisioning belongs to the
 database/CI lifecycle task, so targeted test runs do not replace a running server.
 """
 
+import re
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 from ..context import Context, TaskResult
 from ..errors import ToolingError
 from ..external.rust import AppRegression, CargoArgs, CargoOperation
@@ -22,10 +26,23 @@ def test_environment(context: Context) -> dict[str, str]:
     }
 
 
+@contextmanager
+def native_test_environment(context: Context) -> Iterator[dict[str, str]]:
+    """Keep an explicitly managed persistent root mounted throughout Rust tests."""
+    from .e2e import RunPaths, media_fixture
+
+    environment = test_environment(context)
+    with media_fixture(context, RunPaths.for_context(context)) as (paths, catalog):
+        if catalog is not None:
+            environment["REVAER_NATIVE_RECOVERY_ROOT"] = str(paths.filesystem)
+        yield environment
+
+
 class Test(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
-        context.tools.cargo.execute(CargoArgs(CargoOperation.TEST), test_environment(context))
+        with native_test_environment(context) as environment:
+            context.tools.cargo.execute(CargoArgs(CargoOperation.TEST), environment)
         return TaskResult()
 
 
@@ -42,16 +59,17 @@ class TestNative(Task):
 class TestFeaturesMinimal(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
-        for package in ("revaer-api", "revaer-app"):
-            context.tools.cargo.execute(
-                CargoArgs(
-                    CargoOperation.TEST,
-                    (package,),
-                    all_features=False,
-                    no_default_features=True,
-                ),
-                test_environment(context),
-            )
+        with native_test_environment(context) as environment:
+            for package in ("revaer-api", "revaer-app"):
+                context.tools.cargo.execute(
+                    CargoArgs(
+                        CargoOperation.TEST,
+                        (package,),
+                        all_features=False,
+                        no_default_features=True,
+                    ),
+                    environment,
+                )
         return TaskResult()
 
 
@@ -83,3 +101,90 @@ class UiE2eAppTest(Task):
             result = context.tools.cargo.app_regressions(group, environment)
             context.emit(result.stdout)
         return TaskResult("Application launch, compliance and bootstrap regressions passed")
+
+
+class TestMediaRecovery(Task):
+    """Exercise interruption/replay and the private workspace reuse boundary."""
+
+    @staticmethod
+    def run(context: Context) -> TaskResult:
+        selections: tuple[CargoArgs, ...] = (
+            CargoArgs(
+                CargoOperation.TEST,
+                ("revaer-app",),
+                test_filter="production_media_job_runtime_executes_and_persists_verified_replacement",
+                include_ignored=True,
+                test_threads=1,
+            ),
+            CargoArgs(
+                CargoOperation.TEST,
+                ("revaer-app",),
+                all_features=False,
+                no_default_features=True,
+                test_filter="media_discovery_fingerprint::tests",
+                test_threads=1,
+            ),
+            CargoArgs(
+                CargoOperation.TEST,
+                ("revaer-app",),
+                all_features=False,
+                no_default_features=True,
+                test_filter="media::",
+                test_threads=1,
+            ),
+            CargoArgs(CargoOperation.TEST, ("revaer-media-runtime",)),
+            CargoArgs(CargoOperation.TEST, ("revaer-data",), test_filter="media::"),
+            CargoArgs(
+                CargoOperation.TEST,
+                ("revaer-app",),
+                all_features=False,
+                no_default_features=True,
+                test_filter="media_job_runtime::tests::media_job_runtime_",
+                test_threads=1,
+            ),
+        )
+        if context.host.system == "linux":
+            selections += (
+                CargoArgs(
+                    CargoOperation.TEST,
+                    ("revaer-app",),
+                    all_features=False,
+                    no_default_features=True,
+                    test_filter="bootstrap::root_catalog::native::tests",
+                    test_threads=1,
+                ),
+            )
+        for selection in selections:
+            result = context.tools.cargo.execute(selection, test_environment(context), capture=True)
+            context.emit(result.stdout)
+            if not re.search(
+                r"(?m)^test result: ok\. [1-9]\d* passed; 0 failed; 0 ignored;", result.stdout
+            ):
+                raise ToolingError("Media recovery regression selection ran no passing tests")
+        return TaskResult()
+
+
+class TestMediaServiceRecovery(Task):
+    """Run the explicit persistent-mount, active-service Linux qualification."""
+
+    @staticmethod
+    def run(context: Context) -> TaskResult:
+        if context.host.system != "linux":
+            raise ToolingError("Native media service recovery requires Linux")
+        result = context.tools.cargo.execute(
+            CargoArgs(
+                CargoOperation.TEST,
+                ("revaer-app",),
+                test_filter="bootstrap::service_recovery_tests::native_service_shutdown_resumes_active_ffmpeg",
+                include_ignored=True,
+                test_threads=1,
+            ),
+            test_environment(context),
+            capture=True,
+        )
+        context.emit(result.stdout)
+        if not re.search(r"(?m)^test result: ok\. 1 passed; 0 failed; 0 ignored;", result.stdout):
+            raise ToolingError(
+                "Native service recovery qualification did not execute one passing test"
+            )
+        return TaskResult("Native media service recovery passed")

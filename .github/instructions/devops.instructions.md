@@ -15,6 +15,30 @@ applyTo:
 
 # Workflow And Release Rules
 
+- API and browser E2E jobs explicitly provision FFmpeg for real capability probes
+  and e2fsprogs for managed media roots. Do not rely on runner-image tools or the
+  installed tools of a developer checkout to satisfy these job dependencies.
+
+- Composed validation provisions an owned single-init fixture or verifies the
+  caller-selected database without repair. Preserve administrative test endpoints
+  and owned cleanup. Cargo lock reconciliation remains offline without registry
+  upgrades.
+- PR feature and scanner fixture commands use `uv run --locked --no-build`
+  with the existing exact `python-semantic-release` source-build exception
+  after setup has synchronized the locked environment. Other package builds
+  remain disabled during runtime fixture execution.
+- PR feature and scanner jobs exercise sealed application fixtures in the
+  accepted feature-development phase. Their guardrail requires that fixture
+  gate before feature tests and rejects historical migration replay.
+
+- Existing media recovery recipes retain their feature selections and require
+  positive passing tests. Native service recovery requires Linux and the owned
+  persistent-mount fixture; these checks preserve the full CI and UI gates.
+
+- The Justfile provides compatibility aliases for the locked `rv` task registry.
+  The retained shell/Node implementations are comparison material, not the
+  current quality-gate executor.
+
 - An audit exit code of zero is insufficient when packages were skipped. Source
   dependencies must retain uv provenance/hash verification and complete advisory
   coverage; URL requirements must not silently escape the dependency gate.
@@ -112,6 +136,22 @@ applyTo:
 - Maintain focused README files for setup, architecture, command ownership, and
   verification. Comments should explain ordering, ownership, and compatibility
   constraints that are not apparent from the code.
+- Distributed coverage retains every selected producer and shard. Media API
+  producers include both missing-catalog phases alongside anonymous/authenticated
+  phases; merging must verify their complete selections and route coverage.
+  Explicit API project selections must include all four phases even when
+  dependency expansion is disabled. Upload each phase's raw Python coverage
+  database for the distributed scanner merge.
+  Assign records to their complete declared phase names, so missing-catalog
+  prefixes cannot satisfy or invalidate a different phase's evidence.
+- PostgreSQL readiness treats a timed-out probe as not ready within the existing
+  overall deadline. Preserve the timeout cause when that deadline expires and
+  propagate other command failures immediately; do not increase probe deadlines.
+- Sonar input verification derives `coverage/rust-sonar-lcov.info` from the complete
+  LCOV report using the tracked Rust inventory and zero-hit unexecuted branches,
+  as explicitly approved by the operator. Both workflows retain the complete
+  original and adapted input, including the PR Rust/native upload; no thresholds
+  or authored analysis scope change.
 - Rust coverage retains the existing per-crate 90% Rust line gate and publishes complete
   LCOV, text, and HTML evidence with native sources and build scripts. Do not add
   filename exclusions during the migration. Resolve workspace members through
@@ -135,6 +175,9 @@ applyTo:
   Coverage.py's supported commands. Report every authored Python file with its
   full checkout-relative path, including never-imported files; retain the
   independent 90% tooling/launcher gate. Corrupt coverage inputs must fail.
+- Python and JavaScript coverage merges use the runner's phase selection for
+  the checkout's database lifecycle, including media missing-catalog phases.
+  Require every selected phase to pass in the same completed, unsharded run.
 - Browser source coverage parses all checkout JavaScript, including unused ES
   modules, through the official Tree-sitter Python bindings and grammar. Chromium
   V8 supplies every positive count, bound to exact source hashes and UTF-16
@@ -305,6 +348,26 @@ applyTo:
 
 # Drift Control
 
+- Feature-matrix and API/browser E2E setup includes FFmpeg alongside database
+  prerequisites because those jobs execute native media runtime scenarios.
+  Feature-matrix and Rust coverage also select the owned ext4 fixture for
+  native root tests; a home-directory filesystem is not that proof. Install
+  e2fsprogs for the private loop-backed image and retain it until unmount succeeds.
+
+- Hosted test Postgres services publish `127.0.0.1:5432:5432` for the single-init
+  endpoint check. Media E2E selects `job.services.postgres.id` and its matching admin
+  password. `E2E_MANAGED_MEDIA_ROOTS=1` gives dry-run API/browser scenarios an
+  owned private Linux ext4 catalog, validated by normal application bootstrap;
+  clear the checked-in `E2E_FS_ROOT` default in those managed steps.
+  Stop services before unmounting and removing those disposable roots.
+
+- Database services use the approved PostgreSQL 18.6 image digest from
+  `.github/build-inputs.env`; floating major-version tags are not suitable.
+- Fixture probing uses the pinned Alpine image and ARM64 FFmpeg 8.0.1-r1, whose full
+  version report matches the existing approved F1 profile. The media conversion
+  job uses `ubuntu-24.04-arm` to select that native build. Mount the checkout
+  read-only at `/workspace`, inject the named container, and remove it after use.
+
 - Any change to a workflow, release script, setup action, the `rv` registry, or `sonar-project.properties` must review the matching instruction file in the same change.
 - Revaer enforces that rule mechanically with `rv instruction-drift`, backed by the Python policy tasks. Keep the mapping in those tasks aligned with this file and `AGENTS.md`.
 - Keep `scripts/workflow-guardrails.sh` aligned with the live workflow policy when GitHub Actions pinning or shell-safety rules change.
@@ -329,6 +392,9 @@ applyTo:
   jobs, step order, unconditional report/upload/cleanup and missing-report failure.
   Cache keys consume `tool_version` and `fixtures` from `rv fixture-cache-key`;
   do not retain shell-script hashes after migrating the fixture implementation.
+- The media conversion job supplies its own disposable PostgreSQL service and
+  executes the production worker replacement regression before fixture conversions.
+  A successful Cargo process with no selected worker test must fail the task.
 
 - Helm packaging uses strict lint: warnings must prevent package publication.
   Negative fixtures must pass ordinary lint to distinguish warning enforcement
@@ -365,9 +431,10 @@ The ordinary PR gates (instruction drift, formatting, lint, check, audit, deny,
 unused dependencies, supply-chain aggregation and release build) invoke the
 locked `rv` CLI through the shared uv setup action. Select native tools through
 its supported inputs; retain each gate, dependency, condition and failure result.
-Ordinary setup has a 20-minute bound; coverage prerequisites have a 40-minute
-bound because the full tooling suite requires cold native-tool installations.
-Each job retains an explicit bounded timeout.
+Ordinary setup has a 20-minute bound. Full coverage setup has a 40-minute bound
+because a cold runner builds every pinned Cargo tool; each job retains its
+explicit bounded timeout. The shared setup action retains the operator's
+Node 24-compatible Helm setup pin (`Azure/setup-helm` v5.0.1).
 
 PR coverage producers run independently on the exact submitted head: Rust/native,
 Python/bootstrap, anonymous/authenticated API, and the three-browser, three-shard
@@ -411,3 +478,17 @@ merge tasks validate the same completed phase set.
   credentials and exact PR/head/base identity; missing tools or analysis must fail.
   The Just entrypoint disables generated Python bytecode, matching the hosted
   aggregate job; remove only untracked generated bytecode left by older local runs.
+
+## Consolidated media coverage producers
+
+The split coverage producers retain the single-init PostgreSQL baseline and
+media API catalog phases. Rust coverage retains complete workspace measurements;
+scanner input verification derives the tracked-Rust importer report after all
+producer inputs are available. Preserve both reports in the scanner artifact.
+
+- Coverage upload paths include complete JavaScript measurements and the
+  vendor-free `coverage/js-sonar-lcov.info` scanner input, generated by
+  `sonar-verify-inputs`. Follow the exact vendor exclusions in root policy;
+  first-party execution and all existing quality thresholds remain required.
+  The Rust-only producer uploads native/Rust inputs; the aggregate scanner creates
+  and uploads the JavaScript scanner input after browser measurements are merged.

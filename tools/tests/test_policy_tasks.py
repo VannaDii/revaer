@@ -9,8 +9,20 @@ from revaer_tooling.cli import make_context
 from revaer_tooling.context import Options
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.tasks.build import Audit, Deny
-from revaer_tooling.tasks.policy import AdvisoryPolicy, SourcePolicy
+from revaer_tooling.tasks.policy import AdvisoryPolicy, SourcePolicy, rust_findings
 from revaer_tooling.tasks.workflows import WorkflowPolicy
+
+
+def test_generated_cxx_documentation_exception_cannot_cover_other_code() -> None:
+    path = "crates/revaer-torrent-libt/src/ffi/bridge.rs"
+    exception = "#[allow(clippy::missing_errors_doc)]\n"
+    bridge = '#[cxx::bridge(namespace = "revaer")]\npub mod ffi {}\n'
+    assert not rust_findings(path, exception + bridge)
+    assert rust_findings("crates/other/src/lib.rs", exception + bridge)
+    assert rust_findings(path, exception + "pub fn authored() {}\n")
+    assert rust_findings(path, (exception + bridge) * 2)
+    assert rust_findings(path, exception.replace("missing_errors_doc", "all") + bridge)
+    assert rust_findings(path, exception + bridge + exception + "pub fn authored() {}\n")
 
 
 def test_workflow_task_reads_real_contract_inputs(
@@ -35,7 +47,11 @@ def test_workflow_task_reads_real_contract_inputs(
     WorkflowPolicy.run(context)
     # Adding the media configuration tightens this same foundation task; it
     # does not require a second implementation on the branch rebased onto it.
-    (tmp_path / "config/database-rebaseline.env").touch()
+    phase = tmp_path / "config/database-rebaseline.env"
+    phase.touch()
+    with pytest.raises(ToolingError, match="recognized transition phase"):
+        WorkflowPolicy.run(context)
+    phase.write_text("TRANSITION_PHASE=finalization\n")
     WorkflowPolicy.run(context)
     contexts.write_text("only-one-context\n")
     with pytest.raises(ToolingError, match=r"required.*check|context"):

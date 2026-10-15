@@ -15,11 +15,31 @@ pub type AppResult<T> = Result<T, AppError>;
 /// Application-level error type.
 #[derive(Debug, Error)]
 pub enum AppError {
+    /// Required compliance metadata failed before infrastructure construction.
+    #[error("compliance metadata startup failed")]
+    Compliance {
+        /// Typed metadata failure, already reported at the preflight origin.
+        source: revaer_api::app::compliance::ComplianceMetadataError,
+    },
+    /// The task-free origin diagnostic could not be written.
+    #[error("compliance metadata startup diagnostic failed")]
+    ComplianceDiagnostic {
+        /// Original metadata failure, retained without exposing document contents.
+        compliance: revaer_api::app::compliance::ComplianceMetadataError,
+        /// Diagnostic sink failure.
+        source: io::Error,
+    },
     /// Environment configuration was missing.
     #[error("missing environment configuration")]
     MissingEnv {
         /// Name of the missing environment variable.
         name: &'static str,
+    },
+    /// Root-catalog reconciliation could not persist a safe startup state.
+    #[error("media root catalog startup persistence failed")]
+    RootCatalogStorage {
+        /// Original database failure without caller paths in the outer diagnostic.
+        source: revaer_data::DataError,
     },
     /// Configuration operations failed.
     #[error("configuration operation failed")]
@@ -60,14 +80,6 @@ pub enum AppError {
         operation: &'static str,
         /// Source fsops error.
         source: revaer_fsops::FsOpsError,
-    },
-    /// Runtime persistence operations failed.
-    #[error("runtime persistence failed")]
-    Runtime {
-        /// Operation identifier.
-        operation: &'static str,
-        /// Source runtime data error.
-        source: revaer_data::DataError,
     },
     /// HTTP client operations failed.
     #[error("http operation failed")]
@@ -161,11 +173,6 @@ impl AppError {
     }
 
     #[cfg(feature = "libtorrent")]
-    pub(crate) const fn runtime(operation: &'static str, source: revaer_data::DataError) -> Self {
-        Self::Runtime { operation, source }
-    }
-
-    #[cfg(feature = "libtorrent")]
     pub(crate) const fn http(operation: &'static str, url: String, source: reqwest::Error) -> Self {
         Self::Http {
             operation,
@@ -231,14 +238,5 @@ mod tests {
             },
         );
         assert!(matches!(fsops, AppError::FsOps { .. }));
-
-        let runtime = AppError::runtime(
-            "save",
-            revaer_data::DataError::PathNotUtf8 {
-                field: "path",
-                path: PathBuf::from(".server_root/revaer"),
-            },
-        );
-        assert!(matches!(runtime, AppError::Runtime { .. }));
     }
 }

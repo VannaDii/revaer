@@ -28,6 +28,8 @@ serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 cxx = "1.0"
+# Reuse the existing URL parser for fail-closed tracker validation at the FFI boundary.
+url = "2.5"
 
 [dev-dependencies]
 anyhow.workspace = true

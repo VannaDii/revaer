@@ -1,7 +1,7 @@
 # Pristine PostgreSQL catalog proofs
 
 This package preserves the catalog reference used by Revaer's database
-initializer. It reads a fresh PostgreSQL 16.14 database as its constrained owner
+initializer. It reads a fresh PostgreSQL 18.6 database as its constrained owner
 and compares the complete result with the reviewed snapshot. It requires Docker
 and the image pinned in `.github/build-inputs.env`.
 
@@ -10,7 +10,7 @@ and the image pinned in `.github/build-inputs.env`.
 | Command | Result |
 | --- | --- |
 | `rv db-pristine-catalog-generate` | Generate the complete snapshot and provenance in `target/postgres-pristine/`. |
-| `rv db-pristine-catalog-validate` | Generate fresh evidence and require an exact byte match with `config/postgres-pristine-16.14.tsv`. |
+| `rv db-pristine-catalog-validate` | Generate fresh evidence and require an exact byte match with `config/postgres-pristine-18.6.tsv`. |
 | `rv db-pristine-catalog-test` | Exercise all 27 catalog classes, normalization and privilege boundaries against the pinned server. |
 
 Generation leaves the committed reference untouched. A differing reference fails

@@ -42,4 +42,18 @@ pub(crate) const EVENT_KIND_WHITELIST: &[&str] = &[
     "settings_changed",
     "health_changed",
     "selection_reconciled",
+    "media_profile_changed",
+    "media_capabilities_refreshed",
+    "media_capabilities_refresh_failed",
+    "media_discovery_previewed",
+    "media_job_queued",
+    "media_job_inspected",
+    "media_job_planned",
+    "media_job_execution_started",
+    "media_job_verification_failed",
+    "media_job_completed",
+    "media_job_failed",
+    "media_job_history_pruned",
 ];
+
+pub(crate) use crate::app::compliance::SOURCE_COMPLIANCE_BUNDLE_PATH as MEDIA_SOURCE_COMPLIANCE_BUNDLE_PATH;

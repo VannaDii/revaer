@@ -4,11 +4,65 @@ use crate::LabelKind;
 use anyhow::{Result, anyhow};
 use chrono::Duration as ChronoDuration;
 use revaer_data::config::{NatToggleSet, PrivacyToggleSet, QueuePolicySet, StorageToggleSet};
+use revaer_data::indexers::jobs::JobClaimOutcome;
 use std::collections::HashSet;
 use std::fs;
 use std::net::IpAddr;
 use std::str::FromStr;
 use uuid::Uuid;
+
+#[tokio::test]
+async fn cancelled_configuration_change_keeps_background_jobs_and_reads_healthy() -> Result<()> {
+    use std::future::poll_fn;
+    use std::task::Poll;
+
+    let mut postgres = revaer_test_support::postgres::start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .test_before_acquire(false)
+        .connect(postgres.connection_string())
+        .await?;
+    let service = ConfigService {
+        pool,
+        database_url: postgres.connection_string().to_owned(),
+    };
+    let snapshot = service.snapshot().await?;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while service.pool.num_idle() != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await?;
+
+    let mut change = service.apply_changeset(
+        "tester",
+        "cancelled navigation",
+        SettingsChangeset::default(),
+    );
+    poll_fn(|context| {
+        assert!(change.as_mut().poll(context).is_pending());
+        Poll::Ready(())
+    })
+    .await;
+    drop(change);
+
+    let outcome =
+        revaer_data::indexers::jobs::job_claim_next(&service.pool, "retention_purge").await?;
+    if outcome == JobClaimOutcome::Claimed {
+        assert_ne!(
+            revaer_data::indexers::jobs::job_claim_next(&service.pool, "retention_purge").await?,
+            JobClaimOutcome::Claimed
+        );
+    }
+    let refreshed = service.snapshot().await?;
+    assert_eq!(refreshed.revision, snapshot.revision);
+    service.pool.close().await;
+    postgres.close()?;
+    Ok(())
+}
 
 fn sample_label_row(kind: &str) -> LabelPolicyRow {
     LabelPolicyRow {
@@ -149,6 +203,53 @@ fn sample_fs_policy_row() -> FsPolicyRow {
         umask: Some("022".to_string()),
         allow_paths: vec!["/library".to_string()],
     }
+}
+
+#[test]
+fn factory_reset_retry_sqlstates_are_limited_to_transient_contention() {
+    assert!(factory_reset_sqlstate_is_retryable(Some(
+        POSTGRES_DEADLOCK_DETECTED
+    )));
+    assert!(factory_reset_sqlstate_is_retryable(Some(
+        POSTGRES_SERIALIZATION_FAILURE
+    )));
+    assert!(factory_reset_sqlstate_is_retryable(Some(
+        POSTGRES_LOCK_NOT_AVAILABLE
+    )));
+
+    assert!(!factory_reset_sqlstate_is_retryable(None));
+    assert!(!factory_reset_sqlstate_is_retryable(Some("23505")));
+    assert!(!factory_reset_sqlstate_is_retryable(Some("42P01")));
+}
+
+#[test]
+fn factory_reset_retry_budget_allows_three_total_attempts() {
+    assert_eq!(
+        factory_reset_retry_delay(1, Some(POSTGRES_DEADLOCK_DETECTED)),
+        Some(FACTORY_RESET_RETRY_BASE_DELAY)
+    );
+    assert_eq!(
+        factory_reset_retry_delay(2, Some(POSTGRES_SERIALIZATION_FAILURE)),
+        Some(FACTORY_RESET_RETRY_BASE_DELAY.saturating_mul(2))
+    );
+    assert_eq!(
+        factory_reset_retry_delay(
+            FACTORY_RESET_MAX_ATTEMPTS,
+            Some(POSTGRES_LOCK_NOT_AVAILABLE)
+        ),
+        None
+    );
+}
+
+#[test]
+fn factory_reset_retry_fails_closed_outside_policy() {
+    assert_eq!(
+        factory_reset_retry_delay(0, Some(POSTGRES_DEADLOCK_DETECTED)),
+        None
+    );
+    assert_eq!(factory_reset_retry_delay(1, None), None);
+    assert_eq!(factory_reset_retry_delay(1, Some("08006")), None);
+    assert_eq!(factory_reset_retry_delay(1, Some("23505")), None);
 }
 
 #[test]

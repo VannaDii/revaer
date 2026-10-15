@@ -77,7 +77,8 @@ def test_binding_and_destructive_readiness_desktop_and_mobile(
         header = panel.get_by_role("columnheader", name="Destructive ready", exact=True)
         expect(header).to_be_visible()
         bounds = header.bounding_box()
-        assert bounds is not None and bounds["x"] + bounds["width"] <= width
+        assert bounds is not None
+        assert bounds["x"] + bounds["width"] <= width
         # DOM Range has no Python locator equivalent; keep this measurement
         # local to the element, without embedding automation or application logic.
         assert (
@@ -91,14 +92,16 @@ def test_binding_and_destructive_readiness_desktop_and_mobile(
         icon = panel.get_by_role("button", name="Refresh root readiness").locator("svg")
         expect(icon).to_be_visible()
         icon_bounds = icon.bounding_box()
-        assert icon_bounds is not None and 0 < icon_bounds["width"] <= 32
+        assert icon_bounds is not None
+        assert 0 < icon_bounds["width"] <= 32
         for kind in KINDS:
             row = panel.get_by_role("row").filter(
                 has=page.get_by_role("rowheader", name=kind.capitalize(), exact=True),
             )
             expect(row.get_by_role("cell")).to_have_text(["2", "2", "0"])
         panel_bounds = panel.bounding_box()
-        assert panel_bounds is not None and panel_bounds["x"] + panel_bounds["width"] <= width
+        assert panel_bounds is not None
+        assert panel_bounds["x"] + panel_bounds["width"] <= width
         destination: Path = request.node.stash[ARTIFACTS] / f"root-readiness-{width}.png"
         panel.screenshot(path=destination, animations="disabled")
 

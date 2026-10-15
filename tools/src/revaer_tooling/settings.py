@@ -62,6 +62,7 @@ class DatabaseSettings:
 class CoverageSettings:
     test_threads: int
     build_jobs: int | Literal["default"]
+    native_recovery_root: Path | None
 
 
 @dataclass(frozen=True)
@@ -144,6 +145,7 @@ def cargo_jobs(environment: Mapping[str, str]) -> int | Literal["default"]:
 
 def load_settings(environment: Mapping[str, str], *, linux: bool = False) -> Settings:
     """Resolve existing override precedence without requiring unused credentials."""
+    recovery_root = environment.get("REVAER_NATIVE_RECOVERY_ROOT")
     repository = (
         environment.get("REVAER_RELEASE_REPOSITORY")
         or environment.get("GITHUB_REPOSITORY")
@@ -237,6 +239,7 @@ def load_settings(environment: Mapping[str, str], *, linux: bool = False) -> Set
         coverage=CoverageSettings(
             test_threads=positive_integer(environment, "RUST_TEST_THREADS", 1),
             build_jobs=cargo_jobs(environment),
+            native_recovery_root=(Path(recovery_root) if recovery_root else None),
         ),
         e2e=load_e2e_settings(environment),
     )

@@ -1,7 +1,13 @@
 Revaer {{ .Chart.Version }} has been installed.
 
 Image:
-  {{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}
+  {{ include "revaer.image" . }}
+
+Compliance binding (operator-prepared; not verified by Helm):
+  Architecture: {{ .Values.image.architecture }}
+  Existing PVC: {{ .Values.compliance.existingClaim }}
+  Manifest: {{ .Values.compliance.manifestDigest }}
+  Mounted read-only at /app/compliance.
 
 Initial setup:
   Revaer starts in setup mode and keeps the API listener loopback-only until the

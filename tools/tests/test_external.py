@@ -1,17 +1,22 @@
 """Tool adapters emit exact typed operations without shell interpretation."""
 
 import json
+import os
 import sys
 from pathlib import Path
 
 import pytest
-from revaer_tooling.errors import ToolingError
+from revaer_tooling.errors import CommandError, ToolingError
 from revaer_tooling.external.base import ExternalTool
 from revaer_tooling.external.coverage import CargoLlvmCov
+from revaer_tooling.external.database import PgIsReady
 from revaer_tooling.external.github import GitHub
+from revaer_tooling.external.media import Ffprobe
+from revaer_tooling.external.mount import MkfsExt4, Mount, Unmount
 from revaer_tooling.external.python import Python
 from revaer_tooling.external.release import ReleaseRepository, SemanticRelease
 from revaer_tooling.external.rust import Cargo, CargoArgs, CargoInstallArgs, CargoOperation
+from revaer_tooling.filesystem import FileSystem
 from revaer_tooling.process import Completed, Invocation, RunningProcess
 
 
@@ -26,6 +31,94 @@ class RecordingRunner:
     def run(self, invocation: Invocation) -> Completed:
         self.calls.append(invocation)
         return Completed(0, self.stdout)
+
+
+@pytest.mark.parametrize("exit_code", (124, 127))
+def test_postgres_readiness_distinguishes_probe_timeout_from_command_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exit_code: int
+) -> None:
+    runner = RecordingRunner()
+    error = CommandError("readiness probe failed", exit_code)
+
+    def probe(invocation: Invocation) -> Completed:
+        runner.calls.append(invocation)
+        if len(runner.calls) == 1:
+            raise error
+        return Completed(0, "")
+
+    monkeypatch.setattr(runner, "run", probe)
+    ready = PgIsReady(sys.executable, runner, tmp_path, {})
+    endpoints = ("postgres://fixture@localhost/fixture", "postgres://fixture@127.0.0.1/fixture")
+    if exit_code == 124:
+        assert ready.wait(endpoints) == endpoints[1]
+        assert len(runner.calls) == 2
+    else:
+        with pytest.raises(CommandError) as failure:
+            ready.wait(endpoints)
+        assert failure.value is error
+        assert len(runner.calls) == 1
+
+
+def test_postgres_readiness_retains_timeout_cause_at_overall_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = RecordingRunner()
+    error = CommandError("readiness probe timed out", 124)
+
+    def probe(invocation: Invocation) -> Completed:
+        runner.calls.append(invocation)
+        raise error
+
+    monkeypatch.setattr(runner, "run", probe)
+    ready = PgIsReady(sys.executable, runner, tmp_path, {})
+    with pytest.raises(ToolingError, match="before the timeout") as failure:
+        ready.wait(("postgres://fixture@localhost/fixture",), timeout=0)
+    assert failure.value.__cause__ is error
+    assert len(runner.calls) == 1
+
+
+def test_ext4_fixture_preserves_private_image_and_explicit_mount_lifecycle(tmp_path: Path) -> None:
+    runner = RecordingRunner()
+    fs = FileSystem()
+    image = tmp_path / "media.ext4"
+    root = tmp_path / "roots"
+    fs.create_disk_image(image, 1024 * 1024)
+    root.mkdir(mode=0o700)
+    uid, gid = os.getuid(), os.getgid()
+    formatter = MkfsExt4(sys.executable, runner, tmp_path, {})
+    formatter.image(image, uid, gid)
+    assert runner.calls[-1].argv[1:] == ("-q", "-F", "-E", f"root_owner={uid}:{gid}", str(image))
+    Mount(sys.executable, runner, tmp_path, {}).temporary(root, image, uid, gid, None)
+    assert runner.calls[-1].argv[1:] == (
+        "-t",
+        "ext4",
+        "-o",
+        "loop,nodev,nosuid,noexec",
+        str(image),
+        str(root),
+    )
+    Unmount(sys.executable, runner, tmp_path, {}).temporary(root, None)
+    assert runner.calls[-1].argv[1:] == ("--", str(root))
+    image.chmod(0o644)
+    with pytest.raises(ToolingError, match="private owned backing file"):
+        formatter.image(image, uid, gid)
+    assert len(runner.calls) == 3
+    with pytest.raises(FileExistsError):
+        fs.create_disk_image(image, 1024)
+    assert image.stat().st_size == 1024 * 1024
+    with pytest.raises(ToolingError, match="positive"):
+        fs.create_disk_image(tmp_path / "invalid.ext4", 0)
+
+
+def test_container_ffprobe_reads_only_the_selected_checkout(tmp_path: Path) -> None:
+    runner = RecordingRunner("ffprobe version 8.0.1\n")
+    tool = Ffprobe(sys.executable, runner, tmp_path, {}, container="revaer-fixture-ffprobe")
+    assert tool.report() == b"ffprobe version 8.0.1\n"
+    tool.streams(tmp_path / "test-fixtures/source/input.mkv")
+    assert runner.calls[-1].argv[-1] == "/workspace/test-fixtures/source/input.mkv"
+    assert runner.calls[-1].argv[1:4] == ("exec", "revaer-fixture-ffprobe", "ffprobe")
+    with pytest.raises(ToolingError, match="selected checkout"):
+        tool.streams(tmp_path.parent / "outside.mkv")
 
 
 @pytest.mark.parametrize("newline", ("\n", "\r\n"))

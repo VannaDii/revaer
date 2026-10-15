@@ -7,7 +7,9 @@ from revaer_tooling.errors import ToolingError
 from revaer_tooling.sonar.inputs import (
     NATIVE_SOURCE,
     LineCounts,
+    javascript_sonar_lcov,
     lcov_counts,
+    rust_sonar_lcov,
     verify_bootstrap_coverage,
     verify_lcov,
     verify_native_coverage,
@@ -21,6 +23,58 @@ def lcov(source: str, count: int, covered: int) -> str:
         + "".join(f"DA:{number},{int(number <= covered)}\n" for number in range(1, count + 1))
         + "end_of_record\n"
     )
+
+
+def test_rust_scanner_input_preserves_authored_measurements(tmp_path: Path) -> None:
+    name = "crates/example/src/lib.rs"
+    authored = lcov(str(tmp_path / name), 2, 1).replace(
+        "end_of_record", "BRDA:2,0,0,-\nBRDA:2,0,1,7\nBRF:2\nBRH:1\nend_of_record"
+    )
+    full = (
+        authored
+        + lcov(str(tmp_path / "vendor/gloo/src/lib.rs"), 2, 2)
+        + lcov("/registry/dependency.rs", 2, 2)
+        + lcov(str(tmp_path / "target/generated.rs"), 2, 2)
+        + lcov("crates/native/session.cpp", 2, 2)
+    )
+    adapted = rust_sonar_lcov(
+        full, tmp_path, (name, "vendor/gloo/src/lib.rs", "crates/native/session.cpp")
+    )
+    assert adapted == authored.replace(str(tmp_path / name), name).replace(
+        "BRDA:2,0,0,-", "BRDA:2,0,0,0"
+    )
+    assert lcov_counts(adapted) == lcov_counts(authored)
+    assert "BRDA:2,0,0,-" in full
+    assert "vendor/gloo/src/lib.rs" in full
+    assert "vendor/gloo/src/lib.rs" not in adapted
+
+
+@pytest.mark.parametrize("branch", ["BRDA:1,0,0,bad", "BRDA:1,0,-,0", "BRDA:1,0,0"])
+def test_rust_scanner_input_rejects_invalid_authored_branches(tmp_path: Path, branch: str) -> None:
+    name = "crates/example/src/lib.rs"
+    document = lcov(name, 1, 1).replace("end_of_record", branch + "\nend_of_record")
+    with pytest.raises(ToolingError, match="invalid branch"):
+        rust_sonar_lcov(document, tmp_path, (name,))
+
+
+@pytest.mark.parametrize("absolute", [False, True])
+def test_rust_scanner_input_normalizes_tracked_source_paths(tmp_path: Path, absolute: bool) -> None:
+    source = "crates/revaer-data/src/../tests/unit/config_src_tests.rs"
+    name = "crates/revaer-data/tests/unit/config_src_tests.rs"
+    path = str(tmp_path / source) if absolute else source
+    document = lcov(path, 2, 1)
+    assert rust_sonar_lcov(document, tmp_path, (name,)) == lcov(name, 2, 1)
+    with pytest.raises(ToolingError, match="untracked checkout source"):
+        rust_sonar_lcov(document, tmp_path, ())
+
+
+def test_rust_scanner_input_rejects_untracked_checkout_sources(tmp_path: Path) -> None:
+    untracked = lcov("crates/example/src/lib.rs", 1, 1)
+    dependency = lcov("/registry/dependency.rs", 1, 1)
+    with pytest.raises(ToolingError, match="untracked checkout source"):
+        rust_sonar_lcov(untracked, tmp_path, ())
+    with pytest.raises(ToolingError, match="executed authored Rust"):
+        rust_sonar_lcov(dependency, tmp_path, ())
 
 
 def test_coverage_requires_execution_of_production_sources_only() -> None:
@@ -64,6 +118,18 @@ BOOTSTRAP = (
     '<lineToCover lineNumber="2" covered="true"/>'
     '<lineToCover lineNumber="3" covered="false"/></file></coverage>'
 )
+
+
+def test_javascript_scanner_input_preserves_first_party_and_complete_original() -> None:
+    authored = lcov("crates/example/static/runtime.js", 3, 2)
+    upstream = lcov("crates/revaer-ui/static/nexus/js/app.js", 2, 1)
+    copied_library = lcov("docs/mermaid.min.js", 2, 0)
+    full = authored + upstream + copied_library
+    assert javascript_sonar_lcov(full) == authored
+    assert upstream in full
+    assert copied_library in full
+    with pytest.raises(ToolingError, match="first-party source lines"):
+        javascript_sonar_lcov(upstream + copied_library)
 
 
 def test_bootstrap_generic_coverage_keeps_unexecuted_lines() -> None:

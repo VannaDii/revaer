@@ -27,11 +27,81 @@ from revaer_tooling.tasks import e2e
 from revaer_tooling.tasks.build import SyncAssets
 
 
+@pytest.mark.parametrize("failure", ("", "format", "mount", "scenario", "unmount"))
+def test_managed_media_fixture_cleanup_preserves_mount_failure(
+    coordinator: tuple[Context, "Scenario"], monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    context, _ = coordinator
+    context = replace(
+        context,
+        host=replace(context.host, system="linux", home=context.root),
+        settings=replace(
+            context.settings, e2e=replace(context.settings.e2e, managed_media_roots=True)
+        ),
+    )
+    events: list[str] = []
+    created: list[Path] = []
+
+    def format_image(image: Path, uid: int, gid: int) -> None:
+        events.append("format")
+        created.append(image.parent)
+        assert image.stat().st_mode & 0o777 == 0o600
+        assert image.stat().st_size > 1024 * 1024 * 1024
+        if failure == "format":
+            raise ToolingError("format failed")
+
+    def mount(path: Path, image: Path, uid: int, gid: int, privilege: object) -> None:
+        events.append("mount")
+        assert path == created[0] / "roots"
+        assert image.parent == created[0]
+        if failure == "mount":
+            raise ToolingError("mount failed")
+
+    def unmount(path: Path, privilege: object) -> None:
+        assert path == created[0] / "roots"
+        events.append("unmount")
+        if failure == "unmount":
+            raise ToolingError("unmount failed")
+
+    monkeypatch.setattr(context.tools.mount, "temporary", mount)
+    monkeypatch.setattr(context.tools.mkfs_ext4, "image", format_image)
+    monkeypatch.setattr(context.tools.unmount, "temporary", unmount)
+
+    def run() -> None:
+        with e2e.media_fixture(context, e2e.RunPaths.for_context(context)) as (paths, catalog):
+            assert catalog is not None
+            assert paths.filesystem == created[0] / "roots"
+            assert catalog.stat().st_mode & 0o777 == 0o600
+            document = json.loads(catalog.read_text())
+            assert len(document["slots"]) == 3
+            for slot in document["slots"]:
+                assert slot["durability_class"] == "restart_persistent"
+                assert slot["durability_evidence"] == "linux_dedicated_mount"
+                assert Path(slot["path"]).stat().st_mode & 0o777 == 0o700
+            if failure == "scenario":
+                raise ToolingError("scenario failed")
+
+    if failure:
+        with pytest.raises(ToolingError, match=failure + " failed"):
+            run()
+    else:
+        run()
+    expected = ["format", "mount", "unmount"]
+    if failure == "format":
+        expected = ["format"]
+    elif failure == "mount":
+        expected = ["format", "mount"]
+    assert events == expected
+    assert created[0].exists() == (failure == "unmount")
+
+
 @dataclass
 class Scenario:
     failure: str = ""
     events: list[str] = field(default_factory=list)
     phase_count: int = 0
+    catalogs: list[Path | None] = field(default_factory=list)
+    auth_headers: list[dict[str, str]] = field(default_factory=list)
 
     def visit(self, event: str) -> None:
         self.events.append(event)
@@ -64,7 +134,23 @@ def coordinator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Contex
     (tmp_path / "tools/src/revaer_tooling/cli.py").touch()
     (tmp_path / "Cargo.toml").touch()
     (tmp_path / "tests/e2e.toml").write_text('[api]\nrunner="binary"\nmedia_runner="lib-test"\n')
-    (tmp_path / "docs/api/openapi.json").write_text('{"paths":{}}')
+    (tmp_path / "docs/api/openapi.json").write_text(
+        json.dumps(
+            {
+                "paths": {
+                    "/v1/media/root-catalog/readiness": {
+                        "get": {
+                            "responses": {
+                                "200": {
+                                    "content": {"application/json": {"schema": {"type": "object"}}}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        )
+    )
     for name in ("api-coverage-stale.json", "ui-coverage-stale.json", "selection-stale.json"):
         (tmp_path / "tests/test-results" / name).write_text('["stale"]')
     monkeypatch.chdir(tmp_path)
@@ -110,6 +196,7 @@ def coordinator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Contex
 
     def start_api(args: ApplicationArgs) -> Service:
         scenario.visit("start-api")
+        scenario.catalogs.append(args.media_root_catalog)
         return Service(scenario, "api", 100)
 
     def start_ui(args: TrunkServeArgs) -> Service:
@@ -117,11 +204,20 @@ def coordinator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Contex
         return Service(scenario, "ui", 200)
 
     def health(args: HttpRequest) -> HttpResult:
+        if args.url.endswith("/v1/media/root-catalog/readiness"):
+            scenario.visit("catalog-readiness")
+            state = "missing" if scenario.failure == "catalog-unready" else "ready"
+            return HttpResult(
+                200,
+                {"content-type": "application/json"},
+                json.dumps({"source_state": state, "attestation_state": state}),
+            )
         scenario.visit("health-" + str(urlsplit(args.url).port))
         return HttpResult(200, {}, "")
 
     def auth(client: ApiClient, mode: str, filesystem: str) -> ApiSession:
         scenario.visit("auth-" + mode)
+        scenario.auth_headers.append(client.headers)
         return ApiSession(mode, "fixture-key" if mode == "api_key" else None)
 
     def run_phase(args: E2ePytestArgs, environment: Mapping[str, str]) -> Completed:
@@ -163,6 +259,65 @@ def test_complete_run_authenticates_in_order_and_cleans_owned_resources(
     results = context.root / "tests/test-results"
     assert not list(results.glob("*stale.json"))
     assert json.loads((results / "python-e2e-summary.json").read_text())["status"] == "passed"
+
+
+@pytest.mark.parametrize(
+    "failure", ("", "api-none-missing-catalog", "catalog-unready", "interrupt")
+)
+def test_media_restarts_after_reset_and_never_manufactures_catalog_readiness(
+    coordinator: tuple[Context, Scenario],
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    context, scenario = coordinator
+    scenario.failure = failure
+    context.fs.write(
+        context.root / "config/database-rebaseline.env", "TRANSITION_PHASE=feature-development\n"
+    )
+
+    @contextmanager
+    def database(owner: Context) -> Iterator[str]:
+        scenario.visit("create-database")
+        try:
+            yield "postgres://fixture.invalid/owned"
+        finally:
+            scenario.visit("drop-database")
+
+    monkeypatch.setattr(e2e, "single_init_database", database)
+    if failure:
+        with pytest.raises((ToolingError, KeyboardInterrupt)):
+            e2e.UiE2e.run(context)
+    else:
+        e2e.UiE2e.run(context)
+        missing = context.root / "tests/.runtime/missing-media-roots.json"
+        assert scenario.catalogs == [
+            missing,
+            missing,
+            missing,
+            None,
+            missing,
+            missing,
+            missing,
+            None,
+            None,
+        ]
+        assert scenario.events.count("catalog-readiness") == 3
+        assert [event for event in scenario.events if event.startswith("auth-")] == [
+            "auth-none",
+            "auth-none",
+            "auth-api_key",
+            "auth-api_key",
+        ]
+        assert scenario.events.count("start-api") == scenario.events.count("stop-api") == 9
+        assert scenario.auth_headers == [{}, {}, {}, {"x-revaer-api-key": "fixture-key"}]
+    assert scenario.events[-1] == "drop-database"
+    for index, event in enumerate(scenario.events):
+        if event == "auth-none" or event == "auth-api_key":
+            assert scenario.events[index + 1] == "stop-api"
+            assert scenario.events[index + 2] == "free-7070"
+    summary = json.loads((context.root / "tests/test-results/python-e2e-summary.json").read_text())
+    assert summary["status"] == ("failed" if failure else "passed")
+    assert set(summary["phases"]) == set(context.settings.e2e.phases(media=True))
 
 
 @pytest.mark.parametrize(

@@ -110,7 +110,8 @@ class PostgresDocker(ExternalTool):
                 capture=True,
                 timeout=120,
             ).stdout.strip()
-            if actual != f"{executable} (PostgreSQL) {pin.version}":
+            expected = f"{executable} (PostgreSQL) {pin.version}"
+            if actual not in (expected, expected + " (Debian 18.6-1.pgdg12+2)"):
                 raise ToolingError(f"Pinned proof image has an unexpected {executable} version")
 
     def create(self, args: ProofContainerArgs) -> str:
@@ -140,7 +141,7 @@ class PostgresDocker(ExternalTool):
                     "--env",
                     f"POSTGRES_DB={identifier(args.database)}",
                     "--env",
-                    "PGDATA=/var/lib/postgresql/data/pgdata",
+                    "PGDATA=/var/lib/postgresql/18/docker",
                     "--env",
                     "POSTGRES_INITDB_ARGS=--locale=C --encoding=UTF8 --data-checksums",
                     "--env",
@@ -168,7 +169,7 @@ class PostgresDocker(ExternalTool):
         if (
             mount.get("Type") != "volume"
             or mount.get("RW") is not True
-            or mount.get("Destination") != "/var/lib/postgresql/data"
+            or mount.get("Destination") != "/var/lib/postgresql"
         ):
             raise ToolingError("Proof container data mount differs from the owned volume contract")
         name = string_value(mount.get("Name"))

@@ -6,6 +6,7 @@
   - PR chain validation must fail closed on RustSec and cargo-deny findings before media runtime work is layered on top.
   - The previous dependency graph carried stale advisory ignores for `proc-macro-error`, `bincode`, and `rand 0.8.5`.
 - Decision:
+  - On 2026-10-09, Vanna approved CC0-1.0 as an allowed license and extended the exact Windows duplicate allowances in `deny.toml` through 2027-04-09. Other duplicate and advisory rules remain unchanged; remove these exact tolerances when upstream Windows support versions converge.
   - Vendor patched `gloo` and `yew-macro` sources to remove `gloo-worker` and `bincode`.
   - Replace `proc-macro-error` usage in vendored Yew/Yewdux macros with local `syn::Error` handling.
   - Remove the direct `postgres` test-support dependency and reuse SQLx bootstrap calls with explicitly safe raw SQL.

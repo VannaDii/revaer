@@ -29,6 +29,7 @@
       "relpages",
       "reltuples",
       "relallvisible",
+      "relallfrozen",
       "reltoastrelid",
       "relhasindex",
       "relisshared",
@@ -176,7 +177,7 @@
       "collencoding",
       "collcollate",
       "collctype",
-      "colliculocale",
+      "colllocale",
       "collicurules",
       "collversion"
     ],
@@ -320,7 +321,8 @@
       "pubupdate",
       "pubdelete",
       "pubtruncate",
-      "pubviaroot"
+      "pubviaroot",
+      "pubgencols"
     ],
     "pg_publication_rel": [
       "oid",
@@ -342,6 +344,7 @@
       "subdisableonerr",
       "subpasswordrequired",
       "subrunasowner",
+      "subfailover",
       "subconninfo",
       "subslotname",
       "subsynccommit",

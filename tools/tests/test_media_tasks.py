@@ -113,7 +113,8 @@ def test_cleanup_refuses_tracked_or_linked_files_before_any_removal(media_contex
     link.symlink_to(foreign)
     with pytest.raises(ToolingError, match="symlinks"):
         CleanFixtures.run(context)
-    assert path.is_file() and foreign.is_dir()
+    assert path.is_file()
+    assert foreign.is_dir()
     link.unlink()
     CleanFixtures.run(context)
     assert not path.exists()
@@ -139,7 +140,8 @@ def test_media_cleanup_keeps_other_checkouts_and_old_global_temporary_data(
     foreign = context.root.parent / "revaer-media-conversion.other"
     foreign.mkdir()
     CleanTestMedia.run(context)
-    assert foreign.is_dir() and not owned.exists()
+    assert foreign.is_dir()
+    assert not owned.exists()
 
 
 def test_update_command_changes_only_declared_snapshots(media_context: Context) -> None:
@@ -245,7 +247,7 @@ fn selected_ignored_integration_runs() -> Result<(), Box<dyn std::error::Error>>
 
 
 def test_native_cargo_runs_ignored_integration_with_all_features(cargo_context: Context) -> None:
-    context = cargo_context
+    context: Context = cargo_context
     result = MediaConversion.run(context)
     assert "positive audio/video actions" in result.message
     assert (context.root / context.settings.fixtures.report).read_text() == REPORT
@@ -266,8 +268,67 @@ def test_native_cargo_runs_ignored_integration_with_all_features(cargo_context: 
         assert not (context.root / context.settings.fixtures.report).exists()
 
 
+@pytest.mark.parametrize("worker", ("pass", "failure", "absent"))
+def test_conversion_requires_executed_production_worker(
+    cargo_context: Context, worker: str
+) -> None:
+    context: Context = cargo_context
+    manifest = context.root / "Cargo.toml"
+    manifest.write_text(manifest.read_text().replace("[workspace]", '[workspace]\nmembers=["app"]'))
+    app = context.root / "app"
+    (app / "src").mkdir(parents=True)
+    (app / "Cargo.toml").write_text(
+        '[package]\nname="revaer-app"\nversion="0.1.0"\nedition="2024"\n'
+    )
+    name = (
+        "unselected_worker"
+        if worker == "absent"
+        else "production_media_job_runtime_executes_and_persists_verified_replacement"
+    )
+    (app / "src/lib.rs").write_text(
+        "mod media_job_runtime { mod tests {\n#[test]\n#[ignore]\n"
+        f"fn {name}() -> Result<(), Box<dyn std::error::Error>> {{\n"
+        'let database = std::env::var("REVAER_TEST_DATABASE_URL")?;\n'
+        'assert_eq!(database, "postgresql://localhost/fixture");\n'
+        'std::fs::write("worker-executed", "observed")?;\n'
+        + ('Err("injected worker failure".into())' if worker == "failure" else "Ok(())")
+        + "\n} } }\n"
+    )
+    subprocess.run(
+        ["cargo", "generate-lockfile", "--offline"],
+        cwd=context.root,
+        env=context.tools.cargo.environment,
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    context = Context(
+        root=context.root,
+        settings=replace(
+            context.settings,
+            database=replace(context.settings.database, test_url="postgresql://localhost/fixture"),
+        ),
+        options=context.options,
+        tools=context.tools,
+        fs=context.fs,
+        emit=context.emit,
+        host=context.host,
+        invoked_at=context.invoked_at,
+        command_names=context.command_names,
+    )
+    if worker == "pass":
+        MediaConversion.run(context)
+        assert (app / "worker-executed").read_text() == "observed"
+        assert (context.root / context.settings.fixtures.report).read_text() == REPORT
+    else:
+        with pytest.raises((CommandError, ToolingError)):
+            MediaConversion.run(context)
+        assert not (context.root / context.settings.fixtures.report).exists()
+        assert not (context.root / "target/media-conversion/tmp/owned-media").exists()
+
+
 def test_foundation_reports_only_fixture_verification(cargo_context: Context) -> None:
-    context = cargo_context
+    context: Context = cargo_context
     manifest = context.root / "Cargo.toml"
     manifest.write_text(
         manifest.read_text().replace('name="revaer-media-runtime"', 'name="foundation"')

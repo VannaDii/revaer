@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from ..context import Context, TaskResult
+from ..e2e.database import uses_single_init
 from ..errors import ToolingError
 from ..json_data import decode, object_value
 from ..policy.formats import Document, yaml_document
@@ -76,7 +77,10 @@ class WorkflowPolicy(Task):
             *setup_workflow_findings(documents),
             *scanner_workflow_findings(documents),
             *required_check_findings(
-                documents, contexts, (context.root / "config/database-rebaseline.env").is_file()
+                documents,
+                contexts,
+                (context.root / "config/database-rebaseline.env").is_file(),
+                single_init=uses_single_init(context),
             ),
             *image_workflow_findings(documents, matrix),
             *release_workflow_findings(documents),

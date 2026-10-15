@@ -1990,3 +1990,16 @@ The root document changes only JSON ordering; its schema remains semantically
 identical. The app-local copy was stale at 91 paths and now matches the same
 101-path generated contract used by the API tests. Retained the generated
 documents so analysis and source attribution use the committed contract.
+
+## Operator vendor-analysis policy — 2026-10-14
+
+The operator instructed: “Exclude anything we get from a vendor from being scanned
+then. We don’t scan vendor code, we don’t patch vendor code.”
+
+Apply this permanent source policy to `vendor/**`,
+`crates/revaer-ui/ui_vendor/**`, and the synchronized
+`crates/revaer-ui/static/nexus/**` assets and copied `docs/mermaid.min.js` library.
+Keep first-party code in analysis,
+including runtime SQL, FFI wrappers, tests and tools. Dependency security audits,
+complete execution coverage, coverage thresholds and first-party issue/hotspot
+gates remain required. The exact scanner exclusion allowlist enforces this boundary.

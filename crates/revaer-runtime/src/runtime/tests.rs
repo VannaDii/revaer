@@ -14,18 +14,15 @@ use std::path::Path;
 use uuid::Uuid;
 
 async fn test_store() -> anyhow::Result<(TestDatabase, RuntimeStore)> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping runtime store test: {err}");
-            return Err(anyhow::anyhow!("runtime store test skipped"));
-        }
-    };
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
+        .await?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(postgres.connection_string())
         .await?;
-    let store = RuntimeStore::new(pool).await?;
+    let store = RuntimeStore::new(pool);
     Ok((postgres, store))
 }
 
@@ -76,10 +73,7 @@ fn sample_status(torrent_id: Uuid, state: TorrentState) -> TorrentStatus {
 
 #[tokio::test]
 async fn runtime_store_round_trips_status_and_fs_jobs() -> anyhow::Result<()> {
-    let Ok((postgres, store)) = test_store().await else {
-        return Ok(());
-    };
-    let _keep_db_alive = postgres;
+    let (postgres, store) = test_store().await?;
 
     let torrent_id = Uuid::new_v4();
     let status = sample_status(torrent_id, TorrentState::Downloading);
@@ -120,16 +114,14 @@ async fn runtime_store_round_trips_status_and_fs_jobs() -> anyhow::Result<()> {
     store.remove_torrent(torrent_id).await?;
     assert!(store.load_statuses().await?.is_empty());
 
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn runtime_store_round_trips_failed_state_and_completed_job_without_transfer_mode()
 -> anyhow::Result<()> {
-    let Ok((postgres, store)) = test_store().await else {
-        return Ok(());
-    };
-    let _keep_db_alive = postgres;
+    let (postgres, store) = test_store().await?;
 
     let torrent_id = Uuid::new_v4();
     let status = sample_status(
@@ -166,15 +158,13 @@ async fn runtime_store_round_trips_failed_state_and_completed_job_without_transf
     assert_eq!(job.transfer_mode, None);
     assert_eq!(job.last_error, None);
 
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn runtime_store_records_failed_job_for_known_torrent() -> anyhow::Result<()> {
-    let Ok((postgres, store)) = test_store().await else {
-        return Ok(());
-    };
-    let _keep_db_alive = postgres;
+    let (postgres, store) = test_store().await?;
 
     let torrent_id = Uuid::new_v4();
     store
@@ -193,20 +183,19 @@ async fn runtime_store_records_failed_job_for_known_torrent() -> anyhow::Result<
     assert_eq!(job.attempt, 2);
     assert_eq!(job.last_error.as_deref(), Some("boom"));
 
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn runtime_store_ignores_failed_fs_job_without_known_torrent() -> anyhow::Result<()> {
-    let Ok((postgres, store)) = test_store().await else {
-        return Ok(());
-    };
-    let _keep_db_alive = postgres;
+    let (postgres, store) = test_store().await?;
 
     let missing_id = Uuid::new_v4();
     store.mark_fs_job_failed(missing_id, "boom").await?;
     assert!(store.fetch_fs_job_state(missing_id).await?.is_none());
 
+    postgres.close()?;
     Ok(())
 }
 
@@ -216,10 +205,7 @@ async fn runtime_store_rejects_non_utf8_paths() -> anyhow::Result<()> {
     use revaer_data::DataError;
     use std::path::PathBuf;
 
-    let Ok((postgres, store)) = test_store().await else {
-        return Ok(());
-    };
-    let _keep_db_alive = postgres;
+    let (postgres, store) = test_store().await?;
 
     let torrent_id = Uuid::new_v4();
     store
@@ -239,5 +225,6 @@ async fn runtime_store_rejects_non_utf8_paths() -> anyhow::Result<()> {
         other => panic!("expected PathNotUtf8, got {other:?}"),
     }
 
+    postgres.close()?;
     Ok(())
 }

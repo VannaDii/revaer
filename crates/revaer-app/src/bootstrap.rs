@@ -1,5 +1,7 @@
 use std::borrow::Cow;
+use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 #[cfg(feature = "libtorrent")]
@@ -9,13 +11,33 @@ use crate::error::{AppError, AppResult};
 use crate::import_job_runtime::ImportJobRuntime;
 use crate::indexer_runtime::IndexerRuntime;
 use crate::indexers::IndexerService;
+use crate::media::MediaService;
+use crate::media::native_discovery::NativeDiscovery;
+use crate::media_discovery_runtime::{MediaDiscoveryRuntime, WATCH_EVENT_CAPACITY};
+use crate::media_discovery_watcher::{MediaWatchEventBuffer, NotifyMediaWatcher};
+use crate::media_job_runtime::MediaJobRuntime;
+use crate::media_retention_runtime::MediaRetentionRuntime;
+use crate::media_workspace_retention::MediaWorkspaceRetentionService;
+use crate::runtime_shutdown;
 use revaer_api::TorrentHandles;
+use revaer_api::app::compliance::{
+    ComplianceMetadataError, SOURCE_COMPLIANCE_BUNDLE_PATH, SourceComplianceMetadata,
+};
+use revaer_api::app::media::{MediaCapabilityRefreshParams, MediaFacade};
 use revaer_config::{AppMode, ConfigService, ConfigSnapshot, DbSessionConfig};
 use revaer_events::EventBus;
 use revaer_telemetry::{GlobalContextGuard, LoggingConfig, Metrics, OpenTelemetryConfig};
 use tracing::{error, info, warn};
 
+use revaer_media_runtime::capabilities::{
+    FfmpegCapabilityDetector, SupervisedCapabilityProbeExecutor,
+};
+use revaer_media_runtime::process::{
+    NativeProcessSupervisor, NeverStopNativeProcess, SystemNativeProcessSupervisor,
+};
 use revaer_runtime::RuntimeStore;
+use revaer_runtime::media::MediaStore;
+use uuid::Uuid;
 
 #[cfg(feature = "libtorrent")]
 use crate::orchestrator::{
@@ -24,8 +46,15 @@ use crate::orchestrator::{
 #[cfg(feature = "libtorrent")]
 use revaer_torrent_core::{TorrentEngine, TorrentInspector, TorrentWorkflow};
 
+const SYSTEM_USER_PUBLIC_ID: Uuid = Uuid::from_u128(0);
+
+mod root_catalog;
+#[cfg(unix)]
+mod signals;
+
 /// Dependencies required to bootstrap the Revaer application.
 pub(crate) struct BootstrapDependencies {
+    source_compliance: SourceComplianceMetadata,
     logging: LoggingConfig<'static>,
     otel_config: Option<OpenTelemetryConfig<'static>>,
     config: ConfigService,
@@ -33,18 +62,37 @@ pub(crate) struct BootstrapDependencies {
     watcher: revaer_config::ConfigWatcher,
     events: EventBus,
     telemetry: Metrics,
+    media_workspace_root: PathBuf,
+    media_root_source: root_catalog::CatalogSource,
     #[cfg(feature = "libtorrent")]
     libtorrent: Option<LibtorrentOrchestratorDeps>,
 }
 
 impl BootstrapDependencies {
     /// Construct production dependencies from the environment for the binary entrypoint.
-    pub(crate) async fn from_env() -> AppResult<Self> {
+    async fn from_env(source_compliance: SourceComplianceMetadata) -> AppResult<Self> {
         let database_url = database_url_from_env()?;
-        Self::from_database_url(database_url).await
+        Self::from_database_url(database_url, source_compliance).await
     }
 
-    pub(crate) async fn from_database_url(database_url: String) -> AppResult<Self> {
+    async fn from_database_url(
+        database_url: String,
+        source_compliance: SourceComplianceMetadata,
+    ) -> AppResult<Self> {
+        let media_workspace_root = media_workspace_root_from_env()?;
+        Self::from_database_url_with_workspace_root(
+            database_url,
+            media_workspace_root,
+            source_compliance,
+        )
+        .await
+    }
+
+    async fn from_database_url_with_workspace_root(
+        database_url: String,
+        media_workspace_root: PathBuf,
+        source_compliance: SourceComplianceMetadata,
+    ) -> AppResult<Self> {
         let logging = LoggingConfig::default();
         let otel_config = load_otel_config_from_env();
 
@@ -63,11 +111,7 @@ impl BootstrapDependencies {
             Metrics::new().map_err(|err| AppError::telemetry("telemetry.metrics", err))?;
 
         #[cfg(feature = "libtorrent")]
-        let runtime = Some(
-            RuntimeStore::new(config.pool().clone())
-                .await
-                .map_err(|err| AppError::runtime("runtime_store.new", err))?,
-        );
+        let runtime = Some(RuntimeStore::new(config.pool().clone()));
         #[cfg(not(feature = "libtorrent"))]
         let _runtime: Option<RuntimeStore> = None;
 
@@ -77,6 +121,7 @@ impl BootstrapDependencies {
         )?);
 
         Ok(Self {
+            source_compliance,
             logging,
             otel_config,
             config,
@@ -84,6 +129,8 @@ impl BootstrapDependencies {
             watcher,
             events,
             telemetry,
+            media_workspace_root,
+            media_root_source: root_catalog::source_from_env(),
             #[cfg(feature = "libtorrent")]
             libtorrent,
         })
@@ -94,6 +141,21 @@ fn database_url_from_env() -> AppResult<String> {
     std::env::var("DATABASE_URL").map_err(|_| AppError::MissingEnv {
         name: "DATABASE_URL",
     })
+}
+
+fn media_workspace_root_from_env() -> AppResult<PathBuf> {
+    media_workspace_root_from_value(std::env::var_os("REVAER_MEDIA_WORKSPACE_ROOT"))
+}
+
+fn media_workspace_root_from_value(value: Option<std::ffi::OsString>) -> AppResult<PathBuf> {
+    value
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .ok_or(AppError::InvalidConfig {
+            field: "REVAER_MEDIA_WORKSPACE_ROOT",
+            reason: "absolute_private_workspace_root_required",
+            value: None,
+        })
 }
 
 /// Load the optional database session encryption configuration from the environment.
@@ -211,22 +273,60 @@ fn validate_trimmed_field<'a>(
 }
 
 /// Entry point for the Revaer application boot sequence.
+/// Required packaged metadata is checked before constructing any dependencies.
 ///
 /// # Errors
 ///
 /// Returns an error if dependency construction or application startup fails.
 pub async fn run_app() -> AppResult<()> {
-    let dependencies = BootstrapDependencies::from_env().await?;
-    Box::pin(run_app_with(dependencies)).await
+    run_app_with_compliance_loader(None, load_packaged_compliance, &mut std::io::stderr()).await
 }
 
 /// Boot sequence using a provided database URL.
+/// Required packaged metadata is checked before constructing any dependencies.
 ///
 /// # Errors
 ///
 /// Returns an error if dependency construction or application startup fails.
 pub async fn run_app_with_database_url(database_url: String) -> AppResult<()> {
-    let dependencies = BootstrapDependencies::from_database_url(database_url).await?;
+    run_app_with_compliance_loader(
+        Some(database_url),
+        load_packaged_compliance,
+        &mut std::io::stderr(),
+    )
+    .await
+}
+
+fn load_packaged_compliance() -> Result<SourceComplianceMetadata, ComplianceMetadataError> {
+    SourceComplianceMetadata::load(std::path::Path::new(SOURCE_COMPLIANCE_BUNDLE_PATH))
+}
+
+async fn run_app_with_compliance_loader(
+    database_url: Option<String>,
+    loader: impl FnOnce() -> Result<SourceComplianceMetadata, ComplianceMetadataError>,
+    diagnostic: &mut impl Write,
+) -> AppResult<()> {
+    // This synchronous preflight must precede even dependency construction:
+    // configuration and native dependency constructors already start work.
+    let source_compliance = match loader() {
+        Ok(metadata) => metadata,
+        Err(compliance) => {
+            return Err(
+                match writeln!(
+                    diagnostic,
+                    "compliance_metadata_startup_failed cause={}",
+                    compliance.category(),
+                ) {
+                    Ok(()) => AppError::Compliance { source: compliance },
+                    Err(source) => AppError::ComplianceDiagnostic { compliance, source },
+                },
+            );
+        }
+    };
+    let dependencies = match database_url {
+        Some(url) => BootstrapDependencies::from_database_url(url, source_compliance).await?,
+        None => BootstrapDependencies::from_env(source_compliance).await?,
+    };
     Box::pin(run_app_with(dependencies)).await
 }
 
@@ -251,6 +351,7 @@ fn init_bootstrap_logging(
 
 async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResult<()> {
     let BootstrapDependencies {
+        source_compliance,
         logging: _,
         otel_config: _,
         config,
@@ -258,14 +359,21 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         watcher,
         events,
         telemetry,
+        media_workspace_root,
+        media_root_source,
         #[cfg(feature = "libtorrent")]
         libtorrent,
     } = dependencies;
 
     let addr = bootstrap_listener_addr(&snapshot.app_profile, &telemetry, &events)?;
+    #[cfg(unix)]
+    let signals = signals::ShutdownSignals::install()?;
+    // Retain catalog descriptors and root locks until the service has stopped.
+    let media_roots = root_catalog::start(&config, media_root_source).await?;
+    let (shutdown, receiver) = runtime_shutdown::channel();
 
     #[cfg(feature = "libtorrent")]
-    let (fsops_worker, config_task, torrent_handles) = {
+    let (fsops_worker, mut config_task, torrent_handles) = {
         let libtorrent = libtorrent.ok_or(AppError::MissingDependency { name: "libtorrent" })?;
         let (_engine, orchestrator, worker) = spawn_libtorrent_orchestrator(
             &events,
@@ -284,6 +392,7 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
             Arc::clone(&orchestrator),
             events.clone(),
             telemetry.clone(),
+            receiver.clone(),
         );
         (worker, config_task, Some(handles))
     };
@@ -296,50 +405,232 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         None
     };
 
-    let api = build_api_server(&config, &events, torrent_handles, telemetry.clone())?;
+    let native_process_supervisor = system_native_process_supervisor();
+    let media = Arc::new(
+        build_media_service(
+            &config,
+            telemetry.clone(),
+            Arc::clone(&native_process_supervisor),
+        )
+        .with_association_source(media_roots.as_ref().map(Arc::clone)),
+    );
+    refresh_startup_media_capabilities(&media, &events, &telemetry).await;
+    let api = build_api_server(
+        &config,
+        &events,
+        torrent_handles,
+        telemetry.clone(),
+        Arc::clone(&media),
+        source_compliance,
+    )?;
     let indexer_runtime_task =
         IndexerRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
     let import_job_runtime_task =
         ImportJobRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
+    let media_runtime_tasks = spawn_media_runtime_tasks(
+        &config,
+        &events,
+        &telemetry,
+        media_workspace_root,
+        native_process_supervisor,
+        receiver,
+        media,
+    );
     info!(addr = %addr, "Launching API listener");
 
+    #[cfg(unix)]
+    let serve_result = signals.serve(api, addr).await;
+    #[cfg(not(unix))]
     let serve_result = api.serve(addr).await;
 
-    if !indexer_runtime_task.is_finished() {
-        indexer_runtime_task.abort();
-    }
-    if let Err(err) = indexer_runtime_task.await {
-        warn!(error = %err, "indexer runtime task join failed");
-    }
-    if !import_job_runtime_task.is_finished() {
-        import_job_runtime_task.abort();
-    }
-    if let Err(err) = import_job_runtime_task.await {
-        warn!(error = %err, "import job runtime task join failed");
-    }
+    request_runtime_shutdown(&shutdown);
+    #[cfg(feature = "libtorrent")]
+    stop_config_watch_task(&mut config_task, &shutdown).await;
+    stop_runtime_task(indexer_runtime_task, "indexer").await;
+    stop_runtime_task(import_job_runtime_task, "import_job").await;
+    stop_media_runtime_tasks(media_runtime_tasks, &shutdown).await;
 
     #[cfg(feature = "libtorrent")]
-    {
-        if !fsops_worker.is_finished() {
-            fsops_worker.abort();
-        }
-        if let Err(err) = fsops_worker.await {
-            warn!(error = %err, "fsops worker join failed");
-        }
-
-        if !config_task.is_finished() {
-            config_task.abort();
-        }
-        if let Err(err) = config_task.await {
-            warn!(error = %err, "config watcher task join failed");
-        }
-    }
+    stop_runtime_task(fsops_worker, "fsops").await;
 
     // Await transaction owners that outlive a cancelled API request before runtime shutdown.
     config.pool().close().await;
     serve_result.map_err(|err| AppError::api_server("api_server.serve", err))?;
     info!("API server shutdown complete");
     Ok(())
+}
+
+struct MediaRuntimeTasks {
+    discovery: tokio::task::JoinHandle<()>,
+    job: tokio::task::JoinHandle<()>,
+    retention: tokio::task::JoinHandle<()>,
+}
+
+fn spawn_media_runtime_tasks(
+    config: &ConfigService,
+    events: &EventBus,
+    telemetry: &Metrics,
+    media_workspace_root: PathBuf,
+    native_process_supervisor: Arc<dyn NativeProcessSupervisor>,
+    receiver: runtime_shutdown::RuntimeShutdownReceiver,
+    media: Arc<MediaService>,
+) -> MediaRuntimeTasks {
+    let media_store = MediaStore::new(config.pool().clone());
+    let watch_events = Arc::new(MediaWatchEventBuffer::new(WATCH_EVENT_CAPACITY));
+    let watcher = Box::new(NotifyMediaWatcher::new(Arc::clone(&watch_events)));
+    let discovery = MediaDiscoveryRuntime::new(
+        media_store.clone(),
+        telemetry.clone(),
+        watcher,
+        watch_events,
+        NativeDiscovery::new(media),
+    )
+    .spawn(receiver.clone());
+    let job = MediaJobRuntime::new(
+        media_store.clone(),
+        events.clone(),
+        telemetry.clone(),
+        media_workspace_root.clone(),
+        native_process_supervisor,
+    )
+    .spawn(receiver.clone());
+    let media_workspace_retention = Arc::new(MediaWorkspaceRetentionService::new(
+        media_store.clone(),
+        telemetry.clone(),
+        media_workspace_root,
+    ));
+    let retention =
+        MediaRetentionRuntime::new(media_store, media_workspace_retention, telemetry.clone())
+            .spawn(receiver);
+    MediaRuntimeTasks {
+        discovery,
+        job,
+        retention,
+    }
+}
+
+fn request_runtime_shutdown(shutdown: &runtime_shutdown::RuntimeShutdownSender) {
+    if runtime_shutdown::request(shutdown) {
+        info!("media runtime shutdown requested");
+    } else {
+        warn!("media runtime shutdown requested after receivers closed");
+    }
+}
+
+async fn stop_media_runtime_tasks(
+    tasks: MediaRuntimeTasks,
+    shutdown: &runtime_shutdown::RuntimeShutdownSender,
+) {
+    stop_runtime_task_gracefully(tasks.discovery, "media_discovery", shutdown).await;
+    stop_runtime_task_gracefully(tasks.job, "media_job", shutdown).await;
+    stop_runtime_task_gracefully(tasks.retention, "media_retention", shutdown).await;
+}
+
+#[cfg(any(feature = "libtorrent", test))]
+async fn stop_config_watch_task(
+    task: &mut tokio::task::JoinHandle<()>,
+    shutdown: &runtime_shutdown::RuntimeShutdownSender,
+) {
+    tokio::select! {
+        biased;
+        result = &mut *task => {
+            if let Err(error) = result {
+                log_runtime_task_join_error(&error, "config_watcher", false);
+            }
+        }
+        elapsed = runtime_shutdown::deadline_elapsed(shutdown) => {
+            task.abort();
+            match elapsed {
+                Ok(()) => warn!(
+                    reason = "shared_shutdown_deadline",
+                    "config watcher task aborted during bootstrap shutdown"
+                ),
+                Err(error) => warn!(
+                    error = %error,
+                    task = "config_watcher",
+                    "runtime shutdown authority closed before deadline observation"
+                ),
+            }
+            // No time remains for another grace or an unbounded post-abort join.
+            // Keep the handle with bootstrap and report only an observed outcome.
+            let joined = std::future::poll_fn(|context| {
+                std::task::Poll::Ready(std::future::Future::poll(
+                    std::pin::Pin::new(&mut *task), context,
+                ))
+            }).await;
+            match joined {
+                std::task::Poll::Ready(Ok(())) => {}
+                std::task::Poll::Ready(Err(error)) => {
+                    log_runtime_task_join_error(&error, "config_watcher", true);
+                }
+                std::task::Poll::Pending => {
+                    warn!("config watcher task settlement unconfirmed after shutdown abort request");
+                }
+            }
+        }
+    }
+}
+
+async fn stop_runtime_task<T>(task: tokio::task::JoinHandle<T>, task_name: &'static str) {
+    let abort_requested = !task.is_finished();
+    if abort_requested {
+        task.abort();
+    }
+    if let Err(err) = task.await {
+        log_runtime_task_join_error(&err, task_name, abort_requested);
+    }
+}
+
+async fn stop_runtime_task_gracefully<T>(
+    mut task: tokio::task::JoinHandle<T>,
+    task_name: &'static str,
+    shutdown: &runtime_shutdown::RuntimeShutdownSender,
+) {
+    if task.is_finished() {
+        if let Err(err) = task.await {
+            log_runtime_task_join_error(&err, task_name, false);
+        }
+        return;
+    }
+
+    tokio::select! {
+        result = &mut task => {
+            if let Err(err) = result {
+                log_runtime_task_join_error(&err, task_name, false);
+            }
+        }
+        elapsed = runtime_shutdown::deadline_elapsed(shutdown) => {
+            task.abort();
+            match elapsed {
+                Ok(()) => warn!(
+                    task = task_name,
+                    "runtime task aborted after graceful shutdown timeout"
+                ),
+                Err(error) => warn!(
+                    error = %error,
+                    task = task_name,
+                    "runtime shutdown authority closed before deadline observation"
+                ),
+            }
+            // S2's independent owner and native settlement remain separate work.
+            // This existing join does not grant a new cooperative grace period.
+            if let Err(err) = task.await {
+                log_runtime_task_join_error(&err, task_name, true);
+            }
+        }
+    }
+}
+
+fn log_runtime_task_join_error(
+    error: &tokio::task::JoinError,
+    task_name: &'static str,
+    abort_requested: bool,
+) {
+    if abort_requested && error.is_cancelled() {
+        info!(error = %error, task = task_name, "runtime task cancelled after shutdown abort request");
+    } else {
+        warn!(error = %error, task = task_name, "runtime task join failed");
+    }
 }
 
 fn bootstrap_listener_addr(
@@ -373,19 +664,95 @@ fn build_api_server(
     events: &EventBus,
     torrent_handles: Option<TorrentHandles>,
     telemetry: Metrics,
+    media: Arc<MediaService>,
+    source_compliance: SourceComplianceMetadata,
 ) -> AppResult<revaer_api::ApiServer> {
     let indexers = Arc::new(IndexerService::new(
         Arc::new(config.clone()),
         telemetry.clone(),
     ));
-    revaer_api::ApiServer::new(
+    revaer_api::ApiServer::new_with_media(
         config.clone(),
         indexers,
+        media,
         events.clone(),
         torrent_handles,
         telemetry,
+        source_compliance,
     )
     .map_err(|err| AppError::api_server("api_server.new", err))
+}
+
+fn system_native_process_supervisor() -> Arc<dyn NativeProcessSupervisor> {
+    Arc::new(SystemNativeProcessSupervisor)
+}
+
+fn build_media_service(
+    config: &ConfigService,
+    telemetry: Metrics,
+    native_process_supervisor: Arc<dyn NativeProcessSupervisor>,
+) -> MediaService {
+    MediaService::new(
+        MediaStore::new(config.pool().clone()),
+        Arc::new(FfmpegCapabilityDetector::new(
+            Arc::new(SupervisedCapabilityProbeExecutor::new(
+                native_process_supervisor,
+                Arc::new(NeverStopNativeProcess),
+            )),
+            "ffmpeg",
+            "ffprobe",
+            "ffplay",
+        )),
+        telemetry,
+    )
+}
+
+async fn refresh_startup_media_capabilities(
+    media: &MediaService,
+    events: &EventBus,
+    telemetry: &Metrics,
+) {
+    match media
+        .media_capability_refresh(MediaCapabilityRefreshParams {
+            actor_user_public_id: SYSTEM_USER_PUBLIC_ID,
+        })
+        .await
+    {
+        Ok(snapshot_id) => {
+            info!(
+                media_capability_snapshot_id = snapshot_id,
+                "startup media capability refresh completed"
+            );
+            publish_event(
+                events,
+                revaer_events::Event::MediaCapabilitiesRefreshed {
+                    media_capability_snapshot_id: snapshot_id,
+                },
+            );
+        }
+        Err(error) => {
+            let code = error
+                .code()
+                .unwrap_or("media_capability_refresh_failed")
+                .to_string();
+            warn!(
+                error = %error,
+                code = %code,
+                "startup media capability refresh failed; media execution remains not ready"
+            );
+            telemetry.inc_event("media_capability_refresh_failed");
+            publish_event(
+                events,
+                revaer_events::Event::MediaCapabilitiesRefreshFailed { reason: code },
+            );
+            publish_event(
+                events,
+                revaer_events::Event::HealthChanged {
+                    degraded: vec!["media_capability".to_string()],
+                },
+            );
+        }
+    }
 }
 
 fn load_otel_config_from_env() -> Option<OpenTelemetryConfig<'static>> {
@@ -432,6 +799,7 @@ fn spawn_config_watch_task<E>(
     orchestrator: Arc<crate::orchestrator::TorrentOrchestrator<E>>,
     events: EventBus,
     telemetry: Metrics,
+    mut shutdown: runtime_shutdown::RuntimeShutdownReceiver,
 ) -> tokio::task::JoinHandle<()>
 where
     E: TorrentEngine + EngineConfigurator + 'static,
@@ -441,8 +809,9 @@ where
         let mut config_degraded = false;
         loop {
             let wait_started = Instant::now();
-            match watcher.next().await {
-                Ok(snapshot) => {
+            let result = Box::pin(config_watch_step(
+                watcher.next(),
+                |snapshot| async {
                     telemetry.observe_config_watch_latency(wait_started.elapsed());
                     apply_config_snapshot(
                         snapshot,
@@ -453,7 +822,13 @@ where
                         APPLY_SLA,
                     )
                     .await;
-                }
+                },
+                &mut shutdown,
+            ))
+            .await;
+            match result {
+                Ok(std::ops::ControlFlow::Continue(())) => {}
+                Ok(std::ops::ControlFlow::Break(())) => break,
                 Err(err) => {
                     telemetry.inc_config_update_failure();
                     warn!(error = %err, "configuration watcher terminated");
@@ -463,6 +838,26 @@ where
             }
         }
     })
+}
+
+#[cfg(any(feature = "libtorrent", test))]
+async fn config_watch_step<T, E, A: std::future::Future<Output = ()>>(
+    next: impl std::future::Future<Output = Result<T, E>>,
+    apply: impl FnOnce(T) -> A,
+    shutdown: &mut runtime_shutdown::RuntimeShutdownReceiver,
+) -> Result<std::ops::ControlFlow<()>, E> {
+    let update = tokio::select! {
+        biased;
+        () = runtime_shutdown::changed(shutdown) => return Ok(std::ops::ControlFlow::Break(())),
+        update = next => update?,
+    };
+    // Drain can latch while next is polled. This check admits the snapshot;
+    // once admitted, its serial apply (including limits ACK) must finish.
+    if runtime_shutdown::requested(shutdown) {
+        return Ok(std::ops::ControlFlow::Break(()));
+    }
+    apply(update).await;
+    Ok(std::ops::ControlFlow::Continue(()))
 }
 
 #[cfg(feature = "libtorrent")]
@@ -598,3 +993,17 @@ fn publish_event(events: &EventBus, event: revaer_events::Event) {
 #[cfg(test)]
 #[path = "bootstrap/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "bootstrap/compliance_tests.rs"]
+mod compliance_tests;
+#[cfg(test)]
+mod runtime_tests;
+
+#[cfg(test)]
+#[path = "bootstrap/shutdown_tests.rs"]
+mod shutdown_tests;
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "bootstrap/service_recovery_tests.rs"]
+mod service_recovery_tests;

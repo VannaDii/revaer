@@ -168,6 +168,18 @@ pub(crate) fn icon_file_text(props: &IconProps) -> Html {
     )
 }
 
+#[function_component(IconFileVideo)]
+pub(crate) fn icon_file_video(props: &IconProps) -> Html {
+    icon_svg(
+        props,
+        html! { <>
+            <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+            <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+            <path d="m10 10 5 3-5 3z" />
+        </> },
+    )
+}
+
 #[function_component(IconFolder)]
 pub(crate) fn icon_folder(props: &IconProps) -> Html {
     icon_svg(

@@ -20,6 +20,15 @@ def matching_lines(source: str, pattern: str, insensitive: bool = False) -> tupl
 
 
 def rust_findings(path: str, source: str) -> list[str]:
+    generated_doc_exception = (
+        '#[allow(clippy::missing_errors_doc)]\n#[cxx::bridge(namespace = "revaer")]\n'
+    )
+    authorized_lines: tuple[int, ...] = ()
+    if (
+        path == "crates/revaer-torrent-libt/src/ffi/bridge.rs"
+        and source.count(generated_doc_exception) == 1
+    ):
+        authorized_lines = (source[: source.index(generated_doc_exception)].count("\n") + 1,)
     rules: list[tuple[str, str, bool]] = [
         (r"#!?\[(allow|expect)\s*\(", "source-level lint suppression", False),
         (r"todo!|unimplemented!", "authored stub", False),
@@ -56,6 +65,7 @@ def rust_findings(path: str, source: str) -> list[str]:
         f"{path}:{line}: {title}"
         for pattern, title, insensitive in rules
         for line in matching_lines(source, pattern, insensitive)
+        if title != "source-level lint suppression" or line not in authorized_lines
     ]
 
 

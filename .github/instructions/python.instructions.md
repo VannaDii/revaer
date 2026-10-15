@@ -26,6 +26,25 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 
 # Architecture and errors
 
+- Native text coverage sent to Sonar uses numbered source-line counts without
+  macro expansion or sub-line region displays. Preserve measured line/branch
+  counts, complete source scope and expanded HTML diagnostics.
+
+- Bootstrap coverage uses a private disposable pytest base directory and removes
+  it on success or failure, leaving other pytest sessions' directories intact.
+
+- E2E's explicitly managed Linux roots use injected native mount/unmount tools.
+  Rust tests and coverage reuse that fixture when explicitly selected, passing
+  its mounted directory as `REVAER_NATIVE_RECOVERY_ROOT` for native root tests.
+  Preserve the private owned directory after an unmount failure; never remove
+  caller roots or substitute catalog declarations for bootstrap attestation.
+  The disposable fixture has 4 GiB of capacity so normal media work can run
+  above the production 1 GiB free-space reserve; production limits stay intact.
+
+- The optional fixture-probe container is caller-selected at bootstrap. Setup
+  provisions the existing approved Alpine build; cleanup verifies project,
+  purpose and read-only checkout ownership before removing that container.
+
 - Keep the explicit CLI dictionary mapped to derived tasks' static
   `run(context)` methods. Internal steps stay ordinary calls unless useful as
   independent commands. Follow `tools/src/revaer_tooling/tasks/README.md`.
@@ -65,6 +84,8 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 - Validate migrated behavior against the existing native operation and retained
   artifacts. Test meaningful failures and ownership boundaries. Fixtures do not
   establish application, hosted workflow or publication acceptance.
+- Chart orchestration fixtures stage explicit media or empty chart values so
+  the checkout's compliance settings cannot change the scenario being tested.
 - Run `rv tooling-check`, `rv tooling-cov` and `rv tooling-audit` as applicable
   to the change. Keep the full project acceptance gates and migration inventory
   current; Python checks alone do not complete a tooling migration.

@@ -16,8 +16,9 @@ use serde_json::Value;
 /// Returns an error if the output directory cannot be created, the document
 /// cannot be serialised, or the file cannot be written.
 pub fn persist_openapi(path: impl AsRef<Path>, document: &Value) -> Result<String> {
-    let json = serde_json::to_string_pretty(document)
+    let mut json = serde_json::to_string_pretty(document)
         .map_err(|source| TelemetryError::OpenApiSerialize { source })?;
+    json.push('\n');
     let path = path.as_ref();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|source| TelemetryError::OpenApiCreateDir {

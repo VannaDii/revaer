@@ -13,9 +13,11 @@ authors.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-revaer-api = { path = "../revaer-api" }
+revaer-api = { path = "../revaer-api", default-features = false }
 revaer-config = { path = "../revaer-config" }
 revaer-fsops = { path = "../revaer-fsops" }
+revaer-media-core = { path = "../revaer-media-core" }
+revaer-media-runtime = { path = "../revaer-media-runtime" }
 revaer-telemetry = { path = "../revaer-telemetry", features = ["otel"] }
 revaer-torrent-core = { path = "../revaer-torrent-core" }
 revaer-torrent-libt = { path = "../revaer-torrent-libt", default-features = false }
@@ -29,9 +31,11 @@ tokio-stream.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip"] }
-# Retain Cardigann's Serde YAML contract with a maintained parser backend;
-# serde_yaml's archived unsafe-libyaml is blocked by RUSTSEC-2024-0449.
-serde_norway = "=0.9.42"
+serde_yaml.workspace = true
+yaml-rust2 = { version = "0.11.0", default-features = false }
+rustix.workspace = true
+sha2.workspace = true
+notify.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
@@ -40,5 +44,6 @@ revaer-test-support = { path = "../revaer-test-support" }
 sqlx.workspace = true
 
 [features]
-default = ["libtorrent"]
+default = ["compat-qb", "libtorrent"]
+compat-qb = ["revaer-api/compat-qb"]
 libtorrent = ["revaer-torrent-libt/libtorrent"]

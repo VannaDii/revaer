@@ -69,7 +69,7 @@ impl IndexerTestDb {
 /// Create a seeded Postgres database for indexer stored-proc tests.
 #[cfg(test)]
 pub(crate) async fn setup_indexer_db(label: &str) -> anyhow::Result<IndexerTestDb> {
-    let postgres = match start_postgres() {
+    let mut postgres = match start_postgres() {
         Ok(db) => db,
         Err(err) => {
             eprintln!("skipping {label}: {err}");
@@ -77,6 +77,9 @@ pub(crate) async fn setup_indexer_db(label: &str) -> anyhow::Result<IndexerTestD
         }
     };
 
+    postgres
+        .initialize_runtime(include_str!("../../init.sql"))
+        .await?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .after_connect(|conn, _meta| {
@@ -93,12 +96,8 @@ pub(crate) async fn setup_indexer_db(label: &str) -> anyhow::Result<IndexerTestD
                 Ok(())
             })
         })
-        .connect(postgres.connection_string())
+        .connect_with(postgres.fixture_connect_options()?)
         .await?;
-
-    let mut migrator = sqlx::migrate!("./migrations");
-    migrator.set_ignore_missing(true);
-    migrator.run(&pool).await?;
 
     let now = sqlx::query_scalar("SELECT now()").fetch_one(&pool).await?;
 

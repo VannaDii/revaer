@@ -231,4 +231,18 @@ mod tests {
         assert_eq!(error.to_string(), "invalid opentelemetry configuration");
         assert!(error.source().is_none());
     }
+
+    #[cfg(feature = "otel")]
+    #[test]
+    fn otel_install_error_exposes_source() {
+        let error = TelemetryError::OtelInstall {
+            source: opentelemetry_otlp::ExporterBuildError::InternalFailure("exporter".to_string()),
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "failed to initialize opentelemetry exporter"
+        );
+        assert!(error.source().is_some());
+    }
 }

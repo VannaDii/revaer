@@ -2,7 +2,7 @@
 
 The properties file remains the scanner's sole configuration. This allowlist is
 the review gate for that file: unknown keys fail, every required key must exist,
-and scope filters must match the reviewed values. It never repairs a failing policy.
+and analysis scope filters must match the reviewed values. It never repairs a failing policy.
 """
 
 from collections.abc import Mapping
@@ -25,6 +25,23 @@ EMPTY_KEYS = frozenset(
         "sonar.sca.exclusions",
     )
 )
+
+VENDOR_EXCLUSIONS = (
+    "vendor/**",
+    "crates/revaer-ui/ui_vendor/**",
+    "crates/revaer-ui/static/nexus/**",
+    "docs/mermaid.min.js",
+)
+ANALYSIS_EXCLUSIONS = (
+    "scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml",
+    *VENDOR_EXCLUSIONS,
+)
+
+
+def vendor_source(path: str) -> bool:
+    """Recognize upstream packages and their synchronized runtime assets."""
+    return any(fnmatchcase(path, pattern) for pattern in VENDOR_EXCLUSIONS)
+
 
 COVERAGE_EXCLUSIONS = (
     ".github/**",
@@ -52,11 +69,36 @@ COVERAGE_EXCLUSIONS = (
 
 def production_source(path: str) -> bool:
     """Apply the operator-approved coverage scope without narrowing analysis."""
-    return not any(fnmatchcase(path, pattern) for pattern in COVERAGE_EXCLUSIONS)
+    return not vendor_source(path) and not any(
+        fnmatchcase(path, pattern) for pattern in COVERAGE_EXCLUSIONS
+    )
+
+
+def runtime_source(path: str) -> bool:
+    """Identify shipped code/assets for the operator's production issue gate.
+
+    Internal utilities stay in analysis and the zero-new-issues gate. Upstream
+    packages and synchronized vendor assets are outside the operator's scan scope.
+    """
+    runtime = (
+        "crates/*/src/**",
+        "crates/revaer-torrent-libt/include/**",
+        "crates/revaer-data/migrations/**",
+        "crates/revaer-data/init.sql",
+        "crates/revaer-ui/index.html",
+        "crates/revaer-ui/manifest.json",
+        "crates/revaer-ui/browserconfig.xml",
+        "crates/revaer-ui/static/**",
+    )
+    return (
+        not vendor_source(path)
+        and any(fnmatchcase(path, pattern) for pattern in runtime)
+        and not any(fnmatchcase(path, pattern) for pattern in COVERAGE_EXCLUSIONS)
+    )
 
 
 REQUIRED_VALUES = {
-    "sonar.exclusions": "scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml",
+    "sonar.exclusions": ",".join(ANALYSIS_EXCLUSIONS),
     "sonar.coverage.exclusions": ",".join(COVERAGE_EXCLUSIONS),
     "sonar.projectKey": "VannaDii_Revaer",
     "sonar.organization": "vannadii",
@@ -92,8 +134,8 @@ REQUIRED_VALUES = {
     "sonar.sca.nugetNoResolve": "false",
     "sonar.sca.cfamily": "true",
     "sonar.rust.clippy.enabled": "true",
-    "sonar.rust.lcov.reportPaths": "coverage/lcov.info",
-    "sonar.javascript.lcov.reportPaths": "coverage/js-lcov.info",
+    "sonar.rust.lcov.reportPaths": "coverage/rust-sonar-lcov.info",
+    "sonar.javascript.lcov.reportPaths": "coverage/js-sonar-lcov.info",
     "sonar.python.coverage.reportPaths": "coverage/python.xml",
     "sonar.python.version": "3.13",
     "sonar.coverageReportPaths": "coverage/script-coverage.xml",
@@ -149,7 +191,9 @@ def sonar_findings(
 
 
 def _classifications(configured: dict[str, str], inventory: tuple[str, ...]) -> list[str]:
-    yaml_paths = {path for path in inventory if path.endswith((".yml", ".yaml"))}
+    yaml_paths = {
+        path for path in inventory if path.endswith((".yml", ".yaml")) and not vendor_source(path)
+    }
     kubernetes = {path for path in yaml_paths if path.startswith("charts/revaer/templates/")}
     expected = {
         "sonar.lang.patterns.kubernetes": kubernetes,

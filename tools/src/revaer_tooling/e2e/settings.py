@@ -33,6 +33,7 @@ class E2eSettings:
     admin_url: str | None = field(repr=False)
     database_prefix: str
     filesystem_root: Path | None
+    managed_media_roots: bool
     coverage_directory: Path | None
     skip_database_start: bool
     api_runner: str | None
@@ -62,8 +63,13 @@ class E2eSettings:
     def shard_suffix(self) -> str:
         return f"-shard-{self.shard_index}" if self.shard_total > 1 else ""
 
-    def phases(self) -> tuple[str, ...]:
-        available = ("api-none", "api-api-key", *(f"ui-{browser}" for browser in self.browsers))
+    def phases(self, *, media: bool = False) -> tuple[str, ...]:
+        api = (
+            ("api-none-missing-catalog", "api-none", "api-api-key-missing-catalog", "api-api-key")
+            if media
+            else ("api-none", "api-api-key")
+        )
+        available = (*api, *(f"ui-{browser}" for browser in self.browsers))
         selected = set(self.projects or available)
         unknown = selected - set(available)
         if unknown:
@@ -71,11 +77,19 @@ class E2eSettings:
         if self.browser_coverage and "ui-chromium" not in selected:
             raise ToolingError("Browser line coverage requires the Chromium phase")
         if not self.no_dependencies:
-            if any(project.startswith("ui-") for project in selected):
-                selected.add("api-api-key")
-            if "api-api-key" in selected:
-                selected.add("api-none")
+            self.add_dependencies(selected, media=media)
         return tuple(phase for phase in available if phase in selected)
+
+    @staticmethod
+    def add_dependencies(selected: set[str], *, media: bool) -> None:
+        if any(project.startswith("ui-") for project in selected):
+            selected.add("api-api-key")
+        if "api-api-key" in selected:
+            selected.add("api-none")
+        if media:
+            for phase in ("api-none", "api-api-key"):
+                if phase in selected:
+                    selected.add(phase + "-missing-catalog")
 
 
 def integer(environment: Mapping[str, str], name: str, default: int, minimum: int = 1) -> int:
@@ -165,6 +179,7 @@ def load_e2e_settings(environment: Mapping[str, str]) -> E2eSettings:
         or environment.get("DATABASE_URL"),
         database_prefix=prefix,
         filesystem_root=Path(fs_root) if fs_root else None,
+        managed_media_roots=boolean(environment, "E2E_MANAGED_MEDIA_ROOTS", False),
         coverage_directory=Path(coverage) if coverage else None,
         skip_database_start=boolean(environment, "E2E_SKIP_DB_START", False),
         api_runner=runner,

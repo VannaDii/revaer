@@ -32,8 +32,10 @@ SCANNER_STEPS = {
 }
 COVERAGE_PATHS = (
     "coverage/lcov.info",
+    "coverage/rust-sonar-lcov.info",
     "coverage/llvm-cov.txt",
     "coverage/js-lcov.info",
+    "coverage/js-sonar-lcov.info",
     "coverage/python.xml",
     SCRIPT_COVERAGE_PATH,
     "coverage/compile_commands.json",
@@ -209,7 +211,13 @@ def _distributed_producers(policy: Contract) -> None:
         tuple(
             path
             for path in COVERAGE_PATHS
-            if path not in ("coverage/js-lcov.info", "coverage/python.xml", SCRIPT_COVERAGE_PATH)
+            if path
+            not in (
+                "coverage/js-lcov.info",
+                "coverage/js-sonar-lcov.info",
+                "coverage/python.xml",
+                SCRIPT_COVERAGE_PATH,
+            )
         ),
     )
     tooling = policy.step(policy.job("tooling-coverage"), "Upload tooling execution inputs")

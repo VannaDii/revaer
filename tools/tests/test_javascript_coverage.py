@@ -9,6 +9,7 @@ import tree_sitter_javascript
 from playwright.sync_api import Route, sync_playwright
 from revaer_tooling.cli import main, make_context
 from revaer_tooling.context import Context, Options
+from revaer_tooling.e2e.database import uses_single_init
 from revaer_tooling.e2e.javascript import PageCoverage, parse_inventory, write_inventory
 from revaer_tooling.e2e.v8 import JavaScriptSyntax, source_digest
 from revaer_tooling.errors import ToolingError
@@ -50,8 +51,13 @@ def test_distributed_merge_keeps_measured_chromium_captures(measured: Context) -
     expected = (context.root / "coverage/js-lcov.info").read_text()
     results = context.root / "tests/test-results"
     producers = context.root / "coverage/producers"
+    api_phases = tuple(
+        phase
+        for phase in context.settings.e2e.phases(media=uses_single_init(context))
+        if phase.startswith("api-")
+    )
     groups = (
-        ("api-e2e-coverage", ("api-none", "api-api-key")),
+        ("api-e2e-coverage", api_phases),
         ("ui-e2e-chromium", ("ui-chromium",)),
     )
     for name, phases in groups:
@@ -88,9 +94,14 @@ def test_distributed_merge_keeps_measured_chromium_captures(measured: Context) -
         path.rename(chromium / path.name)
     JavaScriptCoverageMerge.run(context)
     assert (context.root / "coverage/js-lcov.info").read_text() == expected
+    required = producers / "api-e2e-coverage/tests/test-results/api-coverage-api-none-main.json"
+    required.unlink()
+    with pytest.raises(ToolingError, match="nonempty api-none coverage"):
+        JavaScriptCoverageMerge.run(context)
+    assert not (context.root / "coverage/js-lcov.info").exists()
 
 
-@pytest.fixture(params=("classic", "module"))
+@pytest.fixture(params=("classic", "module", "media-classic", "media-module"))
 def measured(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
 ) -> Context:
@@ -98,8 +109,15 @@ def measured(
     (tmp_path / "tools/src/revaer_tooling").mkdir(parents=True)
     (tmp_path / "tools/src/revaer_tooling/cli.py").touch()
     (tmp_path / ".gitignore").write_text("coverage/\ntests/test-results/\n")
-    script_source = SOURCE + ("export {};\r\n" if request.param == "module" else "")
-    script_type = ' type="module"' if request.param == "module" else ""
+    media = request.param.startswith("media-")
+    if media:
+        (tmp_path / "config").mkdir()
+        (tmp_path / "config/database-rebaseline.env").write_text(
+            "TRANSITION_PHASE=feature-development\n"
+        )
+    module = request.param.endswith("module")
+    script_source = SOURCE + ("export {};\r\n" if module else "")
+    script_type = ' type="module"' if module else ""
     for name, source in (
         ("app.js", script_source),
         ("mirror.js", script_source),
@@ -149,7 +167,7 @@ def measured(
         json.dumps(
             {
                 "status": "passed",
-                "phases": dict.fromkeys(context.settings.e2e.phases(), "passed"),
+                "phases": dict.fromkeys(context.settings.e2e.phases(media=media), "passed"),
                 "shard": 1,
                 "total_shards": 1,
                 "browser_coverage": True,

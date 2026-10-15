@@ -44,7 +44,11 @@ def normalize_dump(source: bytes, version: str) -> bytes:
         if forbidden in normalized:
             raise ToolingError("PostgreSQL dump contains migration metadata or proof identities")
     for prefix in (b"-- Dumped from database version ", b"-- Dumped by pg_dump version "):
-        if prefix + version.encode() + b"\n" not in normalized:
+        headers = (
+            prefix + version.encode() + b"\n",
+            prefix + version.encode() + b" (Debian 18.6-1.pgdg12+2)\n",
+        )
+        if not any(header in normalized for header in headers):
             raise ToolingError("PostgreSQL dump does not identify the pinned server/client version")
     if not re.search(
         rb"CREATE (?:OR REPLACE )?FUNCTION revaer_config\.factory_reset\(\)", normalized

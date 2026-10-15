@@ -17,6 +17,53 @@ pub async fn begin_transaction(connection: &mut PgConnection) -> Result<Transact
     try_op("transaction begin", || Transaction::begin(connection, None)).await
 }
 
+/// Begin a transaction with an explicit isolation/read-only boundary.
+///
+/// # Errors
+/// Returns the BEGIN failure; its owner must close the reserved connection on failure.
+pub async fn begin_transaction_with<'a>(
+    connection: &'a mut PgConnection,
+    statement: &'static str,
+) -> Result<Transaction<'a, Postgres>> {
+    use sqlx::Connection;
+    try_op("transaction begin", || {
+        connection.begin_with(sqlx::AssertSqlSafe(statement))
+    })
+    .await
+}
+
+/// Release a clean connection, or close it when cleanup cannot establish a boundary.
+///
+/// # Errors
+/// Preserves the interaction error and any physical connection-close failure.
+pub async fn release_connection<T>(
+    mut connection: sqlx::pool::PoolConnection<Postgres>,
+    result: Result<T>,
+) -> Result<T> {
+    let unclean = matches!(
+        &result,
+        Err(DataError::QueryFailed {
+            operation: "transaction begin" | "transaction rollback",
+            ..
+        } | DataError::RollbackFailed { .. })
+    );
+    if unclean {
+        match try_op("transaction connection close", || connection.close()).await {
+            Ok(()) => result,
+            Err(cleanup) => match result {
+                Err(original) => Err(DataError::RollbackFailed {
+                    original: Box::new(original),
+                    cleanup: Box::new(cleanup),
+                }),
+                Ok(value) => Ok(value),
+            },
+        }
+    } else {
+        connection.return_to_pool().await;
+        result
+    }
+}
+
 /// Commit a transaction, awaiting rollback if the commit fails.
 ///
 /// # Errors

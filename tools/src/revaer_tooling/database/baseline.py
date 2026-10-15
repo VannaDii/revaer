@@ -157,7 +157,7 @@ class BaselineProof:
             "exact sealed digest and principals",
             self.sql(
                 f"SELECT contract_version = 1 AND encode(init_sha256, 'hex') = '{self.digest}' "
-                f"AND postgres_version_num = 160014 AND schema_owner_role = '{self.owner}' "
+                f"AND postgres_version_num = 180006 AND schema_owner_role = '{self.owner}' "
                 f"AND runtime_role = '{self.runtime}' FROM {READ}",
                 role=self.runtime,
             )

@@ -22,13 +22,11 @@ use uuid::Uuid;
 
 #[tokio::test]
 async fn config_service_applies_changes_and_tokens() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping config_service_applies_changes_and_tokens: {err}");
-            return Ok(());
-        }
-    };
+    // Configuration operations require the canonical sealed runtime schema.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+        .await?;
     let service = ConfigService::new(postgres.connection_string()).await?;
     let (download_root, resume_dir, library_root) = build_temp_paths()?;
 
@@ -107,18 +105,17 @@ async fn config_service_applies_changes_and_tokens() -> anyhow::Result<()> {
     let updated = tokio::time::timeout(Duration::from_secs(10), stream.next()).await??;
     assert!(updated.revision >= applied.revision);
     assert_eq!(updated.app_profile.mode, AppMode::Active);
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn engine_profile_update_normalizes_alt_speed() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping engine_profile_update_normalizes_alt_speed: {err}");
-            return Ok(());
-        }
-    };
+    // Configuration operations require the canonical sealed runtime schema.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+        .await?;
     let service = ConfigService::new(postgres.connection_string()).await?;
 
     let profile = service.get_engine_profile().await?;
@@ -158,18 +155,17 @@ async fn engine_profile_update_normalizes_alt_speed() -> anyhow::Result<()> {
             }),
         }
     );
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn config_service_manages_secret_and_api_key_lifecycle() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping config_service_manages_secret_and_api_key_lifecycle: {err}");
-            return Ok(());
-        }
-    };
+    // Configuration operations require the canonical sealed runtime schema.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+        .await?;
     let service = ConfigService::new(postgres.connection_string()).await?;
 
     assert!(!service.has_api_keys().await?);
@@ -235,18 +231,17 @@ async fn config_service_manages_secret_and_api_key_lifecycle() -> anyhow::Result
             .is_none()
     );
 
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn setup_token_lifecycle_covers_invalid_and_consumed_states() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping setup_token_lifecycle_covers_invalid_and_consumed_states: {err}");
-            return Ok(());
-        }
-    };
+    // Configuration operations require the canonical sealed runtime schema.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+        .await?;
     let service = ConfigService::new(postgres.connection_string()).await?;
 
     let invalid_ttl = service
@@ -288,20 +283,17 @@ async fn setup_token_lifecycle_covers_invalid_and_consumed_states() -> anyhow::R
         .await
         .expect_err("consumed token should be missing");
     assert!(matches!(missing, ConfigError::SetupTokenMissing));
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn config_service_new_with_session_round_trips_encrypted_secrets() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!(
-                "skipping config_service_new_with_session_round_trips_encrypted_secrets: {err}"
-            );
-            return Ok(());
-        }
-    };
+    // Configuration operations require the canonical sealed runtime schema.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+        .await?;
     let service = ConfigService::new_with_session(
         postgres.connection_string(),
         Some(DbSessionConfig::new(
@@ -329,18 +321,17 @@ async fn config_service_new_with_session_round_trips_encrypted_secrets() -> anyh
         service.get_secret("session-secret").await?,
         Some("secret-value".to_string())
     );
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn factory_reset_restores_default_auth_state() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping factory_reset_restores_default_auth_state: {err}");
-            return Ok(());
-        }
-    };
+    // Configuration operations require the canonical sealed runtime schema.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+        .await?;
     let service = ConfigService::new(postgres.connection_string()).await?;
     let snapshot = service.snapshot().await?;
 
@@ -376,18 +367,17 @@ async fn factory_reset_restores_default_auth_state() -> anyhow::Result<()> {
     assert_eq!(reset_snapshot.app_profile.mode, AppMode::Setup);
     assert!(!service.has_api_keys().await?);
     assert!(service.get_secret("reset-secret").await?.is_none());
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn config_service_round_trips_comprehensive_settings_update() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping config_service_round_trips_comprehensive_settings_update: {err}");
-            return Ok(());
-        }
-    };
+    // Configuration operations require the canonical sealed runtime schema.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+        .await?;
     let service = ConfigService::new(postgres.connection_string()).await?;
     let snapshot = service.snapshot().await?;
     let (download_root, resume_dir, library_root) = build_temp_paths()?;
@@ -656,18 +646,17 @@ async fn config_service_round_trips_comprehensive_settings_update() -> anyhow::R
     assert_eq!(rate_limit.burst, 20);
     assert_eq!(rate_limit.replenish_period, Duration::from_secs(15));
 
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn config_service_rejects_immutable_and_invalid_mutations() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping config_service_rejects_immutable_and_invalid_mutations: {err}");
-            return Ok(());
-        }
-    };
+    // Configuration operations require the canonical sealed runtime schema.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+        .await?;
     let service = ConfigService::new(postgres.connection_string()).await?;
     let snapshot = service.snapshot().await?;
     let (download_root, resume_dir, library_root) = build_temp_paths()?;
@@ -859,18 +848,17 @@ async fn config_service_rejects_immutable_and_invalid_mutations() -> anyhow::Res
         if section == "fs_policy" && field == "allow_paths" && reason == "path must exist"
     ));
 
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn config_service_handles_auth_edge_cases_and_binary_secrets() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping config_service_handles_auth_edge_cases_and_binary_secrets: {err}");
-            return Ok(());
-        }
-    };
+    // Configuration operations require the canonical sealed runtime schema.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+        .await?;
     let service = ConfigService::new(postgres.connection_string()).await?;
 
     service
@@ -952,20 +940,17 @@ async fn config_service_handles_auth_edge_cases_and_binary_secrets() -> anyhow::
         if section == "settings_secret" && field == "binary-secret" && reason == "payload is not valid UTF-8"
     ));
 
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn settings_stream_and_watcher_cover_notifications_and_polling() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!(
-                "skipping settings_stream_and_watcher_cover_notifications_and_polling: {err}"
-            );
-            return Ok(());
-        }
-    };
+    // Configuration operations require the canonical sealed runtime schema.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+        .await?;
     let service = ConfigService::new(postgres.connection_string()).await?;
 
     let mut stream = service.subscribe_changes().await?;
@@ -1009,18 +994,17 @@ async fn settings_stream_and_watcher_cover_notifications_and_polling() -> anyhow
     assert!(updated.revision >= applied.revision);
     assert_eq!(updated.app_profile.instance_name, "Poll fallback");
 
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn settings_stream_maps_known_tables_to_typed_payloads() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping settings_stream_maps_known_tables_to_typed_payloads: {err}");
-            return Ok(());
-        }
-    };
+    // Configuration operations require the canonical sealed runtime schema.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+        .await?;
     let service = ConfigService::new(postgres.connection_string()).await?;
     let mut stream = service.subscribe_changes().await?;
     let snapshot = service.snapshot().await?;
@@ -1103,18 +1087,17 @@ async fn settings_stream_maps_known_tables_to_typed_payloads() -> anyhow::Result
         other => return Err(anyhow::anyhow!("unexpected fs payload: {other:?}")),
     }
 
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn apply_empty_changeset_does_not_advance_revision() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping apply_empty_changeset_does_not_advance_revision: {err}");
-            return Ok(());
-        }
-    };
+    // Configuration operations require the canonical sealed runtime schema.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+        .await?;
     let service = ConfigService::new(postgres.connection_string()).await?;
     let before = service.snapshot().await?;
 
@@ -1129,18 +1112,17 @@ async fn apply_empty_changeset_does_not_advance_revision() -> anyhow::Result<()>
     assert!(applied.fs_policy.is_none());
     assert_eq!(after.revision, before.revision);
 
+    postgres.close()?;
     Ok(())
 }
 
 #[tokio::test]
 async fn config_service_clears_optional_settings_and_label_policies() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping config_service_clears_optional_settings_and_label_policies: {err}");
-            return Ok(());
-        }
-    };
+    // Configuration operations require the canonical sealed runtime schema.
+    let mut postgres = start_postgres()?;
+    postgres
+        .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+        .await?;
     let service = ConfigService::new(postgres.connection_string()).await?;
     let snapshot = service.snapshot().await?;
     let (download_root, resume_dir, library_root) = build_temp_paths()?;
@@ -1321,6 +1303,7 @@ async fn config_service_clears_optional_settings_and_label_policies() -> anyhow:
     assert_eq!(refreshed.fs_policy.umask, None);
     assert_eq!(refreshed.fs_policy.allow_paths, vec![library_root]);
 
+    postgres.close()?;
     Ok(())
 }
 

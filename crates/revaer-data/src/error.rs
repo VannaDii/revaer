@@ -24,6 +24,11 @@ where
 /// Errors raised by the data access layer.
 #[derive(Debug)]
 pub enum DataError {
+    /// The runtime database does not satisfy the packaged baseline contract.
+    BaselineFailed {
+        /// Credential-free baseline failure.
+        source: crate::baseline::BaselineReadError,
+    },
     /// The owner of a database boundary could not complete.
     BoundaryFailed {
         /// Operation identifier.
@@ -105,6 +110,9 @@ impl DataError {
 impl Display for DataError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
+            Self::BaselineFailed { .. } => {
+                formatter.write_str("database baseline verification failed")
+            }
             Self::BoundaryFailed { operation, source } => {
                 write!(formatter, "{operation}: {source}")
             }
@@ -122,6 +130,7 @@ impl Display for DataError {
 impl Error for DataError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::BaselineFailed { source } => Some(source),
             Self::BoundaryFailed { source, .. } => Some(source.as_ref()),
             Self::RollbackFailed { original, .. } => Some(original),
             Self::MigrationFailed { source } => Some(source),

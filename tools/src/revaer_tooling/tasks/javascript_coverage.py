@@ -5,6 +5,7 @@ from pathlib import Path
 
 from ..context import Context, TaskResult
 from ..e2e.coverage import distributed_runs, verify_analysis_run
+from ..e2e.database import uses_single_init
 from ..e2e.javascript import Script, source_text
 from ..e2e.v8 import Location, line_counts, nonnegative, source_digest, source_lines, utf16_length
 from ..errors import ToolingError
@@ -123,7 +124,7 @@ class JavaScriptCoverageMerge(Task):
         target = context.root / "coverage/js-lcov.info"
         with context.fs.lock(paths.runtime / "e2e.lock"):
             context.fs.remove_owned(target, context.root)
-            expected = context.settings.e2e.phases()
+            expected = context.settings.e2e.phases(media=uses_single_init(context))
             distributed = distributed_runs(
                 context.fs, context.root, expected, context.options.expected_shards
             )

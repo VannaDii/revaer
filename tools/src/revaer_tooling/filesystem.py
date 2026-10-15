@@ -70,6 +70,14 @@ class FileSystem:
     def temporary_directory(self, parent: Path, prefix: str) -> Path:
         return Path(tempfile.mkdtemp(dir=parent, prefix=prefix))
 
+    def create_disk_image(self, path: Path, size: int) -> None:
+        """Exclusively create a private sparse backing file for a functional fixture."""
+        if size <= 0:
+            raise ToolingError("Disk fixture size must be positive")
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.truncate(size)
+
     def directory_permissions(self, path: Path, uid: int, gid: int, mode: int) -> None:
         if path.is_symlink() or not path.is_dir():
             raise ToolingError(f"Directory permissions require a nonlinked directory: {path}")

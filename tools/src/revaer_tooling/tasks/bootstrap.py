@@ -20,6 +20,7 @@ class ScriptCoverage(Task):
             context.tools.kcov.verify()
             temporary = context.fs.temporary_directory(output.parent, ".bootstrap-pytest-")
             try:
+                # Keep this invocation out of earlier pytest sessions' cleanup pool.
                 context.tools.python.pytest(
                     PytestArgs(
                         (

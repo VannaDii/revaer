@@ -16,6 +16,18 @@ fn map_query_err(operation: &'static str) -> impl FnOnce(sqlx::Error) -> DataErr
     move |source| DataError::QueryFailed { operation, source }
 }
 
+/// Verify the packaged baseline before configuration access.
+///
+/// # Errors
+///
+/// Returns an error when the runtime database does not match this artifact.
+pub async fn verify_database(pool: &PgPool) -> Result<()> {
+    crate::baseline::verify_runtime_pool(pool)
+        .await
+        .map_err(|source| DataError::BaselineFailed { source })?;
+    Ok(())
+}
+
 /// Apply all configuration-related migrations (shared with runtime).
 ///
 /// # Errors

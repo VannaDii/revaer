@@ -22,7 +22,7 @@ applyTo:
   - `tests/node_modules/**`
   - `tests/logs/**`
   - `tests/test-results/**`
-- Do not hand-edit vendored or generated assets unless the task is explicitly about vendor ingestion, asset synchronization, or generated output shape.
+- Do not patch vendor code. Regenerate synchronized assets only for an authorized vendor ingestion or asset synchronization change. Vendor sources and synchronized Nexus assets follow the root Sonar exclusions; first-party UI code remains scanned.
 
 # UI Architecture
 
@@ -35,7 +35,17 @@ applyTo:
 
 # UI And E2E Maintenance
 
+- Keep the media operator route connected to the normalized root, profile,
+  association and job APIs. Conditional writes require their server ETag;
+  private configuration reads must disable browser caching. Retain the media
+  authoring, readiness, discovery and job-action regression tests.
+
+- Keep the SSE store exhaustive over media lifecycle events and request refreshed
+  state for those events, preserving the existing refresh behavior.
+
 - Keep selectors and test affordances stable. Update E2E fixtures deliberately when UI structure changes.
+- Media catalog save scenarios verify the successful response, completed refresh,
+  and visible saved record without requiring observation of a transient disabled button.
 - E2E navigation waits for the asynchronously rendered Navbar before checking
   optional overlays. Dismiss visible auth prompts through Playwright's action
   wait, then assert they are hidden; instantaneous button probes and repeated
@@ -44,6 +54,8 @@ applyTo:
 - `asset_sync` must fail closed unless every required runtime SVG exists, runtime text is UTF-8, SVG files have a complete namespaced root envelope, and `crates/revaer-ui/static` contains no raster-extension assets.
 - `static/revaer-logo.svg` and `static/icons/app-icon.svg` must preserve the approved purple stylized-R composition and the `revaer-purple-gradient` and `revaer-r-silhouette` identifiers; do not substitute a wordmark, palette, or symbol during asset synchronization.
 - Keep emitted icon, logo, dashboard, and DataTables references rooted under `/static`; verify their targets in a Trunk release build rather than inferring paths from source layout.
+- Keep the served theme CSS and asset lock synchronized with the selected vendor
+  source. Preserve UTF-8 and missing-reference asset-sync regression coverage.
 - `just check-assets` must compare `crates/revaer-ui/static/nexus` from the repository root after regeneration.
 - Keep legacy vendor-reference canonicalization in `asset_sync`, validate the UTF-8 served image set there, and make `just check-assets` compare the complete repository-root `crates/revaer-ui/static/nexus/**` output.
 - CI E2E should use an explicit browser channel such as `E2E_BROWSER_CHANNEL=chrome` when the runner already provides that browser, so shards install Playwright dependencies without downloading redundant browser bundles. Keep CI video capture off for that path unless the Playwright ffmpeg bundle is installed.
@@ -58,6 +70,9 @@ applyTo:
 - Use native Playwright storage state and locator operations where available.
   Record failures and retries without replacing browser storage methods with
   authored JavaScript. Do not claim browser parity from runner fixture tests.
+- Keep component hooks unconditional. Auth refresh, dashboard polling and SSE
+  effects must retain their cleanup and authentication dependencies when views
+  change; configured API origins belong in the app bootstrap layer.
 - OpenAPI response validation must fail with an operation-specific diagnostic
   for missing paths, methods or statuses. Correct the contract against existing
   handlers and Serde models when drift is found; do not bypass validation to
@@ -67,6 +82,11 @@ applyTo:
   and exact scenario assignments; route files alone do not prove successful tests.
 
 ## Single-init E2E ownership
+
+- Hosted dry-run E2E may explicitly select `E2E_MANAGED_MEDIA_ROOTS=1` to own
+  private ext4 roots and a restart-persistent catalog. Keep real bootstrap attestation
+  and missing-catalog scenarios; unmount only after all owned services stop.
+  Caller-provided filesystem roots remain caller-owned.
 
 - In the approved `feature-development` phase, Python E2E uses the complete
   initializer and sealed restricted runtime role. Require explicit test-service
@@ -80,6 +100,11 @@ applyTo:
   it must not replace or omit foundation scenarios. Keep the original library
   test-serving entry as the media default and preserve explicit runner overrides.
   Do not bypass production compliance startup checks to run a test suite.
+
+- Media E2E retains missing-catalog checks in each authentication mode, then
+  restarts the service to load and attest the caller's real Linux catalog after
+  authentication setup resets configuration. Profile and association scenarios
+  use catalog keys, immutable versions and server ETags.
 
 - In the single-init feature phase, the Python E2E adapter adds `tests/specs/media/ui` alongside the foundation UI suite. Route-controlled media presentation tests must remain explicitly distinguished from filesystem or persistence evidence.
 

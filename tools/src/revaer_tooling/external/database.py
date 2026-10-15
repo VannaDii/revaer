@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 
-from ..errors import ToolingError
+from ..errors import CommandError, ToolingError
 from ..process import Completed
 from .base import ExternalTool
 
@@ -96,8 +96,25 @@ class PgIsReady(ExternalTool):
             raise ToolingError("PostgreSQL readiness needs at least one endpoint")
         connections = tuple((url, LibpqConnection.from_url(url)) for url in database_urls)
         deadline = time.monotonic() + timeout
+        probe_timeout: CommandError | None = None
         while True:
-            for url, connection in connections:
+            ready, current_timeout = self._probe_connections(connections)
+            if ready is not None:
+                return ready
+            if current_timeout is not None:
+                probe_timeout = current_timeout
+            if time.monotonic() >= deadline:
+                raise ToolingError(
+                    "PostgreSQL did not become ready before the timeout"
+                ) from probe_timeout
+            time.sleep(min(0.2, max(0, deadline - time.monotonic())))
+
+    def _probe_connections(
+        self, connections: tuple[tuple[str, LibpqConnection], ...]
+    ) -> tuple[str | None, CommandError | None]:
+        probe_timeout: CommandError | None = None
+        for url, connection in connections:
+            try:
                 result = self._invoke(
                     ("--quiet", "--timeout=1", "--dbname", connection.uri),
                     env=connection.environment(),
@@ -105,11 +122,14 @@ class PgIsReady(ExternalTool):
                     timeout=3,
                     accepted_codes=(0, 1, 2),
                 )
+            except CommandError as error:
+                if error.exit_code != 124:
+                    raise
+                probe_timeout = error
+            else:
                 if result.code == 0:
-                    return url
-            if time.monotonic() >= deadline:
-                raise ToolingError("PostgreSQL did not become ready before the timeout")
-            time.sleep(min(0.2, max(0, deadline - time.monotonic())))
+                    return url, probe_timeout
+        return None, probe_timeout
 
 
 class Psql(ExternalTool):

@@ -37,6 +37,7 @@ from .external.github import GitHub
 from .external.http import Http, VisibleRedirects
 from .external.images import Buildx, Trivy
 from .external.media import Ffmpeg, Ffprobe
+from .external.mount import MkfsExt4, Mount, Unmount
 from .external.packages import Apk, Apt
 from .external.postgres import PostgresDocker
 from .external.python import Python, Uv
@@ -105,6 +106,7 @@ from .tasks.database import DatabaseMigrate, DatabaseReset, DatabaseSeed, Databa
 from .tasks.database_lifecycle import DatabaseTestDrop, DatabaseTestInit
 from .tasks.database_probes import (
     DatabaseBaselineRead,
+    DatabaseBaselineVerify,
     DatabaseCancellationProbe,
     DatabasePoolProbe,
 )
@@ -151,7 +153,7 @@ from .tasks.native import SonarCompileDatabase
 from .tasks.policy import InstructionDrift, Lint, Policy
 from .tasks.pristine import PristineGenerate, PristineTest, PristineValidate
 from .tasks.python_coverage import PythonCoverageMerge
-from .tasks.quality import Ci, CiQualify, Lock, Validate
+from .tasks.quality import CargoLock, Ci, CiQualify, Lock, Validate
 from .tasks.release import ReleasePreview, ReleasePublish, ReleaseResume
 from .tasks.setup import Doctor, Setup
 from .tasks.sonar import (
@@ -166,12 +168,18 @@ from .tasks.testing import (
     LintRuntimeShutdown,
     Test,
     TestFeaturesMinimal,
+    TestMediaRecovery,
+    TestMediaServiceRecovery,
     TestNative,
     TestRuntimeShutdown,
     UiE2eAppTest,
 )
 
 COMMANDS: dict[str, Callable[[Context], TaskResult]] = {
+    "cargo-lock": CargoLock.run,
+    "db-baseline-verify": DatabaseBaselineVerify.run,
+    "test-media-service-recovery": TestMediaServiceRecovery.run,
+    "test-media-recovery": TestMediaRecovery.run,
     "db-pristine-catalog-generate": PristineGenerate.run,
     "db-pristine-catalog-validate": PristineValidate.run,
     "db-pristine-catalog-test": PristineTest.run,
@@ -402,6 +410,10 @@ def make_context(options: Options) -> Context:
         "git", runner, root, env, installation_hint="install Git with your system package manager"
     )
     tools = Tools(
+        mount=Mount("mount", runner, root, env),
+        mkfs_ext4=MkfsExt4("mkfs.ext4", runner, root, env),
+        unmount=Unmount("umount", runner, root, env),
+        privilege=ExternalTool("sudo", runner, root, env) if host.uid != 0 else None,
         lifecycle_docker=LifecycleDocker("docker", runner, root, env),
         proof_databases=ProofDatabase(
             PostgresDocker("docker", runner, root, env),
@@ -416,7 +428,13 @@ def make_context(options: Options) -> Context:
         curl=Curl(environment.get("REVAER_FIXTURE_CURL_BIN") or "curl", runner, root, env),
         ffmpeg=Ffmpeg("ffmpeg", runner, root, env),
         ffprobe=Ffprobe(
-            environment.get("REVAER_FIXTURE_FFPROBE_BIN") or "ffprobe", runner, root, env
+            "docker"
+            if environment.get("REVAER_FIXTURE_FFPROBE_CONTAINER")
+            else environment.get("REVAER_FIXTURE_FFPROBE_BIN") or "ffprobe",
+            runner,
+            root,
+            env,
+            container=environment.get("REVAER_FIXTURE_FFPROBE_CONTAINER") or None,
         ),
         semantic_release=SemanticRelease("semantic-release", runner, root, env),
         helm=Helm(

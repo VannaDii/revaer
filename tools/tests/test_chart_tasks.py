@@ -22,8 +22,9 @@ def test_lint_prerequisites_stop_before_package_replacement(
     media: bool,
     failure: str | None,
 ) -> None:
-    if media:
-        (chart_context.root / "charts/revaer/values.yaml").write_text("compliance: {}\n")
+    (chart_context.root / "charts/revaer/values.yaml").write_text(
+        "compliance: {}\n" if media else "{}\n"
+    )
     calls: list[str] = []
 
     def record(name: str, context: Context) -> TaskResult:

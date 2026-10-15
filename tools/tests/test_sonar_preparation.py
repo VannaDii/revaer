@@ -25,6 +25,10 @@ def preparation_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Cont
     context = make_context(Options())
     coverage = tmp_path / "coverage"
     (coverage / "lcov.info").write_text("SF:crates/sample/src/lib.rs\nDA:1,1\nend_of_record\n")
+    rust = tmp_path / "crates/sample/src/lib.rs"
+    rust.parent.mkdir(parents=True)
+    rust.write_text("pub fn sample() {}\n")
+    subprocess.run(["git", "add", str(rust)], check=True, capture_output=True, timeout=10)
     (coverage / "js-lcov.info").write_text(
         "SF:crates/ui/static/app.js\n"
         + "".join(f"DA:{number},{int(number != 1000)}\n" for number in range(1, 1001))
@@ -78,7 +82,7 @@ def test_input_task_requires_every_report_and_retained_header(preparation_contex
         SonarVerifyInputs.run(context)
 
 
-def test_source_preparation_retains_reports_and_never_deletes_authored_content(
+def test_source_preparation_preserves_coverage_and_never_deletes_authored_content(
     preparation_context: Context,
 ) -> None:
     context = preparation_context
@@ -88,9 +92,12 @@ def test_source_preparation_retains_reports_and_never_deletes_authored_content(
         "release/node_modules/package/index.js",
         "tests/support/api/schema.ts",
         "crates/revaer-ui/dist-serve/index.html",
-        "crates/revaer-ui/dist/output.wasm",
+        "crates/revaer-ui/dist/app.wasm",
         "tests/test-results/result.json",
         "tests/playwright-report/index.html",
+        "tests/logs/api.log",
+        "tools/src/revaer_tooling/__pycache__/cli.cpython-313.pyc",
+        "tests/__pycache__/conftest.cpython-313.pyc",
     )
     for name in paths:
         context.fs.write(context.root / name, "generated\n")
@@ -104,9 +111,7 @@ def test_source_preparation_retains_reports_and_never_deletes_authored_content(
     SonarPrepareSources.run(context)
     assert all(not (context.root / path).exists() for path in paths)
     assert (context.root / "tools/src/revaer_tooling/cli.py").read_text() == "value = 1\n"
-    assert (
-        context.root / "artifacts/sonar/browser-evidence/test-results/result.json"
-    ).read_text() == "generated\n"
+    assert not (context.root / "artifacts/sonar/browser-evidence").exists()
     assert (context.root / "coverage/python.xml").is_file()
     # A checkout still tracking an older generated schema must be migrated
     # explicitly; cleanup cannot erase it to satisfy scanner policy.
@@ -134,7 +139,7 @@ def test_source_preparation_rejects_links_to_another_checkout(
     outside.mkdir()
     (outside / "keep.txt").write_text("keep\n")
     source.symlink_to(outside, target_is_directory=True)
-    with pytest.raises(ToolingError, match="symlink"):
+    with pytest.raises(ToolingError, match="Refusing cleanup outside"):
         SonarPrepareSources.run(context)
     assert (outside / "keep.txt").read_text() == "keep\n"
     source.unlink()

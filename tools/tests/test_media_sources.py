@@ -39,12 +39,12 @@ class SourceCurl(Curl):
 def test_both_reviewed_catalogs_validate_without_fixed_counts(media_context: Context) -> None:
     root = Path(__file__).parents[2]
     settings = load_fixture_settings({})
-    foundation = load_catalog(root, settings)
+    current = load_catalog(root, settings)
     media = load_catalog(
         DATA.parent.parent.parent.parent,
         replace(settings, lock=DATA / "lock.json", manifest=DATA / "manifest.json"),
     )
-    assert (len(foundation.sources), len(foundation.fixtures)) == (2, 3)
+    assert (len(current.sources), len(current.fixtures)) == (22, 30)
     assert (len(media.sources), len(media.fixtures)) == (22, 30)
     assert sum(item.exact_diagnostic for item in media.fixtures) == 1
 
@@ -145,7 +145,8 @@ def test_fallback_rejects_bad_payload_before_publication(
     curl = SourceCurl(context.tools.curl, payloads)
     acquire(source, context.root, context.settings.fixtures, curl, messages.append)
     assert path.read_bytes() == b"fixture-data"
-    assert len(curl.calls) == 2 and curl.calls[0].deadline == 120
+    assert len(curl.calls) == 2
+    assert curl.calls[0].deadline == 120
     assert any("Discarding invalid cached" in item for item in messages)
     assert any("source 1 failed" in item for item in messages)
     assert not tuple(path.parent.glob(".acquire-*"))

@@ -43,3 +43,16 @@ class DatabaseBaselineRead(Task):
             CargoArgs(CargoOperation.TEST, test_filter="baseline::"), test_environment(context)
         )
         return TaskResult("Database baseline read tests passed")
+
+
+class DatabaseBaselineVerify(Task):
+    """Verify the caller-selected runtime database without initializing or repairing it."""
+
+    @staticmethod
+    def run(context: Context) -> TaskResult:
+        context.tools.cargo.run_binary(
+            "revaer-data",
+            "verify_database_baseline",
+            env={"DATABASE_URL": context.settings.database.url},
+        )
+        return TaskResult("Packaged database baseline and runtime identity verified")

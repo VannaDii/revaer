@@ -122,7 +122,9 @@ separate command families in the migration inventory.
 ## Native scanner inputs
 
 `script-coverage` exercises the unchanged root bootstrap with the official uv
-installer and native kcov. Its [guide](../bootstrap/README.md) documents the
+installer and native kcov. Each invocation uses a private disposable pytest base
+directory, cleaned on success or failure without touching other pytest sessions.
+Its [guide](../bootstrap/README.md) documents the
 platform prerequisites, descriptor ownership, raw evidence and pending legacy
 acceptance-check correction.
 
@@ -157,6 +159,9 @@ same explicit disposable database selection as Rust tests; database provisioning
 is a separate lifecycle concern. The default is one build job and one test
 thread, with `CARGO_BUILD_JOBS` and `RUST_TEST_THREADS` overrides preserved.
 Cargo's negative CPU offsets and `default` job setting remain available.
+An explicitly managed Linux fixture or `REVAER_NATIVE_RECOVERY_ROOT` also runs
+the existing service-recovery test before reporting coverage. The managed mount
+remains available until that test and reporting finish.
 The internal `revaer-test-support` database fixture keeps its complete measured
 records but is exempt from the production percentage threshold; other crates
 retain the 90% Rust line minimum.
@@ -208,8 +213,8 @@ source/build inputs.
 | `rv db-seed` | Run the start/migration sequence, then apply the development seed in one transaction. |
 
 With no supplied connection URL, database commands use the local `revaer`
-application database and `db-start` manages a PostgreSQL 16 container. With a
-supplied `DATABASE_URL` or `REVAER_TEST_DATABASE_URL`, lifecycle ownership defaults
+application database and `db-start` manages the pinned PostgreSQL 18.6 container.
+With a supplied `DATABASE_URL` or `REVAER_TEST_DATABASE_URL`, lifecycle ownership defaults
 to the caller: `db-start` checks readiness and runs SQLx against that connection.
 It does not create or replace a Docker container in that mode.
 

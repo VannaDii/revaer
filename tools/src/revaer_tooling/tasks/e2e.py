@@ -17,7 +17,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from ..context import Context, TaskResult
-from ..e2e.api import ApiClient, ApiSchema, ApiSession, configure_auth
+from ..e2e.api import ApiClient, ApiRequest, ApiSchema, ApiSession, Method, configure_auth
 from ..e2e.coverage import RouteCoverage, distributed_runs, required_api_operations, verify_routes
 from ..e2e.database import single_init_database, uses_single_init
 from ..e2e.shards import verify_shards
@@ -32,6 +32,68 @@ from ..process import RunningProcess
 from .base import Task
 from .build import SyncAssets
 from .database import database_connection
+
+OPENAPI_PATH = "docs/api/openapi.json"
+
+
+def require_media_readiness(client: ApiClient, logs: Path) -> None:
+    readiness = client.request(ApiRequest(Method.GET, "/v1/media/root-catalog/readiness")).object()
+    if readiness.get("source_state") != "ready" or readiness.get("attestation_state") != "ready":
+        raise ToolingError(
+            "Media E2E requires a real active Linux root catalog; inspect " + str(logs)
+        )
+
+
+@contextmanager
+def media_fixture(context: Context, paths: "RunPaths") -> Iterator[tuple["RunPaths", Path | None]]:
+    if not context.settings.e2e.managed_media_roots:
+        yield paths, None
+        return
+    if context.host.system != "linux" or context.settings.e2e.filesystem_root is not None:
+        raise ToolingError("Managed E2E media roots require Linux without a caller filesystem root")
+    directory = context.fs.temporary_directory(context.host.home, "revaer-e2e-")
+    image = directory / "media.ext4"
+    roots = directory / "roots"
+    mounted = False
+    try:
+        # Leave the production 1 GiB reserve intact while real recovery tests
+        # create source, workspace and replacement media on the same filesystem.
+        context.fs.create_disk_image(image, 4 * 1024 * 1024 * 1024)
+        context.tools.mkfs_ext4.image(image, context.host.uid, context.host.gid)
+        context.fs.mkdir(roots)
+        context.fs.directory_permissions(roots, context.host.uid, context.host.gid, 0o700)
+        context.tools.mount.temporary(
+            roots, image, context.host.uid, context.host.gid, context.tools.privilege
+        )
+        mounted = True
+        context.fs.directory_permissions(roots, context.host.uid, context.host.gid, 0o700)
+        slots = []
+        for key, name, kinds in (
+            ("ui-source", "source", ["source", "output"]),
+            ("ui-output", "output", ["output"]),
+            ("ui-workspace", "workspace", ["workspace"]),
+        ):
+            path = roots / name
+            context.fs.mkdir(path)
+            context.fs.directory_permissions(path, context.host.uid, context.host.gid, 0o700)
+            slots.append(
+                {
+                    "key": key,
+                    "path": str(path),
+                    "allowed_kinds": kinds,
+                    "durability_class": "restart_persistent",
+                    "durability_evidence": "linux_dedicated_mount",
+                    "sole_writer_class": "revaer_exclusive",
+                    "sole_writer_evidence": "linux_dedicated_service",
+                }
+            )
+        catalog = roots / "catalog.json"
+        context.fs.write(catalog, json.dumps({"format_version": 1, "slots": slots}), 0o600)
+        yield replace(paths, filesystem=roots), catalog
+    finally:
+        if mounted:
+            context.tools.unmount.temporary(roots, context.tools.privilege)
+        context.fs.remove_owned(directory, context.host.home)
 
 
 @contextmanager
@@ -199,6 +261,7 @@ def running_services(
     executable: ServingExecutable,
     database_url: str,
     ui_required: bool,
+    media_root_catalog: Path | None = None,
 ) -> Iterator[tuple[RunningProcess, ...]]:
     settings = context.settings.e2e
     with ExitStack() as cleanup:
@@ -209,6 +272,7 @@ def running_services(
                 database_url,
                 paths.filesystem / ".media-workspace",
                 api_log,
+                media_root_catalog,
             )
         )
         cleanup.callback(api.stop)
@@ -234,15 +298,14 @@ def run_phases(
     phases: tuple[str, ...],
     services: tuple[RunningProcess, ...],
     outcomes: dict[str, str],
+    initial_session: ApiSession | None = None,
 ) -> None:
     settings = context.settings.e2e
-    schema = ApiSchema(
-        object_value(decode(context.fs.read(context.root / "docs/api/openapi.json")))
-    )
-    session: ApiSession | None = None
+    schema = ApiSchema(object_value(decode(context.fs.read(context.root / OPENAPI_PATH))))
+    session = initial_session
     for phase in phases:
         outcomes[phase] = "failed"
-        mode = "none" if phase == "api-none" else "api_key"
+        mode = "none" if phase.startswith("api-none") else "api_key"
         if session is None or session.auth_mode != mode:
             coverage = RouteCoverage(
                 paths.results / f"api-coverage-{phase}{settings.shard_suffix}-setup.json",
@@ -264,14 +327,113 @@ def run_phases(
         outcomes[phase] = "passed"
 
 
-def run_suite(context: Context, paths: RunPaths) -> None:
+def configure_media_auth(
+    context: Context,
+    paths: RunPaths,
+    executable: ServingExecutable,
+    database_url: str,
+    missing: Path,
+    coverage: RouteCoverage,
+    schema: ApiSchema,
+    phase: str,
+    session: ApiSession | None,
+) -> ApiSession:
+    with running_services(
+        context,
+        replace(paths, logs=paths.logs / "setup"),
+        executable,
+        database_url,
+        False,
+        missing,
+    ):
+        client = ApiClient(
+            context.tools.http,
+            context.settings.e2e.api_url,
+            coverage,
+            schema,
+            session.headers() if session is not None else None,
+        )
+        mode = "none" if phase.startswith("api-none") else "api_key"
+        return configure_auth(client, mode, str(paths.filesystem))
+
+
+def run_media_phases(
+    context: Context,
+    paths: RunPaths,
+    phases: tuple[str, ...],
+    executable: ServingExecutable,
+    database_url: str,
+    outcomes: dict[str, str],
+    catalog: Path | None = None,
+) -> None:
+    """Join each old service before loading a different startup catalog.
+
+    Authentication setup resets public tables, including the catalog. Run it
+    against the absent-catalog service, then restart to attest the configured
+    catalog. Never fabricate a generation or add runtime catalog reloading.
+    The database retains authentication across restarts, so resets use the
+    previous session before replacing it with newly issued credentials.
+    """
+    missing = paths.runtime / "missing-media-roots.json"
+    if missing.exists() or missing.is_symlink():
+        raise ToolingError("The missing-catalog fixture path must be absent")
+    settings = context.settings.e2e
+    schema = ApiSchema(object_value(decode(context.fs.read(context.root / OPENAPI_PATH))))
+    session: ApiSession | None = None
+    for phase in phases:
+        outcomes[phase] = "failed"
+        selected_paths = RunPaths(
+            results=paths.results,
+            report=paths.report,
+            logs=paths.logs / phase,
+            runtime=paths.runtime,
+            filesystem=paths.filesystem,
+        )
+        ui = phase.startswith("ui-")
+        coverage = RouteCoverage(
+            paths.results / f"api-coverage-{phase}{settings.shard_suffix}-setup.json",
+            context.fs,
+        )
+        if not ui or session is None:
+            session = configure_media_auth(
+                context,
+                selected_paths,
+                executable,
+                database_url,
+                missing,
+                coverage,
+                schema,
+                phase,
+                session,
+            )
+        context.tools.listeners.require_free(urlsplit(settings.api_url).port or 80)
+        with running_services(
+            context,
+            selected_paths,
+            executable,
+            database_url,
+            ui,
+            missing if phase.endswith("-missing-catalog") else catalog,
+        ) as services:
+            if session is None:
+                raise ToolingError("Media E2E authentication setup did not return a session")
+            if not phase.endswith("-missing-catalog"):
+                client = ApiClient(
+                    context.tools.http, settings.api_url, coverage, schema, session.headers()
+                )
+                require_media_readiness(client, selected_paths.logs)
+            run_phases(context, paths, (phase,), services, outcomes, session)
+
+
+def run_suite(context: Context, paths: RunPaths, catalog: Path | None = None) -> None:
     """Run while the calling task holds the checkout's E2E lock.
 
     Runbook keeps that same lock through artifact copying, so another invocation
     cannot replace results between suite completion and archiving.
     """
     settings = context.settings.e2e
-    phases = settings.phases()
+    media = uses_single_init(context)
+    phases = settings.phases(media=media)
     api_port = urlsplit(settings.api_url).port or 80
     ui_required = any(phase.startswith("ui-") for phase in phases)
     prepare_outputs(context, paths, phases)
@@ -290,11 +452,16 @@ def run_suite(context: Context, paths: RunPaths) -> None:
             SyncAssets.run(context)
             context.fs.mkdir(context.root / "crates/revaer-ui/dist-serve/.stage")
         context.fs.mkdir(paths.filesystem)
-        with (
-            temporary_database(context) as database_url,
-            running_services(context, paths, executable, database_url, ui_required) as services,
-        ):
-            run_phases(context, paths, phases, services, outcomes)
+        with temporary_database(context) as database_url:
+            if media:
+                run_media_phases(
+                    context, paths, phases, executable, database_url, outcomes, catalog
+                )
+            else:
+                with running_services(
+                    context, paths, executable, database_url, ui_required
+                ) as services:
+                    run_phases(context, paths, phases, services, outcomes)
         status = "passed"
     finally:
         write_summary(context, paths, status, outcomes)
@@ -305,8 +472,11 @@ class UiE2e(Task):
     def run(context: Context) -> TaskResult:
         paths = RunPaths.for_context(context)
         context.fs.mkdir(paths.runtime)
-        with context.fs.lock(paths.runtime / "e2e.lock"):
-            run_suite(context, paths)
+        with (
+            context.fs.lock(paths.runtime / "e2e.lock"),
+            media_fixture(context, paths) as (selected_paths, catalog),
+        ):
+            run_suite(context, selected_paths, catalog)
         return TaskResult("E2E phases passed; report: tests/playwright-report/index.html")
 
 
@@ -320,11 +490,11 @@ class UiE2eCoverage(Task):
             distributed_runs(
                 context.fs,
                 context.root,
-                context.settings.e2e.phases(),
+                context.settings.e2e.phases(media=uses_single_init(context)),
                 context.options.expected_shards,
             )
             directory = context.root / "coverage/producers"
-        required = required_api_operations(context.fs.read(context.root / "docs/api/openapi.json"))
+        required = required_api_operations(context.fs.read(context.root / OPENAPI_PATH))
         verify_routes(context.fs, directory, "API", required)
         configuration = defaults(context).get("ui")
         routes = configuration.get("required_routes") if isinstance(configuration, dict) else None
@@ -342,14 +512,20 @@ class UiE2eShardCoverage(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
         if distributed_runs(
-            context.fs, context.root, context.settings.e2e.phases(), context.options.expected_shards
+            context.fs,
+            context.root,
+            context.settings.e2e.phases(media=uses_single_init(context)),
+            context.options.expected_shards,
         ):
             return TaskResult("Every browser shard and API phase completed its expected scenarios")
         directory = context.settings.e2e.coverage_directory or context.root / "tests/test-results"
         if not directory.is_absolute():
             directory = context.root / directory
         verify_shards(
-            context.fs, directory, context.settings.e2e.phases(), context.options.expected_shards
+            context.fs,
+            directory,
+            context.settings.e2e.phases(media=uses_single_init(context)),
+            context.options.expected_shards,
         )
         return TaskResult("Every E2E shard completed its expected scenarios and recorded coverage")
 

@@ -11,12 +11,15 @@ from xml.etree import ElementTree
 import pytest
 from revaer_tooling.cli import main, make_context
 from revaer_tooling.context import Context, Options
+from revaer_tooling.e2e.database import uses_single_init
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.tasks.python_coverage import PythonCoverageMerge
 
 
-@pytest.fixture
-def coverage_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Context:
+@pytest.fixture(params=(False, True))
+def coverage_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> Context:
     source = Path(__file__).resolve().parents[2]
     package = tmp_path / "tools/src/revaer_tooling"
     package.mkdir(parents=True)
@@ -28,10 +31,16 @@ def coverage_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Context
     shutil.copy2(source / "tools/coverage-report.toml", tmp_path / "tools/coverage-report.toml")
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True, timeout=10)
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("E2E_PROJECTS", raising=False)
+    if request.param:
+        (tmp_path / "config").mkdir()
+        (tmp_path / "config/database-rebaseline.env").write_text(
+            "TRANSITION_PHASE=feature-development\n"
+        )
     monkeypatch.setenv("E2E_BROWSERS", "chromium")
     monkeypatch.setenv("E2E_PLAYWRIGHT_PROJECTS", "api-none,api-api-key,ui-chromium")
     context = make_context(Options())
-    phases = context.settings.e2e.phases()
+    phases = context.settings.e2e.phases(media=request.param)
     for phase in ("tooling", *phases):
         data = (
             tmp_path / ".coverage"
@@ -150,8 +159,13 @@ def test_merge_combines_real_data_from_separate_producer_directories(
     tooling = producers / "tooling-coverage"
     tooling.mkdir(parents=True)
     shutil.move(context.root / ".coverage", tooling / ".coverage")
+    api_phases = tuple(
+        phase
+        for phase in context.settings.e2e.phases(media=uses_single_init(context))
+        if phase.startswith("api-")
+    )
     groups = (
-        ("api-e2e-coverage", ("api-none", "api-api-key")),
+        ("api-e2e-coverage", api_phases),
         ("ui-e2e-chromium", ("ui-chromium",)),
     )
     for name, phases in groups:

@@ -15,6 +15,7 @@ from revaer_tooling.cli import make_context
 from revaer_tooling.context import Context, Options
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.external.sonar import SonarApi, SonarScanner
+from revaer_tooling.json_data import JsonObject
 from revaer_tooling.tasks.sonar import SonarPackageReport, SonarScan, SonarVerifyResult
 from revaer_tooling.tasks.workflows import SonarPolicy
 
@@ -247,11 +248,14 @@ def test_result_queries_exact_analysis_and_correct_backlog_scope(
         if endpoint == "/api/qualitygates/project_status":
             assert query == {"analysisId": ["owned-analysis"]}
         elif endpoint in ("/api/issues/search", "/api/hotspots/search"):
-            assert "status" not in query
             assert "statuses" not in query
             assert "inNewCodePeriod" not in query
+            assert "status" not in query
             if pull_request:
                 assert query["pullRequest"] == [pull_request]
+                assert "sinceLeakPeriod" not in query
+            elif query["ps"] == ["500"]:
+                assert "pullRequest" not in query
                 assert "sinceLeakPeriod" not in query
             else:
                 assert "pullRequest" not in query
@@ -275,11 +279,35 @@ def test_failing_result_retains_final_evidence_and_never_hides_hotspots(
     state = ApiState()
     state.records["hotspots"] = {"paging": {"total": 1}, "hotspots": [{"status": "REVIEWED"}]}
     with sonar_server(state) as url:
-        connected = connect(context, url)
-        with pytest.raises(ToolingError, match="current hotspots"):
-            SonarVerifyResult.run(connected)
+        active = connect(context, url)
+        with pytest.raises(ToolingError, match="unreviewed hotspots"):
+            SonarVerifyResult.run(active)
     assert json.loads((evidence / "hotspots.json").read_text()) == state.records["hotspots"]
     assert (evidence / "notes.txt").read_text() == "other evidence"
+
+
+def test_historical_production_issue_after_first_page_blocks_result(
+    scanner_context: tuple[Context, ScannerFixtureRunner],
+) -> None:
+    context, _ = scanner_context
+    SonarScan.run(context)
+    state = ApiState()
+    rows: list[JsonObject] = [
+        {"key": f"utility-{number}", "component": "VannaDii_Revaer:tools/helper.py"}
+        for number in range(500)
+    ]
+    rows.append({"key": "runtime", "component": "VannaDii_Revaer:crates/revaer-app/src/lib.rs"})
+    state.records["all-issues"] = {"total": len(rows), "issues": list(rows)}
+    with sonar_server(state) as url:
+        active = connect(context, url)
+        with pytest.raises(ToolingError, match="active production"):
+            SonarVerifyResult.run(active)
+    pages = [
+        query["p"]
+        for endpoint, query, _ in state.requests
+        if endpoint == "/api/issues/search" and query["ps"] == ["500"]
+    ]
+    assert ["2"] in pages
 
 
 def test_api_authentication_and_retry_exhaustion_fail(

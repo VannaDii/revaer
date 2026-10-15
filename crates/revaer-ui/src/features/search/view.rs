@@ -13,6 +13,7 @@ use crate::features::search::api::{
 use crate::features::search::logic::{format_size, result_meta, selection_key};
 use crate::features::search::state::{SearchFormState, SearchRunState};
 use crate::models::{SearchPageItemResponse, SearchRequestExplainabilityResponse};
+use crate::services::api::ApiClient;
 use yew::platform::spawn_local;
 use yew::prelude::*;
 
@@ -68,30 +69,9 @@ pub(crate) fn search_page(props: &SearchPageProps) -> Html {
                 let response = submit_search(&api.client, &form_snapshot).await;
                 match response {
                     Ok(create) => {
-                        let search_request_public_id = create.search_request_public_id;
                         let mut next_state = SearchRunState::new(create);
-                        match fetch_search_pages(&api.client, search_request_public_id).await {
-                            Ok(pages) => {
-                                let first_page_number =
-                                    pages.pages.first().map(|page| page.page_number);
-                                next_state.pages = pages;
-                                next_state.selected_page_number = first_page_number;
-                                if let Some(page_number) = first_page_number {
-                                    match fetch_search_page(
-                                        &api.client,
-                                        search_request_public_id,
-                                        page_number,
-                                    )
-                                    .await
-                                    {
-                                        Ok(page) => {
-                                            next_state.current_page = Some(page);
-                                        }
-                                        Err(fetch_error) => {
-                                            error.set(Some(fetch_error));
-                                        }
-                                    }
-                                }
+                        match refresh_run_pages(&api.client, &mut next_state, &error).await {
+                            Ok(()) => {
                                 status.set(Some(
                                     "Search request submitted. Refresh to pick up more sealed pages."
                                         .to_string(),
@@ -133,30 +113,9 @@ pub(crate) fn search_page(props: &SearchPageProps) -> Html {
             let error = error.clone();
             let status = status.clone();
             spawn_local(async move {
-                match fetch_search_pages(&api.client, current_run.search_request_public_id).await {
-                    Ok(pages) => {
-                        let page_number = current_run
-                            .selected_page_number
-                            .or_else(|| pages.pages.first().map(|page| page.page_number));
-                        let mut next_state = current_run.clone();
-                        next_state.pages = pages;
-                        next_state.selected_page_number = page_number;
-                        if let Some(selected_page_number) = page_number {
-                            match fetch_search_page(
-                                &api.client,
-                                current_run.search_request_public_id,
-                                selected_page_number,
-                            )
-                            .await
-                            {
-                                Ok(page) => {
-                                    next_state.current_page = Some(page);
-                                }
-                                Err(fetch_error) => {
-                                    error.set(Some(fetch_error));
-                                }
-                            }
-                        }
+                let mut next_state = current_run.clone();
+                match refresh_run_pages(&api.client, &mut next_state, &error).await {
+                    Ok(()) => {
                         status.set(Some("Search results refreshed.".to_string()));
                         run.set(Some(next_state));
                     }
@@ -409,6 +368,26 @@ pub(crate) fn search_page(props: &SearchPageProps) -> Html {
             </div>
         </section>
     }
+}
+
+async fn refresh_run_pages(
+    client: &ApiClient,
+    next_state: &mut SearchRunState,
+    error: &UseStateHandle<Option<String>>,
+) -> Result<(), String> {
+    let pages = fetch_search_pages(client, next_state.search_request_public_id).await?;
+    let page_number = next_state
+        .selected_page_number
+        .or_else(|| pages.pages.first().map(|page| page.page_number));
+    next_state.pages = pages;
+    next_state.selected_page_number = page_number;
+    if let Some(page_number) = page_number {
+        match fetch_search_page(client, next_state.search_request_public_id, page_number).await {
+            Ok(page) => next_state.current_page = Some(page),
+            Err(fetch_error) => error.set(Some(fetch_error)),
+        }
+    }
+    Ok(())
 }
 
 fn render_run_summary(run: Option<&SearchRunState>) -> Html {
