@@ -124,7 +124,8 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 - `just cov` includes that production worker regression after workspace collection
   with matching all-feature FFI instrumentation, without clearing prior profiles.
   An explicitly selected Linux recovery root also exercises the existing native
-  service workflow; each opt-in selection must execute one passing test.
+  service workflow. The production replacement selection must execute one
+  passing test; mounted recovery must execute all nine passing scenarios.
   Coverage must use the mounted root supplied by the managed fixture as well as
   a caller-selected root; fixture setup must not silently skip service recovery.
 
