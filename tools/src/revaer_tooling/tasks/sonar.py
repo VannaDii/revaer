@@ -36,6 +36,7 @@ from .workflows import SonarPolicy
 RESULT_NAMES = ("ce-task", "measures", "quality-gate", "issues", "all-issues", "hotspots")
 ISSUES_SEARCH: Final = "issues/search"
 RUST_LCOV: Final = "lcov.info"
+JAVASCRIPT_LCOV: Final = "js-lcov.info"
 
 
 class SonarVerifyInputs(Task):
@@ -49,7 +50,7 @@ class SonarVerifyInputs(Task):
         context.fs.remove_owned(javascript, context.root)
         names = (
             RUST_LCOV,
-            "js-lcov.info",
+            JAVASCRIPT_LCOV,
             "script-coverage.xml",
             "python.xml",
             "compile_commands.json",
@@ -60,7 +61,7 @@ class SonarVerifyInputs(Task):
             path = directory / name
             _require_nonempty(path)
             reports[name] = context.fs.read(path)
-        verify_lcov(reports[RUST_LCOV], reports["js-lcov.info"])
+        verify_lcov(reports[RUST_LCOV], reports[JAVASCRIPT_LCOV])
         verify_bootstrap_coverage(reports["script-coverage.xml"])
         verify_python_coverage(reports["python.xml"], context.root, authored_python(context))
         verify_compilation_database(
@@ -74,7 +75,7 @@ class SonarVerifyInputs(Task):
             adapted,
             rust_sonar_lcov(reports[RUST_LCOV], context.root, context.tools.git.files()),
         )
-        context.fs.write(javascript, javascript_sonar_lcov(reports["js-lcov.info"]))
+        context.fs.write(javascript, javascript_sonar_lcov(reports[JAVASCRIPT_LCOV]))
         return TaskResult("Sonar coverage and native analyzer inputs verified")
 
 

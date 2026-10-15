@@ -126,7 +126,8 @@ def test_javascript_scanner_input_preserves_first_party_and_complete_original() 
     copied_library = lcov("docs/mermaid.min.js", 2, 0)
     full = authored + upstream + copied_library
     assert javascript_sonar_lcov(full) == authored
-    assert upstream in full and copied_library in full
+    assert upstream in full
+    assert copied_library in full
     with pytest.raises(ToolingError, match="first-party source lines"):
         javascript_sonar_lcov(upstream + copied_library)
 
