@@ -107,10 +107,10 @@ class Cargo(ExternalTool):
     def recovery_scenarios(self, environment: Mapping[str, str]) -> Completed:
         return self._invoke(
             (
-                "--config",
-                'build.rustflags=["-Dwarnings"]',
                 "nextest",
                 "run",
+                "--config",
+                'build.rustflags=["-Dwarnings"]',
                 "--workspace",
                 "--all-features",
                 "--locked",

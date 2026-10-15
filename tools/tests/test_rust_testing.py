@@ -130,6 +130,11 @@ def test_native_service_recipe_requires_linux_and_one_real_selection(
         )
     )
     TestMediaServiceRecovery.run(selected)
+    passing = source.read_text()
+    source.write_text(passing.replace("Ok(())", "let unused = 1; Ok(())"))
+    with pytest.raises(ToolingError):
+        TestMediaServiceRecovery.run(selected)
+    source.write_text(passing)
     source.write_text(source.read_text().replace("Ok(())", 'Err("fixture failure".into())'))
     with pytest.raises(ToolingError):
         TestMediaServiceRecovery.run(selected)
