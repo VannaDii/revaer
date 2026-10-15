@@ -16,7 +16,7 @@ test-group = 'recovery'
 priority = 10
 
 [[profile.default.overrides]]
-filter = 'package(revaer-torrent-libt)'
+filter = 'package(revaer-torrent-libt) | (package(revaer-app) & test(bootstrap::runtime_tests))'
 test-group = 'native'
 
 [[profile.default.overrides]]

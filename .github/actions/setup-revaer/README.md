@@ -81,10 +81,10 @@ separate checks in the [migration inventory](../../../tools/migration.md).
 
 Pinned cargo-nextest supplies process-per-test isolation and resource groups;
 this avoids an authored test executor or an in-process environment lock across
-unrelated tests. `.config/nextest.toml` keeps native libtorrent sessions serial,
+unrelated tests. `.config/nextest.toml` keeps native libtorrent sessions and shared bootstrap engine state serial,
 bounds database-heavy work to two processes, and admits two independent recovery
 scenarios. Each scenario keeps its own ordered restart/fault steps and private
-fixture. Pure tests use the runner's available CPUs. Existing Cargo doctest and
+database, engine paths/listener, media roots and workspace. Pure tests use the runner's available CPUs. Existing Cargo doctest and
 feature gates remain required.
 
 Coverage collections keep one workspace/all-features selection, including ignored

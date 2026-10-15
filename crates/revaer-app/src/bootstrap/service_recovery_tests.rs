@@ -682,7 +682,7 @@ impl Fixture {
         let directory = tempfile::Builder::new()
             .prefix(".revaer-service-recovery-")
             .tempdir_in(root)?;
-        for name in ["source", "workspace"] {
+        for name in ["source", "workspace", "resume", "downloads", "library"] {
             let path = directory.path().join(name);
             tokio::fs::create_dir(&path).await?;
             tokio::fs::set_permissions(path, fs::Permissions::from_mode(0o700)).await?;
@@ -716,19 +716,46 @@ impl Fixture {
         let config = ConfigService::new(postgres.connection_string()).await?;
         let reserved = TcpListener::bind(("127.0.0.1", 0))?;
         let address = reserved.local_addr()?;
+        let engine_listener = TcpListener::bind(("127.0.0.1", 0))?;
+        let engine_address = engine_listener.local_addr()?;
         let mut profile = config.get_app_profile().await?;
         profile.http_port = i32::from(address.port());
+        let mut engine = config.get_engine_profile().await?;
+        engine.listen_port = Some(i32::from(engine_address.port()));
+        engine.listen_interfaces = vec![engine_address.to_string()];
+        engine.resume_dir = directory
+            .path()
+            .join("resume")
+            .to_str()
+            .context("resume path")?
+            .to_owned();
+        engine.download_root = directory
+            .path()
+            .join("downloads")
+            .to_str()
+            .context("download path")?
+            .to_owned();
+        let mut policy = config.get_fs_policy().await?;
+        policy.library_root = directory
+            .path()
+            .join("library")
+            .to_str()
+            .context("library path")?
+            .to_owned();
         config
             .apply_changeset(
                 "tester",
                 "native-service-recovery",
                 SettingsChangeset {
                     app_profile: Some(profile),
+                    engine_profile: Some(engine),
+                    fs_policy: Some(policy),
                     ..SettingsChangeset::default()
                 },
             )
             .await?;
         drop(reserved);
+        drop(engine_listener);
         Ok(Self {
             directory,
             postgres,
