@@ -301,8 +301,9 @@ def _distributed_ui_coverage(policy: Contract) -> None:
     )
     api = policy.job("api-e2e")
     policy.require(
-        mapping(api.get("env")).get("E2E_PLAYWRIGHT_PROJECTS") == "api-none,api-api-key",
-        "API producer must execute anonymous and authenticated phases",
+        mapping(api.get("env")).get("E2E_PLAYWRIGHT_PROJECTS")
+        == "api-none-missing-catalog,api-none,api-api-key-missing-catalog,api-api-key",
+        "API producer must execute anonymous, authenticated, and both missing-catalog phases",
     )
     for job, name, paths in (
         (

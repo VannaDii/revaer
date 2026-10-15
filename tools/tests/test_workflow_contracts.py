@@ -94,6 +94,19 @@ def test_distributed_workflow_preserves_required_checks_and_rejects_missing_inpu
     assert not required_check_findings(fixture.documents, fixture.contexts, False)
     assert not image_workflow_findings(fixture.documents, fixture.matrix)
     original = copy.deepcopy(fixture.documents[path])
+    for phase in (
+        "api-none-missing-catalog",
+        "api-none",
+        "api-api-key-missing-catalog",
+        "api-api-key",
+    ):
+        environment = mapping(fixture.job("pr", "api-e2e")["env"])
+        projects = str(environment["E2E_PLAYWRIGHT_PROJECTS"]).split(",")
+        environment["E2E_PLAYWRIGHT_PROJECTS"] = ",".join(
+            project for project in projects if project != phase
+        )
+        assert required_check_findings(fixture.documents, fixture.contexts, False)
+        fixture.documents[path] = copy.deepcopy(original)
     for producer in ("rust-coverage", "tooling-coverage", "api-e2e", "ui-e2e"):
         fixture.job("pr", producer)["if"] = "false"
         assert scanner_workflow_findings(fixture.documents)

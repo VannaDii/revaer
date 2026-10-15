@@ -463,7 +463,7 @@ jobs:
       E2E_API_BASE_URL: http://localhost:7070
       E2E_BASE_URL: http://localhost:8080
       E2E_COVERAGE_REQUIRE_UI: '0'
-      E2E_PLAYWRIGHT_PROJECTS: api-none,api-api-key
+      E2E_PLAYWRIGHT_PROJECTS: api-none-missing-catalog,api-none,api-api-key-missing-catalog,api-api-key
       E2E_PLAYWRIGHT_NO_DEPS: '1'
       E2E_SKIP_DB_START: '1'
       E2E_VIDEO: 'off'

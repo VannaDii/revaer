@@ -139,8 +139,13 @@ applyTo:
 - Distributed coverage retains every selected producer and shard. Media API
   producers include both missing-catalog phases alongside anonymous/authenticated
   phases; merging must verify their complete selections and route coverage.
+  Explicit API project selections must include all four phases even when
+  dependency expansion is disabled.
   Assign records to their complete declared phase names, so missing-catalog
   prefixes cannot satisfy or invalidate a different phase's evidence.
+- PostgreSQL readiness treats a timed-out probe as not ready within the existing
+  overall deadline. Preserve the timeout cause when that deadline expires and
+  propagate other command failures immediately; do not increase probe deadlines.
 - Sonar input verification derives `coverage/rust-sonar-lcov.info` from the complete
   LCOV report using the tracked Rust inventory and zero-hit unexecuted branches,
   as explicitly approved by the operator. Both workflows retain the complete

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from revaer_tooling.bootstrap.selection import apt_selection
 from revaer_tooling.cli import COMMANDS, parser
+from revaer_tooling.e2e.settings import load_e2e_settings
 from revaer_tooling.policy.formats import Document, yaml_document
 from revaer_tooling.policy.setup_workflows import setup_workflow_findings
 from revaer_tooling.policy.workflows import SETUP_PATH, mapping, steps, workflow_findings
@@ -17,6 +18,20 @@ from revaer_tooling.policy.workflows import SETUP_PATH, mapping, steps, workflow
 def action() -> Document:
     root = Path(__file__).parents[2]
     return yaml_document((root / SETUP_PATH).read_text(), SETUP_PATH)
+
+
+def test_media_api_producer_runs_every_phase_required_by_aggregation() -> None:
+    root = Path(__file__).parents[2]
+    path = ".github/workflows/pr.yml"
+    document = yaml_document((root / path).read_text(), path)
+    jobs = mapping(document["jobs"])
+    producer = mapping(mapping(jobs["api-e2e"])["env"])
+    aggregate = mapping(mapping(jobs["ui-e2e-coverage"])["env"])
+    selected = load_e2e_settings({key: str(value) for key, value in producer.items()})
+    required = load_e2e_settings({key: str(value) for key, value in aggregate.items()})
+    assert selected.phases(media=True) == tuple(
+        phase for phase in required.phases(media=True) if phase.startswith("api-")
+    )
 
 
 @pytest.mark.parametrize("job_name", ("api-e2e", "ui-e2e"))

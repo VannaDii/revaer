@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 
-from ..errors import ToolingError
+from ..errors import CommandError, ToolingError
 from ..process import Completed
 from .base import ExternalTool
 
@@ -96,19 +96,28 @@ class PgIsReady(ExternalTool):
             raise ToolingError("PostgreSQL readiness needs at least one endpoint")
         connections = tuple((url, LibpqConnection.from_url(url)) for url in database_urls)
         deadline = time.monotonic() + timeout
+        probe_timeout: CommandError | None = None
         while True:
             for url, connection in connections:
-                result = self._invoke(
-                    ("--quiet", "--timeout=1", "--dbname", connection.uri),
-                    env=connection.environment(),
-                    capture=True,
-                    timeout=3,
-                    accepted_codes=(0, 1, 2),
-                )
-                if result.code == 0:
-                    return url
+                try:
+                    result = self._invoke(
+                        ("--quiet", "--timeout=1", "--dbname", connection.uri),
+                        env=connection.environment(),
+                        capture=True,
+                        timeout=3,
+                        accepted_codes=(0, 1, 2),
+                    )
+                except CommandError as error:
+                    if error.exit_code != 124:
+                        raise
+                    probe_timeout = error
+                else:
+                    if result.code == 0:
+                        return url
             if time.monotonic() >= deadline:
-                raise ToolingError("PostgreSQL did not become ready before the timeout")
+                raise ToolingError(
+                    "PostgreSQL did not become ready before the timeout"
+                ) from probe_timeout
             time.sleep(min(0.2, max(0, deadline - time.monotonic())))
 
 

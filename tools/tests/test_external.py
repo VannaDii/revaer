@@ -6,9 +6,10 @@ import sys
 from pathlib import Path
 
 import pytest
-from revaer_tooling.errors import ToolingError
+from revaer_tooling.errors import CommandError, ToolingError
 from revaer_tooling.external.base import ExternalTool
 from revaer_tooling.external.coverage import CargoLlvmCov
+from revaer_tooling.external.database import PgIsReady
 from revaer_tooling.external.github import GitHub
 from revaer_tooling.external.media import Ffprobe
 from revaer_tooling.external.mount import MkfsExt4, Mount, Unmount
@@ -30,6 +31,50 @@ class RecordingRunner:
     def run(self, invocation: Invocation) -> Completed:
         self.calls.append(invocation)
         return Completed(0, self.stdout)
+
+
+@pytest.mark.parametrize("exit_code", (124, 127))
+def test_postgres_readiness_distinguishes_probe_timeout_from_command_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exit_code: int
+) -> None:
+    runner = RecordingRunner()
+    error = CommandError("readiness probe failed", exit_code)
+
+    def probe(invocation: Invocation) -> Completed:
+        runner.calls.append(invocation)
+        if len(runner.calls) == 1:
+            raise error
+        return Completed(0, "")
+
+    monkeypatch.setattr(runner, "run", probe)
+    ready = PgIsReady(sys.executable, runner, tmp_path, {})
+    endpoints = ("postgres://fixture@localhost/fixture", "postgres://fixture@127.0.0.1/fixture")
+    if exit_code == 124:
+        assert ready.wait(endpoints) == endpoints[1]
+        assert len(runner.calls) == 2
+    else:
+        with pytest.raises(CommandError) as failure:
+            ready.wait(endpoints)
+        assert failure.value is error
+        assert len(runner.calls) == 1
+
+
+def test_postgres_readiness_retains_timeout_cause_at_overall_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = RecordingRunner()
+    error = CommandError("readiness probe timed out", 124)
+
+    def probe(invocation: Invocation) -> Completed:
+        runner.calls.append(invocation)
+        raise error
+
+    monkeypatch.setattr(runner, "run", probe)
+    ready = PgIsReady(sys.executable, runner, tmp_path, {})
+    with pytest.raises(ToolingError, match="before the timeout") as failure:
+        ready.wait(("postgres://fixture@localhost/fixture",), timeout=0)
+    assert failure.value.__cause__ is error
+    assert len(runner.calls) == 1
 
 
 def test_ext4_fixture_preserves_private_image_and_explicit_mount_lifecycle(tmp_path: Path) -> None:
