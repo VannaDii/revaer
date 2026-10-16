@@ -68,3 +68,5 @@ applyTo:
 - Sonar source preparation removes untracked Python bytecode caches beside authored Python files, including caches left by earlier runs; refuse tracked content and links.
 - Coverage fixtures construct Context with their existing injected collaborators and explicit Options, and own their managed-root/native-required settings so qualification flags cannot enable unrelated integration scenarios. URL fixtures generate credentials at runtime while retaining percent-encoding cases.
 - Exact SCM preparation must reject a stale local target branch that would shadow the fetched event base. Preserve shared worktrees; qualify in an independent checkout.
+
+- `rv cargo-lock` remains offline by default. Use its explicit `--online` option when changed manifest requirements need missing registry metadata; preserve existing unrelated locked registry versions.

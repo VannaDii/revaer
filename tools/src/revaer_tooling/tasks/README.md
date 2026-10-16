@@ -341,3 +341,5 @@ LCOV is a native coverage-profile prerequisite (apt `lcov` or the platform
 package manager). It replaces repository-written native counter analysis: its
 extract and threshold commands enforce the existing positive-execution gate
 for `session.cpp`, without adding a production percentage requirement.
+
+`rv cargo-lock` remains offline by default. Use its explicit `--online` option when changed manifest requirements need missing registry metadata; preserve existing unrelated locked registry versions.
