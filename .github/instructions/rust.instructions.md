@@ -172,3 +172,6 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
   tests in the serial resource group, database-heavy tests in the bounded group,
   and the nine recovery scenarios independently selectable. Private test state
   must not become a shared fixture merely to reduce execution time.
+
+- Media directory observations compare bounded raw-name hashes alongside metadata;
+  resumable scans must detect name changes even when filesystem timestamps collide.
