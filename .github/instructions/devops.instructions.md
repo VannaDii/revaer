@@ -33,8 +33,8 @@ applyTo:
   recovery scenarios, every scenario's internal ordering, and all nine recovery
   cases. Keep workspace/all-feature compilation consistent across collections.
   Compiler parallelism is independent of test resource limits; explicit operator
-  overrides remain supported. Python tooling uses two isolated workers and the
-  supported raw coverage merge.
+  overrides remain supported. Python tooling execution follows
+  `python.instructions.md`; preserve the supported raw coverage merge.
 
 
 - API and browser E2E jobs explicitly provision FFmpeg for real capability probes

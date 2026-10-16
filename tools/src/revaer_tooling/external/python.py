@@ -126,8 +126,6 @@ class Python(ExternalTool):
 
     def pytest(self, args: PytestArgs, env: Mapping[str, str] | None = None) -> Completed:
         command = ["-m", "pytest", *args.paths]
-        if args.paths == ("tools/tests",):
-            command.extend(("--numprocesses", "2", "--dist", "loadfile"))
         if args.coverage:
             command.extend(
                 (

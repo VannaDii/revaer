@@ -65,6 +65,9 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 
 # Documentation and verification
 
+- Keep the complete tooling suite serial. Measure tool setup and test execution
+  separately; hosted two-worker runs took longer.
+
 - Native LLVM text reports use numbered source lines without macro expansion or
   region subviews for scanner compatibility. Preserve coverage measurements and
   expanded HTML diagnostics. Scanner debug logging must use the supported
