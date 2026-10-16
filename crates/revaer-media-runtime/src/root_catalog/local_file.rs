@@ -1,5 +1,7 @@
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Seek};
+
+use sha2::{Digest, Sha256};
 
 use rustix::fs::{self, Access, AtFlags, FileType, Mode, OFlags, Stat};
 use rustix::io::Errno;
@@ -114,6 +116,9 @@ impl TrustedLocalRootCatalogSource {
         let document = read_bounded(&mut opened.file, &mut observer)?;
         observer(LoadPhase::ReadComplete);
         revalidate_source(&self.location, self.trust_policy, &opened)?;
+        if <[u8; 32]>::from(Sha256::digest(&document)) != opened.content_sha256 {
+            return Err(untrusted(RootCatalogTrustViolation::SourceChanged));
+        }
         if document.len() > MAX_ROOT_CATALOG_DOCUMENT_BYTES {
             return Err(RootCatalogSourceError::BoundExceeded {
                 maximum_bytes: MAX_ROOT_CATALOG_DOCUMENT_BYTES,
@@ -186,6 +191,7 @@ struct OpenedSource {
     directories: Vec<File>,
     directory_stats: Vec<Stat>,
     file_stat: Stat,
+    content_sha256: [u8; 32],
 }
 
 pub(super) struct RetainedSource {
@@ -301,11 +307,21 @@ fn open_source(
     validate_packaged_write_protection(&directory, file_name, policy)?;
     directories.push(File::from(directory));
 
+    // Filesystem timestamps can coalesce rapid writes. Retain a bounded content
+    // snapshot so equal-size edits cannot pass metadata-only revalidation.
+    let mut file = File::from(file_descriptor);
+    let content_sha256 = Sha256::digest(read_bounded(&mut file, &mut |_| {})?).into();
+    file.rewind()
+        .map_err(|source| RootCatalogSourceError::Filesystem {
+            operation: "rewind source file",
+            source,
+        })?;
     Ok(Some(OpenedSource {
-        file: File::from(file_descriptor),
+        file,
         directories,
         directory_stats,
         file_stat,
+        content_sha256,
     }))
 }
 
@@ -438,6 +454,7 @@ fn revalidate_source(
             .zip(&reopened.directory_stats)
             .all(|(before, after)| stable_directory_metadata(before, after))
         || !stable_file_metadata(&opened.file_stat, &reopened.file_stat)
+        || opened.content_sha256 != reopened.content_sha256
     {
         return Err(untrusted(RootCatalogTrustViolation::SourceChanged));
     }

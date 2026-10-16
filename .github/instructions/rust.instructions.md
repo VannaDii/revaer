@@ -31,6 +31,9 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 
 # Authoring And Lint Hygiene
 
+- Trusted root catalogs retain a bounded content digest across load and retained
+  source revalidation; equal-size writes must not depend on timestamp resolution.
+
 - Keep workspace lint posture aligned with `AGENTS.md`, the active `just` recipes, and crate-root attributes.
 - Keep `.secignore` and the `[advisories].ignore` list in `deny.toml` empty. An exception requires exact operator consent, an expiry, and a matching guardrail change; an agent-authored ADR is not consent.
 - `just lint` includes `scripts/policy-guardrails.sh`. Keep that guardrail aligned with the root policy when the lint posture changes.
