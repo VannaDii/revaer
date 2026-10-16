@@ -37,7 +37,6 @@ from .external.github import GitHub
 from .external.http import Http, VisibleRedirects
 from .external.images import Buildx, Trivy
 from .external.media import Ffmpeg, Ffprobe
-from .external.mount import MkfsExt4, Mount, Unmount
 from .external.packages import Apk, Apt
 from .external.postgres import PostgresDocker
 from .external.python import Python, Uv
@@ -425,10 +424,6 @@ def make_context(options: Options) -> Context:
         "git", runner, root, env, installation_hint="install Git with your system package manager"
     )
     tools = Tools(
-        mount=Mount("mount", runner, root, env),
-        mkfs_ext4=MkfsExt4("mkfs.ext4", runner, root, env),
-        unmount=Unmount("umount", runner, root, env),
-        privilege=ExternalTool("sudo", runner, root, env) if host.uid != 0 else None,
         lifecycle_docker=LifecycleDocker("docker", runner, root, env),
         proof_databases=ProofDatabase(
             PostgresDocker("docker", runner, root, env),

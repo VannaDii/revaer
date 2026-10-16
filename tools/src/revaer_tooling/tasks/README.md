@@ -154,9 +154,10 @@ same explicit disposable database selection as Rust tests; database provisioning
 is a separate lifecycle concern. The default is one build job and one test
 thread, with `CARGO_BUILD_JOBS` and `RUST_TEST_THREADS` overrides preserved.
 Cargo's negative CPU offsets and `default` job setting remain available.
-An explicitly managed Linux fixture or `REVAER_NATIVE_RECOVERY_ROOT` also runs
-the existing service-recovery test before reporting coverage. The managed mount
-remains available until that test and reporting finish.
+A private fixture beneath an explicit `E2E_FS_ROOT` on existing dedicated ext4
+storage, or `REVAER_NATIVE_RECOVERY_ROOT`, also runs the existing service-recovery
+test before reporting coverage. The private fixture directory remains available
+until that test and reporting finish; deployment retains ownership of the volume.
 Internal-only packages (`revaer-test-support`, `revaer-doc-indexer` and `asset_sync`)
 keep complete measurements without a percentage target. Production packages
 retain the 90% Rust line minimum, enforced by `cargo-llvm-cov report --fail-under-lines`.

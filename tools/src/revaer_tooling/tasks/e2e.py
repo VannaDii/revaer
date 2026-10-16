@@ -40,7 +40,8 @@ def require_media_readiness(client: ApiClient, logs: Path) -> None:
     readiness = client.request(ApiRequest(Method.GET, "/v1/media/root-catalog/readiness")).object()
     if readiness.get("source_state") != "ready" or readiness.get("attestation_state") != "ready":
         raise ToolingError(
-            "Media E2E requires a real active Linux root catalog; inspect " + str(logs)
+            "Media E2E requires dedicated ext4 storage and a trusted active root catalog; inspect "
+            + str(logs)
         )
 
 
@@ -49,24 +50,17 @@ def media_fixture(context: Context, paths: "RunPaths") -> Iterator[tuple["RunPat
     if not context.settings.e2e.managed_media_roots:
         yield paths, None
         return
-    if context.host.system != "linux" or context.settings.e2e.filesystem_root is not None:
-        raise ToolingError("Managed E2E media roots require Linux without a caller filesystem root")
-    directory = context.fs.temporary_directory(context.host.home, "revaer-e2e-")
-    image = directory / "media.ext4"
-    roots = directory / "roots"
-    mounted = False
-    try:
-        # Leave the production 1 GiB reserve intact while real recovery tests
-        # create source, workspace and replacement media on the same filesystem.
-        context.fs.create_disk_image(image, 4 * 1024 * 1024 * 1024)
-        context.tools.mkfs_ext4.image(image, context.host.uid, context.host.gid)
-        context.fs.mkdir(roots)
-        context.fs.directory_permissions(roots, context.host.uid, context.host.gid, 0o700)
-        context.tools.mount.temporary(
-            roots, image, context.host.uid, context.host.gid, context.tools.privilege
+    parent = context.settings.e2e.filesystem_root
+    if context.host.system != "linux" or parent is None:
+        raise ToolingError(
+            "Managed media roots require Linux and E2E_FS_ROOT on an existing dedicated ext4 volume"
         )
-        mounted = True
-        context.fs.directory_permissions(roots, context.host.uid, context.host.gid, 0o700)
+    if not parent.is_absolute() or parent.is_symlink() or not parent.is_dir():
+        raise ToolingError("E2E_FS_ROOT must be an existing absolute nonlinked directory")
+    # Deployment owns the volume; this run owns only a private child directory.
+    # Normal application bootstrap remains responsible for storage attestation.
+    roots = context.fs.temporary_directory(parent, "revaer-e2e-")
+    try:
         slots = []
         for key, name, kinds in (
             ("ui-source", "source", ["source", "output"]),
@@ -91,9 +85,7 @@ def media_fixture(context: Context, paths: "RunPaths") -> Iterator[tuple["RunPat
         context.fs.write(catalog, json.dumps({"format_version": 1, "slots": slots}), 0o600)
         yield replace(paths, filesystem=roots), catalog
     finally:
-        if mounted:
-            context.tools.unmount.temporary(roots, context.tools.privilege)
-        context.fs.remove_owned(directory, context.host.home)
+        context.fs.remove_owned(roots, parent)
 
 
 @contextmanager

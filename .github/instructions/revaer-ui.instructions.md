@@ -63,7 +63,11 @@ applyTo:
 
 ## Single-init E2E ownership
 
-- Hosted dry-run E2E may explicitly select `E2E_MANAGED_MEDIA_ROOTS=1` to own private ext4 roots and a restart-persistent catalog. Keep real bootstrap attestation and missing-catalog scenarios; unmount only after all owned services stop. Caller-provided filesystem roots remain caller-owned.
+- Hosted dry-run E2E may explicitly select `E2E_MANAGED_MEDIA_ROOTS=1` to own
+  private directories and a restart-persistent catalog beneath `E2E_FS_ROOT`
+  on deployment-provided dedicated ext4 storage. Keep real bootstrap attestation
+  and missing-catalog scenarios; remove owned directories only after services stop.
+  Caller-provided storage remains caller-owned; follow root device restrictions.
 
 - In the approved `feature-development` phase, Python E2E uses the complete initializer and sealed restricted runtime role. Require explicit test-service selection and verify its exact loopback binding before provisioning.
 - Keep generated credentials private, bind init/drop to the resolved container ID, refuse malformed phase configuration, and stop every owned service before dropping the test database. Lifecycle/ordering fixtures are not full media application or browser acceptance.

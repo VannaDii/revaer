@@ -47,6 +47,18 @@ def test_reviewed_manifest_and_complete_runtime_declaration_pass(context: Contex
     assert "passed" in MediaComplianceGuardrails.run(context).message
 
 
+def test_runtime_guard_handles_deleted_adapters(
+    context: Context, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    files = context.tools.git.files
+
+    def inventory(include_untracked: bool = False) -> tuple[str, ...]:
+        return (*files(include_untracked=include_untracked), "tools/src/deleted_adapter.py")
+
+    monkeypatch.setattr(context.tools.git, "files", inventory)
+    assert not media_compliance_findings(context)
+
+
 def test_canonical_policy_blocks_inconsistent_runtime_pins(context: Context) -> None:
     source = Path(__file__).parents[2]
     for name in (".secignore", "deny.toml"):

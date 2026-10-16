@@ -27,50 +27,49 @@ from revaer_tooling.tasks import e2e
 from revaer_tooling.tasks.build import SyncAssets
 
 
-@pytest.mark.parametrize("failure", ("", "format", "mount", "scenario", "unmount"))
-def test_managed_media_fixture_cleanup_preserves_mount_failure(
+@pytest.mark.parametrize("failure", ("", "setup", "scenario", "cleanup"))
+def test_managed_media_fixture_owns_only_private_directories(
     coordinator: tuple[Context, "Scenario"], monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
     context, _ = coordinator
+    parent = context.root / "volume"
+    parent.mkdir()
+    sentinel = parent / "caller-data"
+    sentinel.write_text("preserve")
+    original_mode = parent.stat().st_mode
     context = replace(
         context,
-        host=replace(context.host, system="linux", home=context.root),
+        host=replace(context.host, system="linux"),
         settings=replace(
-            context.settings, e2e=replace(context.settings.e2e, managed_media_roots=True)
+            context.settings,
+            e2e=replace(context.settings.e2e, managed_media_roots=True, filesystem_root=parent),
         ),
     )
-    events: list[str] = []
     created: list[Path] = []
+    write = context.fs.write
+    remove = context.fs.remove_owned
 
-    def format_image(image: Path, uid: int, gid: int) -> None:
-        events.append("format")
-        created.append(image.parent)
-        assert image.stat().st_mode & 0o777 == 0o600
-        assert image.stat().st_size > 1024 * 1024 * 1024
-        if failure == "format":
-            raise ToolingError("format failed")
+    def write_catalog(path: Path, value: str, mode: int = 0o644) -> None:
+        created.append(path.parent)
+        if failure == "setup":
+            raise ToolingError("setup failed")
+        write(path, value, mode)
 
-    def mount(path: Path, image: Path, uid: int, gid: int, privilege: object) -> None:
-        events.append("mount")
-        assert path == created[0] / "roots"
-        assert image.parent == created[0]
-        if failure == "mount":
-            raise ToolingError("mount failed")
+    def cleanup(path: Path, owner: Path) -> None:
+        assert owner == parent
+        assert path.parent == parent
+        if failure == "cleanup":
+            raise ToolingError("cleanup failed")
+        remove(path, owner)
 
-    def unmount(path: Path, privilege: object) -> None:
-        assert path == created[0] / "roots"
-        events.append("unmount")
-        if failure == "unmount":
-            raise ToolingError("unmount failed")
-
-    monkeypatch.setattr(context.tools.mount, "temporary", mount)
-    monkeypatch.setattr(context.tools.mkfs_ext4, "image", format_image)
-    monkeypatch.setattr(context.tools.unmount, "temporary", unmount)
+    monkeypatch.setattr(context.fs, "write", write_catalog)
+    monkeypatch.setattr(context.fs, "remove_owned", cleanup)
 
     def run() -> None:
         with e2e.media_fixture(context, e2e.RunPaths.for_context(context)) as (paths, catalog):
             assert catalog is not None
-            assert paths.filesystem == created[0] / "roots"
+            assert paths.filesystem == created[0]
+            assert paths.filesystem.stat().st_mode & 0o777 == 0o700
             assert catalog.stat().st_mode & 0o777 == 0o600
             document = json.loads(catalog.read_text())
             assert len(document["slots"]) == 3
@@ -80,19 +79,52 @@ def test_managed_media_fixture_cleanup_preserves_mount_failure(
                 assert Path(slot["path"]).stat().st_mode & 0o777 == 0o700
             if failure == "scenario":
                 raise ToolingError("scenario failed")
+            with e2e.media_fixture(context, paths) as (other, _):
+                assert other.filesystem != paths.filesystem
+                assert paths.filesystem.is_dir()
+            assert paths.filesystem.is_dir()
 
     if failure:
         with pytest.raises(ToolingError, match=failure + " failed"):
             run()
     else:
         run()
-    expected = ["format", "mount", "unmount"]
-    if failure == "format":
-        expected = ["format"]
-    elif failure == "mount":
-        expected = ["format", "mount"]
-    assert events == expected
-    assert created[0].exists() == (failure == "unmount")
+    assert all(path.exists() == (failure == "cleanup") for path in created)
+    assert sentinel.read_text() == "preserve"
+    assert parent.stat().st_mode == original_mode
+    assert set(parent.iterdir()) == {sentinel, *(path for path in created if path.exists())}
+
+
+@pytest.mark.parametrize("selection", ("missing", "relative", "absent", "file", "link", "platform"))
+def test_managed_media_fixture_rejects_invalid_parent(
+    coordinator: tuple[Context, "Scenario"], selection: str
+) -> None:
+    context, _ = coordinator
+    parent: Path | None = context.root / "volume"
+    if selection == "missing":
+        parent = None
+    elif selection == "relative":
+        parent = Path("relative")
+    elif selection == "file":
+        (context.root / "volume").write_text("caller data")
+    elif selection == "link":
+        (context.root / "volume").symlink_to(context.root, target_is_directory=True)
+    context = replace(
+        context,
+        host=replace(context.host, system="darwin" if selection == "platform" else "linux"),
+        settings=replace(
+            context.settings,
+            e2e=replace(context.settings.e2e, managed_media_roots=True, filesystem_root=parent),
+        ),
+    )
+    with (
+        pytest.raises(ToolingError, match="E2E_FS_ROOT"),
+        e2e.media_fixture(context, e2e.RunPaths.for_context(context)),
+    ):
+        pytest.fail("invalid parent admitted")
+    if selection == "file":
+        assert parent is not None
+        assert parent.read_text() == "caller data"
 
 
 @dataclass

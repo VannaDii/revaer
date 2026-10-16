@@ -6,6 +6,7 @@ import re
 from ..context import Context, TaskResult
 from ..errors import ToolingError
 from ..policy.advisories import advisory_findings
+from ..policy.isolation import isolation_findings
 from ..policy.workflows import workflow_findings
 from .base import Task
 from .compliance import MediaComplianceGuardrails
@@ -77,6 +78,8 @@ class SourcePolicy(Task):
             path = context.root / relative
             if not path.is_file():
                 continue
+            if path.suffix in (".rs", ".py", ".cpp", ".h", ".yml", ".yaml"):
+                failures.extend(isolation_findings(relative, context.fs.read(path)))
             if relative.endswith(".rs") and relative.startswith(("crates/", "tests/", "scripts/")):
                 failures.extend(rust_findings(relative, context.fs.read(path)))
             if relative.startswith((".github/workflows/", ".github/actions/")) and path.suffix in (
