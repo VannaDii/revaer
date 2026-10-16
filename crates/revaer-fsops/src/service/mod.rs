@@ -1286,11 +1286,14 @@ impl FsOpsService {
             let mut entry = archive.by_index(index).map_err(|source_err| {
                 FsOpsError::zip("extract_zip.read_entry", source, source_err)
             })?;
-            let entry_path = Self::sanitize_archive_path(entry.name())?;
+            let entry_name = entry.name().map_err(|source_err| {
+                FsOpsError::zip("extract_zip.entry_name", source, source_err)
+            })?;
+            let entry_path = Self::sanitize_archive_path(&entry_name)?;
             let mut destination = target.to_path_buf();
             destination.push(&entry_path);
 
-            if entry.name().ends_with('/') {
+            if entry_name.ends_with('/') {
                 Self::create_directory(&destination, ZIP_EXTRACT_OPS.create_dir)?;
                 continue;
             }
@@ -2784,7 +2787,7 @@ mod tests {
     fn write_zip_archive(archive: &Path, entries: &[(&str, &[u8])]) -> TestResult<()> {
         let file = File::create(archive)?;
         let mut zip = zip::ZipWriter::new(file);
-        let options = zip::write::FileOptions::default();
+        let options = zip::write::SimpleFileOptions::default();
         for (path, contents) in entries {
             zip.start_file(*path, options)?;
             zip.write_all(contents)?;
@@ -3821,6 +3824,28 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn extract_zip_preserves_utf8_names_and_rejects_parent_paths() -> TestResult<()> {
+        let temp = temp_dir()?;
+        let archive = temp.path().join("payload.zip");
+        let target = temp.path().join("target");
+        write_zip_archive(&archive, &[("épisode.mkv", b"video")])?;
+        FsOpsService::extract_zip(&archive, &target)?;
+        assert_eq!(fs::read(target.join("épisode.mkv"))?, b"video");
+
+        write_zip_archive(&archive, &[("../escape.mkv", b"escape")])?;
+        assert!(matches!(
+            FsOpsService::extract_zip(&archive, &target),
+            Err(FsOpsError::InvalidInput {
+                field: "archive_entry",
+                reason: "invalid_segment",
+                ..
+            })
+        ));
+        assert!(!temp.path().join("escape.mkv").exists());
+        Ok(())
+    }
+
     #[cfg(unix)]
     #[test]
     fn extract_zip_creates_directories_and_preserves_permissions() -> TestResult<()> {
@@ -3830,8 +3855,8 @@ mod tests {
         let archive = temp.path().join("payload.zip");
         let file = File::create(&archive)?;
         let mut zip = zip::ZipWriter::new(file);
-        let dir_options = zip::write::FileOptions::default().unix_permissions(0o755);
-        let file_options = zip::write::FileOptions::default().unix_permissions(0o744);
+        let dir_options = zip::write::SimpleFileOptions::default().unix_permissions(0o755);
+        let file_options = zip::write::SimpleFileOptions::default().unix_permissions(0o744);
         zip.add_directory("show/Season1/", dir_options)?;
         zip.start_file("show/Season1/episode.mkv", file_options)?;
         zip.write_all(b"video")?;

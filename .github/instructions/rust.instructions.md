@@ -50,6 +50,11 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 
 # CI And Recipe Maintenance
 
+- ZIP extraction uses the non-yanked 9.x release with only its flate2 adapter,
+  sharing the existing Rust deflate backend. Align fsops' Unix dependency with
+  ZIP's nix version instead of introducing a duplicate-crate exception; retain
+  archive traversal, content and permission regression coverage.
+
 - Source inspection retains the bounded ffprobe frame sample and attributes
   frame side data only to its reported stream index; unindexed frames are ignored.
   Attachments use their stable kind marker when ffprobe omits or varies the
