@@ -4,6 +4,7 @@ The server uses temporary memory-backed storage and an automatically assigned
 loopback port. It does not inspect, start, reset, or remove a developer database.
 """
 
+import json
 import os
 import secrets
 import socket
@@ -176,6 +177,30 @@ def test_migrations_replay_and_fail_without_resetting_the_database(
     assert postgres.query("SELECT count(*) FROM _sqlx_migrations") == "1"
 
 
+def storage_permissions(directory: Path, image: str, command: str, *arguments: str) -> None:
+    subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--read-only",
+            "--user",
+            "0:0",
+            "--volume",
+            f"{directory}:/owned",
+            "--entrypoint",
+            command,
+            image,
+            *arguments,
+            "/owned",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
 @pytest.fixture
 def managed_database(
     tmp_path: Path,
@@ -210,6 +235,29 @@ def managed_database(
         "INSERT INTO fixture_rows VALUES (43) ON CONFLICT DO NOTHING;\n"
     )
     context = make_context(Options())
+    security = json.loads(
+        subprocess.run(
+            ["docker", "info", "--format", "{{json .SecurityOptions}}"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        ).stdout
+    )
+    rootless = "name=rootless" in security
+    directory = tmp_path / "data, with spaces"
+    image = PostgresPin.load(assignments(tmp_path, context.fs, BUILD_INPUTS)).image
+    mkdir = context.fs.mkdir
+
+    def shared_directory(path: Path) -> None:
+        mkdir(path)
+        if rootless and path == directory:
+            # Namespace root maps to the caller. Grant only the server's mapped
+            # group access to this owned directory; PGDATA keeps its own 0700.
+            storage_permissions(path, image, "chown", f"0:{context.host.gid}")
+            storage_permissions(path, image, "chmod", "0770")
+
+    monkeypatch.setattr(context.fs, "mkdir", shared_directory)
     fixture = PostgresFixture(
         url,
         {
@@ -255,6 +303,11 @@ def managed_database(
                     print(diagnostic)
             finally:
                 context.tools.docker.remove_database_container(container.identifier)
+        if rootless and directory.is_dir():
+            # Restore caller ownership before pytest removes its private tree.
+            # chown's default physical traversal does not follow placed links.
+            storage_permissions(directory, image, "chown", "-R", "0:0")
+            storage_permissions(directory, image, "chmod", "0700")
 
 
 def test_managed_database_preserves_data_and_resets_only_when_requested(
@@ -264,7 +317,14 @@ def test_managed_database_preserves_data_and_resets_only_when_requested(
     DatabaseStart.run(context)
     initial = context.tools.docker.database(database.name)
     assert initial is not None
-    assert (initial.directory / "18/docker/PG_VERSION").read_text().strip() == "18"
+    version = subprocess.run(
+        ["docker", "exec", initial.identifier, "cat", "/var/lib/postgresql/18/docker/PG_VERSION"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
+    assert version == "18"
     DatabaseStart.run(context)
     assert context.tools.docker.database(database.name) == initial
     DatabaseSeed.run(context)

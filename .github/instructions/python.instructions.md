@@ -32,6 +32,8 @@ applyTo:
 
 - The optional fixture-probe container is caller-selected at bootstrap. Setup provisions the existing approved Alpine build; cleanup verifies project, purpose and read-only checkout ownership before removing that container.
 
+- Rootless Docker database fixtures grant the mapped server group access only to their owned scratch directory, retain PostgreSQL data permissions and restore caller ownership before cleanup. Never widen repository permissions.
+
 - Keep the explicit CLI dictionary mapped to derived tasks' static `run(context)` methods. Internal steps stay ordinary calls unless useful as independent commands. Follow `tools/src/revaer_tooling/tasks/README.md`.
 - Load environment settings and construct concrete external collaborators at the CLI boundary. Pass immutable typed settings/options and injected tools, filesystem operations and output functions to tasks.
 - Native tools have classes that locate/verify the executable and accept typed operation arguments. Use the shared process runner; never evaluate a shell command string. Preserve cancellation, diagnostics, redaction and exact data bytes when the native protocol requires them.
