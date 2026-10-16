@@ -128,7 +128,9 @@ def distributed(tmp_path: Path) -> Path:
     for name, phases, total in groups:
         for index in range(1, total + 1):
             suffix = f"-shard-{index}" if total > 1 else ""
-            results = tmp_path / "coverage/producers" / (name + suffix) / "tests/test-results"
+            results = (
+                tmp_path / "coverage/producers" / (name + suffix) / ".test-tmp/e2e/test-results"
+            )
             results.mkdir(parents=True)
             (results / f"python-e2e-summary{suffix}.json").write_text(
                 json.dumps(
@@ -167,7 +169,7 @@ def test_distributed_browser_partitions_keep_each_producer_separate(distributed:
     assert len({root for root, _, _ in inputs}) == 10
     summary = (
         distributed
-        / "coverage/producers/ui-e2e-webkit-shard-2/tests/test-results"
+        / "coverage/producers/ui-e2e-webkit-shard-2/.test-tmp/e2e/test-results"
         / "python-e2e-summary-shard-2.json"
     )
     summary.unlink()
@@ -178,7 +180,7 @@ def test_distributed_browser_partitions_keep_each_producer_separate(distributed:
 
 @pytest.mark.parametrize("case", ("failed", "partition"))
 def test_distributed_coverage_rejects_incomplete_runs(distributed: Path, case: str) -> None:
-    results = distributed / "coverage/producers/ui-e2e-chromium-shard-1/tests/test-results"
+    results = distributed / "coverage/producers/ui-e2e-chromium-shard-1/.test-tmp/e2e/test-results"
     path = results / (
         "selection-ui-chromium-shard-1-main.json"
         if case == "partition"

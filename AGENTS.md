@@ -54,6 +54,9 @@
   mount capabilities. Deployment supplies existing storage directories. Network
   loopback, OS pipes and ordinary IPC are permitted. Retain media's dedicated-ext4
   attestation contract; filesystem identity metadata is not device access.
+- Test scratch, working files and browser outputs live beneath the selected
+  repository's `.test-tmp/` root. The `rv` test boundary supplies `TMPDIR` to child
+  processes; fixtures own private children and never delete another run's data.
 - Runtime collaborators are injected. Do not read environment variables or construct concrete infra implementations inside domain logic.
 - Zero dead code is mandatory. If code ships, it is exercised in production, tests, or an explicitly exercised feature configuration.
 - Advisory ignores are forbidden by default: [`.secignore`](./.secignore), the advisory-ignore list in [`deny.toml`](./deny.toml), and Python audit exceptions must remain empty. Cargo and Python findings at every configured severity are mandatory fixes. Any exception requires explicit operator consent recorded in the task ADR, an expiry, and a guardrail change in the same commit. Exact duplicate-crate tolerances in `deny.toml` must be ADR-backed, time-bounded, and removed as soon as the graph can converge.

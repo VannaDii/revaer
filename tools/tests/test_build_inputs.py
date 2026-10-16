@@ -173,11 +173,21 @@ def test_container_preparation_refuses_the_developer_host(context: Context) -> N
             container_inputs(replace(context, host=replace(context.host, uid=0)))
 
 
-def test_source_archives_require_explicit_opt_in_and_complete_revaer_metadata() -> None:
-    # Outside any Git checkout: an archive nested in another worktree must not
-    # bypass the existing nearest-Git-boundary rule.
-    with tempfile.TemporaryDirectory(prefix="rv-archive-", dir="/tmp") as temporary:
+def test_source_archives_require_explicit_opt_in_and_complete_revaer_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Model an archive without an enclosing checkout while keeping its actual
+    # files under the common repository scratch root.
+    with tempfile.TemporaryDirectory(prefix="rv-archive-") as temporary:
         root = Path(temporary)
+        exists = Path.exists
+
+        def archive_exists(path: Path) -> bool:
+            if path.name == ".git" and not path.is_relative_to(root):
+                return False
+            return exists(path)
+
+        monkeypatch.setattr(Path, "exists", archive_exists)
         (root / "tools/src/revaer_tooling").mkdir(parents=True)
         (root / "tools/src/revaer_tooling/cli.py").touch()
         (root / "pyproject.toml").write_text('[project]\nname="revaer-tooling"\n')

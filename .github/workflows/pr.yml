@@ -161,7 +161,6 @@ jobs:
       - name: Coverage
         env:
           E2E_MANAGED_MEDIA_ROOTS: '1'
-          E2E_FS_ROOT: ${{ vars.REVAER_MEDIA_TEST_ROOT }}
         run: uv run --locked -- rv cov
       - name: Build native compile database
         run: uv run --locked -- rv sonar-compile-db
@@ -462,7 +461,6 @@ jobs:
       - name: Feature matrix tests (no default features)
         env:
           E2E_MANAGED_MEDIA_ROOTS: '1'
-          E2E_FS_ROOT: ${{ vars.REVAER_MEDIA_TEST_ROOT }}
         run: uv run --locked -- rv test-features-min
 
   api-e2e:
@@ -520,7 +518,6 @@ jobs:
           REVAER_LOCAL_DB_USER: revaer
           REVAER_LOCAL_DB_PASSWORD: ${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}
           E2E_MANAGED_MEDIA_ROOTS: '1'
-          E2E_FS_ROOT: ${{ vars.REVAER_MEDIA_TEST_ROOT }}
         run: uv run --locked -- rv ui-e2e
       - name: Upload API E2E coverage
         if: always()
@@ -528,9 +525,9 @@ jobs:
         with:
           name: api-e2e-coverage
           path: |
-            tests/test-results/api-coverage-*.json
-            tests/test-results/python-e2e-summary.json
-            tests/test-results/selection-*.json
+            .test-tmp/e2e/test-results/api-coverage-*.json
+            .test-tmp/e2e/test-results/python-e2e-summary.json
+            .test-tmp/e2e/test-results/selection-*.json
             coverage/e2e/api-none-missing-catalog/.coverage
             coverage/e2e/api-none/.coverage
             coverage/e2e/api-api-key-missing-catalog/.coverage
@@ -607,7 +604,6 @@ jobs:
           REVAER_LOCAL_DB_USER: revaer
           REVAER_LOCAL_DB_PASSWORD: ${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}
           E2E_MANAGED_MEDIA_ROOTS: '1'
-          E2E_FS_ROOT: ${{ vars.REVAER_MEDIA_TEST_ROOT }}
         run: uv run --locked -- rv ui-e2e
       - name: Upload E2E coverage
         if: always()
@@ -615,12 +611,12 @@ jobs:
         with:
           name: ui-e2e-${{ matrix.browser }}-shard-${{ matrix.shard }}
           path: |
-            tests/test-results/api-coverage-*.json
-            tests/test-results/ui-coverage-*.json
-            tests/test-results/python-e2e-summary-shard-*.json
-            tests/test-results/selection-*-shard-*.json
-            tests/test-results/ui-*-shard-*/
-            tests/playwright-report/ui-*-shard-*/
+            .test-tmp/e2e/test-results/api-coverage-*.json
+            .test-tmp/e2e/test-results/ui-coverage-*.json
+            .test-tmp/e2e/test-results/python-e2e-summary-shard-*.json
+            .test-tmp/e2e/test-results/selection-*-shard-*.json
+            .test-tmp/e2e/test-results/ui-*-shard-*/
+            .test-tmp/e2e/playwright-report/ui-*-shard-*/
             coverage/e2e/ui-*-shard-*/.coverage
           include-hidden-files: true
           if-no-files-found: error

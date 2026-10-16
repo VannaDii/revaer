@@ -61,7 +61,7 @@ def test_media_e2e_jobs_provision_capability_tools_without_formatters(job_name: 
 
 
 @pytest.mark.parametrize(("workflow", "expected"), (("pr.yml", 4), ("sonar.yml", 2)))
-def test_managed_media_jobs_require_deployment_storage(workflow: str, expected: int) -> None:
+def test_managed_media_jobs_use_repository_scratch(workflow: str, expected: int) -> None:
     path = Path(__file__).parents[2] / ".github/workflows" / workflow
     document = yaml_document(path.read_text(), str(path))
     environments = [
@@ -72,7 +72,7 @@ def test_managed_media_jobs_require_deployment_storage(workflow: str, expected: 
     ]
     assert len(environments) == expected
     for environment in environments:
-        assert environment["E2E_FS_ROOT"] == "${{ vars.REVAER_MEDIA_TEST_ROOT }}"
+        assert "E2E_FS_ROOT" not in environment
 
 
 def test_committed_setup_action_uses_official_uv_and_valid_commands(action: Document) -> None:

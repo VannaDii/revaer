@@ -42,7 +42,7 @@ fn missing_out_of_range_and_changed_mount_identity_fail_closed() -> anyhow::Resu
 fn fixture() -> anyhow::Result<tempfile::TempDir> {
     Ok(tempfile::Builder::new()
         .prefix(".root-descriptor-test-")
-        .tempdir_in(std::env::current_dir()?)?)
+        .tempdir()?)
 }
 
 #[test]
@@ -328,8 +328,10 @@ fn run_lock_child(path: &std::path::Path, expected: &str) -> anyhow::Result<()> 
         .env("REVAER_ROOT_LOCK_TEST_PATH", path)
         .env("REVAER_ROOT_LOCK_TEST_EXPECTED", expected)
         .stdin(std::process::Stdio::null());
-    if let Some(profile) = std::env::var_os("LLVM_PROFILE_FILE") {
-        command.env("LLVM_PROFILE_FILE", profile);
+    for name in ["TMPDIR", "REVAER_TEST_ROOT", "LLVM_PROFILE_FILE"] {
+        if let Some(value) = std::env::var_os(name) {
+            command.env(name, value);
+        }
     }
     let output = command.output()?;
     anyhow::ensure!(output.status.success(), "root-lock child failed");
@@ -604,8 +606,10 @@ fn run_isolated_lock_test(name: &str) -> anyhow::Result<()> {
     if let Some(path) = std::env::var_os("PATH") {
         command.env("PATH", path);
     }
-    if let Some(profile) = std::env::var_os("LLVM_PROFILE_FILE") {
-        command.env("LLVM_PROFILE_FILE", profile);
+    for name in ["TMPDIR", "REVAER_TEST_ROOT", "LLVM_PROFILE_FILE"] {
+        if let Some(value) = std::env::var_os(name) {
+            command.env(name, value);
+        }
     }
     let output = command.output()?;
     anyhow::ensure!(

@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 import yaml
 from fixtures.registry import registry
+from revaer_tooling.bootstrap.scratch import scratch_parent
 from revaer_tooling.cli import make_context
 from revaer_tooling.context import Context, Options, TaskResult
 from revaer_tooling.errors import ToolingError
@@ -100,9 +101,12 @@ def signed_chart_context(
         temporary_root = chart_context.root / ("long-temporary-directory-" * 4)
         temporary_root.mkdir()
         monkeypatch.setattr(tempfile, "tempdir", str(temporary_root))
-    # GnuPG uses Unix sockets. Both pytest's directory and an overridden TMPDIR
-    # can exceed their path limit, so keep this process-only fixture under /tmp.
-    with tempfile.TemporaryDirectory(prefix="rv-test-key-", dir="/tmp") as temporary:
+    # GnuPG sockets need a short private child of the shared scratch root,
+    # independent of this fixture's deliberately long temporary path.
+    with tempfile.TemporaryDirectory(
+        prefix="rv-test-key-",
+        dir=scratch_parent(chart_context.root, chart_context.tools.gpg.environment),
+    ) as temporary:
         home = Path(temporary)
         gpg = chart_context.tools.gpg.locate()
         try:

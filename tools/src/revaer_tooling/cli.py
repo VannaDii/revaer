@@ -9,12 +9,14 @@ import signal
 import sys
 import time
 from collections.abc import Callable, Sequence
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
 from urllib.request import build_opener
 
 from .bootstrap.install import kcov_command
+from .bootstrap.scratch import repository_scratch, uses_test_scratch
 from .bootstrap.selection import APT_PROFILES, comma_selection
 from .context import Context, HostIdentity, Options, TaskResult, Tools
 from .database.postgres import ProofDatabase
@@ -633,10 +635,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                     environment_file, tuple(argv if argv is not None else sys.argv[1:])
                 )
                 return 0
-        context = make_context(options)
-        result = COMMANDS[args.task](context)
-        if result.message:
-            print(result.message)
+        root = checkout(Path.cwd().resolve(), source_archive=options.source_archive)
+        scratch = (
+            repository_scratch(root, FileSystem())
+            if uses_test_scratch(args.task)
+            else nullcontext()
+        )
+        with scratch:
+            context = make_context(options)
+            result = COMMANDS[args.task](context)
+            if result.message:
+                print(result.message)
         return 0
     except ToolingError as error:
         stderr_message(f"rv: {error}")

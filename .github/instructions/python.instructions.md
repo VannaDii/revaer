@@ -23,12 +23,12 @@ applyTo:
 
 - Bootstrap behavior runs use a private disposable pytest base directory and remove it on success or failure, leaving other pytest sessions' directories intact. Retain raw upstream reports without a custom merger, hit-count validation or Sonar coverage import.
 
-- Managed media fixtures require Linux and an explicit `E2E_FS_ROOT` on an
-  existing dedicated ext4 volume. Own only unique private child directories and
-  their catalog; never format, mount, unmount or remove caller storage. Rust tests
-  and coverage pass the private directory as `REVAER_NATIVE_RECOVERY_ROOT`.
-  Keep normal bootstrap attestation and production free-space reserves intact;
-  provision at least 4 GiB of available fixture capacity externally.
+- Follow the root `.test-tmp/` contract. Test CLI commands supply private run
+  directories through `TMPDIR` and restore environment/cache state afterward.
+  Managed media fixtures create owned children beneath that same repository root;
+  Rust and coverage tasks pass them as `REVAER_NATIVE_RECOVERY_ROOT`. Keep normal
+  bootstrap attestation and production free-space reserves intact. GnuPG homes
+  use short private children of the common root to respect Unix socket limits.
 
 - The optional fixture-probe container is caller-selected at bootstrap. Setup provisions the existing approved Alpine build; cleanup verifies project, purpose and read-only checkout ownership before removing that container.
 

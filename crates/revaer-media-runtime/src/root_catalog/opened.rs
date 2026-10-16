@@ -216,7 +216,7 @@ mod tests {
         use super::super::{ProcRootMountSource, RootMountSource};
         let directory = tempfile::Builder::new()
             .prefix(".catalog-read-test-")
-            .tempdir_in(std::env::current_dir()?)?;
+            .tempdir()?;
         std::fs::write(directory.path().join("original"), b"unchanged")?;
         let catalog = parse_root_catalog_v1(&serde_json::to_vec(&serde_json::json!({
             "format_version": 1,
@@ -273,7 +273,7 @@ mod tests {
     fn failed_catalog_open_releases_earlier_locks_without_writing() -> anyhow::Result<()> {
         let directory = tempfile::Builder::new()
             .prefix(".catalog-lock-test-")
-            .tempdir_in(std::env::current_dir()?)?;
+            .tempdir()?;
         let child = directory.path().join("child");
         std::fs::create_dir(&child)?;
         let slots =

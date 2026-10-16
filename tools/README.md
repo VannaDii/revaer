@@ -310,3 +310,7 @@ For a constrained local test service, select serial Rust test scheduling with
 test database configuration. This runs the same complete test selection and
 retains concurrency exercised inside individual tests. It does not disable
 statement timeouts or replace production baseline checks.
+
+Temporary test working files share the selected checkout's `.test-tmp/` root.
+`rv` supplies private run directories through `TMPDIR`; browser outputs are under
+`.test-tmp/e2e/`. Each fixture cleans only its own files, so other runs remain safe.
