@@ -5,6 +5,7 @@ tags/builders prevent replacing the developer's images or selected builder.
 """
 
 import json
+import os
 import secrets
 import shutil
 import subprocess
@@ -64,7 +65,8 @@ def image_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[C
     ):
         subprocess.run(["git", *arguments], cwd=root, capture_output=True, check=True, timeout=20)
     name = "rv-tooling-image-" + secrets.token_hex(8)
-    builder = name + "-builder"
+    supplied = os.environ.get("REVAER_TEST_BUILDX_BUILDER")
+    builder = supplied or name + "-builder"
     monkeypatch.chdir(root)
     context = make_context(Options())
     context = replace(
@@ -86,7 +88,7 @@ def image_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[C
         identifiers = docker("image", "ls", "--quiet", name).splitlines()
         if identifiers:
             docker("image", "rm", "--force", *sorted(set(identifiers)))
-        if builder in docker("buildx", "ls", "--format", "{{.Name}}").splitlines():
+        if not supplied and builder in docker("buildx", "ls", "--format", "{{.Name}}").splitlines():
             docker("buildx", "rm", "--force", builder)
 
 
