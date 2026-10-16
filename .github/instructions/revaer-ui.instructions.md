@@ -40,6 +40,8 @@ applyTo:
 
 - Keep the SSE store exhaustive over media lifecycle events and request refreshed state for those events, preserving the existing refresh behavior.
 
+- Parameterize media route availability probes by method and route so each
+  operation retains the existing timeout and response assertions independently.
 - Keep selectors and test affordances stable. Update E2E fixtures deliberately when UI structure changes.
 - Media catalog save scenarios verify the successful response, completed refresh, and visible saved record without requiring observation of a transient disabled button.
 - E2E navigation waits for the asynchronously rendered Navbar before checking optional overlays. Dismiss visible auth prompts through Playwright's action wait, then assert they are hidden; instantaneous button probes and repeated speculative clicks cannot establish readiness. Retain existing timeout bounds.
