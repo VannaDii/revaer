@@ -1281,6 +1281,7 @@ impl FsOpsService {
             .map_err(|source_err| FsOpsError::io("extract_zip.open", source, source_err))?;
         let mut archive = ZipArchive::new(file)
             .map_err(|source_err| FsOpsError::zip("extract_zip.decode", source, source_err))?;
+        let mut directory_permissions = Vec::new();
 
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index).map_err(|source_err| {
@@ -1295,6 +1296,7 @@ impl FsOpsService {
 
             if entry_name.ends_with('/') {
                 Self::create_directory(&destination, ZIP_EXTRACT_OPS.create_dir)?;
+                directory_permissions.push((destination, entry.unix_mode()));
                 continue;
             }
 
@@ -1302,6 +1304,11 @@ impl FsOpsService {
             Self::write_archive_file(&mut entry, &destination, ZIP_EXTRACT_OPS, unix_mode)?;
         }
 
+        // Extract children before restoring modes that restrict parent traversal.
+        directory_permissions.sort_by_key(|(path, _)| std::cmp::Reverse(path.components().count()));
+        for (path, mode) in directory_permissions {
+            Self::set_archive_permissions(&path, mode, ZIP_EXTRACT_OPS.set_permissions)?;
+        }
         Ok(())
     }
 
@@ -1382,16 +1389,23 @@ impl FsOpsService {
         io::copy(reader, &mut output)
             .map_err(|source_err| FsOpsError::io(ops.copy, destination, source_err))?;
 
+        Self::set_archive_permissions(destination, unix_mode, ops.set_permissions)
+    }
+
+    fn set_archive_permissions(
+        destination: &Path,
+        unix_mode: Option<u32>,
+        operation: &'static str,
+    ) -> FsOpsResult<()> {
         #[cfg(unix)]
         if let Some(mode) = unix_mode {
             let perms = fs::Permissions::from_mode(mode);
-            fs::set_permissions(destination, perms).map_err(|source_err| {
-                FsOpsError::io(ops.set_permissions, destination, source_err)
-            })?;
+            fs::set_permissions(destination, perms)
+                .map_err(|source_err| FsOpsError::io(operation, destination, source_err))?;
         }
 
         #[cfg(not(unix))]
-        let _ = unix_mode;
+        let _ = (destination, unix_mode, operation);
 
         Ok(())
     }
@@ -3843,6 +3857,35 @@ mod tests {
             })
         ));
         assert!(!temp.path().join("escape.mkv").exists());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extract_zip_restores_read_only_parent_modes_after_children() -> TestResult<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = temp_dir()?;
+        let archive = temp.path().join("payload.zip");
+        let mut zip = zip::ZipWriter::new(File::create(&archive)?);
+        let parent_options = zip::write::SimpleFileOptions::default().unix_permissions(0o400);
+        let child_options = zip::write::SimpleFileOptions::default().unix_permissions(0o750);
+        zip.add_directory("show/", parent_options)?;
+        zip.add_directory("show/season/", child_options)?;
+        zip.start_file("show/season/episode.mkv", child_options)?;
+        zip.write_all(b"video")?;
+        zip.finish()?;
+
+        let target = temp.path().join("target");
+        FsOpsService::extract_zip(&archive, &target)?;
+        let parent = target.join("show");
+        let parent_mode = fs::metadata(&parent)?.permissions().mode() & 0o777;
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o755))?;
+        let child_mode = fs::metadata(parent.join("season"))?.permissions().mode() & 0o777;
+        let contents = fs::read(parent.join("season/episode.mkv"))?;
+        assert_eq!(parent_mode, 0o400);
+        assert_eq!(child_mode, 0o750);
+        assert_eq!(contents, b"video");
         Ok(())
     }
 

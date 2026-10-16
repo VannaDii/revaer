@@ -54,6 +54,8 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
   sharing the existing Rust deflate backend. Align fsops' Unix dependency with
   ZIP's nix version instead of introducing a duplicate-crate exception; retain
   archive traversal, content and permission regression coverage.
+  Restore ZIP directory modes after extracting their children, deepest first;
+  recorded modes must not depend on the caller's process umask.
 
 - Source inspection retains the bounded ffprobe frame sample and attributes
   frame side data only to its reported stream index; unindexed frames are ignored.
