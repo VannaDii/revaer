@@ -1,5 +1,6 @@
 ---
 applyTo:
+  - ".config/nextest.toml"
   - ".github/workflows/**"
   - ".github/actions/**"
   - "Dockerfile"
@@ -35,6 +36,9 @@ applyTo:
   Compiler parallelism is independent of test resource limits; explicit operator
   overrides remain supported. Python tooling execution follows
   `python.instructions.md`; preserve the supported raw coverage merge.
+- The subprocess deadline/setup and TERM-grace timing fixtures reserve the
+  nextest runner exclusively. Preserve their millisecond timing assertions;
+  unrelated child-process startup must not consume their setup budget.
 
 
 - API and browser E2E jobs explicitly provision FFmpeg for real capability probes.

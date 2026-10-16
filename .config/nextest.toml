@@ -10,6 +10,19 @@ database = { max-threads = 2 }
 native = { max-threads = 1 }
 recovery = { max-threads = 2 }
 
+# These real-process fixtures assert millisecond deadlines and TERM grace.
+# Reserve the runner while they execute so unrelated spawns cannot consume
+# the fixture's startup budget before its shell installs its signal handler.
+[[profile.default.overrides]]
+filter = '''
+package(revaer-media-runtime) & (
+    test(process::tests::deadline_includes_pipe_setup_time)
+    | test(process::tests::term_grace_precedes_force_kill_for_uncooperative_process)
+)
+'''
+threads-required = "num-test-threads"
+priority = 10
+
 [[profile.default.overrides]]
 filter = 'package(revaer-app) & test(bootstrap::service_recovery_tests::native_service_recovery_)'
 test-group = 'recovery'
