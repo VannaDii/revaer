@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "coal";
-            window.path_to_searchindex_js = "../searchindex-b3d5508e.js";
+            window.path_to_searchindex_js = "../searchindex-8f9c709e.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-cef10c91.js"></script>
+        <script src="../toc-77dcf5b9.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -325,6 +325,18 @@
 <li><strong>Snapshot access</strong> - <code>GET /.well-known/revaer.json</code> (no auth), <code>GET /v1/config</code> (API key), <code>GET /health/full</code>, and <code>revaer config get</code> return the current revision so automation and dashboards can verify configuration drift without shell access.</li>
 </ul>
 <p>Revaer publishes <code>SettingsChanged</code> events on every successful mutation, ensuring subscribers refresh in-memory caches without polling.</p>
+<h2 id="media-configuration"><a class="header" href="#media-configuration">Media Configuration</a></h2>
+<p>Media configuration is a separate normalized relational surface, not a field to
+add to the settings JSON above. Versioned profiles reference targets, policies
+and output/workspace roots; discovery associations pin a profile version to a
+source root. Configuration activation requests reevaluation without silently
+rebinding jobs already admitted under an immutable snapshot.</p>
+<p>Use the Media UI and <code>/v1/media</code> API resources for roots, profiles, targets,
+policies, compatibility, capabilities, discovery and jobs. Profiles default to
+dry-run; watcher and schedule modes are enabled explicitly. YAML is a versioned
+import/export format, not runtime persistence. See the
+<a href="https://github.com/VannaDii/revaer/blob/main/MEDIA_TRANSCODING.md">transcoding design</a> and served OpenAPI document for
+the complete resource/request contract.</p>
 
                     </main>
 

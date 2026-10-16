@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Web UI - Phase 1 - Revaer Documentation</title>
+        <title>Web UI - Revaer Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "coal";
-            window.path_to_searchindex_js = "../searchindex-b3d5508e.js";
+            window.path_to_searchindex_js = "../searchindex-8f9c709e.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-cef10c91.js"></script>
+        <script src="../toc-77dcf5b9.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -177,13 +177,20 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="web-ui---phase-1"><a class="header" href="#web-ui---phase-1">Web UI - Phase 1</a></h1>
-<p>Rust/Yew UI for the Phase 1 torrent workflow. The goal is a responsive, touch-friendly surface that stays usable on 360px phones through 4K desktops while handling large torrent libraries.</p>
+                        <h1 id="web-ui"><a class="header" href="#web-ui">Web UI</a></h1>
+<p>Rust/Yew UI for torrent orchestration and media transcoding. The goal is a responsive, touch-friendly surface that stays usable on 360px phones through 4K desktops while handling large torrent libraries.</p>
 <ul>
-<li><strong>Pages</strong>: Dashboard, Torrents (list + detail), Logs, Health, Settings.</li>
+<li><strong>Pages</strong>: Dashboard, Indexers, Search, Media, Torrents (list + detail), Logs, Health, Settings.</li>
 <li><strong>Modes</strong>: Simple (trimmed controls) and Advanced (full controls). Stored in local storage.</li>
 <li><strong>Transport</strong>: REST for initial payloads; fetch-based SSE for live updates and logs (header-auth supported, EventSource not used).</li>
 </ul>
+<h2 id="media-workflow"><a class="header" href="#media-workflow">Media workflow</a></h2>
+<p>The Media feature supports profile, target, policy and compatibility authoring,
+managed-root associations, capability refresh, discovery and jobs. Configure
+through the authenticated UI, inspect dry-run plans, and enable processing only
+through explicit configuration/confirmation. Job details expose processing,
+verification and final outcomes. Recovery and scratch behavior follow the
+<a href="https://github.com/VannaDii/revaer/blob/main/MEDIA_TRANSCODING.md#recovery-concurrency-and-scratch">transcoding design</a>.</p>
 <h2 id="layout-and-breakpoints"><a class="header" href="#layout-and-breakpoints">Layout and breakpoints</a></h2>
 <div class="table-wrapper">
 <table>

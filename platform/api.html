@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "coal";
-            window.path_to_searchindex_js = "../searchindex-b3d5508e.js";
+            window.path_to_searchindex_js = "../searchindex-8f9c709e.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-cef10c91.js"></script>
+        <script src="../toc-77dcf5b9.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -232,6 +232,13 @@
 <li><code>GET/PATCH/DELETE /v1/torrents/{id}/trackers</code></li>
 <li><code>PATCH /v1/torrents/{id}/web_seeds</code></li>
 </ul>
+<h3 id="media-transcoding"><a class="header" href="#media-transcoding">Media transcoding</a></h3>
+<p>The <code>/v1/media</code> surface includes managed roots, versioned profiles, targets,
+policies, compatibility, capabilities, discovery, jobs and YAML import/export.
+It uses immutable configuration references, explicit admission checks and dry-run
+defaults. Consult the served OpenAPI document for exact routes, request bodies,
+preconditions and error responses; the <a href="https://github.com/VannaDii/revaer/blob/main/MEDIA_TRANSCODING.md">transcoding design</a>
+explains processing and recovery semantics.</p>
 <h3 id="events-and-logs"><a class="header" href="#events-and-logs">Events and logs</a></h3>
 <ul>
 <li><code>GET /v1/torrents/events</code> (primary SSE stream)</li>

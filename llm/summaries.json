@@ -3227,7 +3227,7 @@
   {
     "id": "index",
     "title": "Revaer",
-    "summary": "Centralized torrent orchestration with hot-reloadable configuration, consistent CLI/API surfaces, and observability-first defaults.",
+    "summary": "Torrent orchestration and desired-state media transcoding with PostgreSQL-backed configuration and consistent operator interfaces.",
     "tags": [
       "contributing-updates",
       "llm-manifests",
@@ -3237,13 +3237,13 @@
   },
   {
     "id": "phase-one-remaining-spec",
-    "title": "Phase One Remaining Engineering Specification",
-    "summary": "Deliver a production-ready public interface (HTTP API, SSE, CLI) for torrent orchestration. Ship FsOps-backed artefacts through API, CLI, telemetry, and documentation with demonstrable reliability. Produce release artefacts (containers, binaries, documentation) that satisfy existing security, observability, and quality gates.",
+    "title": "Historical Phase One Engineering Specification",
+    "summary": "This is the original implementation sequence, retained as historical design context. Phase One remediation is closed in [the remediation plan](https://github.com/VannaDii/revaer/blob/main/REMEDIATION_PLAN.md), and media implementation merged in PR #31 on 2026-10-15. For current scope, see [the roadmap](phase-one-roadmap.md). The tasks, coverage thresholds and output collection below describe the original plan, not current work or operating rules. Current gates and documentation policy are owned by [AGENTS.md](https://github.com/VannaDii/revaer/blob/main/AGENTS.md), the task registry and workflows.",
     "tags": [
       "acceptance-criteria",
       "cross-cutting-deliverables",
       "detailed-work-breakdown",
-      "objectives",
+      "original-objectives",
       "scope-overview",
       "security-observability-requirements-cross-cutting",
       "sequencing-suggested"
@@ -3252,12 +3252,11 @@
   },
   {
     "id": "phase-one-roadmap",
-    "title": "Phase One Roadmap",
-    "summary": "_Last updated: 2026-04-04_ This document captures the current delta between the Phase One objective and the existing codebase. It should be kept in sync as work progresses across the eight workstreams.",
+    "title": "Project Roadmap",
+    "summary": "_Last reconciled: 2026-10-15_",
     "tags": [
-      "next-steps-tracking",
-      "remaining-scope-specification",
-      "snapshot"
+      "continuing-work",
+      "implemented-scope"
     ],
     "href": "/phase-one-roadmap/"
   },
@@ -3299,6 +3298,7 @@
       "change-workflows",
       "engine-profile-settings-engine-profile",
       "filesystem-policy-settings-fs-policy",
+      "media-configuration",
       "snapshot-components",
       "telemetry-toggle"
     ],
@@ -3323,30 +3323,31 @@
   },
   {
     "id": "release-checklist",
-    "title": "Phase One Release Checklist",
-    "summary": "**Branch Hygiene** Ensure main is green (CI pipeline complete). Review outstanding ADRs and docs for freshness. **Build & Test** just ci just build-release just api-export **Artefact Verification** Binary: target/release/revaer-app Checksum: sha256sum target/release/revaer-app OpenAPI: docs/api/openapi.json Helm chart: dist/helm/revaer-<version>.tgz Helm provenance: dist/helm/revaer-<version>.tgz.prov Helm public key: dist/helm/revaer-helm-public.asc Helm public keyring: dist/helm/revaer-helm-public.gpg Docker image: just docker-build && just docker-scan Published GHCR image: verify Trivy scan, SBOM/provenance attestations, and Cosign signatures from the image workflow Published OCI chart: verify oci://ghcr.io/<owner>/charts/revaer:<version> plus the artifacthub.io metadata tag and helm verify against the published public key **Runbook Execution** Run just runbook Follow the remaining manual-only drills in docs/runbook.md",
+    "title": "Release Checklist",
+    "summary": "This checklist covers publication of a selected revision. Transcoding merged in PR #31; that merge alone does not claim a published release. Use the existing workflow gates and release artifacts; do not add separate proof packages or routine completion records. **Branch Hygiene** Ensure main is green (CI pipeline complete). Review outstanding ADRs and docs for freshness. **Build & Test** just ci just ci includes the release build; do not repeat it unless a separate target is required. just api-export **Artefact Verification** Binary: target/release/revaer-app Checksum: sha256sum target/release/revaer-app OpenAPI: docs/api/openapi.json Helm chart: dist/helm/revaer-<version>.tgz Helm provenance: dist/helm/revaer-<version>.tgz.prov Helm public key: dist/helm/revaer-helm-public.asc Helm public",
     "tags": [],
     "href": "/release-checklist/"
   },
   {
     "id": "runbook",
     "title": "Phase One Runbook",
-    "summary": "This runbook exercises the end-to-end control plane, validating FsOps, telemetry, and guard rails. The primary automated entrypoint is just runbook, which wraps the Playwright-backed API/UI validation flow, collects artifacts, and provides a repeatable baseline before any manual drills.",
+    "summary": "This runbook exercises the end-to-end control plane, validating FsOps, telemetry, and guard rails. Use just ui-e2e for the repeatable API/browser workflow. The retained just runbook command wraps that workflow for deployments that explicitly need its archive output; do not use it to create a separate proof package for routine work. Current media scenarios are part of the existing API/UI suite, with focused recovery selections available through just test-media-recovery and just test-media-service-recovery (the latter requires Linux and its managed-root fixture). Use the task help and test README for exact prerequisites.",
     "tags": [
-      "automated-validation",
+      "automated-checks",
       "prerequisites",
-      "scenario",
-      "verification-artifacts"
+      "results-and-cleanup",
+      "scenario"
     ],
     "href": "/runbook/"
   },
   {
     "id": "ui/flows",
     "title": "Web UI Flows and Diagrams",
-    "summary": "Visual references for the Phase 1 UX: navigation, component wiring, SSE handling, and torrent lifecycle. Use these diagrams when extending the UI or adding tests.",
+    "summary": "Visual references for navigation, component wiring, SSE handling, torrent lifecycle and media transcoding. Use these diagrams when extending the UI or adding tests.",
     "tags": [
       "component-graph",
       "interaction-notes",
+      "media-processing-flow",
       "navigation-flow",
       "sse-event-flow",
       "torrent-lifecycle-ui-perspective"
@@ -3355,11 +3356,12 @@
   },
   {
     "id": "ui/index",
-    "title": "Web UI - Phase 1",
-    "summary": "Rust/Yew UI for the Phase 1 torrent workflow. The goal is a responsive, touch-friendly surface that stays usable on 360px phones through 4K desktops while handling large torrent libraries. **Pages**: Dashboard, Torrents (list + detail), Logs, Health, Settings. **Modes**: Simple (trimmed controls) and Advanced (full controls). Stored in local storage. **Transport**: REST for initial payloads; fetch-based SSE for live updates and logs (header-auth supported, EventSource not used).",
+    "title": "Web UI",
+    "summary": "Rust/Yew UI for torrent orchestration and media transcoding. The goal is a responsive, touch-friendly surface that stays usable on 360px phones through 4K desktops while handling large torrent libraries. **Pages**: Dashboard, Indexers, Search, Media, Torrents (list + detail), Logs, Health, Settings. **Modes**: Simple (trimmed controls) and Advanced (full controls). Stored in local storage. **Transport**: REST for initial payloads; fetch-based SSE for live updates and logs (header-auth supported, EventSource not used).",
     "tags": [
       "auth-and-setup",
       "layout-and-breakpoints",
+      "media-workflow",
       "running-the-ui",
       "settings-coverage",
       "theming-and-localization",

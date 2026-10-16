@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "coal";
-            window.path_to_searchindex_js = "../searchindex-b3d5508e.js";
+            window.path_to_searchindex_js = "../searchindex-8f9c709e.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-cef10c91.js"></script>
+        <script src="../toc-77dcf5b9.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -178,10 +178,13 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="web-ui-flows-and-diagrams"><a class="header" href="#web-ui-flows-and-diagrams">Web UI Flows and Diagrams</a></h1>
-<p>Visual references for the Phase 1 UX: navigation, component wiring, SSE handling, and torrent lifecycle. Use these diagrams when extending the UI or adding tests.</p>
+<p>Visual references for navigation, component wiring, SSE handling, torrent lifecycle and media transcoding. Use these diagrams when extending the UI or adding tests.</p>
 <h2 id="navigation-flow"><a class="header" href="#navigation-flow">Navigation flow</a></h2>
 <pre class="mermaid">flowchart LR
     Nav["Sidebar / Drawer"] --&gt; Dash[Dashboard]
+    Nav --&gt; Indexers[Indexers]
+    Nav --&gt; Search[Search]
+    Nav --&gt; Media["Media /media"]
     Nav --&gt; Torrents[Torrents]
     Nav --&gt; Logs[Logs]
     Nav --&gt; Health[Health]
@@ -198,6 +201,7 @@
     shell["AppShell: nav / theme / locale"]
     dash[Dashboard]
     torrents["Torrents list + detail"]
+    media["Media configuration + jobs"]
     settings[Settings]
     logs[Logs]
     health[Health]
@@ -206,6 +210,7 @@
     app --&gt; shell
     shell --&gt; dash
     shell --&gt; torrents
+    shell --&gt; media
     shell --&gt; settings
     shell --&gt; logs
     shell --&gt; health
@@ -217,6 +222,7 @@
     torrents -- "PATCH /v1/torrents/{id}/options" --&gt; api
     torrents -- "POST /v1/torrents/{id}/select" --&gt; api
     torrents -- "SSE /v1/torrents/events" --&gt; api
+    media -- "/v1/media resources" --&gt; api
     logs -- "SSE /v1/logs/stream" --&gt; api
     health -- "GET /health/full" --&gt; api
 </pre>
@@ -256,6 +262,14 @@
 <li>Table virtualization is required beyond 500 rows; virtual scroll must preserve keyboard focus order and pinned columns.</li>
 <li>Mobile detail view uses tabs (Overview, Files, Options); desktop uses a split layout so overview and options stay visible together at lg+.</li>
 </ul>
+<h2 id="media-processing-flow"><a class="header" href="#media-processing-flow">Media processing flow</a></h2>
+<p>Profiles and root associations select an immutable configuration snapshot for
+discovery. Manual, watcher and scheduled discovery converge on the same bounded
+admission path. Dry-run inspects and plans without replacing originals; enabled
+processing executes locally and verifies output before replacement. Restart
+replays unfinished steps and reconciles interrupted replacement through its
+backup/manifest. See the <a href="https://github.com/VannaDii/revaer/blob/main/MEDIA_TRANSCODING.md#recovery-concurrency-and-scratch">transcoding design</a>
+for cancellation, scratch and cleanup semantics.</p>
 
                     </main>
 

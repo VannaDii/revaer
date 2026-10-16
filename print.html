@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "coal";
-            window.path_to_searchindex_js = "searchindex-b3d5508e.js";
+            window.path_to_searchindex_js = "searchindex-8f9c709e.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-cef10c91.js"></script>
+        <script src="toc-77dcf5b9.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -180,12 +180,17 @@
                     <main>
                         <h1 id="revaer"><a class="header" href="#revaer">Revaer</a></h1>
 <blockquote>
-<p>Centralized torrent orchestration with hot-reloadable configuration, consistent CLI/API surfaces, and observability-first defaults.</p>
+<p>Torrent orchestration and desired-state media transcoding with PostgreSQL-backed configuration and consistent operator interfaces.</p>
 </blockquote>
-<p>Revaer is a Rust workspace that coordinates torrent ingestion, filesystem operations, and operational guardrails from a PostgreSQL-backed control plane. The <code>revaer-app</code> binary composes focused crates covering the API, CLI, filesystem pipeline, telemetry, and libtorrent adapter.</p>
+<p>Revaer is a Rust workspace that coordinates torrent ingestion, filesystem operations, media discovery/transcoding, and operational guardrails from a PostgreSQL-backed control plane. The <code>revaer-app</code> binary composes focused crates covering the API, CLI, filesystem pipeline, telemetry, and libtorrent adapter.</p>
+<p>Transcoding merged into <code>main</code> in PR #31 on 2026-10-15. See the
+<a href="#project-roadmap">project roadmap</a> for scope and the
+<a href="https://github.com/VannaDii/revaer/blob/main/MEDIA_TRANSCODING.md">transcoding design</a> for recovery, scratch and replacement
+semantics. Required checks and release workflows determine readiness for a
+particular revision; merged implementation is not a deployment claim.</p>
 <h2 id="what-youll-find-here"><a class="header" href="#what-youll-find-here">What You’ll Find Here</a></h2>
 <ul>
-<li><strong>Roadmap &amp; Specs</strong> – Track the current Phase One scope and remaining delivery deltas.</li>
+<li><strong>Roadmap &amp; Specs</strong> – Distinguish implemented scope and product contracts from historical implementation plans.</li>
 <li><strong>Platform Interfaces</strong> – Configuration schema, HTTP API endpoints, and CLI command reference that match the current codebase.</li>
 <li><strong>Operational Guides</strong> – Runbook, release checklist, and setup flows for operators.</li>
 <li><strong>Architecture Decisions</strong> – ADRs documenting trade-offs across configuration, security, and engine integration.</li>
@@ -200,98 +205,52 @@
 <h2 id="llm-manifests"><a class="header" href="#llm-manifests">LLM Manifests</a></h2>
 <p>For ChatGPT and other LLM-based tooling, fetch <a href="llms.txt"><code>llms.txt</code></a> and the JSON manifests under <code>llm/</code> (<a href="llm/schema.json"><code>schema.json</code></a>, <a href="llm/manifest.json"><code>manifest.json</code></a>, <a href="llm/summaries.json"><code>summaries.json</code></a>) used by the documentation search experience.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="phase-one-roadmap"><a class="header" href="#phase-one-roadmap">Phase One Roadmap</a></h1>
-<p><em>Last updated: 2026-04-04</em></p>
-<p>This document captures the current delta between the Phase One objective and the existing codebase. It should be kept in sync as work progresses across the eight workstreams.</p>
-<h2 id="snapshot"><a class="header" href="#snapshot">Snapshot</a></h2>
+<h1 id="project-roadmap"><a class="header" href="#project-roadmap">Project Roadmap</a></h1>
+<p><em>Last reconciled: 2026-10-15</em></p>
+<h2 id="implemented-scope"><a class="header" href="#implemented-scope">Implemented scope</a></h2>
+<p>The original Phase One control-plane remediation is recorded as closed in
+<a href="https://github.com/VannaDii/revaer/blob/main/REMEDIATION_PLAN.md">the remediation plan</a>. Transcoding merged into <code>main</code>
+in PR #31 on 2026-10-15. The old media restack and operator-checkpoint sequence
+is complete as a delivery plan; it is not the starting point for new work.</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Workstream</th><th>Current State</th><th>Key Gaps</th><th>Immediate Actions</th></tr>
+<tr><th>Area</th><th>Implemented surface</th><th>Reference</th></tr>
 </thead>
 <tbody>
-<tr><td>Control Plane &amp; Setup</td><td>Postgres schema, ConfigService watcher, setup CLI/API, immutable-key guard, history logging; loopback enforcement + RFC7807 pointers live</td><td>Engine hot-reload not yet exercising throttles; setup token lifecycle/error telemetry still thin</td><td>Add watcher-driven throttle tests, expand setup diagnostics and rate-limit guardrails</td></tr>
-<tr><td>Torrent Domain &amp; Adapter</td><td>Native libtorrent FFI (cxx) restored and default-enabled; session worker with alert pump/resume store, throttles, selection, and degraded health surfaced via event bus; stub path retained only when the feature is disabled</td><td>Native CI coverage exists, but alert/rate-limit regression coverage is still thin and broader validation of resume reconciliation and failure handling is still needed</td><td>Deepen alert/rate-limit/resume validation and harden failure handling</td></tr>
-<tr><td>File Selection &amp; FsOps</td><td>Idempotent FsOps pipeline now extracts <code>zip</code>/<code>tar</code>/<code>tar.gz</code>/<code>tgz</code> archives in-process, supports guarded <code>7z</code>/<code>rar</code> extraction via external tools, runs PAR2 verify/repair stages, records checksum metadata in <code>.revaer.meta</code>, and applies move/copy/hardlink transfers with chmod/chown/umask handling</td><td><code>7z</code>/<code>rar</code> and PAR2 still depend on host tooling being installed; ownership overrides remain Unix-only by design, and broader recovery/failure coverage should keep expanding</td><td>Keep hardening extractor/PAR2 recovery scenarios, document host-tool prerequisites clearly, and expand FsOps telemetry + restart-path coverage</td></tr>
-<tr><td>Public HTTP API &amp; SSE</td><td>Admin setup/settings/torrent CRUD, SSE stream, metrics endpoint, OpenAPI generator, <code>/api/v2/*</code> qB façade with cookie sessions, rename/category/tag mutation, relocate, reannounce/recheck, transfer limits, and incremental <code>rid</code> sync</td><td><code>/v1/torrents/*</code> pagination/filter matrix still partial; qB coverage is intentionally bounded rather than full parity; SSE replay still needs broader Last-Event-ID regression coverage</td><td>Finish pagination/filter story, document deliberate qB compatibility scope, and expand SSE replay regression tests</td></tr>
-<tr><td>CLI Parity</td><td>Supports setup start/complete, settings patch, torrent add/remove/list/status/select/action flows, and CLI wrappers around config + torrent APIs</td><td>SSE tail UX and richer validation/diagnostic coverage still need hardening</td><td>Expand reconnecting tail coverage and tighten validation/exit-code contracts</td></tr>
-<tr><td>Security &amp; Observability</td><td>API key storage hashed, per-key rate limits and <code>X-RateLimit-*</code> headers exposed, tracing initialized, metrics registry exported, and dashboard metrics now sourced from runtime state</td><td>OTEL exporter path was placeholder-only and now needs operational validation; tracing/metrics coverage should keep expanding across engine/fsops failure paths</td><td>Validate OTLP exporter behavior in deployment flows and keep expanding engine/fsops observability coverage</td></tr>
-<tr><td>CI &amp; Packaging</td><td>GitHub Actions cover fmt/lint/deny/audit/tests/cov via <code>just ci</code>; native libtorrent CI exists; Dockerfile builds non-root image with bundled libtorrent and HEALTHCHECK; docs workflow publishes mdBook; image workflow now scans, attests, and signs published images</td><td>Rootfs posture remains documented rather than enforced, and image hardening still needs broader cross-arch/runtime validation</td><td>Keep image provenance/scan/sign gates in CI, harden container runtime guidance, and extend cross-arch/runtime validation</td></tr>
-<tr><td>Operational End-to-End</td><td>Playwright-backed API/UI flows run via <code>just ui-e2e</code>, and <code>just runbook</code> now packages repeatable validation artifacts</td><td>Manual fault-injection drills still exist for extractor/permission/recovery scenarios</td><td>Keep automating the remaining runbook drills while retaining the operator-facing checklist</td></tr>
+<tr><td>Configuration</td><td>Setup, typed PostgreSQL-backed configuration, API keys and runtime updates</td><td><a href="#configuration-surface">Configuration</a></td></tr>
+<tr><td>Torrents and filesystem</td><td>Native libtorrent integration, torrent controls, archive/PAR2 processing and managed transfers</td><td><a href="#torrent-flows">Torrent flows</a></td></tr>
+<tr><td>Public interfaces</td><td>HTTP API, CLI, SSE, health and metrics</td><td><a href="#http-api">API</a>, <a href="#cli-reference">CLI</a></td></tr>
+<tr><td>Media</td><td>Relational profiles and root associations, manual/watcher/scheduled discovery, dry-run planning, local execution and verified replacement</td><td><a href="https://github.com/VannaDii/revaer/blob/main/MEDIA_TRANSCODING.md">Transcoding design</a></td></tr>
+<tr><td>Media lifecycle</td><td>Checkpoint restart, explicit cancellation, source-change handling, configured concurrency, bounded scratch and cleanup</td><td><a href="https://github.com/VannaDii/revaer/blob/main/MEDIA_TRANSCODING.md#recovery-concurrency-and-scratch">Transcoding design</a></td></tr>
+<tr><td>Tooling</td><td>uv-managed Python <code>rv</code> commands, delegated Just recipes and shared local/CI task implementations</td><td><a href="https://github.com/VannaDii/revaer/blob/main/tools/README.md">Tooling</a></td></tr>
 </tbody>
 </table>
 </div>
-<h2 id="remaining-scope-specification"><a class="header" href="#remaining-scope-specification">Remaining Scope Specification</a></h2>
-<h3 id="1-torrent-engine-integration"><a class="header" href="#1-torrent-engine-integration">1. Torrent Engine Integration</a></h3>
-<ul>
-<li>Harden the native libtorrent session: keep the stub only for feature-off builds while ensuring the default path drives the real adapter for add/pause/resume/remove, sequential toggles, rate limits, selection updates, reannounce, and force-recheck.</li>
-<li>Validate persisted fast-resume payloads, priorities, target directories, and sequential flags against the live session on startup; continue emitting reconciliation events when divergence is detected.</li>
-<li>Translate libtorrent alerts into EventBus messages (<code>FilesDiscovered</code>, <code>Progress</code>, <code>StateChanged</code>, <code>Completed</code>, <code>Failure</code>) while respecting the ≤10 Hz per-torrent coalescing rule; recover from alert polling failures by degrading health and attempting bounded restarts.</li>
-<li>Ensure global and per-torrent rate caps driven by <code>engine_profile</code> updates are enforced by libtorrent within two seconds, with audit logs surfaced when caps change.</li>
-<li>Extend the feature-gated integration suite to execute against the native libtorrent build (resume restore, rate-limit enforcement, alert mapping) in addition to the in-process stub.</li>
-</ul>
-<h3 id="2-file-selection--fsops-pipeline"><a class="header" href="#2-file-selection--fsops-pipeline">2. File Selection &amp; FsOps Pipeline</a></h3>
-<ul>
-<li>Keep include/exclude glob logic aligned with torrent selection so priority updates continue to reflect operator intent, including the <code>@skip_fluff</code> preset.</li>
-<li>Extend the FsOps pipeline to additional archive formats (7z/tar), introduce the PAR2 verification/repair stage, and surface checksum metadata alongside the recorded <code>.revaer.meta</code> entries.</li>
-<li>Add non-Unix fallbacks or clear operator guidance when ownership/umask directives cannot be honoured, and surface the condition via events and <code>/health/full</code>.</li>
-<li>Harden dependency detection so missing extractor binaries trigger guarded degradation with actionable telemetry, then clear automatically once remediation succeeds.</li>
-<li>Broaden integration coverage to include error paths (permission denied, unsupported archive) and restart scenarios that reuse persisted metadata, capturing metrics snapshots for each stage.</li>
-</ul>
-<h3 id="3-public-http-api--sse"><a class="header" href="#3-public-http-api--sse">3. Public HTTP API &amp; SSE</a></h3>
-<ul>
-<li>Round out <code>/v1/torrents</code> with cursor pagination, rich filtering (state, tracker, extension), and stabilise reannounce/recheck/sequential toggles with regression tests.</li>
-<li>Keep Problem+JSON responses consistent (including JSON Pointer metadata) and mirror them in CLI/user-facing tooling.</li>
-<li>Enhance SSE with Last-Event-ID replay, duplicate suppression, and resiliency tests covering torrent + FsOps event fan-out.</li>
-<li>Evolve the qB façade: tighten the cookie/session model, surface removals/categories/tags in incremental sync, and expose rename/reannounce operations.</li>
-<li>Expand health reporting to <code>/health/full</code>, document façade coverage in OpenAPI/mdBook, and add integration tests that exercise pagination, SSE replay, and façade flows end-to-end.</li>
-</ul>
-<h3 id="4-cli-parity"><a class="header" href="#4-cli-parity">4. CLI Parity</a></h3>
-<ul>
-<li>Add commands <code>revaer ls</code>, <code>status</code>, <code>select</code>, <code>action</code>, and <code>tail</code>, mirroring API filters, selection arguments (include/exclude/skip-fluff), sequential toggles, and data deletion flags.</li>
-<li>Implement an SSE tailer that reconnects on failure, honors Last-Event-ID, and avoids duplicate terminal output.</li>
-<li>Standardize exit codes (0 success, 2 validation, &gt;2 runtime failures) and surface RFC7807 payloads, including pointer metadata, in human-readable CLI output.</li>
-<li>Provide CLI integration tests that run against the API fixture stack, covering filter combinations, sequential toggles, and tail reconnection behaviour.</li>
-</ul>
-<h3 id="5-security--observability"><a class="header" href="#5-security--observability">5. Security &amp; Observability</a></h3>
-<ul>
-<li>Introduce API key lifecycle endpoints (issue, rotate, revoke) with hashed-at-rest storage, returning secrets only once; enforce per-key token-bucket rate limiting and include <code>X-RateLimit-*</code> headers.</li>
-<li>Harden inputs by bounding magnet length, multipart size, filter glob counts, and header values; return Problem+JSON validation errors without panics for malformed requests.</li>
-<li>Propagate tracing spans (request IDs) through the API, engine, and FsOps layers; ensure metrics cover HTTP status, event flow, queue depth, libtorrent transfer, and FsOps step durations, exposed via <code>/metrics</code>.</li>
-<li>Reflect degraded health when tools are missing, engine sessions fault, or queue depth exceeds thresholds; emit corresponding <code>SettingsChanged</code> and <code>HealthChanged</code> events.</li>
-<li>Document operational expectations for rate limiting, key rotation, and observability dashboards.</li>
-</ul>
-<h3 id="6-ci--packaging"><a class="header" href="#6-ci--packaging">6. CI &amp; Packaging</a></h3>
-<ul>
-<li>Keep GitHub Actions green across fmt/lint/deny/audit/tests/cov and add a matrix leg that runs the native libtorrent suite (REVAER_NATIVE_IT=1 with Docker host wiring).</li>
-<li>Enforce an environment-access lint that fails CI if <code>std::env</code> reads occur outside the composition root (excluding <code>DATABASE_URL</code>).</li>
-<li>Harden the container: retain non-root user, switch to read-only rootfs with explicit writable mounts, and gate builds with image scans and provenance/signing.</li>
-<li>Produce cross-arch artifacts (x86_64/aarch64) and publish digests alongside build outputs and release notes.</li>
-</ul>
-<h3 id="7-operational-runbook-automation"><a class="header" href="#7-operational-runbook-automation">7. Operational Runbook Automation</a></h3>
-<ul>
-<li>Author a script to execute the full phase objective on both x86_64 and aarch64: bootstrap using <code>DATABASE_URL</code>, complete setup token flow, add a magnet, monitor <code>FilesDiscovered</code>/<code>Progress</code>/<code>Completed</code>, run FsOps, simulate crash/restart with fast-resume recovery, adjust throttles, and validate degraded health when extractors are absent.</li>
-<li>Capture assertions and logs for each phase, producing artifacts suitable for runbook review and CI retention; ensure failures mark the engine or pipeline health accordingly.</li>
-<li>Include cleanup routines to return environments to a reusable state while retaining diagnostic logs.</li>
-</ul>
-<h3 id="8-documentation--final-polish"><a class="header" href="#8-documentation--final-polish">8. Documentation &amp; Final Polish</a></h3>
-<ul>
-<li>Update <code>docs/phase-one-roadmap.md</code> continuously and add ADRs covering engine architecture, FsOps design, API/CLI contracts, and security posture.</li>
-<li>Regenerate <code>docs/api/openapi.json</code> alongside illustrative request/response examples for new endpoints.</li>
-<li>Extend user-facing guides for CLI usage, health/metrics references, and operational setup covering API keys, rate limits, and degraded-mode recovery.</li>
-<li>Provide a final Phase One release checklist that ties documentation, runbook, and CI artifacts together.</li>
-</ul>
-<h2 id="next-steps-tracking"><a class="header" href="#next-steps-tracking">Next Steps Tracking</a></h2>
-<ol>
-<li>Land setup/network hardening and control-plane polish.</li>
-<li>Keep the native libtorrent session as the default, expand coverage (native CI leg, alert/rate-limit/resume validation), and preserve the stub only for feature-off builds.</li>
-<li>Implement FsOps pipeline with allow-listed execution and metadata.</li>
-<li>Expose <code>/v1/*</code> APIs + CLI parity and reinforce security/observability.</li>
-<li>Stand up CI, packaging, and full runbook validation.</li>
-</ol>
+<h2 id="continuing-work"><a class="header" href="#continuing-work">Continuing work</a></h2>
+<p>Use current source, open issues/PRs and their owners’ handoffs to choose work.
+Historical assertions that pagination, setup, media runtime or tooling still
+need to be implemented are not an actionable backlog. Recheck a specific claim
+against its owning implementation before carrying it forward.</p>
+<p>Implementation merged to <code>main</code> is distinct from a published release or a running
+deployment. Required CI, UI, security, Sonar and release checks remain controlled
+by the current task registry and workflows. Consult <a href="#release-checklist">the release checklist</a>
+for publication and <a href="#phase-one-runbook">the runbook</a> for deployment operations.</p>
+<p>The <a href="#historical-phase-one-engineering-specification">original remaining-scope specification</a> is
+historical. Preserve its product intent where still applicable, but do not
+revive completed tasks, obsolete thresholds or artifact-collection instructions.
+Future architectural changes require the operator decision described in
+<a href="https://github.com/VannaDii/revaer/blob/main/AGENTS.md">AGENTS.md</a>.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="phase-one-remaining-engineering-specification"><a class="header" href="#phase-one-remaining-engineering-specification">Phase One Remaining Engineering Specification</a></h1>
-<h2 id="objectives"><a class="header" href="#objectives">Objectives</a></h2>
+<h1 id="historical-phase-one-engineering-specification"><a class="header" href="#historical-phase-one-engineering-specification">Historical Phase One Engineering Specification</a></h1>
+<p>This is the original implementation sequence, retained as historical design
+context. Phase One remediation is closed in <a href="https://github.com/VannaDii/revaer/blob/main/REMEDIATION_PLAN.md">the remediation plan</a>,
+and media implementation merged in PR #31 on 2026-10-15. For current scope, see
+<a href="#project-roadmap">the roadmap</a>. The tasks, coverage thresholds and output
+collection below describe the original plan, not current work or operating rules.
+Current gates and documentation policy are owned by <a href="https://github.com/VannaDii/revaer/blob/main/AGENTS.md">AGENTS.md</a>,
+the task registry and workflows.</p>
+<h2 id="original-objectives"><a class="header" href="#original-objectives">Original Objectives</a></h2>
 <ul>
 <li>Deliver a production-ready public interface (HTTP API, SSE, CLI) for torrent orchestration.</li>
 <li>Ship FsOps-backed artefacts through API, CLI, telemetry, and documentation with demonstrable reliability.</li>
@@ -487,19 +446,20 @@
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="phase-one-runbook"><a class="header" href="#phase-one-runbook">Phase One Runbook</a></h1>
 <p>This runbook exercises the end-to-end control plane, validating FsOps, telemetry, and guard rails.
-The primary automated entrypoint is <code>just runbook</code>, which wraps the Playwright-backed API/UI validation flow, collects artifacts, and provides a repeatable baseline before any manual drills.</p>
-<h2 id="automated-validation"><a class="header" href="#automated-validation">Automated Validation</a></h2>
-<p>Run the automated baseline first:</p>
-<pre><code class="language-sh">just runbook
+Use <code>just ui-e2e</code> for the repeatable API/browser workflow. The retained
+<code>just runbook</code> command wraps that workflow for deployments that explicitly need
+its archive output; do not use it to create a separate proof package for routine
+work. Current media scenarios are part of the existing API/UI suite, with focused
+recovery selections available through <code>just test-media-recovery</code> and
+<code>just test-media-service-recovery</code> (the latter requires Linux and its managed-root
+fixture). Use the task help and test README for exact prerequisites.</p>
+<h2 id="automated-checks"><a class="header" href="#automated-checks">Automated Checks</a></h2>
+<pre><code class="language-sh">just ui-e2e
 </code></pre>
-<p>Expected outputs:</p>
-<ul>
-<li><code>artifacts/runbook/summary.txt</code></li>
-<li><code>artifacts/runbook/playwright-report/index.html</code></li>
-<li><code>artifacts/runbook/test-results/</code></li>
-<li><code>artifacts/runbook/logs/</code></li>
-</ul>
-<p>The automated runbook currently covers the bootstrap, dashboard/API health, settings, and torrent-management control-plane paths exercised by <code>just ui-e2e</code>. Keep the manual checks below only for deployment-specific fault-injection drills that require operator intervention against real mounts, permissions, and restart boundaries.</p>
+<p>Use focused regression tests for a demonstrated failure. Do not repeat completed
+checks or add independent verification frameworks merely to generate evidence.
+The deployment-specific drills below concern actual mounts, permissions and
+restart boundaries; they do not replace required CI or release checks.</p>
 <h2 id="prerequisites"><a class="header" href="#prerequisites">Prerequisites</a></h2>
 <ul>
 <li>Docker image <code>revaer:ci</code> (built via <code>just docker-build</code>) or a local <code>revaer-app</code> binary (<code>just build-release</code>).</li>
@@ -514,7 +474,7 @@ The primary automated entrypoint is <code>just runbook</code>, which wraps the P
 <ul>
 <li>Issue a setup token: <code>revaer setup start --issued-by runbook</code>.</li>
 <li>Complete configuration with CLI secrets and directories: <code>revaer setup complete --instance runbook --bind 127.0.0.1 --resume-dir .server_root/resume --download-root .server_root/downloads --library-root .server_root/library --api-key-label runbook --passphrase &lt;pass&gt;</code>.</li>
-<li>Capture the committed snapshot via <code>revaer config get --output table</code> and confirm <code>/health/full</code> returns <code>status=ok</code> with <code>guardrail_violations_total=0</code>.</li>
+<li>Inspect the committed snapshot via <code>revaer config get --output table</code> and confirm <code>/health/full</code> returns <code>status=ok</code> with <code>guardrail_violations_total=0</code>.</li>
 </ul>
 </li>
 <li>
@@ -561,16 +521,22 @@ The primary automated entrypoint is <code>just runbook</code>, which wraps the P
 <li>Permission failures and restart/resume drills depend on the actual runtime mount layout, writable volumes, and supervisor behavior of the target deployment.</li>
 <li>The checked-in automation covers the repeatable control-plane baseline; these remaining drills intentionally stay manual so operators can validate their real environment rather than a simulated local-only shell.</li>
 </ul>
-<h2 id="verification-artifacts"><a class="header" href="#verification-artifacts">Verification Artifacts</a></h2>
-<ul>
-<li>Review <code>artifacts/runbook/summary.txt</code> from <code>just runbook</code>.</li>
-<li>Archive CLI telemetry emitted to <code>REVAER_TELEMETRY_ENDPOINT</code> when the manual scenario enables it.</li>
-<li>Capture Prometheus scrapings (<code>/metrics</code>) before and after the manual drills.</li>
-<li>Record <code>/health/full</code> JSON snapshots for each phase.</li>
-</ul>
-<p>Successful completion of this runbook satisfies the operational validation gate defined in <code>AGENT.md</code>.</p>
+<h2 id="results-and-cleanup"><a class="header" href="#results-and-cleanup">Results and Cleanup</a></h2>
+<p>Report failures and relevant revision information briefly. Keep ordinary command
+output temporary; do not archive telemetry, screenshots or health/metrics
+snapshots solely to substantiate routine work. Application audit/checkpoint
+records and required release contracts remain intact.</p>
+<p>Stop or remove only owned disposable resources after checking whether another
+active task still needs them. Preserve persistent databases, original media and
+unfinished replacement/rollback artifacts. This runbook does not itself establish
+passing CI, a published release or production readiness; follow AGENTS.md and
+the existing release checks for the revision being operated.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="phase-one-release-checklist"><a class="header" href="#phase-one-release-checklist">Phase One Release Checklist</a></h1>
+<h1 id="release-checklist"><a class="header" href="#release-checklist">Release Checklist</a></h1>
+<p>This checklist covers publication of a selected revision. Transcoding merged in
+PR #31; that merge alone does not claim a published release. Use the existing
+workflow gates and release artifacts; do not add separate proof packages or
+routine completion records.</p>
 <ol>
 <li>
 <p><strong>Branch Hygiene</strong></p>
@@ -583,7 +549,7 @@ The primary automated entrypoint is <code>just runbook</code>, which wraps the P
 <p><strong>Build &amp; Test</strong></p>
 <ul>
 <li><code>just ci</code></li>
-<li><code>just build-release</code></li>
+<li><code>just ci</code> includes the release build; do not repeat it unless a separate target is required.</li>
 <li><code>just api-export</code></li>
 </ul>
 </li>
@@ -605,16 +571,17 @@ The primary automated entrypoint is <code>just runbook</code>, which wraps the P
 <li>
 <p><strong>Runbook Execution</strong></p>
 <ul>
-<li>Run <code>just runbook</code></li>
-<li>Follow the remaining manual-only drills in <code>docs/runbook.md</code></li>
-<li>Archive CLI telemetry, <code>/metrics</code>, <code>/health/full</code> snapshots.</li>
+<li>Use the existing required API/UI workflow (<code>just ui-e2e</code>).</li>
+<li>Consult <code>docs/runbook.md</code> for deployment-specific drills when applicable.</li>
+<li>Keep ordinary output temporary; report failures without an extra archive.</li>
 </ul>
 </li>
 <li>
 <p><strong>Documentation Refresh</strong></p>
 <ul>
-<li>Verify ADRs 005–007 reflect current design.</li>
-<li>Update user guides (<code>docs/api/guides/*.md</code>) with any behavioural changes.</li>
+<li>Reconcile existing operator guides and product contracts with the selected revision.</li>
+<li>Preserve historical ADR decisions; create an ADR only for a new architectural decision requiring approval.</li>
+<li>Update user guides (<code>docs/platform/*.md</code> and <code>docs/ui/*.md</code>) with any behavioural changes.</li>
 </ul>
 </li>
 <li>
@@ -639,13 +606,20 @@ The primary automated entrypoint is <code>just runbook</code>, which wraps the P
 </li>
 </ol>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="web-ui---phase-1"><a class="header" href="#web-ui---phase-1">Web UI - Phase 1</a></h1>
-<p>Rust/Yew UI for the Phase 1 torrent workflow. The goal is a responsive, touch-friendly surface that stays usable on 360px phones through 4K desktops while handling large torrent libraries.</p>
+<h1 id="web-ui"><a class="header" href="#web-ui">Web UI</a></h1>
+<p>Rust/Yew UI for torrent orchestration and media transcoding. The goal is a responsive, touch-friendly surface that stays usable on 360px phones through 4K desktops while handling large torrent libraries.</p>
 <ul>
-<li><strong>Pages</strong>: Dashboard, Torrents (list + detail), Logs, Health, Settings.</li>
+<li><strong>Pages</strong>: Dashboard, Indexers, Search, Media, Torrents (list + detail), Logs, Health, Settings.</li>
 <li><strong>Modes</strong>: Simple (trimmed controls) and Advanced (full controls). Stored in local storage.</li>
 <li><strong>Transport</strong>: REST for initial payloads; fetch-based SSE for live updates and logs (header-auth supported, EventSource not used).</li>
 </ul>
+<h2 id="media-workflow"><a class="header" href="#media-workflow">Media workflow</a></h2>
+<p>The Media feature supports profile, target, policy and compatibility authoring,
+managed-root associations, capability refresh, discovery and jobs. Configure
+through the authenticated UI, inspect dry-run plans, and enable processing only
+through explicit configuration/confirmation. Job details expose processing,
+verification and final outcomes. Recovery and scratch behavior follow the
+<a href="https://github.com/VannaDii/revaer/blob/main/MEDIA_TRANSCODING.md#recovery-concurrency-and-scratch">transcoding design</a>.</p>
 <h2 id="layout-and-breakpoints"><a class="header" href="#layout-and-breakpoints">Layout and breakpoints</a></h2>
 <div class="table-wrapper">
 <table>
@@ -694,10 +668,13 @@ The primary automated entrypoint is <code>just runbook</code>, which wraps the P
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="web-ui-flows-and-diagrams"><a class="header" href="#web-ui-flows-and-diagrams">Web UI Flows and Diagrams</a></h1>
-<p>Visual references for the Phase 1 UX: navigation, component wiring, SSE handling, and torrent lifecycle. Use these diagrams when extending the UI or adding tests.</p>
+<p>Visual references for navigation, component wiring, SSE handling, torrent lifecycle and media transcoding. Use these diagrams when extending the UI or adding tests.</p>
 <h2 id="navigation-flow"><a class="header" href="#navigation-flow">Navigation flow</a></h2>
 <pre class="mermaid">flowchart LR
     Nav["Sidebar / Drawer"] --&gt; Dash[Dashboard]
+    Nav --&gt; Indexers[Indexers]
+    Nav --&gt; Search[Search]
+    Nav --&gt; Media["Media /media"]
     Nav --&gt; Torrents[Torrents]
     Nav --&gt; Logs[Logs]
     Nav --&gt; Health[Health]
@@ -714,6 +691,7 @@ The primary automated entrypoint is <code>just runbook</code>, which wraps the P
     shell["AppShell: nav / theme / locale"]
     dash[Dashboard]
     torrents["Torrents list + detail"]
+    media["Media configuration + jobs"]
     settings[Settings]
     logs[Logs]
     health[Health]
@@ -722,6 +700,7 @@ The primary automated entrypoint is <code>just runbook</code>, which wraps the P
     app --&gt; shell
     shell --&gt; dash
     shell --&gt; torrents
+    shell --&gt; media
     shell --&gt; settings
     shell --&gt; logs
     shell --&gt; health
@@ -733,6 +712,7 @@ The primary automated entrypoint is <code>just runbook</code>, which wraps the P
     torrents -- "PATCH /v1/torrents/{id}/options" --&gt; api
     torrents -- "POST /v1/torrents/{id}/select" --&gt; api
     torrents -- "SSE /v1/torrents/events" --&gt; api
+    media -- "/v1/media resources" --&gt; api
     logs -- "SSE /v1/logs/stream" --&gt; api
     health -- "GET /health/full" --&gt; api
 </pre>
@@ -772,6 +752,14 @@ The primary automated entrypoint is <code>just runbook</code>, which wraps the P
 <li>Table virtualization is required beyond 500 rows; virtual scroll must preserve keyboard focus order and pinned columns.</li>
 <li>Mobile detail view uses tabs (Overview, Files, Options); desktop uses a split layout so overview and options stay visible together at lg+.</li>
 </ul>
+<h2 id="media-processing-flow"><a class="header" href="#media-processing-flow">Media processing flow</a></h2>
+<p>Profiles and root associations select an immutable configuration snapshot for
+discovery. Manual, watcher and scheduled discovery converge on the same bounded
+admission path. Dry-run inspects and plans without replacing originals; enabled
+processing executes locally and verifies output before replacement. Restart
+replays unfinished steps and reconciles interrupted replacement through its
+backup/manifest. See the <a href="https://github.com/VannaDii/revaer/blob/main/MEDIA_TRANSCODING.md#recovery-concurrency-and-scratch">transcoding design</a>
+for cancellation, scratch and cleanup semantics.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="configuration-surface"><a class="header" href="#configuration-surface">Configuration Surface</a></h1>
 <blockquote>
@@ -921,6 +909,18 @@ The primary automated entrypoint is <code>just runbook</code>, which wraps the P
 <li><strong>Snapshot access</strong> - <code>GET /.well-known/revaer.json</code> (no auth), <code>GET /v1/config</code> (API key), <code>GET /health/full</code>, and <code>revaer config get</code> return the current revision so automation and dashboards can verify configuration drift without shell access.</li>
 </ul>
 <p>Revaer publishes <code>SettingsChanged</code> events on every successful mutation, ensuring subscribers refresh in-memory caches without polling.</p>
+<h2 id="media-configuration"><a class="header" href="#media-configuration">Media Configuration</a></h2>
+<p>Media configuration is a separate normalized relational surface, not a field to
+add to the settings JSON above. Versioned profiles reference targets, policies
+and output/workspace roots; discovery associations pin a profile version to a
+source root. Configuration activation requests reevaluation without silently
+rebinding jobs already admitted under an immutable snapshot.</p>
+<p>Use the Media UI and <code>/v1/media</code> API resources for roots, profiles, targets,
+policies, compatibility, capabilities, discovery and jobs. Profiles default to
+dry-run; watcher and schedule modes are enabled explicitly. YAML is a versioned
+import/export format, not runtime persistence. See the
+<a href="https://github.com/VannaDii/revaer/blob/main/MEDIA_TRANSCODING.md">transcoding design</a> and served OpenAPI document for
+the complete resource/request contract.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="http-api"><a class="header" href="#http-api">HTTP API</a></h1>
 <blockquote>
@@ -977,6 +977,13 @@ The primary automated entrypoint is <code>just runbook</code>, which wraps the P
 <li><code>GET/PATCH/DELETE /v1/torrents/{id}/trackers</code></li>
 <li><code>PATCH /v1/torrents/{id}/web_seeds</code></li>
 </ul>
+<h3 id="media-transcoding"><a class="header" href="#media-transcoding">Media transcoding</a></h3>
+<p>The <code>/v1/media</code> surface includes managed roots, versioned profiles, targets,
+policies, compatibility, capabilities, discovery, jobs and YAML import/export.
+It uses immutable configuration references, explicit admission checks and dry-run
+defaults. Consult the served OpenAPI document for exact routes, request bodies,
+preconditions and error responses; the <a href="https://github.com/VannaDii/revaer/blob/main/MEDIA_TRANSCODING.md">transcoding design</a>
+explains processing and recovery semantics.</p>
 <h3 id="events-and-logs"><a class="header" href="#events-and-logs">Events and logs</a></h3>
 <ul>
 <li><code>GET /v1/torrents/events</code> (primary SSE stream)</li>
