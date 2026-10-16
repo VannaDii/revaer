@@ -168,7 +168,6 @@ def test_sonar_sentinel_is_tracked_empty_and_cannot_hide_authored_files(
         "bad-version",
         "exit-failure",
         "empty-log",
-        "warning",
         "missing-task",
         "duplicate-task",
         "missing-report",
@@ -194,6 +193,25 @@ def test_scanner_failure_never_reuses_previous_success(
         assert not (context.root / ".scannerwork/report-task.txt").exists()
     assert not (context.root / ".scannerwork/scanner-report.tar.xz").exists()
     assert len(runner.invocations) - previous_calls == (1 if case == "bad-version" else 2)
+
+
+def test_scanner_warning_preserves_log_and_uses_published_result_gates(
+    scanner_context: tuple[Context, ScannerFixtureRunner],
+) -> None:
+    context, runner = scanner_context
+    scanner = context.tools.sonar_scanner
+    active = SonarScanner(
+        scanner.name,
+        runner,
+        context.root,
+        {**scanner.environment, "RV_TEST_SCANNER_CASE": "warning"},
+    )
+    context = replace(context, tools=replace(context.tools, sonar_scanner=active))
+    assert SonarScan.run(context).message == "Authoritative Sonar task: owned-task"
+    assert "fixture analysis warning" in (context.root / "artifacts/sonar/scanner.log").read_text()
+    with sonar_server(ApiState()) as url:
+        result = SonarVerifyResult.run(connect(context, url))
+    assert "analysis=owned-analysis" in result.message
 
 
 def test_archive_rejects_missing_or_linked_report_and_preserves_other_files(
