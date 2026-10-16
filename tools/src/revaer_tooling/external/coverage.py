@@ -125,18 +125,18 @@ class CargoLlvmCov(ExternalTool):
         return self._invoke(
             (
                 "llvm-cov",
-                *(("--package", "revaer-app", "--lib") if test_filter else ("--workspace",)),
+                "nextest",
+                "--workspace",
                 "--all-features",
                 "--locked",
                 "--include-ffi",
                 "--no-report",
-                *(
-                    ("--", "--ignored", "--exact", test_filter, "--test-threads=1")
-                    if test_filter
-                    else ()
-                ),
+                "--no-tests=fail",
+                "--test-threads",
+                environment.get("RUST_TEST_THREADS", "num-cpus"),
+                *(("--run-ignored", "only", "-E", f"test({test_filter})") if test_filter else ()),
             ),
-            env={**environment, **flags},
+            env={**environment, **flags, "CARGO_TERM_COLOR": "never"},
             capture=test_filter is not None,
         )
 

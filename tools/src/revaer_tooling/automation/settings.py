@@ -18,6 +18,7 @@ class WorkflowSettings:
     run_id: str
     run_number: str
     supply_chain_results: tuple[tuple[str, str], ...]
+    ref: str = ""
 
 
 def load_workflow_settings(environment: Mapping[str, str]) -> WorkflowSettings:
@@ -35,4 +36,5 @@ def load_workflow_settings(environment: Mapping[str, str]) -> WorkflowSettings:
         environment.get("GITHUB_RUN_ID", ""),
         environment.get("GITHUB_RUN_NUMBER", ""),
         tuple((name, environment.get(name, "")) for name in SUPPLY_CHAIN_RESULTS),
+        environment.get("GITHUB_REF", ""),
     )

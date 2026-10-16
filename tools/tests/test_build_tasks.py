@@ -35,6 +35,8 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Context:
     channel = tomllib.loads((source / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
     monkeypatch.setenv("RUSTUP_TOOLCHAIN", channel)
     monkeypatch.delenv("CARGO_TARGET_DIR", raising=False)
+    for name in ("REVAER_INSTRUCTION_DIFF_BASE", "REVAER_INSTRUCTION_DIFF_HEAD"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.chdir(tmp_path)
     subprocess.run(
         ["git", "init", "--initial-branch=main", str(tmp_path)],

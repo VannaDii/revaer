@@ -36,15 +36,18 @@ def reset_reports(context: Context) -> None:
 def coverage_environment(context: Context) -> dict[str, str]:
     pins = tomllib.loads(context.fs.read(context.root / "tools/versions.toml"))
     context.tools.cargo_llvm_cov.verify(pins["cargo"]["cargo-llvm-cov"]["version"])
+    context.tools.cargo_nextest.verify(pins["cargo"]["cargo-nextest"]["version"])
     compiler = context.tools.rustc.information()
     environment = {
         "RUSTC": str(compiler.executable),
         "REVAER_RUST_LLVM_VERSION": compiler.llvm_version,
+        "CARGO_INCREMENTAL": "0",
         # Never let an analysis invocation prompt for or install components.
         "CARGO_LLVM_COV_SETUP": "no",
         "RUST_TEST_THREADS": str(context.settings.coverage.test_threads),
-        "CARGO_BUILD_JOBS": str(context.settings.coverage.build_jobs),
     }
+    if context.settings.coverage.build_jobs != "default":
+        environment["CARGO_BUILD_JOBS"] = str(context.settings.coverage.build_jobs)
     evidence = [compiler.verbose.rstrip()]
     for name, tool in (
         ("CC", context.tools.cc),
@@ -198,19 +201,17 @@ class Coverage(Task):
                 test_filter="media_job_runtime::tests::production_media_job_runtime_executes_and_persists_verified_replacement",
             )
             context.emit(result.stdout)
-            if not re.search(
-                r"(?m)^test result: ok\. 1 passed; 0 failed; 0 ignored;", result.stdout
-            ):
+            if not re.search(r"Summary.*1 test run: 1 passed", result.stdout + result.stderr):
                 raise ToolingError("Production worker coverage did not execute one passing test")
         if recovery_root is not None:
             # Keep the workspace profiles and use the same all-feature FFI instrumentation.
             result = context.tools.cargo_llvm_cov.collect(
                 {**environment, "REVAER_NATIVE_RECOVERY_ROOT": str(recovery_root)},
-                test_filter="bootstrap::service_recovery_tests::native_service_shutdown_resumes_active_ffmpeg",
+                test_filter="bootstrap::service_recovery_tests::native_service_recovery_",
             )
             context.emit(result.stdout)
-            if not re.search(
-                r"(?m)^test result: ok\. 1 passed; 0 failed; 0 ignored;", result.stdout
-            ):
-                raise ToolingError("Native recovery coverage did not execute one passing test")
+            if not re.search(r"Summary.*9 tests run: 9 passed", result.stdout + result.stderr):
+                raise ToolingError(
+                    "Native recovery coverage did not execute all nine passing scenarios"
+                )
         return CoverageReport.run(context)

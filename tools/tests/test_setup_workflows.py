@@ -3,6 +3,7 @@
 import copy
 import re
 import shlex
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -83,6 +84,142 @@ def test_committed_setup_action_uses_official_uv_and_valid_commands(action: Docu
             parsed = parser().parse_args(argv)
             assert parsed.task == "setup"
             assert parsed.no_launcher
+
+
+def test_tool_caches_reuse_independent_native_installation_roots(action: Document) -> None:
+    pins = tomllib.loads((Path(__file__).parents[2] / "tools/versions.toml").read_text())
+    stages = steps(mapping(action["runs"]))
+    caches = {step.get("name"): step for step in stages}
+    installed = next(
+        index
+        for index, step in enumerate(stages)
+        if step.get("name") == "Set up selected Revaer tools"
+    )
+    for package in pins["cargo"]:
+        restore = caches[f"Cache pinned {package}"]
+        cache = mapping(restore.get("with"))
+        assert cache["path"] == f"~/.local/revaer/cargo-tools/{package}"
+        assert "inputs.cargo-tools" not in str(cache["key"])
+        assert package in str(cache["key"])
+        assert str(restore.get("uses")).startswith("actions/cache/restore@")
+        saved = caches[f"Save pinned {package}"]
+        assert stages.index(restore) < installed < stages.index(saved)
+        assert str(saved.get("uses")).startswith("actions/cache/save@")
+        assert mapping(saved.get("with"))["path"] == cache["path"]
+        assert str(restore["id"]) in str(mapping(saved.get("with"))["key"])
+        assert "cache-hit != 'true'" in str(saved.get("if"))
+    kcov = caches["Cache pinned kcov source and installation"]
+    saved_kcov = caches["Save pinned kcov"]
+    assert str(kcov.get("uses")).startswith("actions/cache/restore@")
+    assert str(saved_kcov.get("uses")).startswith("actions/cache/save@")
+    assert (
+        stages.index(kcov) < stages.index(caches["Install pinned kcov"]) < stages.index(saved_kcov)
+    )
+    assert mapping(saved_kcov.get("with"))["path"] == mapping(kcov.get("with"))["path"]
+
+
+def test_build_cache_consumers_restore_compatible_inputs_without_publishing(
+    action: Document,
+) -> None:
+    stages = steps(mapping(action["runs"]))
+    compiler = next(step for step in stages if step.get("name") == "Restore compiler results")
+    dependencies = next(
+        step for step in stages if step.get("name") == "Restore instrumented dependencies"
+    )
+    for stage in (compiler, dependencies):
+        assert str(stage["uses"]).startswith("actions/cache/restore@")
+        values = mapping(stage["with"])
+        restore = str(values["restore-keys"])
+        for source in (
+            "Cargo.lock",
+            "Cargo.toml",
+            "crates/**/Cargo.toml",
+            ".cargo/**",
+            "rust-toolchain.toml",
+            "tools/versions.toml",
+            ".github/build-inputs.env",
+        ):
+            assert source in restore
+        assert "github.run_id" not in restore
+        assert "github.job" not in restore
+        assert "matrix.browser" not in restore
+        assert "github.run_id" in str(values["key"])
+    assert "inputs.coverage-cache == 'true'" in str(dependencies["if"])
+    assert "compiler-family" in str(mapping(compiler["with"])["key"])
+    assert "coverage.py" in str(mapping(dependencies["with"])["key"])
+    paths = str(mapping(dependencies["with"])["path"]).splitlines()
+    assert all(not path.endswith(("target", "debug", "deps")) for path in paths)
+    assert "!target/llvm-cov-target/debug/deps/*revaer_*" in paths
+
+
+def test_only_designated_build_cache_producers_publish() -> None:
+    root = Path(__file__).parents[2]
+    expected = {
+        "pr": {"check", "udeps", "rust-coverage"},
+        "ci": {"build-release"},
+        "sonar": {"sonar"},
+    }
+    for name, producers in expected.items():
+        document = yaml_document((root / f".github/workflows/{name}.yml").read_text(), name)
+        published = set()
+        for job_name, value in mapping(document["jobs"]).items():
+            job = mapping(value)
+            publish = [
+                stage
+                for stage in steps(job)
+                if stage.get("uses") == "./.github/actions/publish-revaer-cache"
+            ]
+            if not publish:
+                assert mapping(job.get("permissions")).get("actions") != "write"
+                continue
+            published.add(job_name)
+            assert len(publish) == 1
+            assert "if" not in publish[0]
+            assert mapping(job["permissions"])["actions"] == "write"
+            setup = next(stage for stage in steps(job) if stage.get("id") == "build_cache")
+            values = mapping(setup.get("with"))
+            if job_name == "udeps":
+                assert values["compiler-family"] == "nightly"
+            if mapping(publish[0]["with"])["kind"] == "coverage":
+                assert values["coverage-cache"] == "true"
+        assert published == producers
+
+
+def test_cache_publisher_reuses_the_restored_paths_and_native_transport(action: Document) -> None:
+    root = Path(__file__).parents[2]
+    path = ".github/actions/publish-revaer-cache/action.yml"
+    document = yaml_document((root / path).read_text(), path)
+    assert not workflow_findings(path, (root / path).read_text(), frozenset(COMMANDS))
+    stages = steps(mapping(document["runs"]))
+    restored = {step.get("id"): step for step in steps(mapping(action["runs"]))}
+    for kind in ("compiler", "coverage"):
+        saved = next(
+            step
+            for step in stages
+            if str(step.get("if", "")).startswith(f"inputs.kind == '{kind}' && ")
+        )
+        assert str(saved["uses"]).startswith("actions/cache/save@")
+        assert mapping(saved["with"])["path"] == mapping(restored[kind + "_cache"]["with"])["path"]
+    for stage in stages:
+        condition = str(stage.get("if", ""))
+        assert "github.actor != 'dependabot[bot]'" in condition
+        assert "github.event_name != 'pull_request' ||" in condition
+        assert "github.event.pull_request.head.repo.full_name == github.repository" in condition
+    paths = str(mapping(stages[1]["with"])["path"]).splitlines()
+    assert "!target/llvm-cov-target/**/*.profraw" in paths
+    assert "!target/llvm-cov-target/**/*.profdata" in paths
+    prune = stages[-1]
+    assert "workflow-cache-prune" in str(prune["run"])
+    assert shlex.split(str(prune["run"]))[:7] == [
+        "uv",
+        "run",
+        "--locked",
+        "--no-build",
+        "--no-binary-package",
+        "python-semantic-release",
+        "--",
+    ]
+    assert mapping(prune["env"])["CACHE_REF"] == "${{ github.ref }}"
 
 
 @pytest.mark.parametrize("name", ("docs", "helm-oci-verify", "build-images", "ci"))

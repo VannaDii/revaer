@@ -1,0 +1,51 @@
+name: Publish Revaer build cache
+description: Publish a producer snapshot and bound its cache family within this workflow ref.
+inputs:
+  kind:
+    description: compiler or coverage.
+    required: true
+  key:
+    description: Snapshot key returned by setup-revaer.
+    required: true
+  prefix:
+    description: Exact cache family prefix returned by setup-revaer.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Save compiler results
+      if: inputs.kind == 'compiler' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.cache/sccache
+        key: ${{ inputs.key }}
+    - name: Save instrumented dependencies
+      if: inputs.kind == 'coverage' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: |
+          target/llvm-cov-target/debug/deps/*.rlib
+          target/llvm-cov-target/debug/deps/*.rmeta
+          target/llvm-cov-target/debug/deps/*.d
+          target/llvm-cov-target/debug/deps/*.so
+          target/llvm-cov-target/debug/deps/*.dylib
+          target/llvm-cov-target/debug/build
+          target/llvm-cov-target/debug/.fingerprint
+          !target/llvm-cov-target/debug/deps/*revaer_*
+          !target/llvm-cov-target/debug/deps/*asset_sync*
+          !target/llvm-cov-target/debug/build/revaer-*
+          !target/llvm-cov-target/debug/build/asset_sync-*
+          !target/llvm-cov-target/debug/.fingerprint/revaer-*
+          !target/llvm-cov-target/debug/.fingerprint/asset_sync-*
+          !target/llvm-cov-target/**/*.profraw
+          !target/llvm-cov-target/**/*.profdata
+        key: ${{ inputs.key }}
+    - name: Bound published cache family
+      if: github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        CACHE_PREFIX: ${{ inputs.prefix }}
+        CACHE_KEY: ${{ inputs.key }}
+        CACHE_REF: ${{ github.ref }}
+      run: uv run --locked --no-build --no-binary-package python-semantic-release -- rv workflow-cache-prune --cache-prefix "$CACHE_PREFIX" --cache-key "$CACHE_KEY" --cache-ref "$CACHE_REF"

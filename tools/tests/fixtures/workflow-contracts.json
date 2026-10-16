@@ -807,7 +807,7 @@
               "name": "Restore exact cargo-udeps binary",
               "uses": "actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7",
               "with": {
-                "path": "~/.cargo/bin/cargo-udeps",
+                "path": "~/.local/revaer/cargo-tools/cargo-udeps",
                 "key": "${{ runner.os }}-cargo-udeps-${{ env.REVAER_UDEPS_VERSION }}-${{ env.REVAER_UDEPS_TOOLCHAIN }}"
               }
             },
@@ -1564,7 +1564,7 @@
             "if": "inputs.cargo-cache == 'true'",
             "uses": "actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7",
             "with": {
-              "path": "~/.cargo/registry\n~/.cargo/git\n~/.cargo/.crates.toml\n~/.cargo/.crates2.json\n~/.cargo/bin/cargo-audit\n~/.cargo/bin/cargo-deny\n~/.cargo/bin/cargo-llvm-cov\n~/.cargo/bin/cargo-udeps\n~/.cargo/bin/cargo-sqlx\n~/.cargo/bin/sqlx\n~/.cargo/bin/trunk\n~/.cargo/bin/mdbook\n~/.cargo/bin/mdbook-mermaid\n~/.cargo/bin/lychee\n~/.cache/sccache\n",
+              "path": "~/.cargo/registry\n~/.cargo/git\n~/.cargo/.crates.toml\n~/.cargo/.crates2.json\n~/.cargo/bin/cargo-audit\n~/.cargo/bin/cargo-deny\n~/.cargo/bin/cargo-llvm-cov\n~/.local/revaer/cargo-tools/cargo-udeps\n~/.cargo/bin/cargo-sqlx\n~/.cargo/bin/sqlx\n~/.cargo/bin/trunk\n~/.cargo/bin/mdbook\n~/.cargo/bin/mdbook-mermaid\n~/.cargo/bin/lychee\n~/.cache/sccache\n",
               "key": "${{ runner.os }}-${{ runner.arch }}-cargo-${{ github.job }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/versions.toml', '.github/build-inputs.env') }}",
               "restore-keys": "${{ runner.os }}-${{ runner.arch }}-cargo-${{ github.job }}-\n"
             }

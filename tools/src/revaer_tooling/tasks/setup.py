@@ -1,8 +1,11 @@
 """Environment setup and diagnostics; only setup installs external tools."""
 
+import os
+from dataclasses import replace
+
 from ..automation.files import write_values
 from ..bootstrap.install import install_kcov
-from ..bootstrap.selection import apt_selection, native_selection
+from ..bootstrap.selection import NativeSetup, apt_selection, native_selection
 from ..context import Context, TaskResult
 from ..database.contract import BUILD_INPUTS, assignments
 from ..errors import ToolingError
@@ -15,6 +18,7 @@ class Setup(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
         options = context.options
+        install_environment: dict[str, str] = {}
         packages = apt_selection(options.apt_profile, options.apt_packages)
         if packages and context.host.system != "linux":
             raise ToolingError("Apt setup requires a Debian/Ubuntu Linux host")
@@ -37,15 +41,14 @@ class Setup(Task):
                 context.tools.sccache.verify()
                 cache = context.host.home / ".cache/sccache"
                 context.fs.mkdir(cache)
-                write_values(
-                    context.fs,
-                    context.settings.workflow.environment,
+                install_environment.update(
                     {
                         "RUSTC_WRAPPER": "sccache",
                         "SCCACHE_DIR": str(cache),
-                        "SCCACHE_CACHE_SIZE": "5G",
-                    },
+                        "SCCACHE_CACHE_SIZE": "512M",
+                    }
                 )
+                write_values(context.fs, context.settings.workflow.environment, install_environment)
         if context.options.kcov:
             context.emit("Kcov installed: " + str(install_kcov(context)))
         if context.options.sonar_scanner:
@@ -63,8 +66,7 @@ class Setup(Task):
             context.tools.rustup.target_add("wasm32-unknown-unknown")
         if native.nightly:
             context.tools.rustup.install(native.nightly, ())
-        for package in native.cargo:
-            context.tools.cargo.install(package)
+        install_cargo_tools(context, native, install_environment)
         if native.browsers:
             context.tools.python.install_browsers(native.browsers, context.options.profile == "ci")
         # A selective CI install must not require unrelated chart, image or docs
@@ -72,6 +74,27 @@ class Setup(Task):
         if options.cargo_tools is not None or options.browsers is not None:
             return TaskResult("Selected development tools ready")
         return Doctor.run(context)
+
+
+def install_cargo_tools(context: Context, native: NativeSetup, environment: dict[str, str]) -> None:
+    installation = dict(environment)
+    for package in native.cargo:
+        if context.settings.workflow.environment is not None:
+            root = context.host.home / ".local/revaer/cargo-tools" / package.package
+            package = replace(package, root=root)
+            installation["PATH"] = os.pathsep.join(
+                (
+                    str(root / "bin"),
+                    installation.get("PATH", context.tools.cargo.environment.get("PATH", "")),
+                )
+            )
+        context.tools.cargo.install(package, installation)
+    if native.cargo and context.settings.workflow.environment is not None:
+        write_values(
+            context.fs,
+            context.settings.workflow.environment,
+            {"PATH": installation["PATH"]},
+        )
 
 
 class Doctor(Task):
@@ -91,6 +114,7 @@ class Doctor(Task):
             context.tools.cargo_audit,
             context.tools.cargo_deny,
             context.tools.cargo_llvm_cov,
+            context.tools.cargo_nextest,
             context.tools.cargo_udeps,
             context.tools.sqlx,
             context.tools.docker,

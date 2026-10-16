@@ -4,6 +4,7 @@ The apt process recorder deliberately performs no installation on the developer'
 host. The separate disposable Linux proof exercises the actual package manager.
 """
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -160,6 +161,12 @@ def test_linux_setup_delegates_installation_to_apt(tmp_path: Path) -> None:
         [
             "docker",
             "create",
+            "--name",
+            "revaer-setup-test-" + hashlib.sha256(str(root).encode()).hexdigest()[:12],
+            "--label",
+            "project=revaer",
+            "--label",
+            "purpose=setup-test",
             "--workdir",
             "/work",
             "--mount",

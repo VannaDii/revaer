@@ -46,6 +46,8 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
         timeout-minutes: 20
+        with:
+          cargo-cache: "false"
 
       - name: Format
         run: uv run --locked -- rv fmt
@@ -66,17 +68,28 @@ jobs:
 
   check:
     name: Run Checks
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
+        id: build_cache
         timeout-minutes: 20
         with:
           apt-profile: "base"
 
       - name: Check
         run: uv run --locked -- rv check
+
+      - name: Publish compiler cache
+        uses: ./.github/actions/publish-revaer-cache
+        with:
+          kind: compiler
+          key: ${{ steps.build_cache.outputs.compiler-key }}
+          prefix: ${{ steps.build_cache.outputs.compiler-prefix }}
 
   helm-lint:
     name: Helm Lint
@@ -98,6 +111,9 @@ jobs:
 
   rust-coverage:
     name: Rust and Native Coverage
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-latest
     timeout-minutes: 180
     needs:
@@ -132,10 +148,12 @@ jobs:
           fetch-depth: '0'
           ref: ${{ github.event.pull_request.head.sha }}
       - uses: ./.github/actions/setup-revaer
+        id: build_cache
         timeout-minutes: 40
         with:
+          coverage-cache: "true"
           apt-profile: coverage
-          cargo-tools: cargo-llvm-cov,sqlx-cli
+          cargo-tools: cargo-llvm-cov,cargo-nextest,sqlx-cli
       - name: Single-init application fixtures
         run: uv run --locked --no-build --no-binary-package python-semantic-release -- rv ui-e2e-app-test
       - name: Coverage
@@ -160,6 +178,13 @@ jobs:
           if-no-files-found: error
           overwrite: true
 
+      - name: Publish coverage cache
+        uses: ./.github/actions/publish-revaer-cache
+        with:
+          kind: coverage
+          key: ${{ steps.build_cache.outputs.coverage-key }}
+          prefix: ${{ steps.build_cache.outputs.coverage-prefix }}
+
   tooling-coverage:
     name: Python and Bootstrap Coverage
     runs-on: ubuntu-latest
@@ -174,7 +199,7 @@ jobs:
         timeout-minutes: 40
         with:
           apt-profile: coverage
-          cargo-tools: cargo-audit,cargo-deny,cargo-llvm-cov,cargo-udeps,sqlx-cli,trunk,mdbook,mdbook-mermaid,lychee
+          cargo-tools: cargo-audit,cargo-deny,cargo-llvm-cov,cargo-nextest,cargo-udeps,sqlx-cli,trunk,mdbook,mdbook-mermaid,lychee
           helm: 'true'
           oras: 'true'
           trivy: 'true'
@@ -697,6 +722,7 @@ jobs:
         timeout-minutes: 20
         with:
           cargo-tools: "cargo-audit"
+          compiler-cache: "false"
 
       - name: Audit
         run: uv run --locked -- rv audit
@@ -711,12 +737,16 @@ jobs:
         timeout-minutes: 20
         with:
           cargo-tools: "cargo-deny"
+          compiler-cache: "false"
 
       - name: Deny
         run: uv run --locked -- rv deny
 
   udeps:
     name: Check Unused Deps
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -725,16 +755,12 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
+        id: build_cache
         timeout-minutes: 20
         with:
+          compiler-family: nightly
           cargo-tools: "cargo-udeps"
           apt-profile: "base"
-
-      - name: Restore exact cargo-udeps binary
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
-        with:
-          path: ~/.cargo/bin/cargo-udeps
-          key: ${{ runner.os }}-cargo-udeps-${{ env.REVAER_UDEPS_VERSION }}-${{ env.REVAER_UDEPS_TOOLCHAIN }}
 
       - name: Unused Deps
         run: uv run --locked -- rv udeps
@@ -746,6 +772,13 @@ jobs:
           name: cargo-udeps-toolchain-evidence
           path: target/udeps-toolchain-evidence.txt
           if-no-files-found: error
+
+      - name: Publish compiler cache
+        uses: ./.github/actions/publish-revaer-cache
+        with:
+          kind: compiler
+          key: ${{ steps.build_cache.outputs.compiler-key }}
+          prefix: ${{ steps.build_cache.outputs.compiler-prefix }}
 
   supply-chain:
     name: Supply Chain Checks

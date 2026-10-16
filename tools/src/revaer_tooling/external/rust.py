@@ -63,6 +63,22 @@ class CargoArgs:
     test_filter: str | None = None
     include_ignored: bool = False
 
+    def validate(self) -> None:
+        selectors = (self.test_binary, self.test_filter)
+        if (
+            any(value is not None for value in selectors) or self.include_ignored
+        ) and self.operation != CargoOperation.TEST:
+            raise ToolingError("Test selectors require a Cargo test operation")
+        if any(
+            value is not None and (not value or value.startswith("-") or "\x00" in value)
+            for value in selectors
+        ):
+            raise ToolingError("Cargo test selectors must be nonempty literal names")
+        if self.test_threads is not None and (
+            self.operation != CargoOperation.TEST or self.test_threads < 1
+        ):
+            raise ToolingError("Test threads require a test operation and a positive count")
+
 
 @dataclass(frozen=True)
 class CargoInstallArgs:
@@ -70,6 +86,7 @@ class CargoInstallArgs:
     version: str
     features: tuple[str, ...] = ()
     no_default_features: bool = False
+    root: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -98,7 +115,31 @@ class CargoUdeps(ExternalTool):
     version_args = ("udeps", "--version")
 
 
+class CargoNextest(ExternalTool):
+    version_args = ("nextest", "--version")
+
+
 class Cargo(ExternalTool):
+    def recovery_scenarios(self, environment: Mapping[str, str]) -> Completed:
+        return self._invoke(
+            (
+                "nextest",
+                "run",
+                "--config",
+                'build.rustflags=["-Dwarnings"]',
+                "--workspace",
+                "--all-features",
+                "--locked",
+                "--no-tests=fail",
+                "--run-ignored",
+                "only",
+                "-E",
+                "test(bootstrap::service_recovery_tests::native_service_recovery_)",
+            ),
+            env={**environment, "CARGO_TERM_COLOR": "never"},
+            capture=True,
+        )
+
     def database_probe(self, args: DatabaseProbeArgs) -> Completed:
         result = self._invoke(
             (
@@ -245,16 +286,7 @@ class Cargo(ExternalTool):
     def execute(
         self, args: CargoArgs, env: Mapping[str, str] | None = None, *, capture: bool = False
     ) -> Completed:
-        selectors = (args.test_binary, args.test_filter)
-        if (
-            any(value is not None for value in selectors) or args.include_ignored
-        ) and args.operation != CargoOperation.TEST:
-            raise ToolingError("Test selectors require a Cargo test operation")
-        if any(
-            value is not None and (not value or value.startswith("-") or "\x00" in value)
-            for value in selectors
-        ):
-            raise ToolingError("Cargo test selectors must be nonempty literal names")
+        args.validate()
         command = ["--config", 'build.rustflags=["-Dwarnings"]', args.operation.value, "--locked"]
         if args.packages:
             for package in args.packages:
@@ -277,8 +309,6 @@ class Cargo(ExternalTool):
         if args.include_ignored:
             harness.append("--include-ignored")
         if args.test_threads is not None:
-            if args.operation != CargoOperation.TEST or args.test_threads < 1:
-                raise ToolingError("Test threads require a test operation and a positive count")
             harness.append(f"--test-threads={args.test_threads}")
         if harness:
             command.extend(("--", *harness))
@@ -356,7 +386,9 @@ class Cargo(ExternalTool):
             args.append("--release")
         return self._invoke(tuple(args), env=env)
 
-    def install(self, args: CargoInstallArgs) -> Completed:
+    def install(
+        self, args: CargoInstallArgs, environment: Mapping[str, str] | None = None
+    ) -> Completed:
         # Cargo tracks package versions, features and installed binaries. Let it
         # skip an identical install and reject collisions instead of forcing it.
         command = [
@@ -370,7 +402,9 @@ class Cargo(ExternalTool):
             command.extend(("--features", ",".join(args.features)))
         if args.no_default_features:
             command.append("--no-default-features")
-        return self._invoke(tuple(command))
+        if args.root is not None:
+            command.extend(("--root", str(args.root)))
+        return self._invoke(tuple(command), env=environment)
 
     def audit(self) -> Completed:
         return self._invoke(("audit", "--deny", "warnings"))

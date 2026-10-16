@@ -24,11 +24,12 @@ tokio.workspace = true
 tokio-stream.workspace = true
 globset = "0.4"
 walkdir.workspace = true
-nix = { version = "0.29", default-features = false, features = ["user", "fs"] }
+nix = { version = "0.31.3", default-features = false, features = ["user", "fs"] }
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 sha2 = "0.10"
 tar = "0.4"
-zip = { version = "0.6", default-features = false, features = ["deflate"] }
+# Replace the yanked release while sharing flate2's existing Rust backend.
+zip = { version = "9.0.3", default-features = false, features = ["deflate-flate2"] }
 
 [dev-dependencies]
 anyhow.workspace = true

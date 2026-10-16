@@ -22,6 +22,10 @@ from revaer_tooling.tasks.setup import Setup
 
 @pytest.fixture
 def python_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Context:
+    # The parent's focused selection must not filter this child project's tests.
+    monkeypatch.delenv("PYTEST_ADDOPTS", raising=False)
+    # Setup fixtures own their workflow command files, including on hosted runners.
+    monkeypatch.delenv("GITHUB_ENV", raising=False)
     source = Path(__file__).resolve().parents[2]
     for name in ("pyproject.toml", "uv.lock", ".uv-version", ".python-version"):
         shutil.copy2(source / name, tmp_path / name)
@@ -221,8 +225,9 @@ class InstallationBoundary:
 
 @pytest.mark.parametrize("profile", ["dev", "ci"])
 @pytest.mark.parametrize("fail_install", [False, True])
+@pytest.mark.parametrize("workflow_environment", [False, True])
 def test_native_setup_respects_pins_order_and_package_manager_failures(
-    python_project: Context, profile: str, fail_install: bool
+    python_project: Context, profile: str, fail_install: bool, workflow_environment: bool
 ) -> None:
     source = Path(__file__).resolve().parents[2]
     shutil.copy2(source / "rust-toolchain.toml", python_project.root / "rust-toolchain.toml")
@@ -249,6 +254,12 @@ def test_native_setup_respects_pins_order_and_package_manager_failures(
         options=Options(profile=profile, install_launcher=False),
         tools=tools,
         emit=messages.append,
+        host=replace(python_project.host, home=python_project.root / "host"),
+        settings=load_settings(
+            {"GITHUB_ENV": str(python_project.root / "github-environment")}
+            if workflow_environment
+            else {}
+        ),
     )
     if fail_install:
         with pytest.raises(ToolingError, match="package-manager failure"):
@@ -265,7 +276,7 @@ def test_native_setup_respects_pins_order_and_package_manager_failures(
     assert runner.installs[1].argv[1:] == ("target", "add", "wasm32-unknown-unknown")
     assert runner.installs[2].argv[1:4] == ("toolchain", "install", "nightly-2000-01-01")
     package_arguments = runner.installs[3].argv
-    assert package_arguments[1:] == (
+    expected_arguments: tuple[str, ...] = (
         "install",
         "--locked",
         "--version",
@@ -275,6 +286,12 @@ def test_native_setup_respects_pins_order_and_package_manager_failures(
         "selected",
         "--no-default-features",
     )
+    if workflow_environment:
+        expected_arguments += (
+            "--root",
+            str(context.host.home / ".local/revaer/cargo-tools/example-tool"),
+        )
+    assert package_arguments[1:] == expected_arguments
     assert not (context.root / "bin/rv").exists()
 
 
@@ -373,6 +390,50 @@ def test_ci_apt_selection_exports_cache_settings_after_installation(
     assert output.read_text().startswith("existing=value\nRUSTC_WRAPPER<<")
     assert str(context.host.home / ".cache/sccache") in output.read_text()
     assert (context.host.home / ".cache/sccache").is_dir()
+
+
+def test_ci_cargo_install_receives_cache_settings_and_private_receipts(
+    python_project: Context,
+) -> None:
+    source = Path(__file__).resolve().parents[2]
+    for name in ("rust-toolchain.toml", "tools/versions.toml"):
+        shutil.copy2(source / name, python_project.root / name)
+    template = python_project.tools.cargo
+    boundary = InstallationBoundary(template.runner, False)
+    output = python_project.root / "github-environment"
+    output.touch()
+    context = Context(
+        root=python_project.root,
+        fs=python_project.fs,
+        emit=python_project.emit,
+        invoked_at=python_project.invoked_at,
+        command_names=python_project.command_names,
+        options=Options(
+            profile="ci",
+            install_launcher=False,
+            apt_profile="base",
+            cargo_tools=("sqlx-cli",),
+            browsers=(),
+        ),
+        host=replace(python_project.host, system="linux", home=python_project.root / "host"),
+        settings=load_settings({"GITHUB_ENV": str(output)}),
+        tools=replace(
+            python_project.tools,
+            apt=Apt(sys.executable, boundary, template.root, template.environment, None),
+            rustup=Rustup("rustup", boundary, template.root, template.environment),
+            cargo=Cargo(template.name, boundary, template.root, template.environment),
+        ),
+    )
+    Setup.run(context)
+    installed = next(
+        call for call in boundary.installs if call.argv[1] == "install" and "--locked" in call.argv
+    )
+    prefix = context.host.home / ".local/revaer/cargo-tools/sqlx-cli"
+    assert installed.argv[-2:] == ("--root", str(prefix))
+    assert installed.env["RUSTC_WRAPPER"] == "sccache"
+    assert installed.env["SCCACHE_CACHE_SIZE"] == "512M"
+    assert installed.env["SCCACHE_DIR"] == str(context.host.home / ".cache/sccache")
+    assert str(prefix / "bin") in output.read_text()
 
 
 def test_setup_rejects_wrong_platform_and_incompatible_profile_before_installing(

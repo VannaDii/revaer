@@ -171,20 +171,12 @@ class TestMediaServiceRecovery(Task):
     def run(context: Context) -> TaskResult:
         if context.host.system != "linux":
             raise ToolingError("Native media service recovery requires Linux")
-        result = context.tools.cargo.execute(
-            CargoArgs(
-                CargoOperation.TEST,
-                ("revaer-app",),
-                test_filter="bootstrap::service_recovery_tests::native_service_shutdown_resumes_active_ffmpeg",
-                include_ignored=True,
-                test_threads=1,
-            ),
+        result = context.tools.cargo.recovery_scenarios(
             test_environment(context),
-            capture=True,
         )
         context.emit(result.stdout)
-        if not re.search(r"(?m)^test result: ok\. 1 passed; 0 failed; 0 ignored;", result.stdout):
+        if not re.search(r"Summary.*9 tests run: 9 passed", result.stdout + result.stderr):
             raise ToolingError(
-                "Native service recovery qualification did not execute one passing test"
+                "Native service recovery qualification did not execute all nine passing scenarios"
             )
         return TaskResult("Native media service recovery passed")

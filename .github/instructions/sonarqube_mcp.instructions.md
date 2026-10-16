@@ -23,6 +23,9 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 
 # Revaer Sonar Workflow
 
+- New authored workflow/cache actions must be added to the exact YAML language
+  inventory; their operational maintenance code remains in full source analysis.
+
 - For the migrated root `setup.sh` only, ADR 592 permits at most one uncovered
   executable line and accepts full coverage. Preserve complete native records
   and require positive execution. This supersedes the covered-and-uncovered
@@ -97,3 +100,6 @@ head branch) to the scanner; quality criteria remain exclusively in
 - Vendor-free Rust and JavaScript scanner LCOV inputs are derived by
   `sonar-verify-inputs`. Keep complete measured original reports and native records;
   retain every first-party counter unchanged in the scanner inputs.
+
+- Keep the nextest resource configuration in authored main-code analysis scope;
+  adding test scheduling configuration does not narrow coverage or issue gates.

@@ -30,6 +30,7 @@ def test_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Context:
     source = Path(__file__).resolve().parents[2]
     channel = tomllib.loads((source / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
     monkeypatch.setenv("RUSTUP_TOOLCHAIN", channel)
+    monkeypatch.setenv("CARGO_TERM_COLOR", "always")
     monkeypatch.delenv("CARGO_TARGET_DIR", raising=False)
     monkeypatch.delenv("REVAER_NATIVE_IT", raising=False)
     monkeypatch.setenv("REVAER_TEST_DATABASE_URL", "postgres://tests.invalid/admin")
@@ -105,20 +106,36 @@ def test_native_service_recipe_requires_linux_and_one_real_selection(
         invoked_at=test_workspace.invoked_at,
         command_names=test_workspace.command_names,
     )
-    with pytest.raises(ToolingError, match="did not execute one passing test"):
+    with pytest.raises(ToolingError, match="status 4"):
         TestMediaServiceRecovery.run(selected)
     source = test_workspace.root / "revaer-app/src/lib.rs"
     source.write_text(r"""
 #[cfg(test)] mod bootstrap { mod service_recovery_tests {
     #[test] #[ignore = "explicit selection"]
-    fn native_service_shutdown_resumes_active_ffmpeg() -> Result<(), Box<dyn std::error::Error>> {
+    fn native_service_recovery_0() -> Result<(), Box<dyn std::error::Error>> {
         assert!(cfg!(feature = "extended"));
         assert_eq!(std::env::var("REVAER_TEST_DATABASE_URL")?, "postgres://tests.invalid/admin");
         Ok(())
     }
 } }
 """)
+    fixture = source.read_text()
+    functions = fixture[fixture.index("    #[test]") : fixture.index("\n} }")]
+    source.write_text(
+        fixture.replace(
+            functions,
+            "\n".join(
+                functions.replace("native_service_recovery_0", f"native_service_recovery_{index}")
+                for index in range(9)
+            ),
+        )
+    )
     TestMediaServiceRecovery.run(selected)
+    passing = source.read_text()
+    source.write_text(passing.replace("Ok(())", "let unused = 1; Ok(())"))
+    with pytest.raises(ToolingError):
+        TestMediaServiceRecovery.run(selected)
+    source.write_text(passing)
     source.write_text(source.read_text().replace("Ok(())", 'Err("fixture failure".into())'))
     with pytest.raises(ToolingError):
         TestMediaServiceRecovery.run(selected)

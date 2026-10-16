@@ -756,6 +756,8 @@ mod tests {
     #[test]
     fn directory_inventory_rejects_mutation_and_invalid_components() -> anyhow::Result<()> {
         let temp = tempfile::tempdir()?;
+        // A directory write can share the creation timestamp on coarse clocks.
+        File::open(temp.path())?.set_modified(std::time::UNIX_EPOCH)?;
         let directory = super::open_directory(temp.path())?;
         let before = super::directory_observation(&directory)?;
         assert!(super::directory_names(&directory)?.is_empty());

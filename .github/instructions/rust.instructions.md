@@ -31,6 +31,9 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 
 # Authoring And Lint Hygiene
 
+- Trusted root catalogs retain a bounded content digest across load and retained
+  source revalidation; equal-size writes must not depend on timestamp resolution.
+
 - Keep workspace lint posture aligned with `AGENTS.md`, the active `just` recipes, and crate-root attributes.
 - Keep `.secignore` and the `[advisories].ignore` list in `deny.toml` empty. An exception requires exact operator consent, an expiry, and a matching guardrail change; an agent-authored ADR is not consent.
 - `just lint` includes `scripts/policy-guardrails.sh`. Keep that guardrail aligned with the root policy when the lint posture changes.
@@ -46,6 +49,13 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 - FFI crates may omit a crate-wide `forbid(unsafe_code)` if necessary, but unsafe code must stay isolated to the documented boundary modules and shims. Do not use lint suppressions to permit unsafe.
 
 # CI And Recipe Maintenance
+
+- ZIP extraction uses the non-yanked 9.x release with only its flate2 adapter,
+  sharing the existing Rust deflate backend. Align fsops' Unix dependency with
+  ZIP's nix version instead of introducing a duplicate-crate exception; retain
+  archive traversal, content and permission regression coverage.
+  Restore ZIP directory modes after extracting their children, deepest first;
+  recorded modes must not depend on the caller's process umask.
 
 - Source inspection retains the bounded ffprobe frame sample and attributes
   frame side data only to its reported stream index; unindexed frames are ignored.
@@ -124,7 +134,8 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 - `just cov` includes that production worker regression after workspace collection
   with matching all-feature FFI instrumentation, without clearing prior profiles.
   An explicitly selected Linux recovery root also exercises the existing native
-  service workflow; each opt-in selection must execute one passing test.
+  service workflow. The production replacement selection must execute one
+  passing test; mounted recovery must execute all nine passing scenarios.
   Coverage must use the mounted root supplied by the managed fixture as well as
   a caller-selected root; fixture setup must not silently skip service recovery.
 
@@ -152,3 +163,8 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
   the foundation. It verifies exact initializer digest sealing, restricted
   runtime identity, owner login disablement, repeated-init rejection and owned
   database/role cleanup; do not rely on downstream media consumers for coverage.
+
+- Coverage executes independent tests in nextest processes. Keep native libtorrent
+  tests in the serial resource group, database-heavy tests in the bounded group,
+  and the nine recovery scenarios independently selectable. Private test state
+  must not become a shared fixture merely to reduce execution time.

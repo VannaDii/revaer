@@ -160,6 +160,8 @@ fn retained_scan_restarts_when_a_directory_changes_between_batches() -> anyhow::
         std::fs::create_dir(&branch)?;
         std::fs::write(branch.join("a.mkv"), b"first")?;
         std::fs::write(branch.join("z.mkv"), b"last")?;
+        // Make the later directory write observable even within one clock tick.
+        std::fs::File::open(&branch)?.set_modified(std::time::UNIX_EPOCH)?;
         let retained = RetainedRootCatalog {
             source,
             roots,

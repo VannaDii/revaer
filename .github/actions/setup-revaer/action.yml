@@ -19,6 +19,15 @@ inputs:
   cargo-cache:
     description: Restore and save Cargo tools, downloads and compiler artifacts.
     default: "true"
+  compiler-family:
+    description: Compatible compiler cache family (stable or nightly).
+    default: stable
+  compiler-cache:
+    description: Restore compiler results only for jobs that compile.
+    default: "true"
+  coverage-cache:
+    description: Restore instrumented dependency outputs for a Rust coverage producer.
+    default: "false"
   helm:
     description: Install the supported Helm CLI.
     default: "false"
@@ -31,6 +40,19 @@ inputs:
   sonar-scanner:
     description: Install the pinned scanner and retain its analyzer cache.
     default: "false"
+outputs:
+  compiler-key:
+    description: Compiler snapshot key for the designated publisher.
+    value: ${{ steps.compiler_cache.outputs.cache-primary-key }}
+  compiler-prefix:
+    description: Current architecture and compiler family retention scope.
+    value: ${{ runner.os }}-${{ runner.arch }}-revaer-compiler-${{ inputs.compiler-family }}-
+  coverage-key:
+    description: Instrumented dependency snapshot key for the coverage publisher.
+    value: ${{ steps.coverage_cache.outputs.cache-primary-key }}
+  coverage-prefix:
+    description: Current architecture instrumented dependency retention scope.
+    value: ${{ runner.os }}-${{ runner.arch }}-revaer-coverage-
 runs:
   using: composite
   steps:
@@ -63,34 +85,120 @@ runs:
         restore-keys: |
           ${{ runner.os }}-${{ runner.arch }}-cargo-downloads-
 
-    - name: Cache pinned Cargo tools
-      if: inputs.cargo-cache == 'true' && inputs.cargo-tools != ''
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+    - name: Cache pinned cargo-audit
+      id: cargo_audit_cache
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-audit,')
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
-        path: |
-          ~/.cargo/.crates.toml
-          ~/.cargo/.crates2.json
-          ~/.cargo/bin/cargo-audit
-          ~/.cargo/bin/cargo-deny
-          ~/.cargo/bin/cargo-llvm-cov
-          ~/.cargo/bin/cargo-udeps
-          ~/.cargo/bin/cargo-sqlx
-          ~/.cargo/bin/sqlx
-          ~/.cargo/bin/trunk
-          ~/.cargo/bin/mdbook
-          ~/.cargo/bin/mdbook-mermaid
-          ~/.cargo/bin/lychee
-        key: ${{ runner.os }}-${{ runner.arch }}-cargo-tools-${{ format('{0}-{1}-{2}-{3}-{4}-{5}-{6}-{7}-{8}', contains(inputs.cargo-tools, 'cargo-audit'), contains(inputs.cargo-tools, 'cargo-deny'), contains(inputs.cargo-tools, 'cargo-llvm-cov'), contains(inputs.cargo-tools, 'cargo-udeps'), contains(inputs.cargo-tools, 'sqlx-cli'), contains(inputs.cargo-tools, 'trunk'), contains(inputs.cargo-tools, 'mdbook'), contains(inputs.cargo-tools, 'mdbook-mermaid'), contains(inputs.cargo-tools, 'lychee')) }}-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
+        path: ~/.local/revaer/cargo-tools/cargo-audit
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-cargo-audit-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
 
-    - name: Cache compiler results
-      if: inputs.cargo-cache == 'true'
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+    - name: Cache pinned cargo-deny
+      id: cargo_deny_cache
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-deny,')
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/cargo-deny
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-cargo-deny-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
+
+    - name: Cache pinned cargo-llvm-cov
+      id: cargo_llvm_cov_cache
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-llvm-cov,')
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/cargo-llvm-cov
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-cargo-llvm-cov-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
+
+    - name: Cache pinned cargo-nextest
+      id: cargo_nextest_cache
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-nextest,')
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/cargo-nextest
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-cargo-nextest-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
+
+    - name: Cache pinned cargo-udeps
+      id: cargo_udeps_cache
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-udeps,')
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/cargo-udeps
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-cargo-udeps-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
+
+    - name: Cache pinned sqlx-cli
+      id: sqlx_cli_cache
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',sqlx-cli,')
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/sqlx-cli
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-sqlx-cli-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
+
+    - name: Cache pinned trunk
+      id: trunk_cache
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',trunk,')
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/trunk
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-trunk-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
+
+    - name: Cache pinned mdbook
+      id: mdbook_cache
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',mdbook,')
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/mdbook
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-mdbook-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
+
+    - name: Cache pinned mdbook-mermaid
+      id: mdbook_mermaid_cache
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',mdbook-mermaid,')
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/mdbook-mermaid
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-mdbook-mermaid-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
+
+    - name: Cache pinned lychee
+      id: lychee_cache
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',lychee,')
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/lychee
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-tool-lychee-${{ hashFiles('rust-toolchain.toml', 'tools/versions.toml') }}
+
+    - name: Restore compiler results
+      id: compiler_cache
+      if: inputs.cargo-cache == 'true' && inputs.compiler-cache == 'true'
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
       with:
         path: ~/.cache/sccache
-        key: ${{ runner.os }}-${{ runner.arch }}-sccache-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.github/build-inputs.env') }}-${{ github.job }}-${{ matrix.browser || 'none' }}-${{ github.run_id }}-${{ github.run_attempt }}
+        key: ${{ runner.os }}-${{ runner.arch }}-revaer-compiler-${{ inputs.compiler-family }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', '.cargo/**', 'rust-toolchain.toml', 'tools/versions.toml', '.github/build-inputs.env') }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          ${{ runner.os }}-${{ runner.arch }}-sccache-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.github/build-inputs.env') }}-${{ github.job }}-${{ matrix.browser || 'none' }}-
-          ${{ runner.os }}-${{ runner.arch }}-sccache-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.github/build-inputs.env') }}-
+          ${{ runner.os }}-${{ runner.arch }}-revaer-compiler-${{ inputs.compiler-family }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', '.cargo/**', 'rust-toolchain.toml', 'tools/versions.toml', '.github/build-inputs.env') }}-
+
+    - name: Restore instrumented dependencies
+      id: coverage_cache
+      if: inputs.cargo-cache == 'true' && inputs.coverage-cache == 'true'
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: |
+          target/llvm-cov-target/debug/deps/*.rlib
+          target/llvm-cov-target/debug/deps/*.rmeta
+          target/llvm-cov-target/debug/deps/*.d
+          target/llvm-cov-target/debug/deps/*.so
+          target/llvm-cov-target/debug/deps/*.dylib
+          target/llvm-cov-target/debug/build
+          target/llvm-cov-target/debug/.fingerprint
+          !target/llvm-cov-target/debug/deps/*revaer_*
+          !target/llvm-cov-target/debug/deps/*asset_sync*
+          !target/llvm-cov-target/debug/build/revaer-*
+          !target/llvm-cov-target/debug/build/asset_sync-*
+          !target/llvm-cov-target/debug/.fingerprint/revaer-*
+          !target/llvm-cov-target/debug/.fingerprint/asset_sync-*
+          !target/llvm-cov-target/**/*.profraw
+          !target/llvm-cov-target/**/*.profdata
+        key: ${{ runner.os }}-${{ runner.arch }}-revaer-coverage-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', '.cargo/**', 'rust-toolchain.toml', 'tools/versions.toml', '.github/build-inputs.env', 'tools/src/revaer_tooling/external/coverage.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-revaer-coverage-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', '.cargo/**', 'rust-toolchain.toml', 'tools/versions.toml', '.github/build-inputs.env', 'tools/src/revaer_tooling/external/coverage.py') }}-
 
     - name: Install Helm
       if: inputs.helm == 'true'
@@ -127,9 +235,80 @@ runs:
         --apt-profile "$RV_SETUP_APT_PROFILE"
         --apt-packages "$RV_SETUP_APT_PACKAGES"
 
+    - name: Save pinned cargo-audit
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-audit,') && steps.cargo_audit_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/cargo-audit
+        key: ${{ steps.cargo_audit_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned cargo-deny
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-deny,') && steps.cargo_deny_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/cargo-deny
+        key: ${{ steps.cargo_deny_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned cargo-llvm-cov
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-llvm-cov,') && steps.cargo_llvm_cov_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/cargo-llvm-cov
+        key: ${{ steps.cargo_llvm_cov_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned cargo-nextest
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-nextest,') && steps.cargo_nextest_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/cargo-nextest
+        key: ${{ steps.cargo_nextest_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned cargo-udeps
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',cargo-udeps,') && steps.cargo_udeps_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/cargo-udeps
+        key: ${{ steps.cargo_udeps_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned sqlx-cli
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',sqlx-cli,') && steps.sqlx_cli_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/sqlx-cli
+        key: ${{ steps.sqlx_cli_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned trunk
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',trunk,') && steps.trunk_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/trunk
+        key: ${{ steps.trunk_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned mdbook
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',mdbook,') && steps.mdbook_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/mdbook
+        key: ${{ steps.mdbook_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned mdbook-mermaid
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',mdbook-mermaid,') && steps.mdbook_mermaid_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/mdbook-mermaid
+        key: ${{ steps.mdbook_mermaid_cache.outputs.cache-primary-key }}
+
+    - name: Save pinned lychee
+      if: inputs.cargo-cache == 'true' && contains(format(',{0},', inputs.cargo-tools), ',lychee,') && steps.lychee_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/cargo-tools/lychee
+        key: ${{ steps.lychee_cache.outputs.cache-primary-key }}
+
     - name: Cache pinned kcov source and installation
+      id: kcov_cache
       if: inputs.apt-profile == 'coverage'
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: ~/.local/revaer/kcov
         key: ${{ runner.os }}-${{ runner.arch }}-kcov-${{ hashFiles('tools/versions.toml') }}
@@ -138,6 +317,13 @@ runs:
       if: inputs.apt-profile == 'coverage'
       shell: bash
       run: uv run --locked -- rv setup --profile python --no-launcher --kcov
+
+    - name: Save pinned kcov
+      if: inputs.apt-profile == 'coverage' && steps.kcov_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      with:
+        path: ~/.local/revaer/kcov
+        key: ${{ steps.kcov_cache.outputs.cache-primary-key }}
 
     - name: Cache scanner and analyzers
       if: inputs.sonar-scanner == 'true'

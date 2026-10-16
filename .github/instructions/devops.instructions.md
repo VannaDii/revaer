@@ -15,6 +15,28 @@ applyTo:
 
 # Workflow And Release Rules
 
+- Cache pinned Cargo tools in independent per-package installation prefixes with
+  native Cargo receipts. Propagate sccache into current setup installers as well
+  as later steps. Cache hits never replace current-source tests or coverage.
+  Save validated tool installations during setup, before later test failures can
+  prevent cache publication. Parse nextest summaries without terminal colouring.
+- Build-cache consumers restore only. The stable check/release job and nightly
+  unused-dependency job are the compiler writers; Rust coverage jobs alone write
+  instrumented dependencies. Limit each compiler cache to 512 MiB locally and
+  retain at most two snapshots and 1 GiB per family within the current workflow
+  ref. Skip privileged publication on fork/Dependabot runs. Never prune tools,
+  another ref, or a newer publisher's snapshots. Keep
+  Cargo manifests, target configuration, toolchain and native pins in compatible
+  restore keys; Cargo and sccache still validate actual compilation inputs.
+- Coverage uses pinned nextest process isolation and `.config/nextest.toml`
+  resource groups. Preserve serial native sessions, bounded private database and
+  recovery scenarios, every scenario's internal ordering, and all nine recovery
+  cases. Keep workspace/all-feature compilation consistent across collections.
+  Compiler parallelism is independent of test resource limits; explicit operator
+  overrides remain supported. Python tooling execution follows
+  `python.instructions.md`; preserve the supported raw coverage merge.
+
+
 - API and browser E2E jobs explicitly provision FFmpeg for real capability probes
   and e2fsprogs for managed media roots. Do not rely on runner-image tools or the
   installed tools of a developer checkout to satisfy these job dependencies.
@@ -320,6 +342,8 @@ applyTo:
 
 # Shell Safety
 
+- Cache publication uses `uv run --locked --no-build` with only the existing
+  `--no-binary-package python-semantic-release` exception for the pinned archive.
 - Never interpolate untrusted `${{ inputs.* }}` or comparable expression values directly into `run:` blocks.
 - Map user-controlled inputs into environment variables first, validate or whitelist them, then consume them in shell.
 - When writing validated values to `$GITHUB_OUTPUT`, use the multiline heredoc form so output parsing stays safe even if the value surface changes later.

@@ -23,8 +23,15 @@ def coverage_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Conte
     source = Path(__file__).resolve().parents[2]
     channel = tomllib.loads((source / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
     monkeypatch.setenv("RUSTUP_TOOLCHAIN", channel)
+    monkeypatch.setenv("CARGO_TERM_COLOR", "always")
     monkeypatch.setenv("REVAER_TEST_DATABASE_URL", "postgres://fixture.invalid/unused")
-    for name in ("CARGO_TARGET_DIR", "CARGO_LLVM_COV_TARGET_DIR", "RUSTC_COMMAND", "RUSTC"):
+    for name in (
+        "CARGO_TARGET_DIR",
+        "CARGO_LLVM_COV_TARGET_DIR",
+        "RUSTC_COMMAND",
+        "RUSTC",
+        "REVAER_NATIVE_RECOVERY_ROOT",
+    ):
         monkeypatch.delenv(name, raising=False)
     # CI supplies Clang on PATH. Homebrew keeps its LLVM formula keg-only;
     # explicitly select that installed prerequisite for this native fixture.
@@ -87,6 +94,13 @@ pub fn value(input: i32) -> i32 { unsafe { native_value(input) } }
     (tmp_path / "crates/pure/src/lib.rs").write_text(
         """pub fn value() -> u32 { 42 }
 #[cfg(test)] mod tests {
+    static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    #[test] fn isolated_first() {
+        assert_eq!(CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst), 0);
+    }
+    #[test] fn isolated_second() {
+        assert_eq!(CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst), 0);
+    }
     #[test] fn rust_coverage() { assert_eq!(super::value(), 42); assert!(cfg!(feature = "extra")); }
 }
 """
@@ -312,13 +326,26 @@ pub fn recovery_value() -> u32 { 4243 }
 } }
 #[cfg(test)] mod bootstrap { mod service_recovery_tests {
     #[test] #[ignore = "recovery selection"]
-    fn native_service_shutdown_resumes_active_ffmpeg() -> Result<(), Box<dyn std::error::Error>> {
+    fn native_service_recovery_0() -> Result<(), Box<dyn std::error::Error>> {
         assert!(std::path::Path::new(&std::env::var("REVAER_NATIVE_RECOVERY_ROOT")?).is_dir());
         assert_eq!(crate::recovery_value(), 4243);
         Ok(())
     }
 } }
 """)
+    library = app / "src/lib.rs"
+    scenario_source = library.read_text()
+    start = scenario_source.index('    #[test] #[ignore = "recovery selection"]')
+    end = scenario_source.index("\n} }", start)
+    scenario = scenario_source[start:end]
+    library.write_text(
+        scenario_source[:start]
+        + "\n".join(
+            scenario.replace("native_service_recovery_0", f"native_service_recovery_{index}")
+            for index in range(9)
+        )
+        + scenario_source[end:]
+    )
     subprocess.run(
         ["cargo", "generate-lockfile", "--offline"],
         check=True,
