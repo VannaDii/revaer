@@ -41,10 +41,10 @@ applyTo:
   Managed media storage uses the root repo-local test scratch contract. Do not
   rely on runner-image tools or a developer checkout for job dependencies.
 
-- The real Dockerfile tooling test may consume an explicitly supplied
+- Real Dockerfile and image-export tooling fixtures may consume an explicitly supplied
   `REVAER_TEST_BUILDX_BUILDER` without changing its selection or removing it.
   Retain every actual image/runtime assertion and clean only fixture-owned images;
-  otherwise the test owns and removes its unique builder.
+  otherwise each fixture owns and removes its unique builder.
 
 - Composed validation provisions an owned single-init fixture or verifies the
   caller-selected database without repair. Preserve administrative test endpoints
