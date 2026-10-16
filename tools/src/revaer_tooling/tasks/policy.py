@@ -141,7 +141,25 @@ class Policy(Task):
         return TaskResult("Policy checks passed")
 
 
-def drift_findings(changed: tuple[str, ...]) -> list[str]:
+def drift_findings(changed: tuple[str, ...], *, dependabot: bool = False) -> list[str]:
+    dependency_files = (
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/*/Cargo.toml",
+        "pyproject.toml",
+        "uv.lock",
+        "release/package.json",
+        "release/package-lock.json",
+    )
+    if (
+        dependabot
+        and changed
+        and all(
+            any(fnmatch.fnmatchcase(path, pattern) for pattern in dependency_files)
+            for path in changed
+        )
+    ):
+        return []
     rules = (
         (
             (
@@ -215,7 +233,14 @@ class InstructionDrift(Task):
         if base == "0" * 40:
             base = None
         changed = context.tools.git.changed_files(base, head)
-        failures = drift_findings(changed)
+        workflow = context.settings.workflow
+        dependabot = (
+            workflow.event_name == "pull_request"
+            and workflow.pull_request_author == "dependabot[bot]"
+            and workflow.pull_request_head_repository.casefold()
+            == context.settings.chart.repository.casefold()
+        )
+        failures = drift_findings(changed, dependabot=dependabot)
         if failures:
             raise ToolingError("Instruction drift:\n" + "\n".join(failures))
         return TaskResult("Instruction drift checks passed")

@@ -1,7 +1,15 @@
 """Policy fixtures protect forbidden constructs and the documented boundaries."""
 
+from dataclasses import replace
+from pathlib import Path
+
 import pytest
-from revaer_tooling.tasks.policy import drift_findings, rust_findings
+from revaer_tooling.automation.settings import load_workflow_settings
+from revaer_tooling.cli import make_context
+from revaer_tooling.context import Options
+from revaer_tooling.errors import ToolingError
+from revaer_tooling.external.git import Git
+from revaer_tooling.tasks.policy import InstructionDrift, drift_findings, rust_findings
 
 
 @pytest.mark.parametrize(
@@ -48,3 +56,93 @@ def test_instruction_drift_covers_nested_automation_and_python_sources() -> None
         assert drift_findings(changed)
         assert not drift_findings((*changed, ".github/instructions/devops.instructions.md"))
     assert not drift_findings(("docs/guide.md",))
+
+
+@pytest.mark.parametrize(
+    "path", ("release/package-lock.json", "release/package.json", "uv.lock", "pyproject.toml")
+)
+def test_only_dependabot_dependency_changes_skip_instruction_updates(path: str) -> None:
+    assert drift_findings((path,))
+    assert not drift_findings((path,), dependabot=True)
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "release/scripts/publish.py",
+        ".github/workflows/pr.yml",
+        "tools/src/revaer_tooling/tasks/policy.py",
+    ),
+)
+def test_dependabot_mixed_changes_keep_instruction_requirements(path: str) -> None:
+    assert drift_findings(("release/package-lock.json", path), dependabot=True)
+
+
+@pytest.mark.parametrize(
+    ("event", "author", "head_repository", "permitted"),
+    (
+        ("pull_request", "dependabot[bot]", "VannaDii/revaer", True),
+        ("pull_request", "dependabot[bot]", "vannadii/Revaer", True),
+        ("pull_request", "dependabot[bot]", "attacker/revaer", False),
+        ("pull_request", "dependabot", "VannaDii/revaer", False),
+        ("pull_request", "human", "VannaDii/revaer", False),
+        ("push", "dependabot[bot]", "VannaDii/revaer", False),
+        ("pull_request", "dependabot[bot]", "", False),
+    ),
+)
+def test_instruction_drift_uses_pr_identity_instead_of_rerun_actor(
+    monkeypatch: pytest.MonkeyPatch, event: str, author: str, head_repository: str, permitted: bool
+) -> None:
+    context = make_context(Options())
+    workflow = load_workflow_settings(
+        {
+            "GITHUB_EVENT_NAME": event,
+            "GITHUB_ACTOR": "human-rerunning-the-check",
+            "REVAER_INSTRUCTION_PR_AUTHOR": author,
+            "REVAER_INSTRUCTION_PR_HEAD_REPOSITORY": head_repository,
+        }
+    )
+    context = replace(context, settings=replace(context.settings, workflow=workflow))
+    monkeypatch.setattr(
+        Git, "changed_files", lambda self, base, head: ("release/package-lock.json",)
+    )
+    if permitted:
+        assert InstructionDrift.run(context).message == "Instruction drift checks passed"
+    else:
+        with pytest.raises(ToolingError, match="Instruction drift"):
+            InstructionDrift.run(context)
+
+
+def test_privileged_dependabot_workflow_executes_only_trusted_code() -> None:
+    from revaer_tooling.policy.formats import yaml_document
+    from revaer_tooling.policy.workflows import mapping, steps
+
+    source = Path(__file__).parents[2] / ".github/workflows/dependabot.yml"
+    document = yaml_document(source.read_text(), str(source))
+    triggers = mapping(document["on"])
+    assert set(triggers) == {"workflow_run", "workflow_dispatch"}
+    assert mapping(triggers["workflow_run"]) == {"workflows": ["PR"], "types": ["completed"]}
+    job = mapping(mapping(document["jobs"])["auto-merge"])
+    assert mapping(document["permissions"]) == {"contents": "read"}
+    assert "permissions" not in job
+    entries = steps(job)
+    assert mapping(entries[0]["with"]) == {
+        "ref": "${{ github.sha }}",
+        "persist-credentials": "false",
+    }
+    assert entries[1]["uses"] == "./.github/actions/setup-revaer"
+    assert (
+        entries[2]["uses"]
+        == "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510"
+    )
+    assert mapping(entries[2]["with"]) == {
+        "client-id": "${{ vars.REVAER_APP_CLIENT_ID }}",
+        "private-key": "${{ secrets.REVAER_APP_PRIVATE_KEY }}",
+        "owner": "${{ github.repository_owner }}",
+        "repositories": "${{ github.event.repository.name }}",
+        "permission-contents": "write",
+        "permission-pull-requests": "write",
+    }
+    assert mapping(entries[3]["env"])["GH_TOKEN"] == "${{ steps.merge-token.outputs.token }}"
+    assert entries[3]["run"] == "uv run --locked -- rv dependabot-auto-merge"
+    assert len(entries) == 4

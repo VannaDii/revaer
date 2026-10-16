@@ -331,7 +331,9 @@ applyTo:
 - Trivy must emit SARIF with `exit-code: 0` only so the report survives for `if: always()` upload; a separate mandatory verifier must fail on every HIGH or CRITICAL result. Keep deterministic vulnerable-image SARIF regression coverage for this control.
 - Sonar-running jobs must prove the checkout is non-shallow and explicitly fetch the reviewed base ref before analysis so pull-request new-code attribution and SCM blame cannot silently degrade.
 - `rv sonar-compile-db` must clean the isolated native package build before compilation and fail unless it emits a nonempty `coverage/compile_commands.json`; repeated local or CI invocations must never reuse a cached build-script result after deleting the prior database.
-- Release-tooling dependency changes under `release/**`, including JavaScript lockfiles such as `release/package-lock.json`, must stay manifest-scoped, avoid unrelated workflow churn, and update this instruction file in the same change so instruction-drift remains explicit.
+- Release-tooling dependency changes under `release/**` must stay manifest-scoped and avoid unrelated workflow churn. Authenticated Dependabot PRs from this repository that change only the dependency manifests/lockfiles listed in `drift_findings` need no companion instruction edit. Human-authored changes and any release script, workflow, action or tooling-source change retain the instruction-update requirement.
+- Dependabot auto-merge uses GitHub's protected squash auto-merge with an exact head SHA, never an admin bypass or an immediate force merge. Reconcile open, non-draft, same-repository Dependabot PRs targeting `main` after PR workflow completion and through manual dispatch. Existing CI, security, Sonar, signatures and branch-protection requirements remain mandatory. Execute only default-branch code in the privileged `workflow_run` job; never consume PR artifacts or execute a PR checkout.
+- The pinned first-party `actions/create-github-app-token` action supplies short-lived merge credentials scoped to this repository with contents/pull-request write access. This dependency preserves normal post-merge CI and release triggers, which `GITHUB_TOKEN` suppresses. Configure repository variable `REVAER_APP_CLIENT_ID` and secret `REVAER_APP_PRIVATE_KEY` for an App installed on this repository; keep the workflow's built-in token read-only and do not fall back to it for merging.
 - Prerelease Helm assets must be produced during the semantic-release prepare phase so the packaged chart version matches the dev release version exactly. OCI publication must consume those already-packaged assets after the GitHub release assets exist.
 - Stable tag releases must package the Helm chart once, attach the `.tgz`, `.prov`, and public key to the GitHub release, and publish that exact packaged chart to the OCI registry. Avoid repackaging between release-asset upload and OCI publication.
 - Release and Artifact Hub branding documentation must reference the committed `revaer-logo.svg` asset, preserve its approved purple stylized-R identity, and must not advertise removed raster logo variants.
@@ -399,7 +401,7 @@ applyTo:
 - Revaer enforces that rule mechanically with `rv instruction-drift`, backed by the Python policy tasks. Keep the mapping in those tasks aligned with this file and `AGENTS.md`.
 - Keep `scripts/workflow-guardrails.sh` aligned with the live workflow policy when GitHub Actions pinning or shell-safety rules change.
 - `pr.yml` must pass explicit base/head SHAs into `rv instruction-drift` so pull requests are checked against the real reviewed diff, not an incidental worktree state.
-- Drift coverage for actions and release assets is recursive. Changes under `.github/actions/**`, `.github/workflows/**`, and `release/**` must keep matching the devops instruction update rule.
+- Drift coverage for actions and release assets is recursive. Changes under `.github/actions/**`, `.github/workflows/**`, and `release/**` must keep matching the devops instruction update rule, with the dependency-only Dependabot exception defined above.
 - Reusable workflows that publish images must preserve `packages: write` on the caller job because the callee cannot elevate a more restrictive token.
 - Reusable-workflow caller jobs must define one merged `permissions` map. Do not duplicate the `permissions` key in a job to append scopes later; GitHub Actions rejects the workflow before execution.
 - Keep the Sonar PR and main gates blocking. Scanner-side waiting, retained report/task evidence, and API verification must all evaluate the same single analysis; branch decoration alone is not sufficient proof.
@@ -498,12 +500,13 @@ browsers alone do not select execution phases.
 Keep scanner E2E phase selection at job scope so execution and both coverage
 merge tasks validate the same completed phase set.
 
-- Before pushing PR snapshots, run `just ci-qualify` with native coverage
+- Follow the root `AGENTS.md` qualification rule and initial draft-push exception.
+  Run `rv ci-qualify` with native coverage
   required, all API and Chromium/Firefox/WebKit phases, Chromium coverage enabled,
   one local shard and zero retries. It reuses existing CI, merge and strict scanner
-  tasks; do not treat `just ci` alone as hosted qualification. Supply runtime Sonar
+  tasks; do not treat `rv ci` alone as hosted qualification. Supply runtime Sonar
   credentials and exact PR/head/base identity; missing tools or analysis must fail.
-  The Just entrypoint disables generated Python bytecode, matching the hosted
+  The entrypoint disables generated Python bytecode, matching the hosted
   aggregate job; remove only untracked generated bytecode left by older local runs.
 
 ## Consolidated media coverage producers
