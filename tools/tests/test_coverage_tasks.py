@@ -25,7 +25,13 @@ def coverage_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Conte
     monkeypatch.setenv("RUSTUP_TOOLCHAIN", channel)
     monkeypatch.setenv("CARGO_TERM_COLOR", "always")
     monkeypatch.setenv("REVAER_TEST_DATABASE_URL", "postgres://fixture.invalid/unused")
-    for name in ("CARGO_TARGET_DIR", "CARGO_LLVM_COV_TARGET_DIR", "RUSTC_COMMAND", "RUSTC"):
+    for name in (
+        "CARGO_TARGET_DIR",
+        "CARGO_LLVM_COV_TARGET_DIR",
+        "RUSTC_COMMAND",
+        "RUSTC",
+        "REVAER_NATIVE_RECOVERY_ROOT",
+    ):
         monkeypatch.delenv(name, raising=False)
     # CI supplies Clang on PATH. Homebrew keeps its LLVM formula keg-only;
     # explicitly select that installed prerequisite for this native fixture.
