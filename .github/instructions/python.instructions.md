@@ -44,6 +44,10 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
   provisions the existing approved Alpine build; cleanup verifies project,
   purpose and read-only checkout ownership before removing that container.
 
+- Rootless Docker database fixtures grant the mapped server group access only
+  to their owned scratch directory, retain PostgreSQL data permissions and
+  restore caller ownership before cleanup. Never widen repository permissions.
+
 - Keep the explicit CLI dictionary mapped to derived tasks' static
   `run(context)` methods. Internal steps stay ordinary calls unless useful as
   independent commands. Follow `tools/src/revaer_tooling/tasks/README.md`.
