@@ -52,13 +52,18 @@ Browser restarts retain the authenticated
 session and database without another reset. Setup and scenario logs live in
 separate phase subdirectories under `tests/logs`.
 
-Hosted dry-run API/browser jobs set `E2E_MANAGED_MEDIA_ROOTS=1`. The coordinator
-creates one private 1 GiB ext4 loop-backed disk beneath the calling user's home,
-owns the source/output/workspace directories and restart-persistent catalog, and passes it
-through normal bootstrap attestation. It stops services before unmounting and
-removing the fixture. This mode needs e2fsprogs and mount privileges.
-A caller's `E2E_FS_ROOT` cannot be combined with this mode.
-Persistent replacement and restart recovery use the existing ext4 service test.
+Hosted dry-run API/browser jobs set `E2E_MANAGED_MEDIA_ROOTS=1` and
+`E2E_FS_ROOT=${{ vars.REVAER_MEDIA_TEST_ROOT }}`. Runner provisioning must supply
+an existing writable directory on dedicated ext4 storage, distinct from the
+container root filesystem, with at least 4 GiB available. Local callers supply
+`E2E_FS_ROOT` directly. Missing storage fails explicitly; unsuitable storage fails
+normal application attestation rather than falling back or skipping scenarios.
+The coordinator creates a unique private child directory containing source,
+output, workspace and the restart-persistent catalog. It never formats or mounts
+storage and needs no block devices or mount privileges. Cleanup stops services
+before removing only the private child; caller data and the supplied root remain
+untouched. Concurrent runs use separate child directories.
+Persistent replacement and restart recovery retain the existing ext4 service test.
 
 API phases use one worker because they share mutable application configuration.
 UI workers are configurable. Keys pass to pytest through its environment, with
@@ -127,7 +132,7 @@ or `DATABASE_URL`; the tracked defaults contain no database password.
 | `E2E_DB_ADMIN_URL` | Falls back to `REVAER_TEST_DATABASE_URL`, then `DATABASE_URL`, then the managed local server. Only a newly created database is dropped. |
 | `E2E_SKIP_DB_START` | False; true uses an available server without starting Docker. |
 | `E2E_DB_PREFIX` | `revaer_e2e`; a lowercase identifier up to 30 characters, followed by a random run identifier. |
-| `E2E_FS_ROOT` | Checkout root; relative overrides resolve against the selected checkout. Setup allowlists this fixture root. |
+| `E2E_FS_ROOT` | Required absolute directory on existing dedicated ext4 storage in managed-media mode; otherwise defaults to the checkout root and allows relative overrides. |
 | `E2E_API_RUNNER` | Overrides `[api].runner` in `tests/e2e.toml`: `binary` or media's `lib-test`. |
 | `E2E_BROWSERS` | `chromium`; comma-separated `chromium`, `firefox`, `webkit`. |
 | `E2E_BROWSER_CHANNEL` | Optional installed browser channel passed to Playwright. |

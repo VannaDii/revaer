@@ -37,9 +37,10 @@ applyTo:
   `python.instructions.md`; preserve the supported raw coverage merge.
 
 
-- API and browser E2E jobs explicitly provision FFmpeg for real capability probes
-  and e2fsprogs for managed media roots. Do not rely on runner-image tools or the
-  installed tools of a developer checkout to satisfy these job dependencies.
+- API and browser E2E jobs explicitly provision FFmpeg for real capability probes.
+  Managed media storage is supplied by deployment, under the root device
+  restrictions. Do not rely on runner-image tools or the installed tools of a
+  developer checkout to satisfy these job dependencies.
 
 - Composed validation provisions an owned single-init fixture or verifies the
   caller-selected database without repair. Preserve administrative test endpoints
@@ -378,15 +379,17 @@ applyTo:
 - Feature-matrix and API/browser E2E setup includes FFmpeg alongside database
   prerequisites because those jobs execute native media runtime scenarios.
   Feature-matrix and Rust coverage also select the owned ext4 fixture for
-  native root tests; a home-directory filesystem is not that proof. Install
-  e2fsprogs for the private loop-backed image and retain it until unmount succeeds.
+  native root tests. Supply `E2E_FS_ROOT` from `vars.REVAER_MEDIA_TEST_ROOT`:
+  an existing writable dedicated ext4 volume with at least 4 GiB available.
+  Runner provisioning owns storage; application bootstrap retains authority to
+  attest it. Missing or unsuitable storage must fail, never skip required tests.
 
 - Hosted test Postgres services publish `127.0.0.1:5432:5432` for the single-init
   endpoint check. Media E2E selects `job.services.postgres.id` and its matching admin
   password. `E2E_MANAGED_MEDIA_ROOTS=1` gives dry-run API/browser scenarios an
-  owned private Linux ext4 catalog, validated by normal application bootstrap;
-  clear the checked-in `E2E_FS_ROOT` default in those managed steps.
-  Stop services before unmounting and removing those disposable roots.
+  owned private Linux ext4 catalog beneath the explicitly supplied `E2E_FS_ROOT`,
+  validated by normal application bootstrap. Stop services before removing only
+  fixture-owned directories; never change or remove the supplied volume root.
 
 - Database services use the approved PostgreSQL 18.6 image digest from
   `.github/build-inputs.env`; floating major-version tags are not suitable.

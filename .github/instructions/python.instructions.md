@@ -33,13 +33,12 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 - Bootstrap coverage uses a private disposable pytest base directory and removes
   it on success or failure, leaving other pytest sessions' directories intact.
 
-- E2E's explicitly managed Linux roots use injected native mount/unmount tools.
-  Rust tests and coverage reuse that fixture when explicitly selected, passing
-  its mounted directory as `REVAER_NATIVE_RECOVERY_ROOT` for native root tests.
-  Preserve the private owned directory after an unmount failure; never remove
-  caller roots or substitute catalog declarations for bootstrap attestation.
-  The disposable fixture has 4 GiB of capacity so normal media work can run
-  above the production 1 GiB free-space reserve; production limits stay intact.
+- Managed media fixtures require Linux and an explicit `E2E_FS_ROOT` on an
+  existing dedicated ext4 volume. Own only unique private child directories and
+  their catalog; never format, mount, unmount or remove caller storage. Rust tests
+  and coverage pass the private directory as `REVAER_NATIVE_RECOVERY_ROOT`.
+  Keep normal bootstrap attestation and production free-space reserves intact;
+  provision at least 4 GiB of available fixture capacity externally.
 
 - The optional fixture-probe container is caller-selected at bootstrap. Setup
   provisions the existing approved Alpine build; cleanup verifies project,
