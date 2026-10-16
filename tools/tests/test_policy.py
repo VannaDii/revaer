@@ -1,10 +1,8 @@
 """Policy fixtures protect forbidden constructs and the documented boundaries."""
 
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from revaer_tooling.automation.settings import load_workflow_settings
 from revaer_tooling.cli import make_context
 from revaer_tooling.context import Options
 from revaer_tooling.errors import ToolingError
@@ -93,16 +91,14 @@ def test_dependabot_mixed_changes_keep_instruction_requirements(path: str) -> No
 def test_instruction_drift_uses_pr_identity_instead_of_rerun_actor(
     monkeypatch: pytest.MonkeyPatch, event: str, author: str, head_repository: str, permitted: bool
 ) -> None:
+    for name, value in {
+        "GITHUB_EVENT_NAME": event,
+        "GITHUB_ACTOR": "human-rerunning-the-check",
+        "REVAER_INSTRUCTION_PR_AUTHOR": author,
+        "REVAER_INSTRUCTION_PR_HEAD_REPOSITORY": head_repository,
+    }.items():
+        monkeypatch.setenv(name, value)
     context = make_context(Options())
-    workflow = load_workflow_settings(
-        {
-            "GITHUB_EVENT_NAME": event,
-            "GITHUB_ACTOR": "human-rerunning-the-check",
-            "REVAER_INSTRUCTION_PR_AUTHOR": author,
-            "REVAER_INSTRUCTION_PR_HEAD_REPOSITORY": head_repository,
-        }
-    )
-    context = replace(context, settings=replace(context.settings, workflow=workflow))
     monkeypatch.setattr(
         Git, "changed_files", lambda self, base, head: ("release/package-lock.json",)
     )
@@ -123,11 +119,11 @@ def test_privileged_dependabot_workflow_executes_only_trusted_code() -> None:
     assert set(triggers) == {"workflow_run", "workflow_dispatch"}
     assert mapping(triggers["workflow_run"]) == {"workflows": ["PR"], "types": ["completed"]}
     job = mapping(mapping(document["jobs"])["auto-merge"])
+    assert job["if"] == "github.ref == 'refs/heads/main'"
     assert mapping(document["permissions"]) == {"contents": "read"}
     assert "permissions" not in job
     entries = steps(job)
     assert mapping(entries[0]["with"]) == {
-        "ref": "${{ github.sha }}",
         "persist-credentials": "false",
     }
     assert entries[1]["uses"] == "./.github/actions/setup-revaer"
@@ -144,5 +140,5 @@ def test_privileged_dependabot_workflow_executes_only_trusted_code() -> None:
         "permission-pull-requests": "write",
     }
     assert mapping(entries[3]["env"])["GH_TOKEN"] == "${{ steps.merge-token.outputs.token }}"
-    assert entries[3]["run"] == "uv run --locked -- rv dependabot-auto-merge"
+    assert entries[3]["run"] == "uv run --locked --no-build -- rv dependabot-auto-merge"
     assert len(entries) == 4

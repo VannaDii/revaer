@@ -16,13 +16,13 @@ concurrency:
 jobs:
   auto-merge:
     name: Request protected Dependabot auto-merge
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       # workflow_run executes trusted default-branch code. Never check out a PR head.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-revaer
         timeout-minutes: 20
@@ -42,4 +42,4 @@ jobs:
       - name: Request protected auto-merge
         env:
           GH_TOKEN: ${{ steps.merge-token.outputs.token }}
-        run: uv run --locked -- rv dependabot-auto-merge
+        run: uv run --locked --no-build -- rv dependabot-auto-merge

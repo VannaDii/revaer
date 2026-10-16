@@ -3,7 +3,6 @@
 import copy
 import json
 import sys
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -48,11 +47,10 @@ class ProviderRunner:
         return Completed(0, self.response)
 
 
-def test_auto_merge_paginates_and_requests_protected_squash_for_each_head(tmp_path: Path) -> None:
+def test_auto_merge_paginates_and_requests_protected_squash_for_each_head() -> None:
     runner = ProviderRunner("\n".join(json.dumps(item) for item in (request(), request(277))))
     context = make_context(Options())
-    github = GitHub(sys.executable, runner, tmp_path, {})
-    context = replace(context, tools=replace(context.tools, github=github))
+    context.tools.github.runner = runner
     assert "2 Dependabot" in DependabotAutoMerge.run(context).message
     assert "--paginate" in runner.calls[0].argv
     assert ".[] | @json" in runner.calls[0].argv
@@ -109,22 +107,24 @@ def test_malformed_provider_identity_fails_closed(
     item = copy.deepcopy(request())
     item[field] = value
     runner = ProviderRunner(json.dumps(item))
+    github = GitHub(sys.executable, runner, tmp_path, {})
     with pytest.raises(ToolingError):
-        GitHub(sys.executable, runner, tmp_path, {}).dependabot_pull_requests(REPOSITORY)
+        github.dependabot_pull_requests(REPOSITORY)
     assert len(runner.calls) == 1
 
 
 def test_rejected_merge_is_propagated_without_retry_or_bypass(tmp_path: Path) -> None:
     runner = ProviderRunner("", fail_merge=True)
+    github = GitHub(sys.executable, runner, tmp_path, {})
+    args = AutoMergeArgs(REPOSITORY, 276, HEAD)
     with pytest.raises(CommandError, match="rejected"):
-        GitHub(sys.executable, runner, tmp_path, {}).enable_auto_merge(
-            AutoMergeArgs(REPOSITORY, 276, HEAD)
-        )
+        github.enable_auto_merge(args)
     assert len(runner.calls) == 1
 
 
 @pytest.mark.parametrize("response", ("not json", "{}", "[[{}]]"))
 def test_provider_errors_are_not_treated_as_no_updates(tmp_path: Path, response: str) -> None:
     runner = ProviderRunner(response)
+    github = GitHub(sys.executable, runner, tmp_path, {})
     with pytest.raises(ToolingError):
-        GitHub(sys.executable, runner, tmp_path, {}).dependabot_pull_requests(REPOSITORY)
+        github.dependabot_pull_requests(REPOSITORY)
