@@ -10,7 +10,6 @@ import os
 import shutil
 import subprocess
 import tomllib
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -387,8 +386,16 @@ def test_api_export_rejects_successful_empty_generator(workspace: Context) -> No
 def test_cargo_lock_reconciles_changed_workspace_versions(workspace: Context, online: bool) -> None:
     manifest = workspace.root / "crates/revaer-app/Cargo.toml"
     manifest.write_text(manifest.read_text().replace('version = "0.1.0"', 'version = "0.2.0"'))
-    context: Context = replace(
-        workspace, options=replace(workspace.options, cargo_lock_online=online)
+    context = Context(
+        root=workspace.root,
+        settings=workspace.settings,
+        options=Options(cargo_lock_online=online),
+        tools=workspace.tools,
+        fs=workspace.fs,
+        emit=workspace.emit,
+        host=workspace.host,
+        invoked_at=workspace.invoked_at,
+        command_names=workspace.command_names,
     )
     CargoLock.run(context)
     packages = tomllib.loads((workspace.root / "Cargo.lock").read_text())["package"]
