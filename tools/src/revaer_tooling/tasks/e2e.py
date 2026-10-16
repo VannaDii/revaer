@@ -34,6 +34,7 @@ from .build import SyncAssets
 from .database import database_connection
 
 OPENAPI_PATH = "docs/api/openapi.json"
+RESULTS_PATH = ".test-tmp/e2e/test-results"
 
 
 def require_media_readiness(client: ApiClient, logs: Path) -> None:
@@ -164,7 +165,7 @@ class RunPaths:
         root = context.root
         filesystem = root / ".test-tmp"
         return RunPaths(
-            root / ".test-tmp/e2e/test-results",
+            root / RESULTS_PATH,
             root / ".test-tmp/e2e/playwright-report",
             root / ".test-tmp/e2e/logs",
             root / ".test-tmp/e2e/runtime",
@@ -464,9 +465,7 @@ class UiE2e(Task):
 class UiE2eCoverage(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
-        directory = (
-            context.settings.e2e.coverage_directory or context.root / ".test-tmp/e2e/test-results"
-        )
+        directory = context.settings.e2e.coverage_directory or context.root / RESULTS_PATH
         if not directory.is_absolute():
             directory = context.root / directory
         if (context.root / "coverage/producers").is_dir():
@@ -501,9 +500,7 @@ class UiE2eShardCoverage(Task):
             context.options.expected_shards,
         ):
             return TaskResult("Every browser shard and API phase completed its expected scenarios")
-        directory = (
-            context.settings.e2e.coverage_directory or context.root / ".test-tmp/e2e/test-results"
-        )
+        directory = context.settings.e2e.coverage_directory or context.root / RESULTS_PATH
         if not directory.is_absolute():
             directory = context.root / directory
         verify_shards(
