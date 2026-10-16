@@ -65,10 +65,16 @@ pub(crate) enum MediaDirectoryEntryKind {
     Other,
 }
 
+#[derive(Clone)]
+pub(crate) struct DirectoryObservation {
+    metadata: Stat,
+    names_sha256: [u8; 32],
+}
+
 #[cfg(any(target_os = "linux", test))]
 pub(crate) struct MediaDirectoryInventory {
     pub(crate) entries: Vec<MediaDirectoryEntry>,
-    pub(crate) observation: Stat,
+    pub(crate) observation: DirectoryObservation,
 }
 
 /// Inventory every raw name before selecting media; never follow child links.
@@ -77,12 +83,13 @@ pub(crate) fn read_media_directory_at(
     directory: &OwnedFd,
     entry_limit: usize,
 ) -> Result<MediaDirectoryInventory, FingerprintError> {
-    let before = directory_observation(directory)?;
-    let names = enumerate_directory_names(
-        directory,
-        entry_limit.min(MAX_DIRECTORY_ENTRIES),
-        MAX_DIRECTORY_NAME_BYTES,
-    )?;
+    let metadata = directory_observation(directory)?;
+    let entry_limit = entry_limit.min(MAX_DIRECTORY_ENTRIES);
+    let names = enumerate_directory_names(directory, entry_limit, MAX_DIRECTORY_NAME_BYTES)?;
+    let before = DirectoryObservation {
+        metadata,
+        names_sha256: directory_names_hash(&names),
+    };
     let mut entries = Vec::with_capacity(names.len());
     for name in names {
         let stat = statat(directory, &name, AtFlags::SYMLINK_NOFOLLOW).map_err(|source| {
@@ -101,7 +108,7 @@ pub(crate) fn read_media_directory_at(
         };
         entries.push(MediaDirectoryEntry { name, kind });
     }
-    validate_directory_observation(directory, &before)?;
+    validate_directory_observation(directory, &before, entry_limit)?;
     Ok(MediaDirectoryInventory {
         entries,
         observation: before,
@@ -528,10 +535,14 @@ fn validate_member_size(
 }
 
 fn directory_names(directory: &OwnedFd) -> Result<Vec<OsString>, FingerprintError> {
-    let before = directory_observation(directory)?;
+    let metadata = directory_observation(directory)?;
     let names =
         enumerate_directory_names(directory, MAX_DIRECTORY_ENTRIES, MAX_DIRECTORY_NAME_BYTES)?;
-    validate_directory_observation(directory, &before)?;
+    let before = DirectoryObservation {
+        metadata,
+        names_sha256: directory_names_hash(&names),
+    };
+    validate_directory_observation(directory, &before, MAX_DIRECTORY_ENTRIES)?;
     Ok(names)
 }
 
@@ -542,18 +553,44 @@ fn directory_observation(directory: &OwnedFd) -> Result<Stat, FingerprintError> 
     })
 }
 
-fn validate_directory_observation(
+pub(crate) fn validate_directory_observation(
     directory: &OwnedFd,
-    before: &Stat,
+    before: &DirectoryObservation,
+    entry_limit: usize,
 ) -> Result<(), FingerprintError> {
-    let after = directory_observation(directory)?;
+    let names = enumerate_directory_names(
+        directory,
+        entry_limit.min(MAX_DIRECTORY_ENTRIES),
+        MAX_DIRECTORY_NAME_BYTES,
+    )?;
+    let after = DirectoryObservation {
+        metadata: directory_observation(directory)?,
+        names_sha256: directory_names_hash(&names),
+    };
     if !directory_observations_match(before, &after) {
         return Err(FingerprintError::DirectoryChanged);
     }
     Ok(())
 }
 
-pub(crate) const fn directory_observations_match(before: &Stat, after: &Stat) -> bool {
+fn directory_names_hash(names: &[OsString]) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    for name in names {
+        digest.update(name.as_bytes());
+        digest.update([0]);
+    }
+    digest.finalize().into()
+}
+
+pub(crate) fn directory_observations_match(
+    before: &DirectoryObservation,
+    after: &DirectoryObservation,
+) -> bool {
+    before.names_sha256 == after.names_sha256
+        && directory_metadata_matches(&before.metadata, &after.metadata)
+}
+
+const fn directory_metadata_matches(before: &Stat, after: &Stat) -> bool {
     before.st_dev == after.st_dev
         && before.st_ino == after.st_ino
         && before.st_mode == after.st_mode
@@ -759,11 +796,19 @@ mod tests {
         // A directory write can share the creation timestamp on coarse clocks.
         File::open(temp.path())?.set_modified(std::time::UNIX_EPOCH)?;
         let directory = super::open_directory(temp.path())?;
-        let before = super::directory_observation(&directory)?;
         assert!(super::directory_names(&directory)?.is_empty());
         fs::write(temp.path().join("new-name"), b"")?;
+        // Model a timestamp collision explicitly: only the raw names differ.
+        let before = super::DirectoryObservation {
+            metadata: super::directory_observation(&directory)?,
+            names_sha256: super::directory_names_hash(&[]),
+        };
         assert!(matches!(
-            super::validate_directory_observation(&directory, &before),
+            super::validate_directory_observation(
+                &directory,
+                &before,
+                super::MAX_DIRECTORY_ENTRIES
+            ),
             Err(FingerprintError::DirectoryChanged)
         ));
         fs::write(temp.path().join("invalid\\name"), b"")?;

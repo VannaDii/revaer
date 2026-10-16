@@ -115,3 +115,5 @@ applyTo:
 - The reusable database initializer has its own success-path integration test in the foundation. It verifies exact initializer digest sealing, restricted runtime identity, owner login disablement, repeated-init rejection and owned database/role cleanup; do not rely on downstream media consumers for coverage.
 
 - Coverage executes independent tests in nextest processes. Keep native libtorrent tests in the serial resource group, database-heavy tests in the bounded group, and the nine recovery scenarios independently selectable. Private test state must not become a shared fixture merely to reduce execution time.
+
+- Media directory observations compare bounded raw-name hashes alongside metadata; resumable scans must detect name changes even when filesystem timestamps collide.
