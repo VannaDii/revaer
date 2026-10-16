@@ -37,8 +37,9 @@ def repository_scratch(root: Path, fs: FileSystem) -> Iterator[None]:
     previous = {name: os.environ.get(name) for name in ("TMPDIR", "REVAER_TEST_ROOT")}
     cached = tempfile.tempdir
     try:
-        os.environ["TMPDIR"] = str(temporary)
-        os.environ["REVAER_TEST_ROOT"] = str(parent)
+        # Publish only the private directory created by mkdtemp, never an
+        # inherited system temporary directory, to this process and children.
+        os.environ.update({"TMPDIR": str(temporary), "REVAER_TEST_ROOT": str(parent)})
         tempfile.tempdir = str(temporary)
         yield
     finally:
