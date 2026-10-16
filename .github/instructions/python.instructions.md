@@ -126,3 +126,7 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
   percent-encoding cases.
 - Exact SCM preparation must reject a stale local target branch that would shadow
   the fetched event base. Preserve shared worktrees; qualify in an independent checkout.
+
+- `rv cargo-lock` remains offline by default. Use its explicit `--online` option
+  when changed manifest requirements need missing registry metadata; preserve
+  existing unrelated locked registry versions.

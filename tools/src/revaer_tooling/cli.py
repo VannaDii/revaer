@@ -335,6 +335,8 @@ def parser() -> argparse.ArgumentParser:
             else commands.add_parser(name)
         )
         command.set_defaults(task=name)
+        if name == "cargo-lock":
+            command.add_argument("--online", dest="cargo_lock_online", action="store_true")
         if name in ("container-build", "container-runtime"):
             command.set_defaults(source_archive=True)
         if name in ("db-test-init", "db-test-drop"):
@@ -586,6 +588,7 @@ def make_context(options: Options) -> Context:
 def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
     options = Options(
+        cargo_lock_online=getattr(args, "cargo_lock_online", False),
         database_name=getattr(args, "database_name", ""),
         chart_version=getattr(args, "chart_version", "0.0.0-dev.0"),
         app_version=getattr(args, "app_version", "v0.0.0-dev.0"),
