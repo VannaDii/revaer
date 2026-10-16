@@ -4,7 +4,12 @@ This checklist is based on current code and documentation inspection as of 2026-
 
 Closeout status: the Phase One remediation work tracked here has been implemented and re-verified against the repo. Items remain in this document as an audit trail, not because additional gaps are still open.
 
-## Current Findings
+This is a closed historical plan, not a live backlog. The [project roadmap](docs/phase-one-roadmap.md)
+and current source distinguish subsequent work, including the merged transcoding
+subsystem. Historical evidence and task-record references below do not authorize
+new reports, logs or routine ADRs under current documentation policy.
+
+## Closed Findings
 
 ### [x] Dashboard API is no longer stubbed
 

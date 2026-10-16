@@ -1,24 +1,24 @@
 # Phase One Runbook
 
 This runbook exercises the end-to-end control plane, validating FsOps, telemetry, and guard rails.
-The primary automated entrypoint is `just runbook`, which wraps the Playwright-backed API/UI validation flow, collects artifacts, and provides a repeatable baseline before any manual drills.
+Use `just ui-e2e` for the repeatable API/browser workflow. The retained
+`just runbook` command wraps that workflow for deployments that explicitly need
+its archive output; do not use it to create a separate proof package for routine
+work. Current media scenarios are part of the existing API/UI suite, with focused
+recovery selections available through `just test-media-recovery` and
+`just test-media-service-recovery` (the latter requires Linux and its managed-root
+fixture). Use the task help and test README for exact prerequisites.
 
-## Automated Validation
-
-Run the automated baseline first:
+## Automated Checks
 
 ```sh
-just runbook
+just ui-e2e
 ```
 
-Expected outputs:
-
-- `artifacts/runbook/summary.txt`
-- `artifacts/runbook/playwright-report/index.html`
-- `artifacts/runbook/test-results/`
-- `artifacts/runbook/logs/`
-
-The automated runbook currently covers the bootstrap, dashboard/API health, settings, and torrent-management control-plane paths exercised by `just ui-e2e`. Keep the manual checks below only for deployment-specific fault-injection drills that require operator intervention against real mounts, permissions, and restart boundaries.
+Use focused regression tests for a demonstrated failure. Do not repeat completed
+checks or add independent verification frameworks merely to generate evidence.
+The deployment-specific drills below concern actual mounts, permissions and
+restart boundaries; they do not replace required CI or release checks.
 
 ## Prerequisites
 
@@ -33,7 +33,7 @@ The automated runbook currently covers the bootstrap, dashboard/API health, sett
 
     - Issue a setup token: `revaer setup start --issued-by runbook`.
     - Complete configuration with CLI secrets and directories: `revaer setup complete --instance runbook --bind 127.0.0.1 --resume-dir .server_root/resume --download-root .server_root/downloads --library-root .server_root/library --api-key-label runbook --passphrase <pass>`.
-    - Capture the committed snapshot via `revaer config get --output table` and confirm `/health/full` returns `status=ok` with `guardrail_violations_total=0`.
+    - Inspect the committed snapshot via `revaer config get --output table` and confirm `/health/full` returns `status=ok` with `guardrail_violations_total=0`.
 
 2. **Add Torrent & Observe FsOps**
 
@@ -67,11 +67,15 @@ Manual-only rationale:
 - Permission failures and restart/resume drills depend on the actual runtime mount layout, writable volumes, and supervisor behavior of the target deployment.
 - The checked-in automation covers the repeatable control-plane baseline; these remaining drills intentionally stay manual so operators can validate their real environment rather than a simulated local-only shell.
 
-## Verification Artifacts
+## Results and Cleanup
 
--   Review `artifacts/runbook/summary.txt` from `just runbook`.
--   Archive CLI telemetry emitted to `REVAER_TELEMETRY_ENDPOINT` when the manual scenario enables it.
--   Capture Prometheus scrapings (`/metrics`) before and after the manual drills.
--   Record `/health/full` JSON snapshots for each phase.
+Report failures and relevant revision information briefly. Keep ordinary command
+output temporary; do not archive telemetry, screenshots or health/metrics
+snapshots solely to substantiate routine work. Application audit/checkpoint
+records and required release contracts remain intact.
 
-Successful completion of this runbook satisfies the operational validation gate defined in `AGENT.md`.
+Stop or remove only owned disposable resources after checking whether another
+active task still needs them. Preserve persistent databases, original media and
+unfinished replacement/rollback artifacts. This runbook does not itself establish
+passing CI, a published release or production readiness; follow AGENTS.md and
+the existing release checks for the revision being operated.

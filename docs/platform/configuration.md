@@ -151,3 +151,18 @@ Revaer boots with structured logging and Prometheus metrics by default. OpenTele
 - **Snapshot access** - `GET /.well-known/revaer.json` (no auth), `GET /v1/config` (API key), `GET /health/full`, and `revaer config get` return the current revision so automation and dashboards can verify configuration drift without shell access.
 
 Revaer publishes `SettingsChanged` events on every successful mutation, ensuring subscribers refresh in-memory caches without polling.
+
+## Media Configuration
+
+Media configuration is a separate normalized relational surface, not a field to
+add to the settings JSON above. Versioned profiles reference targets, policies
+and output/workspace roots; discovery associations pin a profile version to a
+source root. Configuration activation requests reevaluation without silently
+rebinding jobs already admitted under an immutable snapshot.
+
+Use the Media UI and `/v1/media` API resources for roots, profiles, targets,
+policies, compatibility, capabilities, discovery and jobs. Profiles default to
+dry-run; watcher and schedule modes are enabled explicitly. YAML is a versioned
+import/export format, not runtime persistence. See the
+[transcoding design](https://github.com/VannaDii/revaer/blob/main/MEDIA_TRANSCODING.md) and served OpenAPI document for
+the complete resource/request contract.

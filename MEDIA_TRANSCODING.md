@@ -1,17 +1,22 @@
-# Revaer Media Transcoding Implementation Plan
+# Revaer Media Transcoding Design
 
 > Agent operating rules and quality gates are defined in [AGENTS.md](AGENTS.md).
 > This specification does not authorize substantiating artifacts or task records.
 
-Status: consolidated executable plan.
+Status: implementation merged into `main` in PR #31 on 2026-10-15.
 
-Date: 2026-05-23.
+Original design: 2026-05-23. Documentation reconciled: 2026-10-15.
+
+This document describes the product contract. Its original implementation slices
+are historical decomposition, not an unfinished backlog. Merge status does not
+assert that a release has been published or a deployment has been validated.
 
 Goal: build Revaer's full media transcoding subsystem as a deterministic
 desired-state reconciliation engine for media files.
 
-Architecture: media profiles bind one non-overlapping path to one target and one
-policy. Revaer discovers files, inspects actual media state, compiles desired
+Architecture: versioned media profiles bind desired targets and policies;
+non-overlapping source-root associations pin the configuration used for discovery.
+Revaer discovers files, inspects actual media state, compiles desired
 media state, selects the least expensive safe reconciliation plan, executes in a
 managed workspace, verifies output, then replaces source files only after
 successful verification. Configuration is relational at runtime, with Revaer
@@ -22,6 +27,46 @@ Axum/OpenAPI in `revaer-api`, Yew UI in `revaer-ui`, typed SSE events through
 `revaer-events`, managed filesystem workspaces, ffmpeg-compatible and
 ffprobe-compatible injected adapters, and a full-capability Docker image with
 open-source media libraries.
+
+## Recovery, Concurrency and Scratch
+
+Revaer performs discovery and processing locally. Distributed workers are outside
+first-release scope. One service process owns each managed root through the
+existing root lock; configured in-process concurrency remains supported, with
+one active replacement per source.
+
+Discovery coalesces watcher and schedule triggers, scans with bounded memory and
+persists accepted candidate/job identities. After interruption or watcher
+uncertainty, rescan; identity keys prevent duplicate jobs. Incomplete scans do
+not establish absence. Do not reconstruct a durable per-directory/name frontier.
+
+Persist completed step checkpoints and outcomes. Stop old work before replay,
+then restart the unfinished step, discarding or overwriting its owned temporary
+output. Reuse usable completed checkpoints; rebuild missing or corrupt
+intermediates from an earlier usable checkpoint or the unchanged original.
+Shutdown interruption is resumable without consuming a failure retry; explicit
+cancellation remains terminal. Changed or missing sources stop the attempt
+without silent rebinding or replacement.
+
+Originals remain untouched until verified final replacement. An interrupted
+replacement must be reconciled through its backup/manifest before its artifacts
+can be processed or removed. It is not ordinary temporary-output replay.
+
+Budget peak scratch files that coexist across concurrent jobs and defer work
+that cannot fit. Reuse unfinished-output paths and delete obsolete intermediates
+after their last consumer. Protect active work, usable checkpoints and unfinished
+replacement/rollback artifacts. A removed intermediate may need recomputation.
+
+At startup, classify interrupted work before reclaiming abandoned scratch.
+Delete only eligible Revaer-owned files, then acknowledge cleanup through the
+stored procedure. Already absent means success. Retry deletion/acknowledgement
+failures individually without blocking other entries; failed deletion stays
+charged against scratch capacity until files are gone. Diagnostic-record
+retention does not require retaining obsolete media.
+
+These rules replace the earlier supervisor, distributed lease/takeover and
+cleanup-owner machinery. They preserve source checks, resource bounds, safe
+replacement and the existing functional quality gates.
 
 ---
 
@@ -2505,9 +2550,13 @@ Responsibilities:
 
 ---
 
-## Implementation Slices
+## Original Implementation Slices
 
-Every slice adds an ADR and keeps docs in sync.
+The slices below describe the original implementation breakdown. The subsystem
+is now implemented; these are not instructions to add duplicate crates, tests,
+migrations or task records. Current persistence uses the single initializer;
+legacy migration replay and compatibility work are not first-release tasks.
+Update existing documentation when its behavior changes, following AGENTS.md.
 
 1. Domain model and normalization
     - Add `revaer-media-core`.
@@ -2742,6 +2791,7 @@ Additional media-specific gates:
 
 ## Open Questions
 
-No unresolved operator decisions remain in this plan. Future implementation may
-discover engineering tradeoffs, but those should be handled through ADRs rather
-than by reintroducing ambiguous behavior into this document.
+No unresolved operator decisions remain in this design. An actual design flaw
+requires an operator decision before changing architecture.
+Routine implementation, testing and cleanup do not require an ADR or additional
+substantiating artifacts.

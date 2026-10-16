@@ -1,6 +1,14 @@
-# Phase One Remaining Engineering Specification
+# Historical Phase One Engineering Specification
 
-## Objectives
+This is the original implementation sequence, retained as historical design
+context. Phase One remediation is closed in [the remediation plan](https://github.com/VannaDii/revaer/blob/main/REMEDIATION_PLAN.md),
+and media implementation merged in PR #31 on 2026-10-15. For current scope, see
+[the roadmap](phase-one-roadmap.md). The tasks, coverage thresholds and output
+collection below describe the original plan, not current work or operating rules.
+Current gates and documentation policy are owned by [AGENTS.md](https://github.com/VannaDii/revaer/blob/main/AGENTS.md),
+the task registry and workflows.
+
+## Original Objectives
 
 - Deliver a production-ready public interface (HTTP API, SSE, CLI) for torrent orchestration.
 - Ship FsOps-backed artefacts through API, CLI, telemetry, and documentation with demonstrable reliability.

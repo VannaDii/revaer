@@ -1,10 +1,19 @@
-# Web UI - Phase 1
+# Web UI
 
-Rust/Yew UI for the Phase 1 torrent workflow. The goal is a responsive, touch-friendly surface that stays usable on 360px phones through 4K desktops while handling large torrent libraries.
+Rust/Yew UI for torrent orchestration and media transcoding. The goal is a responsive, touch-friendly surface that stays usable on 360px phones through 4K desktops while handling large torrent libraries.
 
-- **Pages**: Dashboard, Torrents (list + detail), Logs, Health, Settings.
+- **Pages**: Dashboard, Indexers, Search, Media, Torrents (list + detail), Logs, Health, Settings.
 - **Modes**: Simple (trimmed controls) and Advanced (full controls). Stored in local storage.
 - **Transport**: REST for initial payloads; fetch-based SSE for live updates and logs (header-auth supported, EventSource not used).
+
+## Media workflow
+
+The Media feature supports profile, target, policy and compatibility authoring,
+managed-root associations, capability refresh, discovery and jobs. Configure
+through the authenticated UI, inspect dry-run plans, and enable processing only
+through explicit configuration/confirmation. Job details expose processing,
+verification and final outcomes. Recovery and scratch behavior follow the
+[transcoding design](https://github.com/VannaDii/revaer/blob/main/MEDIA_TRANSCODING.md#recovery-concurrency-and-scratch).
 
 ## Layout and breakpoints
 

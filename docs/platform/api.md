@@ -55,6 +55,15 @@ Error responses follow RFC9457 (`ProblemDetails`) and include `invalid_params` e
 - `GET/PATCH/DELETE /v1/torrents/{id}/trackers`
 - `PATCH /v1/torrents/{id}/web_seeds`
 
+### Media transcoding
+
+The `/v1/media` surface includes managed roots, versioned profiles, targets,
+policies, compatibility, capabilities, discovery, jobs and YAML import/export.
+It uses immutable configuration references, explicit admission checks and dry-run
+defaults. Consult the served OpenAPI document for exact routes, request bodies,
+preconditions and error responses; the [transcoding design](https://github.com/VannaDii/revaer/blob/main/MEDIA_TRANSCODING.md)
+explains processing and recovery semantics.
+
 ### Events and logs
 
 - `GET /v1/torrents/events` (primary SSE stream)

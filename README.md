@@ -1,6 +1,6 @@
 # Revaer
 
-Revaer is a data-driven media orchestration platform that centralizes configuration, telemetry, and operational control in PostgreSQL. The repository is organized as a Rust workspace composed of focused crates that together deliver the initial torrent + filesystem management minimal lovable product.
+Revaer is a data-driven media orchestration platform that centralizes configuration, telemetry, and operational control in PostgreSQL. Its Rust workspace combines torrent orchestration, filesystem processing, and desired-state media transcoding in one service. Media profiles drive discovery, inspection, planning, execution, verification and safe replacement; profiles default to dry-run.
 
 ## Guiding Principles
 
@@ -39,8 +39,8 @@ revaer/
 Run `./setup.sh` once to provision the uv-managed Python environment, pinned
 native tools and local `rv` launcher. Then run `rv check` to verify the workspace.
 See the [setup and architecture guide](tools/README.md) for installation options
-and worktree behavior. The [migration inventory](tools/migration.md) records
-remaining qualification and retirement work.
+and worktree behavior. The [tooling integration guide](tools/migration.md) explains
+the current command surface and retained compatibility entry points.
 
 For automation, use `uv run --locked -- rv <command>` after the shared setup
 action. Local development and CI use the same task implementations.
@@ -101,8 +101,11 @@ The documentation site is powered by [mdBook](https://rust-lang.github.io/mdBook
 
 Pushes to `main` invoke the docs workflow to rebuild the book, refresh the LLM manifests under `docs/llm/`, and publish the static site to GitHub Pages.
 
-## Next Steps
+## Design and Planning
 
--   Implement the migrations and configuration schema inside `revaer-config`.
--   Wire the setup flow and runtime hot-reload between `revaer-app`, `revaer-api`, `revaer-torrent-*`, and `revaer-fsops`.
--   Author ADRs capturing architectural decisions, bootstrap flow, and configuration invariants.
+The transcoding subsystem merged into `main` on 2026-10-15 in PR #31.
+[MEDIA_TRANSCODING.md](MEDIA_TRANSCODING.md) describes its product contract;
+it is not an instruction to repeat the original implementation sequence.
+The [roadmap](docs/phase-one-roadmap.md) distinguishes implemented scope from
+historical plans. A merge does not establish deployment or release status;
+use the required checks and release workflow for the revision being shipped.

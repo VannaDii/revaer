@@ -1,4 +1,9 @@
-# Phase One Release Checklist
+# Release Checklist
+
+This checklist covers publication of a selected revision. Transcoding merged in
+PR #31; that merge alone does not claim a published release. Use the existing
+workflow gates and release artifacts; do not add separate proof packages or
+routine completion records.
 
 1. **Branch Hygiene**
 
@@ -8,7 +13,7 @@
 2. **Build & Test**
 
     - `just ci`
-    - `just build-release`
+    - `just ci` includes the release build; do not repeat it unless a separate target is required.
     - `just api-export`
 
 3. **Artefact Verification**
@@ -26,14 +31,15 @@
 
 4. **Runbook Execution**
 
-    - Run `just runbook`
-    - Follow the remaining manual-only drills in `docs/runbook.md`
-    - Archive CLI telemetry, `/metrics`, `/health/full` snapshots.
+    - Use the existing required API/UI workflow (`just ui-e2e`).
+    - Consult `docs/runbook.md` for deployment-specific drills when applicable.
+    - Keep ordinary output temporary; report failures without an extra archive.
 
 5. **Documentation Refresh**
 
-    - Verify ADRs 005–007 reflect current design.
-    - Update user guides (`docs/api/guides/*.md`) with any behavioural changes.
+    - Reconcile existing operator guides and product contracts with the selected revision.
+    - Preserve historical ADR decisions; create an ADR only for a new architectural decision requiring approval.
+    - Update user guides (`docs/platform/*.md` and `docs/ui/*.md`) with any behavioural changes.
 
 6. **Tag & Publish**
 

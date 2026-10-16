@@ -1,12 +1,18 @@
 # Revaer
 
-> Centralized torrent orchestration with hot-reloadable configuration, consistent CLI/API surfaces, and observability-first defaults.
+> Torrent orchestration and desired-state media transcoding with PostgreSQL-backed configuration and consistent operator interfaces.
 
-Revaer is a Rust workspace that coordinates torrent ingestion, filesystem operations, and operational guardrails from a PostgreSQL-backed control plane. The `revaer-app` binary composes focused crates covering the API, CLI, filesystem pipeline, telemetry, and libtorrent adapter.
+Revaer is a Rust workspace that coordinates torrent ingestion, filesystem operations, media discovery/transcoding, and operational guardrails from a PostgreSQL-backed control plane. The `revaer-app` binary composes focused crates covering the API, CLI, filesystem pipeline, telemetry, and libtorrent adapter.
+
+Transcoding merged into `main` in PR #31 on 2026-10-15. See the
+[project roadmap](phase-one-roadmap.md) for scope and the
+[transcoding design](https://github.com/VannaDii/revaer/blob/main/MEDIA_TRANSCODING.md) for recovery, scratch and replacement
+semantics. Required checks and release workflows determine readiness for a
+particular revision; merged implementation is not a deployment claim.
 
 ## What You’ll Find Here
 
--   **Roadmap & Specs** – Track the current Phase One scope and remaining delivery deltas.
+-   **Roadmap & Specs** – Distinguish implemented scope and product contracts from historical implementation plans.
 -   **Platform Interfaces** – Configuration schema, HTTP API endpoints, and CLI command reference that match the current codebase.
 -   **Operational Guides** – Runbook, release checklist, and setup flows for operators.
 -   **Architecture Decisions** – ADRs documenting trade-offs across configuration, security, and engine integration.

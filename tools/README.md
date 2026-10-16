@@ -4,9 +4,9 @@
 Python, dependencies, and installed executables. Revaer code coordinates the
 project's tools and checks.
 
-The migration is in progress. [The migration inventory](migration.md) records
-which existing recipes still require implementation and parity checks. The
-existing gates remain authoritative until their replacements are verified.
+The uv-managed CLI and media integration are merged. The Justfile delegates to
+`rv`; it does not contain a second implementation. The [integration guide](migration.md)
+explains retained compatibility material and where current tasks are defined.
 
 ## Getting started
 

@@ -1,14 +1,14 @@
 # Summary
 
 -   [Overview](index.md)
--   [Phase One Roadmap](phase-one-roadmap.md)
--   [Phase One Remaining Spec](phase-one-remaining-spec.md)
+-   [Project Roadmap](phase-one-roadmap.md)
+-   [Historical Phase One Spec](phase-one-remaining-spec.md)
 -   [Runbook](runbook.md)
 -   [Release Checklist](release-checklist.md)
 
 ## Web UI
 
--   [Web UI - Phase 1](ui/index.md)
+-   [Web UI](ui/index.md)
 -   [Web UI Flows](ui/flows.md)
 
 ## Platform Surface

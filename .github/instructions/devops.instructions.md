@@ -53,9 +53,12 @@ applyTo:
   creation identity and inherited session token. Port occupancy or an executable
   name is not cleanup authority. Keep ownership receipts after cleanup failure.
 
-- The accepted Python migration is recorded in `docs/adr/592-python-tooling.md`.
-  Keep existing gates in place until their `rv` replacements have demonstrated
-  parity; do not confuse the new tooling checks with completion of project CI.
+- The uv-managed tooling foundation and media integration are merged. Current
+  commands and compatibility entry points are described in `tools/README.md`
+  and `tools/migration.md`; use the registry and workflows for exact gate
+  composition. ADR 592 retains historical decisions and dated implementation
+  notes, not a live migration backlog. Preserve existing gates; merged tooling
+  is not a claim that a particular revision or release has passed them.
 - The main Sonar result query follows ADR 592's approved new-code contract;
   retain the PR's complete current-issue scope and all other strict gates.
 - Changed-line commands count the complete exact-commit diff against the selected
