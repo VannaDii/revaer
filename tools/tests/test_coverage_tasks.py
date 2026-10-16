@@ -24,6 +24,8 @@ def coverage_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Conte
     channel = tomllib.loads((source / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
     monkeypatch.setenv("RUSTUP_TOOLCHAIN", channel)
     monkeypatch.setenv("CARGO_TERM_COLOR", "always")
+    # This synthetic workspace contains only native and pure coverage fixtures.
+    monkeypatch.setenv("E2E_MANAGED_MEDIA_ROOTS", "0")
     monkeypatch.setenv("REVAER_TEST_DATABASE_URL", "postgres://fixture.invalid/unused")
     for name in (
         "CARGO_TARGET_DIR",
