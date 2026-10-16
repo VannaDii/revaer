@@ -119,4 +119,4 @@ The engine clears profiles and workspace artifacts before collection; the rollin
 instrumented-target cache retains compatible dependency builds. No execution data
 from a cache can satisfy a test or coverage gate. Cargo determines compiler
 parallelism unless the operator supplies `CARGO_BUILD_JOBS`. Python tooling tests
-remain serial and retain complete Coverage.py measurements and merging.
+use two file-grouped workers and retain complete Coverage.py measurements and merging.
