@@ -18,7 +18,9 @@ class ScriptCoverage(Task):
             context.fs.remove_owned(cases, context.root)
             context.tools.bash.verify()
             context.tools.kcov.verify()
-            temporary = context.fs.temporary_directory(output.parent, ".bootstrap-pytest-")
+            temporary = context.fs.temporary_directory(
+                context.root / ".test-tmp", "bootstrap-pytest-"
+            )
             try:
                 # Keep this invocation out of earlier pytest sessions' cleanup pool.
                 context.tools.python.pytest(

@@ -125,7 +125,7 @@ mod tests {
     }
 
     fn server_root() -> Result<PathBuf> {
-        let root = repo_root().join(".server_root");
+        let root = repo_root().join(".test-tmp");
         std::fs::create_dir_all(&root)?;
         Ok(root)
     }

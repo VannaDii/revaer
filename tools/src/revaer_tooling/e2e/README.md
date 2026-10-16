@@ -50,19 +50,18 @@ session retained from the preceding phase, then replaces it with the new setup
 credentials. Restarting the service does not reset database authentication.
 Browser restarts retain the authenticated
 session and database without another reset. Setup and scenario logs live in
-separate phase subdirectories under `tests/logs`.
+separate phase subdirectories under `.test-tmp/e2e/logs`.
 
-Hosted dry-run API/browser jobs set `E2E_MANAGED_MEDIA_ROOTS=1` and
-`E2E_FS_ROOT=${{ vars.REVAER_MEDIA_TEST_ROOT }}`. Runner provisioning must supply
-an existing writable directory on dedicated ext4 storage, distinct from the
-container root filesystem, with at least 4 GiB available. Local callers supply
-`E2E_FS_ROOT` directly. Missing storage fails explicitly; unsuitable storage fails
-normal application attestation rather than falling back or skipping scenarios.
-The coordinator creates a unique private child directory containing source,
-output, workspace and the restart-persistent catalog. It never formats or mounts
-storage and needs no block devices or mount privileges. Cleanup stops services
-before removing only the private child; caller data and the supplied root remain
-untouched. Concurrent runs use separate child directories.
+Hosted dry-run API/browser jobs set `E2E_MANAGED_MEDIA_ROOTS=1`. All test
+working files use the selected repository's `.test-tmp/` root. The coordinator
+creates private source/output/workspace directories and a restart-persistent
+catalog beneath it, without formatting, mounting, or accessing block devices.
+Normal application bootstrap still validates the storage and ownership contract.
+Cleanup stops services before deleting only that run's private directories;
+concurrent runs and other files beneath the common root remain untouched.
+Browser results, reports, logs and runtime files use `.test-tmp/e2e/`.
+Rust and Python temporary files inherit a private directory under the same root
+through `rv`'s `TMPDIR`. Required coverage inputs retain their canonical paths.
 Persistent replacement and restart recovery retain the existing ext4 service test.
 
 API phases use one worker because they share mutable application configuration.
@@ -132,7 +131,7 @@ or `DATABASE_URL`; the tracked defaults contain no database password.
 | `E2E_DB_ADMIN_URL` | Falls back to `REVAER_TEST_DATABASE_URL`, then `DATABASE_URL`, then the managed local server. Only a newly created database is dropped. |
 | `E2E_SKIP_DB_START` | False; true uses an available server without starting Docker. |
 | `E2E_DB_PREFIX` | `revaer_e2e`; a lowercase identifier up to 30 characters, followed by a random run identifier. |
-| `E2E_FS_ROOT` | Required absolute directory on existing dedicated ext4 storage in managed-media mode; otherwise defaults to the checkout root and allows relative overrides. |
+| `E2E_FS_ROOT` | Internal pytest allowlist supplied by the coordinator from its repo-local scratch directory. |
 | `E2E_API_RUNNER` | Overrides `[api].runner` in `tests/e2e.toml`: `binary` or media's `lib-test`. |
 | `E2E_BROWSERS` | `chromium`; comma-separated `chromium`, `firefox`, `webkit`. |
 | `E2E_BROWSER_CHANNEL` | Optional installed browser channel passed to Playwright. |
@@ -157,9 +156,9 @@ session from an unrelated running application.
 
 ## Evidence and failures
 
-- `tests/logs/` contains private service logs.
-- `tests/playwright-report/index.html` links the phase reports and current status.
-- `tests/test-results/` contains phase artifacts, JUnit XML, route coverage, and
+- `.test-tmp/e2e/logs/` contains private service logs.
+- `.test-tmp/e2e/playwright-report/index.html` links the phase reports and current status.
+- `.test-tmp/e2e/test-results/` contains phase artifacts, JUnit XML, route coverage, and
   `python-e2e-summary.json` (or `python-e2e-summary-shard-N.json`).
 - `coverage/e2e/<phase>/` contains that phase's measured Python XML, LCOV, and raw
   coverage data. A phase is partial evidence, so it does not apply the independent
@@ -210,8 +209,8 @@ Partial captures, syntax errors, changed sources, missing files, invalid counter
 worker disagreement and unsuccessful/partial runs fail the merge. It holds the
 E2E operation lock while reading and publishing. A capture failure retains traces
 and videos alongside the private partial JSON. Baselines are
-`tests/test-results/javascript-baseline-*.json`; per-attempt captures are
-`tests/test-results/ui-chromium/*/javascript-page-*.json`. A new run invalidates
+`.test-tmp/e2e/test-results/javascript-baseline-*.json`; per-attempt captures are
+`.test-tmp/e2e/test-results/ui-chromium/*/javascript-page-*.json`. A new run invalidates
 the old inputs before collection. Never combine evidence across workflow attempts.
 
 ## Upstream interfaces

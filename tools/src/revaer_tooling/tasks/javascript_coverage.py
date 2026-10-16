@@ -130,7 +130,7 @@ class JavaScriptCoverageMerge(Task):
             )
             if distributed:
                 chromium = tuple(
-                    (root / "tests/test-results", suffix)
+                    (root / ".test-tmp/e2e/test-results", suffix)
                     for root, phase, suffix in distributed
                     if phase == "ui-chromium"
                 )

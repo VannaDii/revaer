@@ -49,7 +49,7 @@ def test_distributed_merge_keeps_measured_chromium_captures(measured: Context) -
     )
     JavaScriptCoverageMerge.run(context)
     expected = (context.root / "coverage/js-lcov.info").read_text()
-    results = context.root / "tests/test-results"
+    results = context.root / ".test-tmp/e2e/test-results"
     producers = context.root / "coverage/producers"
     api_phases = tuple(
         phase
@@ -61,7 +61,7 @@ def test_distributed_merge_keeps_measured_chromium_captures(measured: Context) -
         ("ui-e2e-chromium", ("ui-chromium",)),
     )
     for name, phases in groups:
-        target = producers / name / "tests/test-results"
+        target = producers / name / ".test-tmp/e2e/test-results"
         target.mkdir(parents=True)
         (target / "python-e2e-summary.json").write_text(
             json.dumps(
@@ -88,13 +88,15 @@ def test_distributed_merge_keeps_measured_chromium_captures(measured: Context) -
             )
             label = "ui" if phase.startswith("ui-") else "api"
             (target / f"{label}-coverage-{phase}-main.json").write_text('["/observed"]')
-    chromium = producers / "ui-e2e-chromium/tests/test-results"
+    chromium = producers / "ui-e2e-chromium/.test-tmp/e2e/test-results"
     (results / "ui-chromium").rename(chromium / "ui-chromium")
     for path in results.glob("javascript-baseline-*.json"):
         path.rename(chromium / path.name)
     JavaScriptCoverageMerge.run(context)
     assert (context.root / "coverage/js-lcov.info").read_text() == expected
-    required = producers / "api-e2e-coverage/tests/test-results/api-coverage-api-none-main.json"
+    required = (
+        producers / "api-e2e-coverage/.test-tmp/e2e/test-results/api-coverage-api-none-main.json"
+    )
     required.unlink()
     with pytest.raises(ToolingError, match="nonempty api-none coverage"):
         JavaScriptCoverageMerge.run(context)
@@ -108,7 +110,7 @@ def measured(
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True, timeout=10)
     (tmp_path / "tools/src/revaer_tooling").mkdir(parents=True)
     (tmp_path / "tools/src/revaer_tooling/cli.py").touch()
-    (tmp_path / ".gitignore").write_text("coverage/\ntests/test-results/\n")
+    (tmp_path / ".gitignore").write_text("coverage/\n.test-tmp/e2e/test-results/\n")
     media = request.param.startswith("media-")
     if media:
         (tmp_path / "config").mkdir()
@@ -129,7 +131,7 @@ def measured(
     monkeypatch.setenv("E2E_BROWSERS", "chromium")
     monkeypatch.setenv("E2E_PLAYWRIGHT_PROJECTS", "api-none,api-api-key,ui-chromium")
     context = make_context(Options())
-    results = tmp_path / "tests/test-results"
+    results = tmp_path / ".test-tmp/e2e/test-results"
 
     def serve(route: Route) -> None:
         if route.request.url.endswith(".js"):
@@ -211,7 +213,7 @@ def test_real_parser_and_execution_keep_unexecuted_code_at_zero(measured: Contex
 )
 def test_incomplete_or_changed_evidence_never_reuses_a_report(measured: Context, case: str) -> None:
     JavaScriptCoverageMerge.run(measured)
-    results = measured.root / "tests/test-results"
+    results = measured.root / ".test-tmp/e2e/test-results"
     if case == "source":
         (measured.root / "app.js").write_text("changed source\n")
     elif case == "missing-source":
@@ -263,7 +265,7 @@ def test_early_closed_script_page_fails_and_retains_partial_evidence(tmp_path: P
 
 
 def test_nonproduction_only_inventory_needs_no_fabricated_execution(measured: Context) -> None:
-    results = measured.root / "tests/test-results"
+    results = measured.root / ".test-tmp/e2e/test-results"
     for path in (results / "ui-chromium").glob("*/javascript-page-*.json"):
         record = json.loads(path.read_text())
         for capture in record["captures"]:

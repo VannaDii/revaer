@@ -38,9 +38,13 @@ applyTo:
 
 
 - API and browser E2E jobs explicitly provision FFmpeg for real capability probes.
-  Managed media storage is supplied by deployment, under the root device
-  restrictions. Do not rely on runner-image tools or the installed tools of a
-  developer checkout to satisfy these job dependencies.
+  Managed media storage uses the root repo-local test scratch contract. Do not
+  rely on runner-image tools or a developer checkout for job dependencies.
+
+- The real Dockerfile tooling test may consume an explicitly supplied
+  `REVAER_TEST_BUILDX_BUILDER` without changing its selection or removing it.
+  Retain every actual image/runtime assertion and clean only fixture-owned images;
+  otherwise the test owns and removes its unique builder.
 
 - Composed validation provisions an owned single-init fixture or verifies the
   caller-selected database without repair. Preserve administrative test endpoints
@@ -379,17 +383,17 @@ applyTo:
 - Feature-matrix and API/browser E2E setup includes FFmpeg alongside database
   prerequisites because those jobs execute native media runtime scenarios.
   Feature-matrix and Rust coverage also select the owned ext4 fixture for
-  native root tests. Supply `E2E_FS_ROOT` from `vars.REVAER_MEDIA_TEST_ROOT`:
-  an existing writable dedicated ext4 volume with at least 4 GiB available.
-  Runner provisioning owns storage; application bootstrap retains authority to
-  attest it. Missing or unsuitable storage must fail, never skip required tests.
+  native root tests. Use private directories beneath the selected repository's
+  `.test-tmp/`; do not require a repository variable or external test root.
+  Missing or unsuitable storage must fail normal application attestation,
+  never skip required tests or fall back to device provisioning.
 
 - Hosted test Postgres services publish `127.0.0.1:5432:5432` for the single-init
   endpoint check. Media E2E selects `job.services.postgres.id` and its matching admin
-  password. `E2E_MANAGED_MEDIA_ROOTS=1` gives dry-run API/browser scenarios an
-  owned private Linux ext4 catalog beneath the explicitly supplied `E2E_FS_ROOT`,
-  validated by normal application bootstrap. Stop services before removing only
-  fixture-owned directories; never change or remove the supplied volume root.
+  password. `E2E_MANAGED_MEDIA_ROOTS=1` creates an owned private catalog beneath
+  `.test-tmp/`, validated by normal application bootstrap. Stop services before
+  deleting fixture-owned directories. Browser outputs and their CI upload paths
+  use `.test-tmp/e2e/`; keep mandatory coverage/scanner paths unchanged.
 
 - Database services use the approved PostgreSQL 18.6 image digest from
   `.github/build-inputs.env`; floating major-version tags are not suitable.

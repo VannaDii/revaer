@@ -17,6 +17,10 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 
 # Rust Quality Rules
 
+- Test workspace helpers use the common repo-local `.test-tmp/` root. Temporary
+  file builders inherit the private `TMPDIR` provided by `rv`; trusted catalog
+  tests retain their ancestry and owner checks.
+
 - Production and bootstrap Rust must be deterministic and panic-free.
 - `panic!`, `unwrap()`, `expect()`, and `unreachable!()` are forbidden in authored production and bootstrap code.
 - In this file, "bootstrap code" means startup/wiring runtime code, not test setup helpers.

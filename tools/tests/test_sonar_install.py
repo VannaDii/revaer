@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 from fixtures.downloads import Downloads, download_server
+from revaer_tooling.bootstrap.scratch import scratch_parent
 from revaer_tooling.cli import make_context
 from revaer_tooling.context import Context, Options
 from revaer_tooling.errors import ToolingError
@@ -60,7 +61,10 @@ def installer_context(
         info = zipfile.ZipInfo(DIRECTORY + "/bin/sonar-scanner")
         info.external_attr = (stat.S_IFREG | 0o755) << 16
         output.writestr(info, f"#!{sys.executable}\nprint('SonarScanner CLI {VERSION}')\n")
-    with tempfile.TemporaryDirectory(prefix="rv-signer-", dir="/tmp") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="rv-signer-",
+        dir=scratch_parent(context.root, context.tools.gpg.environment),
+    ) as temporary:
         home = Path(temporary)
         try:
             fingerprints = []
@@ -150,7 +154,10 @@ def test_an_unrelated_valid_signature_cannot_satisfy_the_pinned_primary_key(
     installer_context: tuple[Context, Path, str],
 ) -> None:
     context, archive, fingerprint = installer_context
-    with tempfile.TemporaryDirectory(prefix="rv-verify-", dir="/tmp") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="rv-verify-",
+        dir=scratch_parent(context.root, context.tools.gpg.environment),
+    ) as temporary:
         args = SignatureArgs(
             Path(temporary),
             context.root / "config/sonarsource-public-key.asc",

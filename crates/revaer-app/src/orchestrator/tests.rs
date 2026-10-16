@@ -27,7 +27,7 @@ mod orchestrator_tests {
     }
 
     fn server_root() -> TestResult<PathBuf> {
-        let root = repo_root().join(".server_root");
+        let root = repo_root().join(".test-tmp");
         fs::create_dir_all(&root)?;
         Ok(root)
     }
@@ -929,7 +929,7 @@ mod engine_refresh_tests {
 
     fn sample_fs_policy() -> FsPolicy {
         let root = repo_root()
-            .join(".server_root")
+            .join(".test-tmp")
             .join(format!("revaer-fsops-{}", Uuid::new_v4()));
         FsPolicy {
             id: Uuid::new_v4(),

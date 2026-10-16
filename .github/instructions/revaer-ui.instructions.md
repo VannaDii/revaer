@@ -20,8 +20,8 @@ applyTo:
   - `crates/revaer-ui/dist-serve/**`
   - `crates/revaer-ui/target/**`
   - `tests/node_modules/**`
-  - `tests/logs/**`
-  - `tests/test-results/**`
+  - `.test-tmp/e2e/logs/**`
+  - `.test-tmp/e2e/test-results/**`
 - Do not patch vendor code. Regenerate synchronized assets only for an authorized vendor ingestion or asset synchronization change. Vendor sources and synchronized Nexus assets follow the root Sonar exclusions; first-party UI code remains scanned.
 
 # UI Architecture
@@ -84,8 +84,8 @@ applyTo:
 ## Single-init E2E ownership
 
 - Hosted dry-run E2E may explicitly select `E2E_MANAGED_MEDIA_ROOTS=1` to own
-  private directories and a restart-persistent catalog beneath `E2E_FS_ROOT`
-  on deployment-provided dedicated ext4 storage. Keep real bootstrap attestation
+  private directories and a restart-persistent catalog beneath the repository's
+  `.test-tmp/` root. Keep real bootstrap attestation
   and missing-catalog scenarios; remove owned directories only after services stop.
   Caller-provided storage remains caller-owned; follow root device restrictions.
 

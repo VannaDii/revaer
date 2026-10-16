@@ -125,7 +125,7 @@ generation, verification and cleanup share a checkout-local operation lock.
 Acquisition/generation/cleanup refuse tracked destinations. Explicit snapshot
 updates intentionally edit the declared reviewed files.
 
-Conversion subprocesses receive `TMPDIR=target/media-conversion/tmp` as an
+Conversion subprocesses receive `TMPDIR=.test-tmp/media-conversion` as an
 absolute path. Cleanup does not search global temporary directories or other
 worktrees. It preserves manifests, reviewed snapshots and reports. Native tools
 must be installed through their package manager; Linux automation can select

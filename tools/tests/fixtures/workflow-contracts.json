@@ -531,7 +531,7 @@
               "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
               "with": {
                 "name": "ui-e2e-coverage-shard-${{ matrix.shard }}",
-                "path": "tests/test-results/api-coverage-*.json\ntests/test-results/ui-coverage-*.json\n",
+                "path": ".test-tmp/e2e/test-results/api-coverage-*.json\n.test-tmp/e2e/test-results/ui-coverage-*.json\n",
                 "if-no-files-found": "error"
               }
             },
@@ -617,7 +617,7 @@
               "uses": "actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
               "with": {
                 "name": "api-e2e-coverage",
-                "path": "tests/test-results/api-coverage-*.json",
+                "path": ".test-tmp/e2e/test-results/api-coverage-*.json",
                 "if-no-files-found": "error"
               }
             }
@@ -648,7 +648,7 @@
               "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
               "with": {
                 "name": "api-e2e-coverage",
-                "path": "tests/test-results"
+                "path": ".test-tmp/e2e/test-results"
               }
             },
             {
@@ -656,7 +656,7 @@
               "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
               "with": {
                 "name": "ui-e2e-coverage-shard-1",
-                "path": "tests/test-results"
+                "path": ".test-tmp/e2e/test-results"
               }
             },
             {
@@ -664,7 +664,7 @@
               "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
               "with": {
                 "name": "ui-e2e-coverage-shard-2",
-                "path": "tests/test-results"
+                "path": ".test-tmp/e2e/test-results"
               }
             },
             {
@@ -672,7 +672,7 @@
               "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
               "with": {
                 "name": "ui-e2e-coverage-shard-3",
-                "path": "tests/test-results"
+                "path": ".test-tmp/e2e/test-results"
               }
             },
             {
