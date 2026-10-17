@@ -116,6 +116,9 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
   must not change the controlled fixture data.
 - Composite qualification must enter through the same uv dotenv-loading boundary
   as standalone E2E before constructing its task context.
+- E2E authentication setup gives factory reset a bounded 30-second request
+  deadline for normalized-table cleanup. Other API requests retain their
+  10-second deadline; preserve status, mode-transition and schema assertions.
 - Rust coverage routing normalizes paths for tracked-source membership and merges
   same-source compilation records using their measured counters. Retain separate
   compilation records in the complete engine reports; follow root operator consent.
