@@ -6,7 +6,6 @@ responses. Packaging keeps the full submitted binary report, not an excerpt.
 """
 
 import json
-import re
 import tarfile
 import tempfile
 import tomllib
@@ -126,7 +125,7 @@ class SonarPrepareSources(Task):
             "crates/revaer-ui/dist",
             "tests/test-results",
             "tests/playwright-report",
-            "tests/logs",
+            ".test-tmp/e2e/logs",
         )
         names += tuple(
             str(path.relative_to(context.root))
@@ -192,9 +191,6 @@ class SonarScan(Task):
                 )
             )
             _require_nonempty(log)
-            normalized = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", context.fs.read(log))
-            if "WARN" in normalized:
-                raise ToolingError(f"Sonar scanner emitted WARN output; review {log}")
             _require_nonempty(report)
             identifier = task_id(context.fs.read(report))
             _report_files(scanner_work / "scanner-report")

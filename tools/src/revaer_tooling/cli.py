@@ -9,12 +9,14 @@ import signal
 import sys
 import time
 from collections.abc import Callable, Sequence
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
 from urllib.request import build_opener
 
 from .bootstrap.install import kcov_command
+from .bootstrap.scratch import repository_scratch, uses_test_scratch
 from .bootstrap.selection import APT_PROFILES, comma_selection
 from .context import Context, HostIdentity, Options, TaskResult, Tools
 from .database.postgres import ProofDatabase
@@ -37,7 +39,6 @@ from .external.github import GitHub
 from .external.http import Http, VisibleRedirects
 from .external.images import Buildx, Trivy
 from .external.media import Ffmpeg, Ffprobe
-from .external.mount import MkfsExt4, Mount, Unmount
 from .external.packages import Apk, Apt
 from .external.postgres import PostgresDocker
 from .external.python import Python, Uv
@@ -334,6 +335,8 @@ def parser() -> argparse.ArgumentParser:
             else commands.add_parser(name)
         )
         command.set_defaults(task=name)
+        if name == "cargo-lock":
+            command.add_argument("--online", dest="cargo_lock_online", action="store_true")
         if name in ("container-build", "container-runtime"):
             command.set_defaults(source_archive=True)
         if name in ("db-test-init", "db-test-drop"):
@@ -427,10 +430,6 @@ def make_context(options: Options) -> Context:
         "git", runner, root, env, installation_hint="install Git with your system package manager"
     )
     tools = Tools(
-        mount=Mount("mount", runner, root, env),
-        mkfs_ext4=MkfsExt4("mkfs.ext4", runner, root, env),
-        unmount=Unmount("umount", runner, root, env),
-        privilege=ExternalTool("sudo", runner, root, env) if host.uid != 0 else None,
         lifecycle_docker=LifecycleDocker("docker", runner, root, env),
         proof_databases=ProofDatabase(
             PostgresDocker("docker", runner, root, env),
@@ -589,6 +588,7 @@ def make_context(options: Options) -> Context:
 def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
     options = Options(
+        cargo_lock_online=getattr(args, "cargo_lock_online", False),
         database_name=getattr(args, "database_name", ""),
         chart_version=getattr(args, "chart_version", "0.0.0-dev.0"),
         app_version=getattr(args, "app_version", "v0.0.0-dev.0"),
@@ -633,10 +633,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                     environment_file, tuple(argv if argv is not None else sys.argv[1:])
                 )
                 return 0
-        context = make_context(options)
-        result = COMMANDS[args.task](context)
-        if result.message:
-            print(result.message)
+        root = checkout(Path.cwd().resolve(), source_archive=options.source_archive)
+        scratch = (
+            repository_scratch(root, FileSystem())
+            if uses_test_scratch(args.task)
+            else nullcontext()
+        )
+        with scratch:
+            context = make_context(options)
+            result = COMMANDS[args.task](context)
+            if result.message:
+                print(result.message)
         return 0
     except ToolingError as error:
         stderr_message(f"rv: {error}")

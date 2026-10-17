@@ -2,10 +2,12 @@
 
 This proves uv provisioning, native package pins, BuildKit mounts and runtime
 ownership without claiming that the full Revaer application was built or tested.
-Every builder/image belongs to this fixture and cleanup uses those exact names.
+Images and created builders belong to this fixture; an explicitly supplied
+builder remains caller-owned.
 """
 
 import json
+import os
 import secrets
 import shutil
 import subprocess
@@ -54,10 +56,13 @@ def test_real_dockerfile_uses_uv_and_keeps_tooling_out_of_the_runtime(tmp_path: 
         ["cargo", "generate-lockfile"], cwd=root, check=True, capture_output=True, timeout=120
     )
     inputs = BuildInputs.load(FileSystem(), root)
-    builder = "rv-container-proof-" + secrets.token_hex(8)
-    tag = builder + ":fixture"
+    identity = "rv-container-proof-" + secrets.token_hex(8)
+    supplied = os.environ.get("REVAER_TEST_BUILDX_BUILDER")
+    builder = supplied or identity
+    tag = identity + ":fixture"
     selected = selected_builders()
-    docker("buildx", "create", "--name", builder, "--driver", "docker-container")
+    if not supplied:
+        docker("buildx", "create", "--name", builder, "--driver", "docker-container")
     try:
         log_path = tmp_path / "docker-build.log"
         with log_path.open("w") as log:
@@ -174,4 +179,5 @@ def test_real_dockerfile_uses_uv_and_keeps_tooling_out_of_the_runtime(tmp_path: 
         identifiers = docker("image", "ls", "--quiet", tag).splitlines()
         if identifiers:
             docker("image", "rm", "--force", *identifiers)
-        docker("buildx", "rm", "--force", builder)
+        if not supplied:
+            docker("buildx", "rm", "--force", builder)

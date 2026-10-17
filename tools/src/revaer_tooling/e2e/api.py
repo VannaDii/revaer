@@ -36,6 +36,7 @@ class ApiRequest:
     path: Mapping[str, str] = field(default_factory=dict)
     query: Mapping[str, QueryValue] = field(default_factory=dict, repr=False)
     headers: Mapping[str, str] = field(default_factory=dict, repr=False)
+    timeout: float = 10
 
     def target(self, base_url: str) -> str:
         if not self.route.startswith("/") or self.route.startswith("//"):
@@ -120,7 +121,11 @@ class ApiClient:
         self.coverage.record(f"{args.method} {args.route}")
         result = self.http.request(
             HttpRequest(
-                args.method, args.target(self.base_url), {**self.headers, **args.headers}, args.body
+                args.method,
+                args.target(self.base_url),
+                {**self.headers, **args.headers},
+                args.body,
+                timeout=args.timeout,
             )
         )
         self.schema.validate(args, result)
@@ -162,7 +167,12 @@ def configure_auth(client: ApiClient, mode: str, filesystem_root: str) -> ApiSes
     if not health.ok:
         raise ToolingError("Initial health check failed")
     reset = client.request(
-        ApiRequest(Method.POST, "/admin/factory-reset", {"confirm": "factory reset"})
+        ApiRequest(
+            Method.POST,
+            "/admin/factory-reset",
+            {"confirm": "factory reset"},
+            timeout=30,
+        )
     )
     if reset.status != 204:
         raise ToolingError(f"Factory reset failed with {reset.status}")

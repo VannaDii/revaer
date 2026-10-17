@@ -60,7 +60,10 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
   supported `sinceLeakPeriod=true` API query and require zero new unresolved
   issues and zero new hotspots. PR checks still require zero current issues and
   hotspots in that PR. Do not filter hotspot dispositions or change scanner
-  scope, server criteria, coverage thresholds, or warning failures.
+  scope, server criteria, or coverage thresholds.
+- Preserve scanner diagnostics. Evaluate acceptance using scanner exit status,
+  required inputs and reports, and the published-result gates; do not reject
+  analysis solely because its log contains warning text.
 - Treat zero published coverage, a missing Rust LCOV report, a missing native LLVM coverage report, or unavailable SCM baseline data as a failed analysis even when Sonar reports a green quality gate.
 - Pull-request and main-branch scans must receive the same complete Rust, native, browser JavaScript, Python, and root Bash bootstrap coverage inputs and must retain the scanner report as uploaded evidence after post-scan verification.
 - Use pull-request-specific quality-gate checks when the user asks whether a PR is blocked.

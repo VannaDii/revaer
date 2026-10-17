@@ -49,7 +49,7 @@ def distributed_runs(
             producers,
             phases,
             count,
-            {index: path / "tests/test-results" for index, path in directories.items()},
+            {index: path / ".test-tmp/e2e/test-results" for index, path in directories.items()},
         )
         for index, path in directories.items():
             verify_producer(filesystem, path, phases, suffix=f"-shard-{index}" if count > 1 else "")
@@ -64,7 +64,9 @@ def verify_producer(
     if path.is_symlink():
         raise ToolingError("Coverage producer must not be a symlink")
     summary = object_value(
-        decode(filesystem.read(path / f"tests/test-results/python-e2e-summary{suffix}.json"))
+        decode(
+            filesystem.read(path / f".test-tmp/e2e/test-results/python-e2e-summary{suffix}.json")
+        )
     )
     if "ui-chromium" in phases and summary.get("browser_coverage") is not True:
         raise ToolingError("Chromium shards must collect browser line coverage")

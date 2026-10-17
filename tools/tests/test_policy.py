@@ -1,6 +1,7 @@
 """Policy fixtures protect forbidden constructs and the documented boundaries."""
 
 import pytest
+from revaer_tooling.policy.isolation import isolation_findings
 from revaer_tooling.tasks.policy import drift_findings, rust_findings
 
 
@@ -48,3 +49,32 @@ def test_instruction_drift_covers_nested_automation_and_python_sources() -> None
         assert drift_findings(changed)
         assert not drift_findings((*changed, ".github/instructions/devops.instructions.md"))
     assert not drift_findings(("docs/guide.md",))
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "losetup --find disk.img",
+        "mkfs.ext4 disk.img",
+        '"loop,nodev,nosuid"',
+        "--device=/dev/sda",
+        "/dev/loop0",
+        "--privileged",
+        "privileged: true",
+        "CAP_SYS_ADMIN",
+    ],
+)
+def test_isolation_policy_rejects_device_provisioning(source: str) -> None:
+    for path in (
+        "tools/src/revaer_tooling/tasks/e2e.py",
+        ".github/workflows/pr.yml",
+        "crates/revaer-app/src/bootstrap.rs",
+    ):
+        assert isolation_findings(path, source)
+
+
+def test_isolation_policy_allows_ordinary_ipc_and_storage_observations() -> None:
+    source = '"127.0.0.1:7070 /proc/self/mountinfo /dev/null"; Stdio::piped(); UnixStream::pair();'
+    source += 'symlink("loop", path);'
+    assert not isolation_findings("crates/revaer-app/src/bootstrap.rs", source)
+    assert not isolation_findings("tools/tests/test_policy.py", "losetup disk.img")

@@ -134,7 +134,7 @@ def test_media_cleanup_keeps_other_checkouts_and_old_global_temporary_data(
     media_context: Context,
 ) -> None:
     context = media_context
-    owned = context.root / "target/media-conversion/tmp/revaer-media-conversion.current"
+    owned = context.root / ".test-tmp/media-conversion/revaer-media-conversion.current"
     owned.mkdir(parents=True)
     (owned / "payload").write_text("temporary")
     foreign = context.root.parent / "revaer-media-conversion.other"
@@ -217,7 +217,7 @@ fn selected_ignored_integration_runs() -> Result<(), Box<dyn std::error::Error>>
     assert!(cfg!(feature = "fixture-feature"));
     let report = std::path::PathBuf::from(std::env::var("REVAER_MEDIA_CONVERSION_REPORT")?);
     let temporary = std::path::PathBuf::from(std::env::var("TMPDIR")?);
-    assert!(temporary.starts_with(std::env::current_dir()?.join("target/media-conversion")));
+    assert!(temporary.starts_with(std::env::current_dir()?.join(".test-tmp/media-conversion")));
     std::fs::write(temporary.join("owned-media"), "observed")?;
     let mode = std::env::var("RV_FIXTURE_MODE")?;
     if mode == "failure" { return Err("injected test failure".into()); }
@@ -251,7 +251,7 @@ def test_native_cargo_runs_ignored_integration_with_all_features(cargo_context: 
     result = MediaConversion.run(context)
     assert "positive audio/video actions" in result.message
     assert (context.root / context.settings.fixtures.report).read_text() == REPORT
-    assert (context.root / "target/media-conversion/tmp/owned-media").read_text() == "observed"
+    assert (context.root / ".test-tmp/media-conversion/owned-media").read_text() == "observed"
     assert (context.root / (str(context.settings.fixtures.report) + ".preparation")).is_file()
     # Repeat through the same native crate: stale success must not survive a
     # failing test process or a successful process that failed to write a report.
@@ -324,7 +324,7 @@ def test_conversion_requires_executed_production_worker(
         with pytest.raises((CommandError, ToolingError)):
             MediaConversion.run(context)
         assert not (context.root / context.settings.fixtures.report).exists()
-        assert not (context.root / "target/media-conversion/tmp/owned-media").exists()
+        assert not (context.root / ".test-tmp/media-conversion/owned-media").exists()
 
 
 def test_foundation_reports_only_fixture_verification(cargo_context: Context) -> None:
@@ -342,4 +342,4 @@ def test_foundation_reports_only_fixture_verification(cargo_context: Context) ->
         timeout=30,
     )
     assert "Source integrity" in MediaConversion.run(context).message
-    assert not (context.root / "target/media-conversion/tmp/owned-media").exists()
+    assert not (context.root / ".test-tmp/media-conversion/owned-media").exists()

@@ -34,13 +34,15 @@ from .build import SyncAssets
 from .database import database_connection
 
 OPENAPI_PATH = "docs/api/openapi.json"
+RESULTS_PATH = ".test-tmp/e2e/test-results"
 
 
 def require_media_readiness(client: ApiClient, logs: Path) -> None:
     readiness = client.request(ApiRequest(Method.GET, "/v1/media/root-catalog/readiness")).object()
     if readiness.get("source_state") != "ready" or readiness.get("attestation_state") != "ready":
         raise ToolingError(
-            "Media E2E requires a real active Linux root catalog; inspect " + str(logs)
+            "Media E2E requires dedicated ext4 storage and a trusted active root catalog; inspect "
+            + str(logs)
         )
 
 
@@ -49,24 +51,16 @@ def media_fixture(context: Context, paths: "RunPaths") -> Iterator[tuple["RunPat
     if not context.settings.e2e.managed_media_roots:
         yield paths, None
         return
-    if context.host.system != "linux" or context.settings.e2e.filesystem_root is not None:
-        raise ToolingError("Managed E2E media roots require Linux without a caller filesystem root")
-    directory = context.fs.temporary_directory(context.host.home, "revaer-e2e-")
-    image = directory / "media.ext4"
-    roots = directory / "roots"
-    mounted = False
+    if context.host.system != "linux":
+        raise ToolingError("Managed media roots require Linux storage attestation")
+    parent = context.root / ".test-tmp"
+    if parent.is_symlink():
+        raise ToolingError("Repository test scratch must not be a symlink")
+    context.fs.mkdir(parent)
+    # This run owns only a private child of the common repository scratch root.
+    # Normal application bootstrap remains responsible for storage attestation.
+    roots = context.fs.temporary_directory(parent, "revaer-e2e-")
     try:
-        # Leave the production 1 GiB reserve intact while real recovery tests
-        # create source, workspace and replacement media on the same filesystem.
-        context.fs.create_disk_image(image, 4 * 1024 * 1024 * 1024)
-        context.tools.mkfs_ext4.image(image, context.host.uid, context.host.gid)
-        context.fs.mkdir(roots)
-        context.fs.directory_permissions(roots, context.host.uid, context.host.gid, 0o700)
-        context.tools.mount.temporary(
-            roots, image, context.host.uid, context.host.gid, context.tools.privilege
-        )
-        mounted = True
-        context.fs.directory_permissions(roots, context.host.uid, context.host.gid, 0o700)
         slots = []
         for key, name, kinds in (
             ("ui-source", "source", ["source", "output"]),
@@ -91,9 +85,7 @@ def media_fixture(context: Context, paths: "RunPaths") -> Iterator[tuple["RunPat
         context.fs.write(catalog, json.dumps({"format_version": 1, "slots": slots}), 0o600)
         yield replace(paths, filesystem=roots), catalog
     finally:
-        if mounted:
-            context.tools.unmount.temporary(roots, context.tools.privilege)
-        context.fs.remove_owned(directory, context.host.home)
+        context.fs.remove_owned(roots, parent)
 
 
 @contextmanager
@@ -171,14 +163,12 @@ class RunPaths:
     @staticmethod
     def for_context(context: Context) -> "RunPaths":
         root = context.root
-        filesystem = context.settings.e2e.filesystem_root or root
-        if not filesystem.is_absolute():
-            filesystem = root / filesystem
+        filesystem = root / ".test-tmp"
         return RunPaths(
-            root / "tests/test-results",
-            root / "tests/playwright-report",
-            root / "tests/logs",
-            root / "tests/.runtime",
+            root / RESULTS_PATH,
+            root / ".test-tmp/e2e/playwright-report",
+            root / ".test-tmp/e2e/logs",
+            root / ".test-tmp/e2e/runtime",
             filesystem.resolve(),
         )
 
@@ -477,13 +467,13 @@ class UiE2e(Task):
             media_fixture(context, paths) as (selected_paths, catalog),
         ):
             run_suite(context, selected_paths, catalog)
-        return TaskResult("E2E phases passed; report: tests/playwright-report/index.html")
+        return TaskResult("E2E phases passed; report: .test-tmp/e2e/playwright-report/index.html")
 
 
 class UiE2eCoverage(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
-        directory = context.settings.e2e.coverage_directory or context.root / "tests/test-results"
+        directory = context.settings.e2e.coverage_directory or context.root / RESULTS_PATH
         if not directory.is_absolute():
             directory = context.root / directory
         if (context.root / "coverage/producers").is_dir():
@@ -518,7 +508,7 @@ class UiE2eShardCoverage(Task):
             context.options.expected_shards,
         ):
             return TaskResult("Every browser shard and API phase completed its expected scenarios")
-        directory = context.settings.e2e.coverage_directory or context.root / "tests/test-results"
+        directory = context.settings.e2e.coverage_directory or context.root / RESULTS_PATH
         if not directory.is_absolute():
             directory = context.root / directory
         verify_shards(

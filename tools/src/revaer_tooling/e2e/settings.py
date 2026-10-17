@@ -32,7 +32,6 @@ class E2eSettings:
     ui_url: str
     admin_url: str | None = field(repr=False)
     database_prefix: str
-    filesystem_root: Path | None
     managed_media_roots: bool
     coverage_directory: Path | None
     skip_database_start: bool
@@ -168,7 +167,6 @@ def load_e2e_settings(environment: Mapping[str, str]) -> E2eSettings:
     shard_index = integer(environment, "PLAYWRIGHT_SHARD_INDEX", 1)
     if shard_index > shard_total:
         raise ToolingError("PLAYWRIGHT_SHARD_INDEX must not exceed PLAYWRIGHT_SHARD_TOTAL")
-    fs_root = environment.get("E2E_FS_ROOT")
     coverage = environment.get("E2E_COVERAGE_DIR")
     workers = integer(environment, "E2E_UI_WORKERS", 1)
     return E2eSettings(
@@ -178,7 +176,6 @@ def load_e2e_settings(environment: Mapping[str, str]) -> E2eSettings:
         or environment.get("REVAER_TEST_DATABASE_URL")
         or environment.get("DATABASE_URL"),
         database_prefix=prefix,
-        filesystem_root=Path(fs_root) if fs_root else None,
         managed_media_roots=boolean(environment, "E2E_MANAGED_MEDIA_ROOTS", False),
         coverage_directory=Path(coverage) if coverage else None,
         skip_database_start=boolean(environment, "E2E_SKIP_DB_START", False),

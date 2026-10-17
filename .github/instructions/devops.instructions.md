@@ -1,5 +1,6 @@
 ---
 applyTo:
+  - ".config/nextest.toml"
   - ".github/workflows/**"
   - ".github/actions/**"
   - "Dockerfile"
@@ -35,11 +36,19 @@ applyTo:
   Compiler parallelism is independent of test resource limits; explicit operator
   overrides remain supported. Python tooling execution follows
   `python.instructions.md`; preserve the supported raw coverage merge.
+- The subprocess deadline/setup and TERM-grace timing fixtures reserve the
+  nextest runner exclusively. Preserve their millisecond timing assertions;
+  unrelated child-process startup must not consume their setup budget.
 
 
-- API and browser E2E jobs explicitly provision FFmpeg for real capability probes
-  and e2fsprogs for managed media roots. Do not rely on runner-image tools or the
-  installed tools of a developer checkout to satisfy these job dependencies.
+- API and browser E2E jobs explicitly provision FFmpeg for real capability probes.
+  Managed media storage uses the root repo-local test scratch contract. Do not
+  rely on runner-image tools or a developer checkout for job dependencies.
+
+- Real Dockerfile and image-export tooling fixtures may consume an explicitly supplied
+  `REVAER_TEST_BUILDX_BUILDER` without changing its selection or removing it.
+  Retain every actual image/runtime assertion and clean only fixture-owned images;
+  otherwise each fixture owns and removes its unique builder.
 
 - Composed validation provisions an owned single-init fixture or verifies the
   caller-selected database without repair. Preserve administrative test endpoints
@@ -378,15 +387,17 @@ applyTo:
 - Feature-matrix and API/browser E2E setup includes FFmpeg alongside database
   prerequisites because those jobs execute native media runtime scenarios.
   Feature-matrix and Rust coverage also select the owned ext4 fixture for
-  native root tests; a home-directory filesystem is not that proof. Install
-  e2fsprogs for the private loop-backed image and retain it until unmount succeeds.
+  native root tests. Use private directories beneath the selected repository's
+  `.test-tmp/`; do not require a repository variable or external test root.
+  Missing or unsuitable storage must fail normal application attestation,
+  never skip required tests or fall back to device provisioning.
 
 - Hosted test Postgres services publish `127.0.0.1:5432:5432` for the single-init
   endpoint check. Media E2E selects `job.services.postgres.id` and its matching admin
-  password. `E2E_MANAGED_MEDIA_ROOTS=1` gives dry-run API/browser scenarios an
-  owned private Linux ext4 catalog, validated by normal application bootstrap;
-  clear the checked-in `E2E_FS_ROOT` default in those managed steps.
-  Stop services before unmounting and removing those disposable roots.
+  password. `E2E_MANAGED_MEDIA_ROOTS=1` creates an owned private catalog beneath
+  `.test-tmp/`, validated by normal application bootstrap. Stop services before
+  deleting fixture-owned directories. Browser outputs and their CI upload paths
+  use `.test-tmp/e2e/`; keep mandatory coverage/scanner paths unchanged.
 
 - Database services use the approved PostgreSQL 18.6 image digest from
   `.github/build-inputs.env`; floating major-version tags are not suitable.

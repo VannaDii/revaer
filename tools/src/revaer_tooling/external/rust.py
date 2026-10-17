@@ -368,9 +368,9 @@ class Cargo(ExternalTool):
             )
         )
 
-    def lock_workspace(self) -> Completed:
-        """Reconcile workspace metadata offline without upgrading registry dependencies."""
-        return self._invoke(("update", "--workspace", "--offline"))
+    def lock_workspace(self, *, online: bool = False) -> Completed:
+        """Reconcile changed workspace requirements, fetching only when requested."""
+        return self._invoke(("update", "--workspace", *(() if online else ("--offline",))))
 
     def run_binary(
         self,

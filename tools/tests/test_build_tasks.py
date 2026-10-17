@@ -27,6 +27,7 @@ from revaer_tooling.tasks.build import (
     ReleaseArtifacts,
     Sbom,
 )
+from revaer_tooling.tasks.quality import CargoLock
 
 
 @pytest.fixture
@@ -379,3 +380,25 @@ def test_api_export_rejects_successful_empty_generator(workspace: Context) -> No
     )
     with pytest.raises(ToolingError, match="nonempty API paths"):
         ApiExport.run(workspace)
+
+
+@pytest.mark.parametrize("online", (False, True))
+def test_cargo_lock_reconciles_changed_workspace_versions(workspace: Context, online: bool) -> None:
+    manifest = workspace.root / "crates/revaer-app/Cargo.toml"
+    manifest.write_text(manifest.read_text().replace('version = "0.1.0"', 'version = "0.2.0"'))
+    context = Context(
+        root=workspace.root,
+        settings=workspace.settings,
+        options=Options(cargo_lock_online=online),
+        tools=workspace.tools,
+        fs=workspace.fs,
+        emit=workspace.emit,
+        host=workspace.host,
+        invoked_at=workspace.invoked_at,
+        command_names=workspace.command_names,
+    )
+    CargoLock.run(context)
+    packages = tomllib.loads((workspace.root / "Cargo.lock").read_text())["package"]
+    versions = {package["name"]: package["version"] for package in packages}
+    assert versions["revaer-app"] == "0.2.0"
+    assert versions["asset_sync"] == "0.1.0"

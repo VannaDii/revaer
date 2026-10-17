@@ -74,19 +74,11 @@ impl AssociationSource for RetainedRootCatalog {
                 let directory = self.roots.open_read_directory(index, path)?;
                 let entries = read_media_directory_at(&directory, entry_limit)?;
                 let current = self.roots.open_read_directory(index, path)?;
-                let observe = |descriptor: &std::os::fd::OwnedFd| {
-                    rustix::fs::fstat(descriptor).map_err(|source| FingerprintError::Io {
-                        path: path.to_path_buf(),
-                        source: std::io::Error::from(source),
-                    })
-                };
-                let after = observe(&current)?;
-                if !crate::media_discovery_fingerprint::directory_observations_match(
+                crate::media_discovery_fingerprint::validate_directory_observation(
+                    &current,
                     &entries.observation,
-                    &after,
-                ) {
-                    return Err(FingerprintError::DirectoryChanged);
-                }
+                    entry_limit,
+                )?;
                 Ok(entries)
             },
         )

@@ -47,6 +47,18 @@ def test_reviewed_manifest_and_complete_runtime_declaration_pass(context: Contex
     assert "passed" in MediaComplianceGuardrails.run(context).message
 
 
+def test_runtime_guard_handles_deleted_adapters(
+    context: Context, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    files = context.tools.git.files
+
+    def inventory(include_untracked: bool = False) -> tuple[str, ...]:
+        return (*files(include_untracked=include_untracked), "tools/src/deleted_adapter.py")
+
+    monkeypatch.setattr(context.tools.git, "files", inventory)
+    assert not media_compliance_findings(context)
+
+
 def test_canonical_policy_blocks_inconsistent_runtime_pins(context: Context) -> None:
     source = Path(__file__).parents[2]
     for name in (".secignore", "deny.toml"):
@@ -161,11 +173,21 @@ def test_container_preparation_refuses_the_developer_host(context: Context) -> N
             container_inputs(replace(context, host=replace(context.host, uid=0)))
 
 
-def test_source_archives_require_explicit_opt_in_and_complete_revaer_metadata() -> None:
-    # Outside any Git checkout: an archive nested in another worktree must not
-    # bypass the existing nearest-Git-boundary rule.
-    with tempfile.TemporaryDirectory(prefix="rv-archive-", dir="/tmp") as temporary:
+def test_source_archives_require_explicit_opt_in_and_complete_revaer_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Model an archive without an enclosing checkout while keeping its actual
+    # files under the common repository scratch root.
+    with tempfile.TemporaryDirectory(prefix="rv-archive-") as temporary:
         root = Path(temporary)
+        exists = Path.exists
+
+        def archive_exists(path: Path) -> bool:
+            if path.name == ".git" and not path.is_relative_to(root):
+                return False
+            return exists(path)
+
+        monkeypatch.setattr(Path, "exists", archive_exists)
         (root / "tools/src/revaer_tooling").mkdir(parents=True)
         (root / "tools/src/revaer_tooling/cli.py").touch()
         (root / "pyproject.toml").write_text('[project]\nname="revaer-tooling"\n')

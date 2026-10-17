@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use revaer_test_support::fixtures::{docker_available, docker_available_with_host};
 use revaer_test_support::postgres::{start_postgres, start_postgres_at};
@@ -69,7 +69,7 @@ fn docker_available_with_host_rejects_missing_unix_socket() {
 #[test]
 fn docker_available_with_host_accepts_existing_unix_socket()
 -> Result<(), Box<dyn std::error::Error>> {
-    let socket_dir = PathBuf::from(".server_root/test-support");
+    let socket_dir = std::env::temp_dir().join("test-support");
     fs::create_dir_all(&socket_dir)?;
     let socket_path = socket_dir.join("revaer-docker.sock");
     fs::write(&socket_path, "")?;
@@ -85,7 +85,7 @@ fn docker_available_with_host_accepts_existing_unix_socket()
 #[test]
 fn docker_available_with_host_uses_existing_default_socket()
 -> Result<(), Box<dyn std::error::Error>> {
-    let socket_dir = PathBuf::from(".server_root/test-support");
+    let socket_dir = std::env::temp_dir().join("test-support");
     fs::create_dir_all(&socket_dir)?;
     let socket_path = socket_dir.join("revaer-docker-default.sock");
     fs::write(&socket_path, "")?;

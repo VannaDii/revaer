@@ -27,50 +27,50 @@ from revaer_tooling.tasks import e2e
 from revaer_tooling.tasks.build import SyncAssets
 
 
-@pytest.mark.parametrize("failure", ("", "format", "mount", "scenario", "unmount"))
-def test_managed_media_fixture_cleanup_preserves_mount_failure(
+@pytest.mark.parametrize("failure", ("", "setup", "scenario", "cleanup"))
+def test_managed_media_fixture_owns_only_private_directories(
     coordinator: tuple[Context, "Scenario"], monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
     context, _ = coordinator
+    parent = context.root / ".test-tmp"
+    parent.mkdir(exist_ok=True)
+    sentinel = parent / "caller-data"
+    sentinel.write_text("preserve")
+    caller_entries = set(parent.iterdir())
+    original_mode = parent.stat().st_mode
     context = replace(
         context,
-        host=replace(context.host, system="linux", home=context.root),
+        host=replace(context.host, system="linux"),
         settings=replace(
-            context.settings, e2e=replace(context.settings.e2e, managed_media_roots=True)
+            context.settings,
+            e2e=replace(context.settings.e2e, managed_media_roots=True),
         ),
     )
-    events: list[str] = []
     created: list[Path] = []
+    write = context.fs.write
+    remove = context.fs.remove_owned
 
-    def format_image(image: Path, uid: int, gid: int) -> None:
-        events.append("format")
-        created.append(image.parent)
-        assert image.stat().st_mode & 0o777 == 0o600
-        assert image.stat().st_size > 1024 * 1024 * 1024
-        if failure == "format":
-            raise ToolingError("format failed")
+    def write_catalog(path: Path, value: str, mode: int = 0o644) -> None:
+        created.append(path.parent)
+        if failure == "setup":
+            raise ToolingError("setup failed")
+        write(path, value, mode)
 
-    def mount(path: Path, image: Path, uid: int, gid: int, privilege: object) -> None:
-        events.append("mount")
-        assert path == created[0] / "roots"
-        assert image.parent == created[0]
-        if failure == "mount":
-            raise ToolingError("mount failed")
+    def cleanup(path: Path, owner: Path) -> None:
+        assert owner == parent
+        assert path.parent == parent
+        if failure == "cleanup":
+            raise ToolingError("cleanup failed")
+        remove(path, owner)
 
-    def unmount(path: Path, privilege: object) -> None:
-        assert path == created[0] / "roots"
-        events.append("unmount")
-        if failure == "unmount":
-            raise ToolingError("unmount failed")
-
-    monkeypatch.setattr(context.tools.mount, "temporary", mount)
-    monkeypatch.setattr(context.tools.mkfs_ext4, "image", format_image)
-    monkeypatch.setattr(context.tools.unmount, "temporary", unmount)
+    monkeypatch.setattr(context.fs, "write", write_catalog)
+    monkeypatch.setattr(context.fs, "remove_owned", cleanup)
 
     def run() -> None:
         with e2e.media_fixture(context, e2e.RunPaths.for_context(context)) as (paths, catalog):
             assert catalog is not None
-            assert paths.filesystem == created[0] / "roots"
+            assert paths.filesystem == created[0]
+            assert paths.filesystem.stat().st_mode & 0o777 == 0o700
             assert catalog.stat().st_mode & 0o777 == 0o600
             document = json.loads(catalog.read_text())
             assert len(document["slots"]) == 3
@@ -80,19 +80,49 @@ def test_managed_media_fixture_cleanup_preserves_mount_failure(
                 assert Path(slot["path"]).stat().st_mode & 0o777 == 0o700
             if failure == "scenario":
                 raise ToolingError("scenario failed")
+            with e2e.media_fixture(context, paths) as (other, _):
+                assert other.filesystem != paths.filesystem
+                assert paths.filesystem.is_dir()
+            assert paths.filesystem.is_dir()
 
     if failure:
         with pytest.raises(ToolingError, match=failure + " failed"):
             run()
     else:
         run()
-    expected = ["format", "mount", "unmount"]
-    if failure == "format":
-        expected = ["format"]
-    elif failure == "mount":
-        expected = ["format", "mount"]
-    assert events == expected
-    assert created[0].exists() == (failure == "unmount")
+    assert all(path.exists() == (failure == "cleanup") for path in created)
+    assert sentinel.read_text() == "preserve"
+    assert parent.stat().st_mode == original_mode
+    assert set(parent.iterdir()) == caller_entries | {path for path in created if path.exists()}
+
+
+@pytest.mark.parametrize("selection", ("file", "link", "platform"))
+def test_managed_media_fixture_rejects_invalid_scratch(
+    coordinator: tuple[Context, "Scenario"], selection: str
+) -> None:
+    context, _ = coordinator
+    parent = context.root / ".test-tmp"
+    context.fs.remove_owned(parent, context.root)
+    if selection == "file":
+        parent.write_text("caller data")
+    elif selection == "link":
+        parent.symlink_to(context.root, target_is_directory=True)
+    context = replace(
+        context,
+        host=replace(context.host, system="darwin" if selection == "platform" else "linux"),
+        settings=replace(
+            context.settings,
+            e2e=replace(context.settings.e2e, managed_media_roots=True),
+        ),
+    )
+    expected = OSError if selection == "file" else ToolingError
+    with (
+        pytest.raises(expected),
+        e2e.media_fixture(context, e2e.RunPaths.for_context(context)),
+    ):
+        pytest.fail("invalid scratch admitted")
+    if selection == "file":
+        assert parent.read_text() == "caller data"
 
 
 @dataclass
@@ -129,7 +159,13 @@ class Service:
 
 @pytest.fixture
 def coordinator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Context, Scenario]:
-    for name in (".git", "tools/src/revaer_tooling", "tests/test-results", "docs/api"):
+    for name in (
+        ".git",
+        "tools/src/revaer_tooling",
+        ".test-tmp/e2e/test-results",
+        "docs/api",
+        "tests",
+    ):
         (tmp_path / name).mkdir(parents=True)
     (tmp_path / "tools/src/revaer_tooling/cli.py").touch()
     (tmp_path / "Cargo.toml").touch()
@@ -152,7 +188,7 @@ def coordinator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Contex
         )
     )
     for name in ("api-coverage-stale.json", "ui-coverage-stale.json", "selection-stale.json"):
-        (tmp_path / "tests/test-results" / name).write_text('["stale"]')
+        (tmp_path / ".test-tmp/e2e/test-results" / name).write_text('["stale"]')
     monkeypatch.chdir(tmp_path)
     # Explicit settings prevent a developer's .env or E2E selection from changing
     # which resource transitions this fault-injection suite exercises.
@@ -256,7 +292,7 @@ def test_complete_run_authenticates_in_order_and_cleans_owned_resources(
         "auth-api_key",
     ]
     assert scenario.events[-3:] == ["stop-ui", "stop-api", "drop-database"]
-    results = context.root / "tests/test-results"
+    results = context.root / ".test-tmp/e2e/test-results"
     assert not list(results.glob("*stale.json"))
     assert json.loads((results / "python-e2e-summary.json").read_text())["status"] == "passed"
 
@@ -289,7 +325,7 @@ def test_media_restarts_after_reset_and_never_manufactures_catalog_readiness(
             e2e.UiE2e.run(context)
     else:
         e2e.UiE2e.run(context)
-        missing = context.root / "tests/.runtime/missing-media-roots.json"
+        missing = context.root / ".test-tmp/e2e/runtime/missing-media-roots.json"
         assert scenario.catalogs == [
             missing,
             missing,
@@ -315,7 +351,9 @@ def test_media_restarts_after_reset_and_never_manufactures_catalog_readiness(
         if event == "auth-none" or event == "auth-api_key":
             assert scenario.events[index + 1] == "stop-api"
             assert scenario.events[index + 2] == "free-7070"
-    summary = json.loads((context.root / "tests/test-results/python-e2e-summary.json").read_text())
+    summary = json.loads(
+        (context.root / ".test-tmp/e2e/test-results/python-e2e-summary.json").read_text()
+    )
     assert summary["status"] == ("failed" if failure else "passed")
     assert set(summary["phases"]) == set(context.settings.e2e.phases(media=True))
 
@@ -353,7 +391,9 @@ def test_failures_keep_cleanup_order_and_failed_summary(
         assert events.index("stop-ui") < events.index("stop-api")
     if failure in ("free-7070", "migrate", "start-api", "health-7070", "start-ui", "owner-8080"):
         assert not any(event.startswith("auth-") for event in events)
-    summary = json.loads((context.root / "tests/test-results/python-e2e-summary.json").read_text())
+    summary = json.loads(
+        (context.root / ".test-tmp/e2e/test-results/python-e2e-summary.json").read_text()
+    )
     assert summary["status"] == "failed"
     if failure == "api-api-key":
         assert summary["phases"] == {
@@ -364,7 +404,9 @@ def test_failures_keep_cleanup_order_and_failed_summary(
     # A failed invocation releases its lock, so a subsequent repair can run.
     scenario.failure = ""
     e2e.UiE2e.run(context)
-    repaired = json.loads((context.root / "tests/test-results/python-e2e-summary.json").read_text())
+    repaired = json.loads(
+        (context.root / ".test-tmp/e2e/test-results/python-e2e-summary.json").read_text()
+    )
     assert repaired["status"] == "passed"
 
 
@@ -395,7 +437,7 @@ def test_runbook_archives_the_current_outcome_under_the_suite_lock(
             raise KeyboardInterrupt
 
     def coverage(owner: Context) -> TaskResult:
-        assert owner.settings.e2e.coverage_directory == context.root / "tests/test-results"
+        assert owner.settings.e2e.coverage_directory == context.root / ".test-tmp/e2e/test-results"
         if failure == "coverage":
             raise ToolingError("injected route-coverage failure")
         return TaskResult()
@@ -417,4 +459,4 @@ def test_runbook_archives_the_current_outcome_under_the_suite_lock(
         assert (destination / "test-results/result.json").read_text() == "current result"
         assert not (destination / "logs/old.log").exists()
         assert not (destination / "test-results/e2e-state.json").exists()
-        assert (context.root / "tests/test-results/e2e-state.json").is_file()
+        assert (context.root / ".test-tmp/e2e/test-results/e2e-state.json").is_file()

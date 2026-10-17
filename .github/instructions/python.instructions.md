@@ -33,17 +33,20 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 - Bootstrap coverage uses a private disposable pytest base directory and removes
   it on success or failure, leaving other pytest sessions' directories intact.
 
-- E2E's explicitly managed Linux roots use injected native mount/unmount tools.
-  Rust tests and coverage reuse that fixture when explicitly selected, passing
-  its mounted directory as `REVAER_NATIVE_RECOVERY_ROOT` for native root tests.
-  Preserve the private owned directory after an unmount failure; never remove
-  caller roots or substitute catalog declarations for bootstrap attestation.
-  The disposable fixture has 4 GiB of capacity so normal media work can run
-  above the production 1 GiB free-space reserve; production limits stay intact.
+- Follow the root `.test-tmp/` contract. Test CLI commands supply private run
+  directories through `TMPDIR` and restore environment/cache state afterward.
+  Managed media fixtures create owned children beneath that same repository root;
+  Rust and coverage tasks pass them as `REVAER_NATIVE_RECOVERY_ROOT`. Keep normal
+  bootstrap attestation and production free-space reserves intact. GnuPG homes
+  use short private children of the common root to respect Unix socket limits.
 
 - The optional fixture-probe container is caller-selected at bootstrap. Setup
   provisions the existing approved Alpine build; cleanup verifies project,
   purpose and read-only checkout ownership before removing that container.
+
+- Rootless Docker database fixtures grant the mapped server group access only
+  to their owned scratch directory, retain PostgreSQL data permissions and
+  restore caller ownership before cleanup. Never widen repository permissions.
 
 - Keep the explicit CLI dictionary mapped to derived tasks' static
   `run(context)` methods. Internal steps stay ordinary calls unless useful as
@@ -113,6 +116,9 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
   must not change the controlled fixture data.
 - Composite qualification must enter through the same uv dotenv-loading boundary
   as standalone E2E before constructing its task context.
+- E2E authentication setup gives factory reset a bounded 30-second request
+  deadline for normalized-table cleanup. Other API requests retain their
+  10-second deadline; preserve status, mode-transition and schema assertions.
 - Rust coverage routing normalizes paths for tracked-source membership and merges
   same-source compilation records using their measured counters. Retain separate
   compilation records in the complete engine reports; follow root operator consent.
@@ -123,3 +129,7 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
   percent-encoding cases.
 - Exact SCM preparation must reject a stale local target branch that would shadow
   the fetched event base. Preserve shared worktrees; qualify in an independent checkout.
+
+- `rv cargo-lock` remains offline by default. Use its explicit `--online` option
+  when changed manifest requirements need missing registry metadata; preserve
+  existing unrelated locked registry versions.

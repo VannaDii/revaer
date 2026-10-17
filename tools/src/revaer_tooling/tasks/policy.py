@@ -6,10 +6,13 @@ import re
 from ..context import Context, TaskResult
 from ..errors import ToolingError
 from ..policy.advisories import advisory_findings
+from ..policy.isolation import isolation_findings
 from ..policy.workflows import workflow_findings
 from .base import Task
 from .compliance import MediaComplianceGuardrails
 from .workflows import SonarPolicy, WorkflowPolicy
+
+YAML_SUFFIXES = (".yaml", ".yml")
 
 
 def matching_lines(source: str, pattern: str, insensitive: bool = False) -> tuple[int, ...]:
@@ -77,11 +80,13 @@ class SourcePolicy(Task):
             path = context.root / relative
             if not path.is_file():
                 continue
+            if path.suffix in (".rs", ".py", ".cpp", ".h", *YAML_SUFFIXES):
+                failures.extend(isolation_findings(relative, context.fs.read(path)))
             if relative.endswith(".rs") and relative.startswith(("crates/", "tests/", "scripts/")):
                 failures.extend(rust_findings(relative, context.fs.read(path)))
-            if relative.startswith((".github/workflows/", ".github/actions/")) and path.suffix in (
-                ".yaml",
-                ".yml",
+            if (
+                relative.startswith((".github/workflows/", ".github/actions/"))
+                and path.suffix in YAML_SUFFIXES
             ):
                 failures.extend(
                     workflow_findings(relative, context.fs.read(path), context.command_names)
@@ -103,8 +108,7 @@ class SourcePolicy(Task):
                 ".rb",
                 ".js",
                 ".ts",
-                ".yaml",
-                ".yml",
+                *YAML_SUFFIXES,
                 ".cpp",
                 ".h",
                 ".sql",

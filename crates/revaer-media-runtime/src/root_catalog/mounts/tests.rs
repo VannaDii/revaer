@@ -189,7 +189,7 @@ fn linux_snapshot_matches_opened_root_descriptor() -> anyhow::Result<()> {
     use crate::root_catalog::{ProcRootMountSource, RootMountSource};
     let directory = tempfile::Builder::new()
         .prefix(".root-mount-test-")
-        .tempdir_in(std::env::current_dir()?)?;
+        .tempdir()?;
     let catalog =
         crate::root_catalog::parse_root_catalog_v1(&serde_json::to_vec(&serde_json::json!({
             "format_version": 1,

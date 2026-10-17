@@ -15,6 +15,7 @@ import tomllib
 import zipfile
 from pathlib import Path, PurePosixPath
 
+from ..bootstrap.scratch import scratch_parent
 from ..context import Context, HostIdentity
 from ..errors import ToolingError
 from ..external.charts import SignatureArgs
@@ -170,7 +171,10 @@ def install_scanner(context: Context) -> Path:
                 )
         # Public-key verification starts no agent. A short private home also
         # avoids GnuPG's Unix socket path limit on macOS runner temp paths.
-        with tempfile.TemporaryDirectory(prefix="rv-sonar-key-", dir="/tmp") as home:
+        with tempfile.TemporaryDirectory(
+            prefix="rv-sonar-key-",
+            dir=scratch_parent(context.root, context.tools.gpg.environment),
+        ) as home:
             context.tools.gpg.verify_signature(
                 SignatureArgs(Path(home), key, fingerprint, archive, signature)
             )

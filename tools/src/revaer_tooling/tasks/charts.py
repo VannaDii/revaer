@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 
+from ..bootstrap.scratch import scratch_parent
 from ..context import Context, TaskResult
 from ..errors import ToolingError
 from ..external.charts import PackageArgs, RegistryCredentials
@@ -192,7 +193,10 @@ class HelmPackage(Task):
             tempfile.TemporaryDirectory(prefix="revaer-chart-") as staging,
             # Agent socket paths have a much smaller limit than filesystem
             # paths. A private short home works even when TMPDIR is a worktree.
-            tempfile.TemporaryDirectory(prefix="rv-signing-", dir="/tmp") as home,
+            tempfile.TemporaryDirectory(
+                prefix="rv-signing-",
+                dir=scratch_parent(context.root, context.tools.gpg.environment),
+            ) as home,
         ):
             try:
                 package_chart(context, Path(staging), Path(home))

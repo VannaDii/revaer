@@ -163,7 +163,7 @@ class TestMediaConversion(Task):
                 # fixture verification; never describe that as a transcoding run.
                 return verify(context, catalog)
             report = owned_path(context.root, context.settings.fixtures.report)
-            temporary = owned_path(context.root, "target/media-conversion/tmp")
+            temporary = owned_path(context.root, ".test-tmp/media-conversion")
             protect_tracked(context, (report, temporary))
             context.fs.remove_owned(report, context.root)
             preparation = replace(
@@ -269,7 +269,7 @@ class CleanTestMedia(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
         with fixture_operation(context):
-            path = owned_path(context.root, "target/media-conversion")
+            path = owned_path(context.root, ".test-tmp/media-conversion")
             protect_tracked(context, (path,))
             context.fs.remove_owned(path, context.root)
         return TaskResult("Removed temporary media owned by this checkout")
