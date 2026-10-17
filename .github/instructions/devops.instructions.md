@@ -176,13 +176,13 @@ applyTo:
 
 - Feature-matrix and API/browser E2E setup includes FFmpeg alongside database
   prerequisites because those jobs execute native media runtime scenarios.
-  Feature-matrix and Rust coverage also select the owned ext4 fixture for
+  Feature-matrix and Rust coverage also select the owned directory fixture for
   native root tests. Use private directories beneath the selected repository's
   `.test-tmp/`; do not require a repository variable or external test root.
   Missing or unsuitable storage must fail normal application attestation,
   never skip required tests or fall back to device provisioning.
-  Private ext4 directories may share the runner's root filesystem; do not
-  require a separate storage device or mount for repo-local test scratch.
+  Private directories may share the runner's root filesystem; do not require
+  a particular filesystem name, separate device or dedicated mount.
 
 - Hosted test Postgres services publish `127.0.0.1:5432:5432` for the single-init
   endpoint check. Media E2E selects `job.services.postgres.id` and its matching admin

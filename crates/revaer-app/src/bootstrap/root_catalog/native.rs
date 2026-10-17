@@ -316,7 +316,7 @@ fn prove(
     roots: &OpenedRootCatalog,
     mounts: &dyn RootMountSource,
 ) -> Result<ProofSnapshot, ProofError> {
-    // Do not convert declarations into deployment or persistence proof.
+    // Deployment declarations do not replace live descriptor/capability checks.
     for slot in source.catalog().slots() {
         if slot.sole_writer_evidence() == SoleWriterEvidence::KubernetesReadWriteOncePod {
             return Err(ProofError::Writer);
@@ -325,15 +325,16 @@ fn prove(
     source.revalidate()?;
     let topology = mounts.snapshot().map_err(RootDirectoryError::MountRead)?;
     let observations = roots.observations(&topology)?;
-    for (slot, observation) in source.catalog().slots().iter().zip(&observations) {
-        match (slot.durability_class(), slot.durability_evidence()) {
-            (DurabilityClass::Disposable, DurabilityEvidence::None) => {
-                disposable_filesystem(observation.filesystem_type())?;
-            }
-            (DurabilityClass::RestartPersistent, DurabilityEvidence::LinuxDedicatedMount) => {
-                persistent_filesystem(observation.filesystem_type())?;
-            }
-            _ => return Err(ProofError::Durability),
+    for slot in source.catalog().slots() {
+        if !matches!(
+            (slot.durability_class(), slot.durability_evidence()),
+            (DurabilityClass::Disposable, DurabilityEvidence::None)
+                | (
+                    DurabilityClass::RestartPersistent,
+                    DurabilityEvidence::LinuxDedicatedMount
+                )
+        ) {
+            return Err(ProofError::Durability);
         }
     }
     let capabilities = roots.probe_capabilities(mounts)?;
@@ -344,24 +345,6 @@ fn prove(
         capabilities,
         identity,
     })
-}
-
-fn disposable_filesystem(filesystem: &str) -> Result<(), ProofError> {
-    // Only private Linux tmpfs has the existing non-destructive proof here.
-    // Other filesystems require their package evidence, not an inferred grant.
-    if filesystem != "tmpfs" {
-        return Err(ProofError::Durability);
-    }
-    Ok(())
-}
-
-fn persistent_filesystem(filesystem: &str) -> Result<(), ProofError> {
-    // Private ext4 directories are exercised by the repo-local restart fixture.
-    // Other native filesystems and PVCs remain pending their package evidence.
-    if filesystem != "ext4" {
-        return Err(ProofError::Durability);
-    }
-    Ok(())
 }
 
 fn claims<'a>(

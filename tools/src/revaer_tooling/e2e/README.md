@@ -59,14 +59,15 @@ working files use the selected repository's `.test-tmp/` root. The coordinator
 creates private source/output/workspace directories and a restart-persistent
 catalog beneath it, without formatting, mounting, or accessing block devices.
 Normal application bootstrap still validates the storage and ownership contract.
-Private ext4 directories may share the repository's root filesystem; a separate
-device or mount is not required.
+Private directories may share the repository's root filesystem. Admission uses
+actual capability checks, without a filesystem-name allowlist or separate mount.
 Cleanup stops services before deleting only that run's private directories;
 concurrent runs and other files beneath the common root remain untouched.
 Browser results, reports, logs and runtime files use `.test-tmp/e2e/`.
 Rust and Python temporary files inherit a private directory under the same root
 through `rv`'s `TMPDIR`. Required coverage inputs retain their canonical paths.
-Persistent replacement and restart recovery retain the existing ext4 service test.
+Persistent replacement and restart recovery run the existing service tests on
+the selected repository filesystem.
 
 API phases use one worker because they share mutable application configuration.
 UI workers are configurable. Keys pass to pytest through its environment, with
