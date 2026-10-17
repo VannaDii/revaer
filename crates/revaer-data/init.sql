@@ -30304,20 +30304,20 @@ CREATE FUNCTION revaer_config.factory_reset_without_media_defaults_v1() RETURNS 
 DECLARE
     base_rate_limit_message CONSTANT text := 'Failed to seed rate limit policies';
     errcode CONSTANT text := 'P0001';
-    rec RECORD;
+    table_list text;
 BEGIN
-    FOR rec IN
-        SELECT schemaname, tablename
-        FROM pg_tables
-        WHERE schemaname IN ('public', 'revaer_runtime')
-          AND tablename <> '_sqlx_migrations'
-    LOOP
+    SELECT string_agg(format('%I.%I', schemaname, tablename), ', ' ORDER BY schemaname, tablename)
+    INTO table_list
+    FROM pg_tables
+    WHERE schemaname IN ('public', 'revaer_runtime')
+      AND tablename <> '_sqlx_migrations';
+
+    IF table_list IS NOT NULL THEN
         EXECUTE format(
-            'TRUNCATE TABLE %I.%I RESTART IDENTITY CASCADE',
-            rec.schemaname,
-            rec.tablename
+            'TRUNCATE TABLE %s RESTART IDENTITY CASCADE',
+            table_list
         );
-    END LOOP;
+    END IF;
 
     INSERT INTO public.settings_revision (id, revision)
     VALUES (1, 0)
