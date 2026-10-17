@@ -140,5 +140,5 @@ def test_privileged_dependabot_workflow_executes_only_trusted_code() -> None:
         "permission-pull-requests": "write",
     }
     assert mapping(entries[3]["env"])["GH_TOKEN"] == "${{ steps.merge-token.outputs.token }}"
-    assert entries[3]["run"] == "uv run --locked --no-build -- rv dependabot-auto-merge"
+    assert entries[3]["run"] == "uv run --locked --no-build --no-sync -- rv dependabot-auto-merge"
     assert len(entries) == 4

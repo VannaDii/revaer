@@ -42,4 +42,4 @@ jobs:
       - name: Request protected auto-merge
         env:
           GH_TOKEN: ${{ steps.merge-token.outputs.token }}
-        run: uv run --locked --no-build -- rv dependabot-auto-merge
+        run: uv run --locked --no-build --no-sync -- rv dependabot-auto-merge
