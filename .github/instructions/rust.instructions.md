@@ -19,6 +19,9 @@ applyTo:
 - Test workspace helpers use the common repo-local `.test-tmp/` root. Temporary
   file builders inherit the private `TMPDIR` provided by `rv`; trusted catalog
   tests retain their ancestry and owner checks.
+- Native persistence accepts private ext4 directories on the root filesystem;
+  require matching descriptor/mount identity, ownership and capability probes,
+  without requiring a different device from `/`.
 
 - Production and bootstrap Rust must be deterministic and panic-free.
 - `panic!`, `unwrap()`, `expect()`, and `unreachable!()` are forbidden in authored production and bootstrap code.

@@ -52,8 +52,10 @@
 - Application runtime and media fixtures must not provision filesystem loopbacks,
   format or mount filesystems, access block devices, or require device mappings or
   mount capabilities. Deployment supplies existing storage directories. Network
-  loopback, OS pipes and ordinary IPC are permitted. Retain media's dedicated-ext4
-  attestation contract; filesystem identity metadata is not device access.
+  loopback, OS pipes and ordinary IPC are permitted. Media attestation accepts
+  private ext4 directories on the repository filesystem, including `/`; no
+  separate device or dedicated mount is required. Retain filesystem identity,
+  ownership, locking and restart checks; identity metadata is not device access.
 - Test scratch, working files and browser outputs live beneath the selected
   repository's `.test-tmp/` root. The `rv` test boundary supplies `TMPDIR` to child
   processes; fixtures own private children and never delete another run's data.

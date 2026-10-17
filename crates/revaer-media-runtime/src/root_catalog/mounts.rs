@@ -47,24 +47,6 @@ impl fmt::Debug for RootMountTopology {
 }
 
 impl RootMountTopology {
-    /// Whether a descriptor's observed mount is separate from the image/root mount.
-    /// This topology fact alone does not establish persistence or writer ownership.
-    ///
-    /// # Errors
-    /// Rejects an identity absent from the supplied current namespace snapshot.
-    pub fn is_external_mount(&self, id: u64) -> Result<bool, RootMountError> {
-        let mount = self
-            .mounts
-            .get(&id)
-            .ok_or(RootMountError::IdentityMismatch)?;
-        let root = self
-            .mounts
-            .values()
-            .find(|entry| entry.point == Path::new("/"))
-            .ok_or(RootMountError::IdentityMismatch)?;
-        Ok(mount.point != Path::new("/") && mount.device != root.device)
-    }
-
     /// Parse the kernel mountinfo field layout, including optional-field separator.
     /// Unknown optional fields are ignored as required by the Linux contract.
     ///

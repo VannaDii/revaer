@@ -331,10 +331,7 @@ fn prove(
                 disposable_filesystem(observation.filesystem_type())?;
             }
             (DurabilityClass::RestartPersistent, DurabilityEvidence::LinuxDedicatedMount) => {
-                let external = topology
-                    .is_external_mount(observation.mount_id())
-                    .map_err(RootDirectoryError::Mount)?;
-                persistent_filesystem(observation.filesystem_type(), external)?;
+                persistent_filesystem(observation.filesystem_type())?;
             }
             _ => return Err(ProofError::Durability),
         }
@@ -358,10 +355,10 @@ fn disposable_filesystem(filesystem: &str) -> Result<(), ProofError> {
     Ok(())
 }
 
-fn persistent_filesystem(filesystem: &str, external_mount: bool) -> Result<(), ProofError> {
-    // Native ext4 mounts are exercised by the owned-volume restart fixture.
+fn persistent_filesystem(filesystem: &str) -> Result<(), ProofError> {
+    // Private ext4 directories are exercised by the repo-local restart fixture.
     // Other native filesystems and PVCs remain pending their package evidence.
-    if filesystem != "ext4" || !external_mount {
+    if filesystem != "ext4" {
         return Err(ProofError::Durability);
     }
     Ok(())

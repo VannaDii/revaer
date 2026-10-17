@@ -18,7 +18,7 @@ from ..media.model import FIXTURE_DIRECTORIES, owned_path, regular_file
 from ..media.probes import probe_catalog
 from .automation import outputs
 from .base import Task
-from .testing import test_environment
+from .testing import native_test_environment, test_environment
 
 
 @contextmanager
@@ -217,6 +217,15 @@ class TestMediaRootCatalog(Task):
                 CargoOperation.TEST, packages=("revaer-media-runtime",), test_filter="root_catalog"
             )
         )
+        with native_test_environment(context) as environment:
+            context.tools.cargo.execute(
+                CargoArgs(
+                    CargoOperation.TEST,
+                    packages=("revaer-app",),
+                    test_filter="bootstrap::root_catalog::native::tests",
+                ),
+                environment,
+            )
         return TaskResult("Media root catalog tests passed")
 
 

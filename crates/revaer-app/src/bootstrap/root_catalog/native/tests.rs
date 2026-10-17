@@ -132,21 +132,55 @@ fn verify_watch_directories(retained: &RetainedRootCatalog) -> anyhow::Result<()
 }
 
 #[test]
-fn native_persistence_requires_external_nonvolatile_qualified_mount() -> anyhow::Result<()> {
-    persistent_filesystem("ext4", true)?;
-    assert!(persistent_filesystem("ext4", false).is_err());
+fn native_persistence_requires_qualified_nonvolatile_filesystem() -> anyhow::Result<()> {
+    persistent_filesystem("ext4")?;
     for filesystem in [
         "tmpfs", "overlay", "ramfs", "virtiofs", "nfs4", "xfs", "btrfs", "",
     ] {
-        assert!(persistent_filesystem(filesystem, true).is_err());
+        assert!(persistent_filesystem(filesystem).is_err());
     }
-    let mounts = revaer_media_runtime::root_catalog::RootMountTopology::parse(
-        "1 0 8:1 / / rw - ext4 /dev/vda rw\n2 1 8:2 / /media rw - ext4 /dev/vdb rw\n4 1 8:1 /alias /image-alias rw - ext4 /dev/vda rw",
-    )?;
-    assert!(!mounts.is_external_mount(1)?);
-    assert!(mounts.is_external_mount(2)?);
-    assert!(!mounts.is_external_mount(4)?);
-    assert!(mounts.is_external_mount(3).is_err());
+    Ok(())
+}
+
+struct RootFilesystemMountSource {
+    record: String,
+}
+
+impl RootMountSource for RootFilesystemMountSource {
+    fn snapshot(
+        &self,
+    ) -> Result<
+        revaer_media_runtime::root_catalog::RootMountTopology,
+        revaer_media_runtime::root_catalog::RootMountReadError,
+    > {
+        Ok(revaer_media_runtime::root_catalog::RootMountTopology::parse(&self.record)?)
+    }
+}
+
+#[test]
+fn private_directories_on_the_root_filesystem_receive_native_proof() -> anyhow::Result<()> {
+    let (directory, source, roots) = fixture()?;
+    let observations = roots.observations(&ProcRootMountSource.snapshot()?)?;
+    let observed = &observations[0];
+    let device = observed.filesystem_device();
+    // Preserve real descriptors, ownership and capability probes. Model their
+    // filesystem at `/` to exercise admission without a separate storage device.
+    let mounts = RootFilesystemMountSource {
+        record: format!(
+            "{} 0 {}:{} / / rw - {} fixture rw",
+            observed.mount_id(),
+            rustix::fs::major(device),
+            rustix::fs::minor(device),
+            observed.filesystem_type(),
+        ),
+    };
+    let proof = prove(&source, &roots, &mounts)?;
+    assert_eq!(proof.capabilities[0], [true; 7]);
+    assert_eq!(proof.identity.slots().len(), 2);
+    revalidate(&source, &roots, &mounts, &proof.observations)?;
+    drop(roots);
+    drop(source);
+    directory.close()?;
     Ok(())
 }
 

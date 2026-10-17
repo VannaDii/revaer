@@ -59,6 +59,8 @@ working files use the selected repository's `.test-tmp/` root. The coordinator
 creates private source/output/workspace directories and a restart-persistent
 catalog beneath it, without formatting, mounting, or accessing block devices.
 Normal application bootstrap still validates the storage and ownership contract.
+Private ext4 directories may share the repository's root filesystem; a separate
+device or mount is not required.
 Cleanup stops services before deleting only that run's private directories;
 concurrent runs and other files beneath the common root remain untouched.
 Browser results, reports, logs and runtime files use `.test-tmp/e2e/`.

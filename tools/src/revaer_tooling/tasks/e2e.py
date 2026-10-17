@@ -41,7 +41,7 @@ def require_media_readiness(client: ApiClient, logs: Path) -> None:
     readiness = client.request(ApiRequest(Method.GET, "/v1/media/root-catalog/readiness")).object()
     if readiness.get("source_state") != "ready" or readiness.get("attestation_state") != "ready":
         raise ToolingError(
-            "Media E2E requires dedicated ext4 storage and a trusted active root catalog; inspect "
+            "Media E2E requires private ext4 directories and a trusted root catalog; inspect "
             + str(logs)
         )
 
