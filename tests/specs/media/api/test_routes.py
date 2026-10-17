@@ -3,6 +3,7 @@
 import re
 import uuid
 
+import pytest
 from revaer_tooling.e2e.api import ApiClient, ApiRequest, Method
 from revaer_tooling.external.http import HttpRequest
 from revaer_tooling.json_data import JsonObject
@@ -114,11 +115,13 @@ def raw_status(api: ApiClient, method: Method, route: str) -> int:
     return api.http.request(HttpRequest(method, request.target(api.base_url), api.headers)).status
 
 
-def test_bounded_empty_requests_do_not_produce_server_errors(api: ApiClient) -> None:
-    for method, route in OPERATIONS:
-        status = raw_status(api, method, route)
-        assert status < 500, f"{method} {route} returned {status}"
-        assert status != 405, f"{method} {route} is not wired"
+@pytest.mark.parametrize(("method", "route"), OPERATIONS)
+def test_bounded_empty_requests_do_not_produce_server_errors(
+    api: ApiClient, method: Method, route: str
+) -> None:
+    status = raw_status(api, method, route)
+    assert status < 500, f"{method} {route} returned {status}"
+    assert status != 405, f"{method} {route} is not wired"
 
 
 def test_worker_owned_media_writes_remain_unavailable(api: ApiClient) -> None:
