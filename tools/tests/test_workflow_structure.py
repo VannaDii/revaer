@@ -73,13 +73,16 @@ def test_setup_keeps_the_selected_profile_timeout(
 
 
 @pytest.mark.parametrize("position", ("absent", "conditional", "late"))
-def test_every_command_requires_completed_setup(workflow: Document, position: str) -> None:
+@pytest.mark.parametrize("invocation", ("rv ci", "uv run --locked --no-build --no-sync -- rv ci"))
+def test_every_command_requires_completed_setup(
+    workflow: Document, position: str, invocation: str
+) -> None:
     jobs = workflow["jobs"]
     assert isinstance(jobs, dict)
     job = jobs["check"]
     assert isinstance(job, dict)
     setup: Document = {"uses": "./.github/actions/setup-revaer", "timeout-minutes": "20"}
-    command: Document = {"run": "rv ci"}
+    command: Document = {"run": invocation}
     if position == "absent":
         job["steps"] = [command]
     elif position == "conditional":
@@ -101,6 +104,9 @@ def test_every_command_requires_completed_setup(workflow: Document, position: st
         {"uses": "aquasecurity/trivy-action@" + "a" * 40},
         {"uses": "docker/build-push-action@" + "a" * 40},
         {"run": "cargo test"},
+        {"run": "uv run --no-build --no-sync -- rv ci"},
+        {"run": "uv run --locked --no-build --no-sync -- rv misspelled"},
+        {"run": "uv run --locked --no-build --no-sync -- rv ci; true"},
         {"run": "rv misspelled"},
         {"run": "rv ci; true"},
         {"run": "rv ci || true"},
@@ -149,6 +155,7 @@ def test_supported_steps_environment_inputs_and_false_are_accepted() -> None:
                     {"uses": "./.github/actions/setup-revaer", "timeout-minutes": "20"},
                     {"run": "rv release preview", "continue-on-error": "false"},
                     {"run": ".venv/bin/rv ci", "if": "success()"},
+                    {"run": "uv run --locked --no-build --no-sync -- rv ci"},
                     {
                         "run": 'rv helm-package "$VERSION"',
                         "env": {"VERSION": "${{ inputs.version }}"},

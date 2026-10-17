@@ -24,6 +24,8 @@ def runs(step: Document, *arguments: str) -> bool:
         command = command[4:]
     elif command[:5] == ["uv", "run", "--locked", "--no-build", "--"]:
         command = command[5:]
+    elif command[:6] == ["uv", "run", "--locked", "--no-build", "--no-sync", "--"]:
+        command = command[6:]
     elif command[:7] == [
         "uv",
         "run",
