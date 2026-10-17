@@ -41,8 +41,10 @@ retain every foundation scenario and all other media scenarios. Each phase has
 its own selection, report and raw coverage, required by shard and coverage
 consumers. This separation preserves rejection checks alongside real discovery.
 
-Authentication setup's factory reset clears catalog tables. The media runner
-performs that setup with an absent startup source, stops and reaps that service,
+Authentication setup's factory reset clears catalog tables and has a bounded
+30-second request deadline; other API requests retain their 10-second deadline.
+The media runner performs that setup with an absent startup source, stops and
+reaps that service,
 then starts the scenario service. Positive phases require the real configured
 `REVAER_MEDIA_ROOT_CATALOG_FILE` to attest successfully on Linux. No stored
 attestation is inserted by the harness. Each API phase reset uses the current

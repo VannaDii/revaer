@@ -1,6 +1,7 @@
 """Real HTTP boundaries for route encoding, schemas, streaming and diagnostics."""
 
 import json
+import secrets
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -8,7 +9,7 @@ from pathlib import Path
 from urllib.request import ProxyHandler, build_opener
 
 import pytest
-from revaer_tooling.e2e.api import ApiClient, ApiRequest, ApiSchema, Method
+from revaer_tooling.e2e.api import ApiClient, ApiRequest, ApiSchema, Method, configure_auth
 from revaer_tooling.e2e.coverage import RouteCoverage, required_api_operations, verify_routes
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.external.http import Http, HttpRequest, HttpResult, VisibleRedirects
@@ -19,9 +20,17 @@ from revaer_tooling.json_data import array_value, decode, object_value, string_v
 @pytest.fixture
 def endpoint() -> Iterator[tuple[str, Http]]:
     triggered = threading.Event()
+    token = secrets.token_hex(16)
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
+            setup = {
+                "/health": {"mode": "setup"},
+                "/.well-known/revaer.json": {"app_profile": {}, "fs_policy": {}},
+            }
+            if self.path in setup:
+                self.send_json(setup[self.path])
+                return
             if self.path == "/redirect":
                 self.send_response(302)
                 self.send_header("location", "/must-not-follow")
@@ -42,9 +51,23 @@ def endpoint() -> Iterator[tuple[str, Http]]:
             self.wfile.write(json.dumps({"path": self.path}).encode())
 
         def do_POST(self) -> None:
+            if self.path == "/admin/factory-reset":
+                threading.Event().wait(11)
+            elif self.path == "/admin/setup/start":
+                self.send_json({"token": token})
+                return
+            elif self.path == "/admin/setup/complete":
+                self.send_json({})
+                return
             triggered.set()
             self.send_response(204)
             self.end_headers()
+
+        def send_json(self, payload: object) -> None:
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(payload).encode())
 
         def log_message(self, format: str, *args: object) -> None:
             # Tests make assertions on responses instead of printing access logs.
@@ -112,6 +135,35 @@ def test_literal_parameters_and_actual_response_are_recorded(
     assert result.ok
     assert result.object() == {"path": "/value/space%2Fslash%3F?q=a%26b&enabled=true"}
     assert json.loads(evidence.path.read_text()) == ["GET /value/{id}"]
+
+
+def test_auth_setup_waits_for_reset_beyond_normal_request_deadline(
+    endpoint: tuple[str, Http], tmp_path: Path
+) -> None:
+    base, http = endpoint
+    operations = (
+        ("/health", "get", "200"),
+        ("/.well-known/revaer.json", "get", "200"),
+        ("/admin/factory-reset", "post", "204"),
+        ("/admin/setup/start", "post", "200"),
+        ("/admin/setup/complete", "post", "200"),
+    )
+    document = ApiSchema(
+        {
+            "paths": {
+                route: {method: {"responses": {status: {"description": "Fixture response"}}}}
+                for route, method, status in operations
+            }
+        }
+    )
+    coverage = RouteCoverage(tmp_path / "api-coverage-setup.json", FileSystem())
+    client = ApiClient(http, base, coverage, document)
+    session = configure_auth(client, "none", str(tmp_path))
+    assert session.auth_mode == "none"
+    assert session.api_key is None
+    assert set(json.loads(coverage.path.read_text())) == {
+        f"{method.upper()} {route}" for route, method, _ in operations
+    }
 
 
 @pytest.mark.parametrize(
