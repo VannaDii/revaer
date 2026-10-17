@@ -9,7 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from revaer_tooling.cli import make_context
+from revaer_tooling.cli import make_context, parser
 from revaer_tooling.context import Context, Options
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.external.rust import Cargo
@@ -77,6 +77,26 @@ mod tests {
 
 def observations(context: Context) -> dict[str, str]:
     return {path.name: path.read_text() for path in (context.root / "observations").iterdir()}
+
+
+@pytest.mark.parametrize("task_name", ("test", "test-features-min"))
+def test_filter_runs_selected_real_tests_and_preserves_features(
+    test_workspace: Context, task_name: str
+) -> None:
+    for package in ("revaer-api", "revaer-app", "revaer-torrent-libt"):
+        source = test_workspace.root / package / "src/lib.rs"
+        source.write_text(
+            source.read_text() + "\n#[test] fn unselected_failure() -> Result<(), u8> { Err(1) }\n"
+        )
+    arguments = parser().parse_args((task_name, "--filter", "selected_inputs"))
+    context = replace(test_workspace, options=Options(test_filter=arguments.test_filter))
+    task = RustTest if task_name == "test" else MinimalFeatures
+    task.run(context)
+    packages: tuple[str, ...] = ("revaer-api", "revaer-app")
+    if task_name == "test":
+        packages += ("revaer-torrent-libt",)
+    extended = "true" if task_name == "test" else "false"
+    assert observations(context) == dict.fromkeys(packages, f"extended={extended};native=")
 
 
 @pytest.mark.parametrize("compiler_variable", ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS"))

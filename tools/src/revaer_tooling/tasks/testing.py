@@ -42,7 +42,9 @@ class Test(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
         with native_test_environment(context) as environment:
-            context.tools.cargo.execute(CargoArgs(CargoOperation.TEST), environment)
+            context.tools.cargo.execute(
+                CargoArgs(CargoOperation.TEST, test_filter=context.options.test_filter), environment
+            )
         return TaskResult()
 
 
@@ -67,6 +69,7 @@ class TestFeaturesMinimal(Task):
                         (package,),
                         all_features=False,
                         no_default_features=True,
+                        test_filter=context.options.test_filter,
                     ),
                     environment,
                 )

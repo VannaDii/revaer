@@ -47,6 +47,9 @@ continue to use `uv run --locked` and do not update the graph.
 | `rv test-native` | `revaer-torrent-libt` with all features, `REVAER_NATIVE_IT=1`, and one test thread. |
 | `rv test-features-min` | `revaer-api`, then `revaer-app`, each with default features disabled. |
 
+`rv test` and `rv test-features-min` accept `--filter <substring>` for focused
+local diagnosis. Composite CI and qualification always use unfiltered defaults.
+
 All variants use the locked Cargo graph and treat compiler warnings as errors.
 An unsuccessful Cargo test is an unsuccessful `rv` command. Existing Cargo and
 Rust test environment settings pass through. The native variant serializes its

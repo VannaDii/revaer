@@ -65,6 +65,7 @@ class Options:
     cache_key: str = ""
     cache_ref: str = ""
     cargo_lock_online: bool = False
+    test_filter: str | None = None
 
 
 @dataclass(frozen=True)
