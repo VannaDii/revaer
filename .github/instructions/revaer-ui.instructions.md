@@ -80,6 +80,9 @@ applyTo:
 - Browser scenarios must report local HTTP 500 responses as failures. Keep
   credentials out of diagnostics. Shard aggregation must prove completed phases
   and exact scenario assignments; route files alone do not prove successful tests.
+- Parameterize independent API route probes so each retains the existing request
+  and test timeout bounds. Do not combine many authenticated requests under one
+  test deadline or increase timeouts to accommodate that cumulative work.
 
 ## Single-init E2E ownership
 

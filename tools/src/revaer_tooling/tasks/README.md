@@ -321,6 +321,7 @@ compiler.
 - [`build.py`](build.py): build outputs, assets, documentation, dependency audits,
   and the Python quality commands.
 - [`policy.py`](policy.py): source/workflow policy and instruction drift.
+- [`dependabot.py`](dependabot.py): request protected squash auto-merge for eligible Dependabot PRs; GitHub retains every required check and branch rule. `rv dependabot-auto-merge` is also the manual reconciliation entry point.
 - [`setup.py`](setup.py): official package-manager installation and diagnostics.
 - [`automation.py`](automation.py), [`docs.py`](docs.py): workflow metadata,
   report handling and the documentation deployment payload.
@@ -330,9 +331,10 @@ compiler.
 
 ## Complete local PR qualification
 
-`just ci-qualify` runs foundation CI, all API and browser phases, route checks,
+`rv ci-qualify` runs foundation CI, all API and browser phases, route checks,
 bootstrap/native measurements, Python/JavaScript merges, scanner input/SCM
-validation and the strict scanner published-result gate before a push. Use the
+validation and the strict scanner published-result gate. Follow the root
+[`AGENTS.md`](../../../../AGENTS.md) qualification rule and initial draft-push exception. Use the
 pinned native toolchain with `REVAER_REQUIRE_NATIVE_COVERAGE=1`, `E2E_BROWSER_COVERAGE=1`,
 `E2E_BROWSERS=chromium,firefox,webkit`,
 `E2E_PLAYWRIGHT_PROJECTS=api-none,api-api-key,ui-chromium,ui-firefox,ui-webkit`,

@@ -19,6 +19,8 @@ class WorkflowSettings:
     run_number: str
     supply_chain_results: tuple[tuple[str, str], ...]
     ref: str = ""
+    pull_request_author: str = ""
+    pull_request_head_repository: str = ""
 
 
 def load_workflow_settings(environment: Mapping[str, str]) -> WorkflowSettings:
@@ -37,4 +39,6 @@ def load_workflow_settings(environment: Mapping[str, str]) -> WorkflowSettings:
         environment.get("GITHUB_RUN_NUMBER", ""),
         tuple((name, environment.get(name, "")) for name in SUPPLY_CHAIN_RESULTS),
         environment.get("GITHUB_REF", ""),
+        environment.get("REVAER_INSTRUCTION_PR_AUTHOR", ""),
+        environment.get("REVAER_INSTRUCTION_PR_HEAD_REPOSITORY", ""),
     )

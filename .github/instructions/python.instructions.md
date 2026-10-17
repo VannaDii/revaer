@@ -65,6 +65,8 @@ Workflow, release and installation policy remains in `devops.instructions.md`.
 
 # Documentation and verification
 
+- Instruction drift receives PR author/repository identity from workflow event fields at the CLI boundary. Limit the Dependabot exception to same-repository dependency-only changes; spoofed authors, forks and mixed source changes retain normal drift findings. Native auto-merge must validate provider metadata, paginate all PRs and propagate API/merge failures.
+
 - Bound the complete tooling suite to two file-grouped pytest workers. Preserve
   module fixture isolation and complete coverage merging. Measure tool setup and
   test execution separately.

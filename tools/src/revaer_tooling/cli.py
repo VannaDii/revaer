@@ -128,6 +128,7 @@ from .tasks.database_rebaseline import (
     DatabasePrefix,
     StackChangedLines,
 )
+from .tasks.dependabot import DependabotAutoMerge
 from .tasks.development import Development, Zombies
 from .tasks.docs import DocsGuard, DocsPrepare
 from .tasks.e2e import Runbook, UiE2e, UiE2eCoverage, UiE2eShardCoverage
@@ -225,6 +226,7 @@ COMMANDS: dict[str, Callable[[Context], TaskResult]] = {
     "policy": Policy.run,
     "lint": Lint.run,
     "instruction-drift": InstructionDrift.run,
+    "dependabot-auto-merge": DependabotAutoMerge.run,
     "validate": Validate.run,
     "ci": Ci.run,
     "ci-qualify": CiQualify.run,

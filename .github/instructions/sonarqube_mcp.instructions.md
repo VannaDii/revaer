@@ -23,7 +23,7 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 
 # Revaer Sonar Workflow
 
-- New authored workflow/cache actions must be added to the exact YAML language
+- New authored workflows, including Dependabot auto-merge, and cache actions must be added to the exact YAML language
   inventory; their operational maintenance code remains in full source analysis.
 
 - For the migrated root `setup.sh` only, ADR 592 permits at most one uncovered

@@ -48,6 +48,48 @@ class GraphqlArgs:
 
 
 @dataclass(frozen=True)
+class AutoMergeArgs:
+    repository: ReleaseRepository
+    number: int
+    head: str
+
+    def validate(self) -> None:
+        if type(self.number) is not int or self.number < 1:
+            raise ToolingError("Auto-merge requires a positive pull request number")
+        if not re.fullmatch(r"[0-9a-f]{40}", self.head):
+            raise ToolingError("Auto-merge requires the exact reviewed head SHA")
+        PullRequestArgs(self.repository, "auto-merge").validate()
+
+    @staticmethod
+    def from_pull_request(repository: ReleaseRepository, value: Json) -> "AutoMergeArgs | None":
+        item = object_value(value)
+        author = object_value(item.get("user"))
+        if author.get("login") != "dependabot[bot]" or author.get("type") != "Bot":
+            return None
+        head, base = object_value(item.get("head")), object_value(item.get("base"))
+        head_repository = head.get("repo")
+        if head_repository is None:
+            return None
+        if (
+            item.get("state") != "open"
+            or item.get("draft") is not False
+            or item.get("auto_merge") is not None
+            or base.get("ref") != "main"
+            or str(object_value(head_repository).get("full_name")).casefold()
+            != repository.name.casefold()
+            or str(object_value(base.get("repo")).get("full_name")).casefold()
+            != repository.name.casefold()
+        ):
+            return None
+        number, sha = item.get("number"), head.get("sha")
+        if type(number) is not int or not isinstance(sha, str):
+            raise ToolingError("GitHub returned a malformed Dependabot pull request")
+        args = AutoMergeArgs(repository, number, sha)
+        args.validate()
+        return args
+
+
+@dataclass(frozen=True)
 class CacheEntry:
     identifier: int
     key: str
@@ -82,6 +124,54 @@ class CacheEntry:
 
 
 class GitHub(ExternalTool):
+    def dependabot_pull_requests(self, repository: ReleaseRepository) -> tuple[AutoMergeArgs, ...]:
+        PullRequestArgs(repository, "auto-merge").validate()
+        response = self._invoke(
+            (
+                "api",
+                "--hostname",
+                repository.host,
+                "--method",
+                "GET",
+                "--paginate",
+                "--jq",
+                ".[] | @json",
+                f"repos/{repository.name}/pulls",
+                "--raw-field",
+                "state=open",
+                "--field",
+                "per_page=100",
+            ),
+            env=self._environment(repository),
+            capture=True,
+            timeout=60,
+        )
+        return tuple(
+            args
+            for line in response.stdout.splitlines()
+            if line.strip()
+            and (args := AutoMergeArgs.from_pull_request(repository, decode(line))) is not None
+        )
+
+    def enable_auto_merge(self, args: AutoMergeArgs) -> None:
+        args.validate()
+        self._invoke(
+            (
+                "pr",
+                "merge",
+                str(args.number),
+                "--repo",
+                args.repository.name,
+                "--auto",
+                "--squash",
+                "--match-head-commit",
+                args.head,
+            ),
+            env=self._environment(args.repository),
+            capture=True,
+            timeout=60,
+        )
+
     def caches(
         self, repository: ReleaseRepository, prefix: str, ref: str
     ) -> tuple[CacheEntry, ...]:
