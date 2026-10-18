@@ -9,10 +9,10 @@
 > 5. **Stored procedures or bust**. Runtime database access goes through stored procedures; raw SQL belongs only in migrations and tightly scoped operational bootstrap scripts.
 > 6. **Deterministic, panic-free production code**. No `panic!`, `unwrap()`, `expect()`, `unreachable!()`, or silent error suppression in authored production or bootstrap code.
 > 7. **No source-level lint suppressions**. `#[allow(...)]` and `#[expect(...)]` are not permitted in authored code, except for the operator-approved generated CXX documentation exception defined in the FFI instructions.
-> 8. **`rv ci` and `rv ui-e2e` before every hand-off**. A task is not complete until both pass cleanly.
+> 8. **`rv ci` and `rv ui-e2e` before final delivery**. Intermediate checkpoints use the focused validation described in Section 3; they are not qualification for pushing or merging.
 > 9. **Dependencies are injected**. Runtime logic receives collaborators from callers; only bootstrap/wiring code constructs concrete implementations or reads the environment.
 >
-> **Completion Rule:** Because Codex runs locally, a task is complete only when all requirements in this file and the scoped instruction files are satisfied, `rv ci` passes without warnings or errors, and `rv ui-e2e` passes.
+> **Completion Rule:** Final implementation delivery requires all requirements in this file and the scoped instruction files to be satisfied, `rv ci` to pass without warnings or errors, and `rv ui-e2e` to pass. An operator-requested planning or review checkpoint completes only that stage; report its focused checks and outstanding qualification without starting unrequested implementation or full validation.
 
 ---
 
@@ -71,17 +71,33 @@
 
 ## 3) Quality Gates
 
+### Coverage scope and investigation limits
+
+- Mandatory coverage targets are production code and explicitly designated essential internal tools. Scope follows the code's executed role, not its language or presence in a complete report. Preserve existing production thresholds, including Rust/Yew WebAssembly, runtime SQL and first-party native code requirements.
+- The only designated essential internal tool is `rv`: its implementation in `tools/src/revaer_tooling/**` and launcher in `tools/launcher/src/revaer_launcher/**`, protected by the existing independent tooling/launcher coverage gate. Asset synchronization, root `setup.sh`, documentation utilities and other internal tools are not production coverage targets. Their functional checks remain required. Expanding the essential-tool designation requires operator approval.
+- Test-only code, including Rust test modules, fixtures, test harness scenarios, examples, documentation, unused templates, vendor code and generated artifacts have no independent coverage percentage, positive-hit or exact-execution-count targets. Tests must exercise production and essential-tool behavior; agents must not add execution merely to cover the tests themselves. Preserve genuine collected records without turning their presence into additional acceptance requirements.
+- Coverage scope is separate from functional correctness, security analysis and measurement integrity. Tests and fixtures remain subject to applicable lint, security and functional checks. Essential coverage tools must accurately measure the required sources, retain covered and uncovered locations, and reject corrupt inputs; never fabricate hits, hide required source or weaken production thresholds.
+- A collector regression using a synthetic script tests tool behavior; it is not coverage of that fixture as a product requirement, nor automatic proof of missing production coverage. Exact hit counts or synthetic navigation behavior are acceptance requirements only where needed to establish a required production or essential-tool measurement. Do not label every fixture failure harmless or silently skip it.
+- Before investigating a coverage failure, identify the failed requirement, the production or designated essential-tool target, and the concrete effect on its required measurement. If a fixture-only assertion or collector edge case has no demonstrated connection to that requirement, stop after targeted reproduction and present the limitation and proposed adjustment to the operator before further investigation, dependency experiments or full validation. Do not spend the delivery task chasing arbitrary counts or perfect coverage of out-of-scope code.
+- This scope governs local gates, CI, collector regression assertions and Sonar coverage. Scoped instructions may specify how to measure required targets; they must not expand the target set. Keep Sonar's production coverage exclusions in `tools/src/revaer_tooling/policy/sonar.py` aligned with `sonar-project.properties`; essential tools retain their separate local/CI gates. Analysis and security scope are unchanged. If executable checks conflict with this policy, identify that conflict and propose the smallest correction; this policy does not turn a failing command into a pass or authorize unrelated gate bypasses.
+
+### Validation order and delivery
+
+- For every fix, run the smallest relevant verification first. For multiple issues, pass the targeted checks for each before expanding to related validation, then full qualification on the final candidate before a follow-up push. Include affected tooling fixtures when changing tools or browser packages, not only application scenarios.
+- Repeat full validation only after a relevant source or configuration correction has passed targeted checks. A failure in unchanged code is a reason to diagnose narrowly, not to restart the full pipeline in the hope of a pass. Never restart a live qualification run or treat separate partial successes as a complete qualification.
+- At an operator-requested checkpoint, stop at the requested stage with focused checks and a concise account of remaining work. Final-delivery, push and merge requirements below remain mandatory.
+
 - Operator-approved Rust Sonar input: retain every tracked Rust source record from
   the complete LLVM LCOV report, converting only unexecuted branch markers to
   zero hits. Third-party and untracked generated coverage remains in the complete
   original LCOV and native reports; all authored analysis and quality thresholds
   remain intact. The exact scanner path is `coverage/rust-sonar-lcov.info`.
 
-- Operator-approved Sonar policy: coverage requirements concern production code only. Keep the exact coverage-only exclusions enforced by `tools/src/revaer_tooling/policy/sonar.py`; all authored content remains in analysis and the zero-new-issues gate. No unresolved historical issue may remain in first-party active production code, including the runtime SQL initializer. Only `TO_REVIEW` hotspots block; reviewed hotspots do not. Real browser records may have zero hits when no authored production JavaScript is executed. This specific coverage policy supersedes the blanket empty-coverage-filter language below; all other analysis restrictions remain in force.
+- Operator-approved Sonar policy: apply the coverage scope above and the exact coverage-only exclusions enforced by `tools/src/revaer_tooling/policy/sonar.py`; all authored content remains in analysis and the zero-new-issues gate. No unresolved historical issue may remain in first-party active production code, including the runtime SQL initializer. Only `TO_REVIEW` hotspots block; reviewed hotspots do not. Real browser records may have zero hits when no authored production JavaScript is executed. This specific coverage policy supersedes the blanket empty-coverage-filter language below; all other analysis restrictions remain in force.
 
 - All local and CI operations run through `rv` tasks. Workflows may install tools or stage artifacts, but build/test/lint/release gates must call `uv run --locked -- rv`.
 - Bootstrap once with `./setup.sh`; use the uv-managed `rv` CLI thereafter. The approved migration retires Just, Node tooling and shell automation except this root bootstrap.
-- Handoff requires:
+- Final implementation delivery requires:
   - `rv ci`
   - `rv ui-e2e`
 - A new branch may receive one initial push to open a draft PR and obtain its
@@ -92,7 +108,7 @@
   `rv ci` alone does not qualify the hosted analysis gates.
 - [the `rv` task registry](./tools/src/revaer_tooling/cli.py) is the canonical command surface for build, lint, test, coverage, release, docs, and local dev loops.
 - [`ci.yml`](./.github/workflows/ci.yml), [`pr.yml`](./.github/workflows/pr.yml), and [`sonar.yml`](./.github/workflows/sonar.yml) must stay aligned with the `rv` registry and this policy.
-- Sonar analysis scope and first-party signal shaping are versioned in [`sonar-project.properties`](./sonar-project.properties). `sonar.sources` must enumerate every authored tracked top-level repository entry so all authored content remains in main-code scope without treating the untracked `.git` object database as source. `sonar.tests` must point only to the committed empty `.sonar-test-scope` sentinel: this disables Sonar's path heuristic, prevents `docs` and `tests` paths from silently skipping secrets analysis, and keeps every authored test under main-code rules and coverage. Strict empty scope filters are intentional scanner-side overrides of any project-side narrowing. Rust coverage must exercise the complete workspace with all features, Python coverage must come from executed tooling and E2E code, browser JavaScript coverage must come from Playwright execution, and all coverage streams must retain real source and line records, and Sonar must publish positive coverage and lines-to-cover metrics.
+- Sonar analysis scope and first-party signal shaping are versioned in [`sonar-project.properties`](./sonar-project.properties). `sonar.sources` must enumerate every authored tracked top-level repository entry so all authored content remains in main-code scope without treating the untracked `.git` object database as source. `sonar.tests` must point only to the committed empty `.sonar-test-scope` sentinel: this disables Sonar's path heuristic, prevents `docs` and `tests` paths from silently skipping secrets analysis, and keeps every authored test under main-code analysis and security rules without imposing coverage targets on test code. Strict empty scope filters are intentional scanner-side overrides of any project-side narrowing. Rust coverage must exercise the complete workspace with all features, Python coverage must come from executed tooling and E2E code, browser JavaScript coverage must come from Playwright execution, and all coverage streams must retain real source and line records, and Sonar must publish positive coverage and lines-to-cover metrics.
 - Sonar strictness is mandatory and fail-closed. Do not add, broaden, or reintroduce Sonar issue ignores, rule-scope restrictions, source/test inclusions or exclusions, coverage exclusions, duplication exclusions, analyzer default exclusions, binary suffix exclusions, bundle/generated-code skips, dependency-analysis degradation, disabled available analyzers, disabled or unavailable analyzer caches that reduce cross-file analysis, partial SCM reload, discarded scanner evidence, file-size lowering, SCM disablement, SCM-ignore-based hiding, scanner skip switches, quality-gate relaxation, `NOSONAR`, or comparable suppressions without explicit operator consent recorded in the task ADR. `sonar-project.properties` is the only permitted scanner-criteria source: workflow overrides, duplicate keys, and unreviewed properties are forbidden, and every accepted property must remain on the exact allowlist enforced by [`tools/src/revaer_tooling/policy/sonar.py`](./tools/src/revaer_tooling/policy/sonar.py). Do not classify any authored first-party file as test-only or out of the source gate to make findings disappear, alter or populate `.sonar-test-scope`, restore automatic test-path detection, route files into the wrong language analyzer, or remove coverage instrumentation to manufacture a cleaner log. The post-scan gate must prove that positive coverage and lines-to-cover metrics were published, the quality gate evaluated without ignored conditions, no new unresolved issue or unreviewed hotspot remains, and the complete submitted scanner report was retained as nonempty evidence. Do not use vendored/generated discomfort, binary assets, scanner noise, time pressure, coverage discomfort, dependency-resolution failures, or a desire to make CI pass as an excuse to relax Sonar. A failing Sonar gate, skipped scan, skipped entitled dependency analysis, missing coverage input or metric, missing native analyzer input, disabled analyzer feature flag, unavailable analyzer cache, missing SCM blame, quality-of-analysis warning, deprecated analysis parameter, absent scanner evidence, or scanner `WARN` line is a required fix, not permission to hide files or soften criteria. Fix the finding, add real coverage, supply the precise analyzer input, delete or regenerate the offending artifact, or stop and obtain explicit operator consent before weakening the gate. This prohibition applies equally to repository files and Sonar server state: agents MUST NOT weaken quality-profile rule activation or severity, quality-gate conditions or thresholds, the new-code definition, project or organization analysis settings, issue or hotspot dispositions, or branch-protection requirements as a substitute for fixing code. Agents MUST stop before making any criteria-relaxing edit or remote mutation and ask the operator for consent that names the exact property or server setting, scope, reason, and expiry. Silence, prior consent for another exception, inferred intent, a green quality gate, and an ADR written by the agent are not consent. An agent MUST NOT create the consent record on the operator's behalf, mark an issue false-positive or accepted to manufacture a pass, or reinterpret a suppression as classification, cleanup, or temporary CI repair.
 
 ---
@@ -113,12 +129,10 @@
   records in complete LLVM, JSON and HTML reports. Instrumentation and thresholds
   remain unchanged.
 
-The operator-approved production-only coverage scope is the exact
-`sonar.coverage.exclusions` list enforced by
-`tools/src/revaer_tooling/policy/sonar.py`. Internal utilities, test sources and
-unused Nexus templates remain in analysis and complete coverage measurements;
-only production sources carry coverage requirements. A JavaScript inventory
-containing no production sources requires no fabricated execution counts.
+Coverage targets and investigation limits are defined in Section 3. Preserve
+collected records without extending those targets to internal utilities, tests
+or unused templates. Sonar coverage scope does not replace the designated
+essential tools' separate gates.
 
 The operator-approved source exclusions are the intentionally malformed YAML
 fixture `scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml` and vendor

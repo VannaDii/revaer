@@ -23,13 +23,19 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 
 # Revaer Sonar Workflow
 
+- Section 3 of `AGENTS.md` defines coverage targets and investigation limits.
+  Sonar main-code analysis scope is not a requirement to cover every analyzed
+  file. Test and fixture records may remain in complete reports without coverage
+  targets. Essential tooling keeps its separate designated gates; do not broaden
+  Sonar coverage or invent fixture execution requirements to match analysis scope.
+
 - New authored workflows, including Dependabot auto-merge, and cache actions must be added to the exact YAML language
   inventory; their operational maintenance code remains in full source analysis.
 
-- For the migrated root `setup.sh` only, ADR 592 permits at most one uncovered
-  executable line and accepts full coverage. Preserve complete native records
-  and require positive execution. This supersedes the covered-and-uncovered
-  requirement below only for that bootstrap; other inputs retain their gates.
+- The historical `setup.sh` uncovered-line allowance does not establish a
+  coverage target. Follow Section 3 of `AGENTS.md`; preserve functional bootstrap
+  checks and genuine collected records without requiring fixture or bootstrap
+  hit counts.
 
 - Revaer versions its complete strict Sonar scope in `sonar-project.properties`. Keep every authored tracked top-level entry in main-code scope and use only the committed empty `.sonar-test-scope` sentinel for `sonar.tests`. The exact source exclusions are the malformed YAML fixture and vendor package/asset paths defined by root `AGENTS.md` and enforced in `tools/src/revaer_tooling/policy/sonar.py`. Vendor code is not scanned or patched; all first-party code remains in scope. Test, duplication, JavaScript, SCA, and issue-scope filters remain explicitly empty. Apply the operator-approved production-only coverage scope from root `AGENTS.md`; do not otherwise narrow analysis or security scope.
 - PostgreSQL migrations must remain visible to generic text, secrets, and main-code analysis. Do not assign `.sql`, `.pgsql`, or `.plpgsql` to the PL/SQL analyzer; reserve `sonar.plsql.file.suffixes=.plsql` for actual PL/SQL.
@@ -52,7 +58,7 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 - The root operator-approved Rust input merge combines measured counters for the
   same physical source; preserve uncovered locations and the complete original
   compilation records. Do not drop a duplicate measurement to satisfy the importer.
-- `sonar.coverageReportPaths` must consume the generic report emitted by `rv script-coverage`. That report must come from the exact archive-hash-verified `kcov` revision installed by the canonical setup action for the retained root `setup.sh`, retain uncovered executable lines, and enforce the approved bootstrap allowance above.
+- `sonar.coverageReportPaths` must consume the generic report emitted by `rv script-coverage`. That report must come from the exact archive-hash-verified `kcov` revision installed by the canonical setup action for the retained root `setup.sh`, retain real executable-line counts, and apply the root coverage scope without a bootstrap hit-count target.
 - Follow the repo-wide external action versioning rule in `.github/instructions/devops.instructions.md` when editing `.github/workflows/sonar.yml`. Do not restate a conflicting Sonar-only pinning rule here.
 - Revaer uses Sonar as a strict merge-control signal on pull requests. Require scanner-side waiting, retained task/report evidence, and API verification of that same analysis.
 - The operator-approved Rust scanner input is `coverage/rust-sonar-lcov.info`: retain every tracked Rust source record from the complete LLVM report and translate unexecuted `BRDA` markers to zero hits without removing branches. Third-party and untracked generated records remain in the complete original `coverage/lcov.info` and native reports. Preserve all thresholds and authored analysis scope; reject untracked checkout Rust sources outside generated `target/` output.

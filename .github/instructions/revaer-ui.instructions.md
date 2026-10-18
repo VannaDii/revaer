@@ -23,6 +23,11 @@ applyTo:
   - `tests/logs/**`
   - `tests/test-results/**`
 - Do not patch vendor code. Regenerate synchronized assets only for an authorized vendor ingestion or asset synchronization change. Vendor sources and synchronized Nexus assets follow the root Sonar exclusions; first-party UI code remains scanned.
+- The authored-path inventory above defines analysis scope, not coverage targets.
+  Apply Section 3 of `AGENTS.md` to production Rust/Yew WebAssembly. The asset
+  tool retains functional checks without a production coverage target.
+  UI specs, mock pages and synthetic JavaScript
+  fixtures must test required behavior without becoming coverage targets.
 
 # UI Architecture
 
@@ -70,6 +75,11 @@ applyTo:
 - Use native Playwright storage state and locator operations where available.
   Record failures and retries without replacing browser storage methods with
   authored JavaScript. Do not claim browser parity from runner fixture tests.
+- Application logic belongs in Rust/Yew WebAssembly. Generated browser bindings
+  and minimal JavaScript fixtures for required browser/tool contracts are distinct
+  from authored application logic. Their existence does not establish a production
+  JavaScript coverage requirement; classify collector failures under root policy
+  before expanding investigation or changing the browser runtime.
 - Keep component hooks unconditional. Auth refresh, dashboard polling and SSE
   effects must retain their cleanup and authentication dependencies when views
   change; configured API origins belong in the app bootstrap layer.
