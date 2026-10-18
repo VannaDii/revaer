@@ -79,9 +79,19 @@ def observations(context: Context) -> dict[str, str]:
     return {path.name: path.read_text() for path in (context.root / "observations").iterdir()}
 
 
+@pytest.mark.parametrize("compiler_variable", ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS"))
 def test_native_service_recipe_requires_linux_and_one_real_selection(
-    test_workspace: Context,
+    test_workspace: Context, compiler_variable: str
 ) -> None:
+    original = test_workspace.tools.cargo
+    environment = {
+        key: value
+        for key, value in original.environment.items()
+        if key not in ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS")
+    }
+    environment[compiler_variable] = "-Awarnings"
+    cargo = Cargo(original.name, original.runner, original.root, environment)
+    test_workspace = replace(test_workspace, tools=replace(test_workspace.tools, cargo=cargo))
     unsupported: Context = Context(
         root=test_workspace.root,
         settings=test_workspace.settings,
