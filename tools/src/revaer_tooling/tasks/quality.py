@@ -111,7 +111,6 @@ class CiQualify(Task):
         if (
             e2e.shard_total != 1
             or e2e.retries != 0
-            or not e2e.browser_coverage
             or set(e2e.phases(media=uses_single_init(context)))
             != {
                 "api-none",

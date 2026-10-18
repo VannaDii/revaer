@@ -164,9 +164,7 @@ def test_tooling_coverage_cannot_replace_data_while_a_merge_reads_it(
     assert report.read_text() == "current report"
 
 
-@pytest.mark.parametrize(
-    "command", ("ci-qualify", "ui-e2e", "runbook", "python-coverage-merge", "js-coverage-merge")
-)
+@pytest.mark.parametrize("command", ("ci-qualify", "ui-e2e", "runbook", "python-coverage-merge"))
 def test_e2e_reentry_uses_uv_dotenv_precedence_and_keeps_the_lockfile(
     python_project: Context, monkeypatch: pytest.MonkeyPatch, command: str
 ) -> None:

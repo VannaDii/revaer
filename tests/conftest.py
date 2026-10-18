@@ -9,7 +9,7 @@ import json
 import os
 import re
 import time
-from collections.abc import Callable, Generator, Iterator
+from collections.abc import Generator, Iterator
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,17 +18,13 @@ from urllib.parse import urlsplit
 from urllib.request import build_opener
 
 import pytest
-import tree_sitter_javascript
 from playwright.sync_api import Browser, BrowserContext, Page, Response, Video, expect
 from revaer_tooling.e2e.api import ApiClient, ApiSchema, ApiSession
 from revaer_tooling.e2e.coverage import RouteCoverage
-from revaer_tooling.e2e.javascript import PageCoverage, parse_inventory, write_inventory
 from revaer_tooling.e2e.settings import E2eSettings, load_e2e_settings
-from revaer_tooling.e2e.v8 import JavaScriptSyntax
 from revaer_tooling.external.http import Http, VisibleRedirects
 from revaer_tooling.filesystem import FileSystem
-from revaer_tooling.json_data import array_value, decode, object_value, string_value
-from tree_sitter import Language, Parser
+from revaer_tooling.json_data import decode, object_value
 
 from tests.pages.app_shell import AppShell
 
@@ -238,84 +234,10 @@ def public_api(
 
 
 @pytest.fixture
-def javascript_pages() -> dict[Page, PageCoverage]:
-    """A scenario closing a page early can call javascript_pages[page].finish()."""
-    return {}
-
-
-@pytest.fixture
-def new_page(
-    context: BrowserContext,
-    runtime: E2eRuntime,
-    javascript_inventory: bool,
-    javascript_pages: dict[Page, PageCoverage],
-    request: pytest.FixtureRequest,
-) -> Callable[[], Page]:
-    """Initialize instrumentation before the scenario receives a native page.
-
-    Playwright's synchronous event callbacks can yield to the scenario during a
-    protocol call. Keep page events observational and do initialization here.
-    """
-
-    def create() -> Page:
-        page = context.new_page()
-        if javascript_inventory:
-            artifacts = request.node.stash[ARTIFACTS]
-            javascript_pages[page] = PageCoverage(
-                page,
-                runtime.settings.ui_url,
-                artifacts / f"javascript-page-{len(javascript_pages) + 1}.json",
-                runtime.filesystem,
-            )
-        return page
-
-    return create
-
-
-@pytest.fixture
-def page(new_page: Callable[[], Page]) -> Page:
-    return new_page()
-
-
-@pytest.fixture
-def close_page(javascript_pages: dict[Page, PageCoverage]) -> Callable[[Page], None]:
-    """Close a page with its final counters, across all browser configurations."""
-
-    def close(page: Page) -> None:
-        coverage = javascript_pages.get(page)
-        if coverage is not None:
-            coverage.finish()
-        page.close()
-
-    return close
-
-
-@pytest.fixture(scope="session")
-def javascript_inventory(runtime: E2eRuntime) -> bool:
-    if not runtime.settings.browser_coverage or runtime.phase != "ui-chromium":
-        return False
-    paths = tuple(
-        string_value(value)
-        for value in array_value(
-            decode(runtime.filesystem.read(runtime.results / "javascript-sources.json"))
-        )
-    )
-    syntax = JavaScriptSyntax(Parser(Language(tree_sitter_javascript.language())))
-    scripts = parse_inventory(syntax, runtime.root, paths)
-    destination = (
-        runtime.results / f"javascript-baseline{runtime.settings.shard_suffix}-{worker_name()}.json"
-    )
-    write_inventory(runtime.filesystem, destination, scripts)
-    return True
-
-
-@pytest.fixture
 def context(
     browser: Browser,
     runtime: E2eRuntime,
     request: pytest.FixtureRequest,
-    javascript_inventory: bool,
-    javascript_pages: dict[Page, PageCoverage],
 ) -> Iterator[BrowserContext]:
     settings = runtime.settings
     attempt = getattr(request.node, "execution_count", 1)
@@ -382,14 +304,10 @@ def context(
         yield context
     finally:
         reports = request.node.stash.get(REPORTS, {})
-        missing_instrumentation = javascript_inventory and any(
-            page not in javascript_pages for page in pages
-        )
         failed = (
             "call" not in reports
             or any(report.failed for report in reports.values())
             or bool(server_errors)
-            or missing_instrumentation
         )
         videos = [page.video for page in pages if page.video is not None]
         request.node.user_properties.append(("artifacts", str(artifacts)))
@@ -401,14 +319,6 @@ def context(
             # still leaves evidence that can be recovered manually.
             video.delete()
 
-        def finish_coverage(coverage: PageCoverage) -> None:
-            nonlocal failed
-            try:
-                coverage.finish()
-            except BaseException:
-                failed = True
-                raise
-
         def finish_trace() -> None:
             destination = artifacts / "trace.zip" if settings.trace.retain(failed) else None
             context.tracing.stop(path=destination)
@@ -419,8 +329,7 @@ def context(
             ):
                 page.screenshot(path=artifacts / f"page-{index + 1}.png")
 
-        # LIFO cleanup guarantees coverage -> screenshots -> trace -> context ->
-        # video. A coverage failure changes retention before recording decisions.
+        # LIFO cleanup guarantees screenshots -> trace -> context -> video.
         # ExitStack attempts every registered operation even when one fails;
         # failures remain visible as pytest teardown errors with their causes.
         with ExitStack() as cleanup:
@@ -431,16 +340,10 @@ def context(
                 cleanup.callback(finish_trace)
             for index, page in reversed(list(enumerate(pages))):
                 cleanup.callback(finish_screenshot, page, index)
-            for coverage in reversed(tuple(javascript_pages.values())):
-                cleanup.callback(finish_coverage, coverage)
         # Firefox may also record internal pages used to restore storage state.
         # Once the context and all tracked videos close successfully, this
         # attempt's raw scratch directory is no longer needed.
         runtime.filesystem.remove_owned(artifacts / "recordings", runtime.root)
-        if missing_instrumentation:
-            raise pytest.UsageError(
-                "Browser line coverage requires pages created through the new_page fixture"
-            )
         if server_errors:
             raise AssertionError(
                 "Unexpected E2E server responses:\n" + "\n".join(sorted(server_errors))

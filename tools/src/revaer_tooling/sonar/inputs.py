@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 from xml.etree import ElementTree
 
 from ..errors import ToolingError
-from ..policy.sonar import production_source, vendor_source
+from ..policy.sonar import vendor_source
 
 NATIVE_SOURCE = "crates/revaer-torrent-libt/src/ffi/session.cpp"
 
@@ -71,7 +71,7 @@ def rust_sonar_lcov(document: str, root: Path, tracked: tuple[str, ...]) -> str:
     return result
 
 
-def lcov_counts(document: str, suffix: str = "", *, production: bool = False) -> LineCounts:
+def lcov_counts(document: str, suffix: str = "") -> LineCounts:
     """Count LCOV line records, rejecting duplicate or malformed observations."""
     records: dict[tuple[str, int], int] = {}
     source = ""
@@ -104,41 +104,8 @@ def lcov_counts(document: str, suffix: str = "", *, production: bool = False) ->
             source = ""
     if source:
         raise ToolingError("LCOV source record is missing end_of_record")
-    hits = [
-        count
-        for (path, _), count in records.items()
-        if path.endswith(suffix) and (not production or production_source(path))
-    ]
+    hits = [count for (path, _), count in records.items() if path.endswith(suffix)]
     return LineCounts(len(hits), sum(count > 0 for count in hits))
-
-
-def javascript_sonar_lcov(document: str) -> str:
-    """Keep complete first-party measurements in the scanner's vendor-free input."""
-    lcov_counts(document)
-    output: list[str] = []
-    vendor = False
-    for line in document.splitlines():
-        if line.startswith("SF:"):
-            vendor = vendor_source(line[3:])
-        if not vendor:
-            output.append(line)
-        if line == "end_of_record":
-            vendor = False
-    result = "\n".join(output) + "\n"
-    if not lcov_counts(result).total:
-        raise ToolingError("Sonar JavaScript LCOV must retain first-party source lines")
-    return result
-
-
-def verify_lcov(rust: str, browser: str) -> None:
-    rust_counts = lcov_counts(rust, ".rs")
-    if not rust_counts.covered:
-        raise ToolingError("Rust LCOV must contain positive Rust line coverage")
-    if not lcov_counts(browser).total:
-        raise ToolingError("Browser LCOV must retain real source line records")
-    browser_counts = lcov_counts(browser, production=True)
-    if browser_counts.total and not browser_counts.covered:
-        raise ToolingError("Browser LCOV must contain executed production JavaScript lines")
 
 
 def _xml(document: str) -> ElementTree.Element:

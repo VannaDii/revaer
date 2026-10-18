@@ -209,7 +209,7 @@ for the source revision and acceptance status.
 - `docker-build`, `docker-scan`, `sonar-compile-db`: local image output, scanning,
   and native analyzer inputs; see the [task guide](src/revaer_tooling/tasks/README.md).
 - `script-coverage`: measured [root bootstrap behavior](src/revaer_tooling/bootstrap/README.md).
-- `js-coverage-merge`, `python-coverage-merge`, `sonar-verify-inputs`, `sonar-prepare-sources`,
+- `python-coverage-merge`, `sonar-verify-inputs`, `sonar-prepare-sources`,
   `sonar-prepare-scm`, `sonar-scan`, `sonar-package-report`, `sonar-verify-result`:
   [Sonar coverage, installation, and evidence](src/revaer_tooling/sonar/README.md).
 - `release preview`, `release publish`, `release resume`, and `helm-*`:

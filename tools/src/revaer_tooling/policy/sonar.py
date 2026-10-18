@@ -137,7 +137,7 @@ REQUIRED_VALUES = {
     "sonar.sca.cfamily": "true",
     "sonar.rust.clippy.enabled": "true",
     "sonar.rust.lcov.reportPaths": "coverage/rust-sonar-lcov.info",
-    "sonar.javascript.lcov.reportPaths": "coverage/js-sonar-lcov.info",
+    "sonar.javascript.lcov.reportPaths": "",
     "sonar.python.coverage.reportPaths": "coverage/python.xml",
     "sonar.python.version": "3.13",
     "sonar.coverageReportPaths": "coverage/script-coverage.xml",
@@ -188,6 +188,16 @@ def sonar_findings(
     )
     if sentinel != {".gitkeep": b""}:
         failures.append(".sonar-test-scope must contain only an empty .gitkeep")
+    failures.extend(
+        f"{path}: required JavaScript coverage needs a supported coverage tool; "
+        "custom collectors are forbidden"
+        for path in inventory
+        if path.endswith((".js", ".mjs", ".cjs"))
+        and (
+            production_source(path)
+            or path.startswith(("tools/src/revaer_tooling/", "tools/launcher/src/revaer_launcher/"))
+        )
+    )
     failures.extend(_classifications(configured, inventory))
     return failures
 

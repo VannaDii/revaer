@@ -105,18 +105,3 @@ def test_shards_and_timeouts_are_explicit() -> None:
     assert settings.api_runner == "lib-test"
     with pytest.raises(ToolingError, match="Unknown E2E projects"):
         load_e2e_settings({"E2E_PLAYWRIGHT_PROJECTS": "unknown"}).phases()
-
-
-def test_browser_line_coverage_requires_chromium_and_keeps_other_browsers() -> None:
-    settings = load_e2e_settings(
-        {"E2E_BROWSER_COVERAGE": "1", "E2E_BROWSERS": "chromium,firefox,webkit"}
-    )
-    assert settings.phases() == (
-        "api-none",
-        "api-api-key",
-        "ui-chromium",
-        "ui-firefox",
-        "ui-webkit",
-    )
-    with pytest.raises(ToolingError, match="requires the Chromium phase"):
-        load_e2e_settings({"E2E_BROWSER_COVERAGE": "1", "E2E_BROWSERS": "firefox"}).phases()

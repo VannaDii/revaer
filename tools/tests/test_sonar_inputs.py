@@ -6,12 +6,9 @@ import pytest
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.sonar.inputs import (
     NATIVE_SOURCE,
-    LineCounts,
-    javascript_sonar_lcov,
     lcov_counts,
     rust_sonar_lcov,
     verify_bootstrap_coverage,
-    verify_lcov,
     verify_native_coverage,
     verify_python_coverage,
 )
@@ -77,22 +74,6 @@ def test_rust_scanner_input_rejects_untracked_checkout_sources(tmp_path: Path) -
         rust_sonar_lcov(dependency, tmp_path, ())
 
 
-def test_coverage_requires_execution_of_production_sources_only() -> None:
-    rust = lcov("crates/example/src/lib.rs", 2, 1)
-    browser = lcov("crates/example/static/app.js", 2, 1)
-    assert lcov_counts(rust) == LineCounts(2, 1)
-    verify_lcov(rust, browser)
-    verify_lcov(rust, lcov("app.js", 2, 2))
-    verify_lcov(rust, lcov("docs/diagram.js", 2, 0))
-    with pytest.raises(ToolingError, match="real source line records"):
-        verify_lcov(rust, "")
-    with pytest.raises(ToolingError, match="production JavaScript"):
-        verify_lcov(rust, lcov("app.js", 2, 0))
-    for bad in (lcov("app.rs", 2, 0), lcov("not-rust.cpp", 2, 2), ""):
-        with pytest.raises(ToolingError, match="Rust"):
-            verify_lcov(bad, browser)
-
-
 @pytest.mark.parametrize(
     "document",
     (
@@ -118,18 +99,6 @@ BOOTSTRAP = (
     '<lineToCover lineNumber="2" covered="true"/>'
     '<lineToCover lineNumber="3" covered="false"/></file></coverage>'
 )
-
-
-def test_javascript_scanner_input_preserves_first_party_and_complete_original() -> None:
-    authored = lcov("crates/example/static/runtime.js", 3, 2)
-    upstream = lcov("crates/revaer-ui/static/nexus/js/app.js", 2, 1)
-    copied_library = lcov("docs/mermaid.min.js", 2, 0)
-    full = authored + upstream + copied_library
-    assert javascript_sonar_lcov(full) == authored
-    assert upstream in full
-    assert copied_library in full
-    with pytest.raises(ToolingError, match="first-party source lines"):
-        javascript_sonar_lcov(upstream + copied_library)
 
 
 def test_bootstrap_generic_coverage_keeps_unexecuted_lines() -> None:

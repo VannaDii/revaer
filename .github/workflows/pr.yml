@@ -240,7 +240,6 @@ jobs:
       SONAR_AUTH_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
       REVAER_REQUIRE_NATIVE_COVERAGE: '1'
       E2E_BROWSERS: chromium,firefox,webkit
-      E2E_BROWSER_COVERAGE: '1'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -279,8 +278,6 @@ jobs:
           path: coverage/producers
       - name: Merge Python coverage inputs
         run: uv run --locked -- rv python-coverage-merge
-      - name: Merge browser coverage inputs
-        run: uv run --locked -- rv js-coverage-merge
       - name: Verify Sonar analysis inputs
         run: uv run --locked -- rv sonar-verify-inputs
       - name: Prepare Sonar source inputs
@@ -313,8 +310,6 @@ jobs:
             coverage/workspace-lcov.info
             coverage/rust-sonar-lcov.info
             coverage/llvm-cov.txt
-            coverage/js-lcov.info
-            coverage/js-sonar-lcov.info
             coverage/script-coverage.xml
             coverage/compile_commands.json
             coverage/cxxbridge/include/rust/cxx.h
@@ -585,7 +580,6 @@ jobs:
       E2E_VIDEO: 'off'
       PLAYWRIGHT_SHARD_INDEX: ${{ matrix.shard }}
       PLAYWRIGHT_SHARD_TOTAL: '3'
-      E2E_BROWSER_COVERAGE: ${{ matrix.browser == 'chromium' && '1' || '0' }}
     services:
       postgres:
         image: docker.io/library/postgres@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
@@ -624,8 +618,6 @@ jobs:
           path: |
             tests/test-results/api-coverage-*.json
             tests/test-results/ui-coverage-*.json
-            tests/test-results/javascript-baseline-*.json
-            tests/test-results/ui-*-shard-*/*/javascript-page-*.json
             tests/test-results/python-e2e-summary-shard-*.json
             tests/test-results/selection-*-shard-*.json
             coverage/e2e/ui-*-shard-*/.coverage
@@ -642,7 +634,6 @@ jobs:
       - ui-e2e
     env:
       E2E_BROWSERS: chromium,firefox,webkit
-      E2E_BROWSER_COVERAGE: '1'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:

@@ -63,9 +63,9 @@ Coverage producer migrations marked pending in the inventory must be finished
 before this sequence replaces the existing workflow.
 
 1. Run Rust/native coverage, Python tooling coverage, and the complete API/browser
-   suite with `E2E_BROWSER_COVERAGE=1`. Each producer invalidates its previous
+   suite. Each producer invalidates its previous
    success artifacts first.
-2. Run `rv js-coverage-merge` and `rv python-coverage-merge` with the same E2E settings.
+2. Run `rv python-coverage-merge` with the same E2E settings.
    Collect the root `setup.sh` with `rv script-coverage`; its
    [documented legacy-policy conflict](../bootstrap/README.md#tests-and-coverage-evidence)
    must be resolved before workflow cutover.
@@ -104,18 +104,16 @@ the Git/nonignored working-file inventory is passed to the reporter. Files
 never imported during tests remain present with zero execution. No source or
 coverage exclusion is added, and no hit count is rewritten.
 
-The input gate requires positive Rust and Python execution, at least 1,000
-browser line records with covered and uncovered lines, positive native bootstrap
-execution with at most one uncovered line, and the bridge's compilation database and staged CXX
-headers. Native `session.cpp` coverage is mandatory on CI Linux. If present on
+The input gate requires positive Rust and Python execution, genuine root
+bootstrap records without a coverage percentage or hit target, and the bridge's
+compilation database and staged CXX headers. Native `session.cpp` coverage is mandatory on CI Linux. If present on
 another host, it must also contain executed lines.
 
-The browser producer uses Python Tree-sitter parsing for a complete source
-inventory and Chromium's native V8 counters for execution; its
-[measurement and page-lifecycle contract](../e2e/README.md#javascript-source-coverage)
-describes source identity, unused modules, and failure retention. Real classic
-and module browser fixtures pass. Every current JavaScript source also passed
-the parser inventory check; full application coverage acceptance is still pending.
+Browser execution contributes measured Python coverage through Coverage.py.
+There are no production JavaScript targets, so no JavaScript LCOV is required.
+The JavaScript analyzer remains active; policy rejects new production JavaScript
+until a supported coverage tool is configured. No custom collector or coverage
+calculation is maintained here.
 
 ## Results and failure recovery
 

@@ -143,7 +143,6 @@ def test_local_qualification_needs_no_pr_or_sonar_credentials_and_propagates_fai
                 context.settings.e2e,
                 browsers=("chromium", "firefox", "webkit"),
                 projects=("api-none", "api-api-key", "ui-chromium", "ui-firefox", "ui-webkit"),
-                browser_coverage=True,
                 shard_total=1,
                 retries=0,
             ),

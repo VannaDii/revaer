@@ -29,11 +29,6 @@ def preparation_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Cont
     rust.parent.mkdir(parents=True)
     rust.write_text("pub fn sample() {}\n")
     subprocess.run(["git", "add", str(rust)], check=True, capture_output=True, timeout=10)
-    (coverage / "js-lcov.info").write_text(
-        "SF:crates/ui/static/app.js\n"
-        + "".join(f"DA:{number},{int(number != 1000)}\n" for number in range(1, 1001))
-        + "end_of_record\n"
-    )
     (coverage / "script-coverage.xml").write_text(
         '<coverage version="1"><file path="setup.sh">'
         '<lineToCover lineNumber="2" covered="true"/>'

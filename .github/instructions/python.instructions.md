@@ -36,7 +36,7 @@ applyTo:
 
 - The essential `rv` percentage floor uses the implementation-only include set in `[tool.coverage.report]` of `pyproject.toml`. Raw execution data may retain tests, and the aggregate Sonar report preserves authored inventory, but neither makes test scaffolding part of that percentage denominator.
 
-- Follow Section 3 of `AGENTS.md` for coverage targets and validation order. The independent tooling/launcher gate measures implementation code in the designated essential paths; test modules and embedded fixture scripts do not acquire coverage targets from inclusion in a Python report. Use supported coverage reports; do not test third-party collector behavior or create fixture hit-count requirements.
+- Follow Section 3 of `AGENTS.md` for coverage targets and validation order. The independent tooling/launcher gate measures implementation code in the designated essential paths; test modules and embedded fixture scripts do not acquire coverage targets from inclusion in a Python report. Use supported coverage reports; do not implement or test collector behavior or create fixture hit-count requirements.
 
 - Instruction drift receives PR author/repository identity from workflow event fields at the CLI boundary. Limit the Dependabot exception to same-repository dependency-only changes; spoofed authors, forks and mixed source changes retain normal drift findings. Native auto-merge must validate provider metadata, paginate all PRs and propagate API/merge failures.
 
@@ -50,7 +50,7 @@ applyTo:
 - Keep a structured README for each substantial tooling package: purpose, commands/inputs, module responsibilities, failure/cleanup behavior and evidence. Comment non-obvious invariants and native protocol details at their implementation.
 - Test task behavior through the supported native operation. Test meaningful failures and ownership boundaries. Fixtures do not establish application, hosted workflow or publication acceptance.
 - Chart orchestration fixtures stage explicit media or empty chart values so the checkout's compliance settings cannot change the scenario being tested.
-- Distributed coverage consumes separately downloaded producer artifacts. Use the existing shard selection/completion validator before combining measurements; reject missing phases, inconsistent partitions, corrupt databases and absent Chromium captures. Keep the unsharded local/main scanner path functional.
+- Distributed coverage consumes separately downloaded producer artifacts. Use the existing shard selection/completion validator before combining measurements; reject missing phases, inconsistent partitions, corrupt databases and missing required execution data. Keep the unsharded local/main scanner path functional.
 - Scanner extraction materializes upstream internal JRE license links from regular archive members. Reject escaping, missing or chained targets and retain expanded-byte limits, pinned archive hashes and signature verification.
 
 - Keep distributed producer validation in focused functions, share repeated coverage paths and workflow step names as constants, and keep regression assertions and expected-failure calls individually scoped.

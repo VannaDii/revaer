@@ -98,6 +98,28 @@ def change(source: str, key: str, value: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+@pytest.mark.parametrize(
+    "path,requires_reporter",
+    (
+        ("crates/revaer-ui/static/runtime.js", True),
+        ("crates/revaer-ui/static/runtime.mjs", True),
+        ("crates/revaer-ui/static/runtime.cjs", True),
+        ("tools/src/revaer_tooling/runtime.js", True),
+        ("tools/launcher/src/revaer_launcher/runtime.js", True),
+        ("crates/revaer-ui/static/nexus/js/app.js", False),
+        ("docs/fixture.js", False),
+        ("tools/tests/fixture.js", False),
+    ),
+)
+def test_production_javascript_requires_supported_coverage(
+    sonar: str, path: str, requires_reporter: bool
+) -> None:
+    findings = sonar_findings(sonar, (*INVENTORY, path), SENTINEL)
+    assert bool(findings) is requires_reporter
+    if requires_reporter:
+        assert all("supported coverage tool" in message for message in findings)
+
+
 def test_reviewed_configuration_and_all_sources_are_accepted(sonar: str) -> None:
     assert not sonar_findings(sonar, INVENTORY, SENTINEL)
     assert sonar_findings(sonar, (*INVENTORY, "new/source.py"), SENTINEL)

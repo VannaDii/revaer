@@ -77,7 +77,7 @@ def test_scanner_execution_and_merges_select_the_same_browser_phases(
     document = yaml_document((root / path).read_text(), path)
     job = mapping(mapping(document["jobs"])[job_name])
     shared = {key: str(value) for key, value in mapping(job["env"]).items()}
-    execution = mapping(named_steps(job).get("Run Playwright with browser coverage", {}).get("env"))
+    execution = mapping(named_steps(job).get("Run Playwright with Python coverage", {}).get("env"))
     selected = {**shared, **{key: str(value) for key, value in execution.items()}}
     expected = ("api-none", "api-api-key", "ui-chromium", "ui-firefox", "ui-webkit")
     assert load_e2e_settings(selected).phases() == expected
@@ -151,9 +151,8 @@ def test_committed_media_job_preserves_required_conversion_contract(fixture: Fix
     (
         "Coverage",
         "Python tooling coverage",
-        "Run Playwright with browser coverage",
+        "Run Playwright with Python coverage",
         "Merge Python coverage inputs",
-        "Merge browser coverage inputs",
         "Build native compile database",
         "Verify Sonar analysis inputs",
         "Prepare Sonar source inputs",
@@ -174,7 +173,6 @@ def test_every_scanner_gate_requires_its_actual_executor(fixture: Fixture, name:
     ("name", "key", "value"),
     [
         ("SonarQube scan", "if", "false"),
-        ("Run Playwright with browser coverage", "env", {"E2E_BROWSER_COVERAGE": "0"}),
         ("SonarQube scan", "env", {"SONAR_TOKEN": "wrong-source"}),
         ("Prepare exact Sonar SCM context", "env", {"SONAR_HEAD_SHA": "wrong-source"}),
         ("Verify Sonar published result", "env", {"SONAR_PROJECT_KEY": "wrong"}),

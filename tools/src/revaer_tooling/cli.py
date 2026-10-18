@@ -145,7 +145,6 @@ from .tasks.image_release import (
     ImageSignAttest,
 )
 from .tasks.images import DockerBuild, DockerScan
-from .tasks.javascript_coverage import JavaScriptCoverageMerge
 from .tasks.media import (
     CleanFixtures,
     CleanTestMedia,
@@ -270,7 +269,6 @@ COMMANDS: dict[str, Callable[[Context], TaskResult]] = {
     "sonar-prepare-scm": SonarPrepareScm.run,
     "sonar-prepare-sources": SonarPrepareSources.run,
     "python-coverage-merge": PythonCoverageMerge.run,
-    "js-coverage-merge": JavaScriptCoverageMerge.run,
     "sonar-package-report": SonarPackageReport.run,
     "sonar-verify-result": SonarVerifyResult.run,
     "docker-build": DockerBuild.run,
@@ -319,9 +317,7 @@ COMMANDS: dict[str, Callable[[Context], TaskResult]] = {
     "docs-prepare": DocsPrepare.run,
 }
 
-E2E_ENVIRONMENT_TASKS = frozenset(
-    ("ci-qualify", "ui-e2e", "runbook", "python-coverage-merge", "js-coverage-merge")
-)
+E2E_ENVIRONMENT_TASKS = frozenset(("ci-qualify", "ui-e2e", "runbook", "python-coverage-merge"))
 
 
 def parser() -> argparse.ArgumentParser:

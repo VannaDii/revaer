@@ -128,10 +128,8 @@ acceptance-check correction.
 Policy tasks share the validators described in the
 [policy guide](../policy/README.md). Direct audit, deny and scanner entry points
 enforce their relevant contracts as well as the full `rv policy` composition.
-`js-coverage-merge` holds the E2E lock while binding the complete parsed source
-inventory to actual Chromium execution. See the
-[browser coverage guide](../e2e/README.md#javascript-source-coverage) before changing
-source locations, counter conversion, or page cleanup.
+Browser Python execution uses Coverage.py. Root policy defines required coverage
+targets; the current Rust/Yew application needs no JavaScript coverage collector.
 
 `rv sonar-compile-db` builds the libtorrent bridge with native integration enabled
 into `target/sonar-build`. The Rust build script supplies actual compiler flags
