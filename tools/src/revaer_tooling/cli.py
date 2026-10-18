@@ -27,7 +27,7 @@ from .external.bash import Bash, Kcov
 from .external.charts import Gpg, GpgConf, Helm, Oras
 from .external.cmake import Cmake
 from .external.cosign import Cosign
-from .external.coverage import CargoLlvmCov, LlvmTool, Rustc
+from .external.coverage import CargoLlvmCov, Lcov, LlvmTool, Rustc
 from .external.curl import Curl
 from .external.database import PgIsReady, Psql, Sqlx
 from .external.database_lifecycle import LifecycleDocker
@@ -495,6 +495,13 @@ def make_context(options: Options) -> Context:
         lychee=Lychee("lychee", runner, root, env),
         cargo_audit=ExternalTool("cargo-audit", runner, root, env),
         cargo_deny=ExternalTool("cargo-deny", runner, root, env),
+        lcov=Lcov(
+            "lcov",
+            runner,
+            root,
+            env,
+            installation_hint="install lcov with your system package manager",
+        ),
         cargo_llvm_cov=CargoLlvmCov("cargo-llvm-cov", runner, root, env),
         cargo_nextest=CargoNextest("cargo-nextest", runner, root, env),
         cargo_udeps=CargoUdeps("cargo-udeps", runner, root, env),

@@ -1,14 +1,12 @@
 """Collect complete Rust/native coverage and retain reports on a threshold failure."""
 
-import os
 import re
 import tomllib
-from pathlib import Path
 
 from ..context import Context, TaskResult
 from ..errors import ToolingError
 from ..external.coverage import CoverageFormat, CoverageReportArgs
-from ..sonar.lcov import merge_compilations
+from ..sonar.inputs import NATIVE_SOURCE
 from .base import Task
 from .testing import native_test_environment
 
@@ -25,6 +23,8 @@ def reset_reports(context: Context) -> None:
         "lcov.info",
         WORKSPACE_LCOV,
         "rust-sonar-lcov.info",
+        "rust-sonar.xml",
+        "native-lcov.info",
         "llvm-cov.txt",
         "html",
         "crates",
@@ -68,37 +68,6 @@ def coverage_environment(context: Context) -> dict[str, str]:
     return environment
 
 
-def rust_lcov(document: str, root: Path, tracked: tuple[str, ...]) -> str:
-    """Route measured authored Rust records to the Rust-only scanner sensor.
-
-    LLVM also exports native, dependency and generated records. Those are not
-    indexed authored Rust inputs. Preserve their measurements in text/HTML and
-    package JSON, rather than sending them to an incompatible language sensor.
-    """
-    sources = {root / name for name in tracked if name.endswith(".rs")}
-    compilations: dict[Path, list[list[str]]] = {}
-    for record in document.split("end_of_record"):
-        lines = record.strip().splitlines()
-        filenames = [line[3:] for line in lines if line.startswith("SF:")]
-        if not lines:
-            continue
-        if len(filenames) != 1:
-            raise ToolingError("LLVM coverage record must identify exactly one source")
-        filename = os.path.normpath(filenames[0])
-        source = Path(filename)
-        if not source.is_absolute():
-            source = root / source
-        if source in sources:
-            compilations.setdefault(source, []).append(lines)
-    if not compilations:
-        raise ToolingError("LLVM coverage has no authored Rust records")
-    selected: list[str] = []
-    for source, records in compilations.items():
-        lines = records[0] if len(records) == 1 else merge_compilations(str(source), records)
-        selected.extend((*lines, "end_of_record"))
-    return "\n".join(selected) + "\n"
-
-
 class CoverageReport(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
@@ -122,19 +91,23 @@ class CoverageReport(Task):
                 failures.append(f"{package}: {error}")
         for format, destination in (
             (CoverageFormat.LCOV, output / WORKSPACE_LCOV),
+            (CoverageFormat.COBERTURA, output / "rust-sonar.xml"),
             (CoverageFormat.TEXT, output / "llvm-cov.txt"),
             (CoverageFormat.HTML, output),
         ):
             context.tools.cargo_llvm_cov.report(
                 CoverageReportArgs(format, destination), environment
             )
-        lcov = context.fs.read(output / WORKSPACE_LCOV)
-        lcov = rust_lcov(lcov, context.root, context.tools.git.files())
-        context.fs.write(output / "lcov.info", lcov)
-        if not any(line.startswith("SF:") for line in lcov.splitlines()) or not any(
-            line.startswith("DA:") for line in lcov.splitlines()
-        ):
-            raise ToolingError("LLVM coverage report has no source and line records")
+        native = context.root / NATIVE_SOURCE
+        if context.fs.is_file(native):
+            try:
+                context.tools.lcov.check_native(
+                    output / WORKSPACE_LCOV, native, output / "native-lcov.info"
+                )
+            except ToolingError as error:
+                failures.append(f"Native coverage: {error}")
+        elif context.settings.sonar.native_required:
+            failures.append("Native coverage source is missing: " + NATIVE_SOURCE)
         if failures:
             raise ToolingError(
                 "Coverage failed; diagnostic reports retained:\n" + "\n".join(failures)

@@ -94,6 +94,7 @@ class LlvmTool(ExternalTool):
 class CoverageFormat(StrEnum):
     JSON = "json"
     LCOV = "lcov"
+    COBERTURA = "cobertura"
     HTML = "html"
     TEXT = "text"
 
@@ -169,7 +170,17 @@ class CargoLlvmCov(ExternalTool):
             # Retain complete measurements separately from the tool's scoped
             # threshold report, including native sources and test scaffolding.
             command.extend(("--package", args.package, "--summary-only"))
-        command.extend(("--no-default-ignore-filename-regex", "--include-build-script"))
+        if args.format == CoverageFormat.COBERTURA:
+            # The Rust importer consumes the upstream report directly. Keep
+            # complete native/generated/dependency measurements in other formats.
+            command.extend(
+                (
+                    "--ignore-filename-regex",
+                    r"\.(c|cc|cpp|cxx|h|hh|hpp|hxx|ipp|inl|s|S)$|/vendor/",
+                )
+            )
+        else:
+            command.extend(("--no-default-ignore-filename-regex", "--include-build-script"))
         command.extend(
             (
                 f"--{args.format}",
@@ -187,3 +198,32 @@ class CargoLlvmCov(ExternalTool):
                 " -show-line-counts=true"
             ).strip()
         return self._invoke(tuple(command), env=report_environment)
+
+
+class Lcov(ExternalTool):
+    def check_native(self, complete: Path, source: Path, output: Path) -> None:
+        """Let LCOV select and enforce the existing positive native line gate."""
+        self.verify()
+        self._invoke(
+            (
+                "--extract",
+                str(complete),
+                str(source),
+                "--output-file",
+                str(output),
+                "--rc",
+                "lcov_branch_coverage=1",
+            ),
+            capture=True,
+        )
+        self._invoke(
+            (
+                "--summary",
+                str(output),
+                "--fail-under-lines",
+                "0.000001",
+                "--rc",
+                "lcov_branch_coverage=1",
+            ),
+            capture=True,
+        )

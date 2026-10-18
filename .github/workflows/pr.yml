@@ -170,9 +170,8 @@ jobs:
         with:
           name: rust-native-coverage
           path: |
-            coverage/lcov.info
             coverage/workspace-lcov.info
-            coverage/rust-sonar-lcov.info
+            coverage/rust-sonar.xml
             coverage/llvm-cov.txt
             coverage/compile_commands.json
             coverage/cxxbridge/include/rust/cxx.h
@@ -223,7 +222,7 @@ jobs:
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: bootstrap-coverage
-          path: coverage/script-coverage.xml
+          path: coverage/scripts/cases
           if-no-files-found: error
           overwrite: true
 
@@ -306,11 +305,10 @@ jobs:
         with:
           name: sonar-coverage
           path: |
-            coverage/lcov.info
             coverage/workspace-lcov.info
-            coverage/rust-sonar-lcov.info
+            coverage/rust-sonar.xml
             coverage/llvm-cov.txt
-            coverage/script-coverage.xml
+            coverage/scripts/cases
             coverage/compile_commands.json
             coverage/cxxbridge/include/rust/cxx.h
             coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h

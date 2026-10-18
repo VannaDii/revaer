@@ -122,8 +122,8 @@ separate command families in the migration inventory.
 installer and native kcov. Each invocation uses a private disposable pytest base
 directory, cleaned on success or failure without touching other pytest sessions.
 Its [guide](../bootstrap/README.md) documents the
-platform prerequisites, descriptor ownership, raw evidence and pending legacy
-acceptance-check correction.
+platform prerequisites, descriptor ownership and raw upstream reports. Bootstrap
+has no required coverage target or merged Sonar report.
 
 Policy tasks share the validators described in the
 [policy guide](../policy/README.md). Direct audit, deny and scanner entry points
@@ -174,7 +174,9 @@ paths. Analysis never installs components. See the engine's
 | `coverage/toolchain.txt` | Rust host/LLVM details and the four selected native tools and versions. |
 | `coverage/crates/*.json` | Complete per-package engine measurements, separate from cargo-llvm-cov's scoped 90% Rust line gate. Cargo expands workspace member globs. |
 | `coverage/rust-sources.rsp` | LLVM response file mapping compiler source paths to the matching installed `rust-src`, including paths with spaces/quotes. |
-| `coverage/lcov.info` | Complete source/line records for downstream analysis. |
+| `coverage/workspace-lcov.info` | Complete original LLVM source/line records. |
+| `coverage/native-lcov.info` | LCOV-selected native source report for the existing positive-execution gate. |
+| `coverage/rust-sonar.xml` | Upstream Cobertura for Sonar Rust, without custom counter analysis. |
 | `coverage/llvm-cov.txt` | Text evidence, including native sources. |
 | `coverage/html/index.html` | Browsable complete report. |
 
@@ -333,3 +335,8 @@ server analysis. As with `ui-e2e`, uv loads `tests/.env` before task constructio
 caller settings retain precedence. Follow root `AGENTS.md` for local Sonar
 file/project review before pushing. Hosted workflows independently produce all
 scanner inputs and enforce the published Sonar quality gate before merge.
+
+LCOV is a native coverage-profile prerequisite (apt `lcov` or the platform
+package manager). It replaces repository-written native counter analysis: its
+extract and threshold commands enforce the existing positive-execution gate
+for `session.cpp`, without adding a production percentage requirement.

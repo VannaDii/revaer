@@ -20,8 +20,6 @@ from ..external.sonar import ScanArgs
 from ..json_data import JsonObject, array_value, object_value, string_value
 from ..sonar.inputs import (
     NATIVE_SOURCE,
-    rust_sonar_lcov,
-    verify_bootstrap_coverage,
     verify_native_coverage,
     verify_python_coverage,
 )
@@ -33,7 +31,7 @@ from .workflows import SonarPolicy
 
 RESULT_NAMES = ("ce-task", "measures", "quality-gate", "issues", "all-issues", "hotspots")
 ISSUES_SEARCH: Final = "issues/search"
-RUST_LCOV: Final = "lcov.info"
+RUST_COVERAGE: Final = "rust-sonar.xml"
 
 
 class SonarVerifyInputs(Task):
@@ -41,11 +39,8 @@ class SonarVerifyInputs(Task):
     def run(context: Context) -> TaskResult:
         settings = context.settings.sonar
         directory = _evidence_path(context, settings.coverage)
-        adapted = directory / "rust-sonar-lcov.info"
-        context.fs.remove_owned(adapted, context.root)
         names = (
-            RUST_LCOV,
-            "script-coverage.xml",
+            RUST_COVERAGE,
             "python.xml",
             "compile_commands.json",
             "llvm-cov.txt",
@@ -55,7 +50,6 @@ class SonarVerifyInputs(Task):
             path = directory / name
             _require_nonempty(path)
             reports[name] = context.fs.read(path)
-        verify_bootstrap_coverage(reports["script-coverage.xml"])
         verify_python_coverage(reports["python.xml"], context.root, authored_python(context))
         verify_compilation_database(
             reports["compile_commands.json"],
@@ -64,10 +58,6 @@ class SonarVerifyInputs(Task):
             directory / "cxxbridge/include",
         )
         verify_native_coverage(reports["llvm-cov.txt"], required=settings.native_required)
-        context.fs.write(
-            adapted,
-            rust_sonar_lcov(reports[RUST_LCOV], context.root, context.tools.git.files()),
-        )
         return TaskResult("Sonar coverage and native analyzer inputs verified")
 
 

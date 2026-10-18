@@ -1,9 +1,7 @@
-"""Exercise the real root bootstrap and publish complete, measured shell evidence."""
+"""Exercise bootstrap behavior and retain raw upstream measurements without a coverage target."""
 
-from ..bootstrap.coverage import merge_records
 from ..context import Context, TaskResult
 from ..external.python import PytestArgs
-from ..sonar.inputs import verify_bootstrap_coverage
 from .base import Task
 
 
@@ -33,7 +31,4 @@ class ScriptCoverage(Task):
                 )
             finally:
                 context.fs.remove_owned(temporary, context.root)
-            document = merge_records(context.fs, cases, (context.root / "setup.sh").read_bytes())
-            verify_bootstrap_coverage(document)
-            context.fs.write(output, document)
-        return TaskResult("Bootstrap execution coverage: coverage/script-coverage.xml")
+        return TaskResult("Bootstrap behavior passed; raw kcov reports: coverage/scripts/cases")

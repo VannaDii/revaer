@@ -113,11 +113,10 @@ jobs:
         with:
           name: sonar-coverage
           path: |
-            coverage/lcov.info
             coverage/workspace-lcov.info
-            coverage/rust-sonar-lcov.info
+            coverage/rust-sonar.xml
             coverage/llvm-cov.txt
-            coverage/script-coverage.xml
+            coverage/scripts/cases
             coverage/compile_commands.json
             coverage/cxxbridge/include/rust/cxx.h
             coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h

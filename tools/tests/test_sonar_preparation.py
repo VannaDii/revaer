@@ -24,16 +24,11 @@ def preparation_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Cont
     monkeypatch.chdir(tmp_path)
     context = make_context(Options())
     coverage = tmp_path / "coverage"
-    (coverage / "lcov.info").write_text("SF:crates/sample/src/lib.rs\nDA:1,1\nend_of_record\n")
+    (coverage / "rust-sonar.xml").write_text("<coverage/>")
     rust = tmp_path / "crates/sample/src/lib.rs"
     rust.parent.mkdir(parents=True)
     rust.write_text("pub fn sample() {}\n")
     subprocess.run(["git", "add", str(rust)], check=True, capture_output=True, timeout=10)
-    (coverage / "script-coverage.xml").write_text(
-        '<coverage version="1"><file path="setup.sh">'
-        '<lineToCover lineNumber="2" covered="true"/>'
-        '<lineToCover lineNumber="3" covered="false"/></file></coverage>'
-    )
     (coverage / "python.xml").write_text(
         "<coverage><sources><source>.</source></sources><packages><package><classes>"
         '<class filename="tools/src/revaer_tooling/cli.py"><lines>'

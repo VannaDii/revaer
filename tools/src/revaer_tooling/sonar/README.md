@@ -2,9 +2,8 @@
 
 This package preserves Revaer's existing scanner and coverage requirements in
 Python. The [task layer](../tasks/sonar.py) coordinates it through the `rv` command
-registry. The [migration inventory](../../../migration.md) records which commands
-have passed fixture, application, and integration checks. The workflow cutover
-and complete scanner acceptance are still in progress.
+registry. The registry and workflows define the current execution sequence; the migration
+inventory is historical reference.
 
 ## Ownership and architecture
 
@@ -59,16 +58,13 @@ installed tree and retains the failing cached bytes for diagnosis.
 ## Analysis sequence
 
 The workflow must keep these operations in the same checkout and run attempt.
-Coverage producer migrations marked pending in the inventory must be finished
-before this sequence replaces the existing workflow.
 
 1. Run Rust/native coverage, Python tooling coverage, and the complete API/browser
    suite. Each producer invalidates its previous
    success artifacts first.
 2. Run `rv python-coverage-merge` with the same E2E settings.
-   Collect the root `setup.sh` with `rv script-coverage`; its
-   [documented legacy-policy conflict](../bootstrap/README.md#tests-and-coverage-evidence)
-   must be resolved before workflow cutover.
+   Exercise root `setup.sh` with `rv script-coverage`; its raw kcov output
+   has no production coverage target and is not imported into Sonar.
 3. Run `rv sonar-compile-db`, then `rv sonar-verify-inputs`.
 4. Retain coverage artifacts, then run `rv sonar-prepare-sources`. This refuses
    to remove tracked files and archives browser reports before cleaning generated
@@ -104,10 +100,17 @@ the Git/nonignored working-file inventory is passed to the reporter. Files
 never imported during tests remain present with zero execution. No source or
 coverage exclusion is added, and no hit count is rewritten.
 
-The input gate requires positive Rust and Python execution, genuine root
-bootstrap records without a coverage percentage or hit target, and the bridge's
-compilation database and staged CXX headers. Native `session.cpp` coverage is mandatory on CI Linux. If present on
-another host, it must also contain executed lines.
+Rust coverage is generated directly by `cargo-llvm-cov --cobertura` as
+`coverage/rust-sonar.xml` and imported with `sonar.rust.cobertura.reportPaths`.
+Complete original LCOV, JSON, text and HTML remain available. Production
+thresholds use the upstream tool; no Rust counter parsing, merging, branch
+normalization or synthetic collector verification is maintained here.
+
+The input gate requires the upstream Rust report, the complete Python file
+inventory, and the bridge's compilation database and staged CXX headers.
+Native `session.cpp` coverage is mandatory on CI Linux. LCOV's extraction and
+threshold commands enforce its positive-execution gate in the producer;
+input validation checks source binding without parsing hit counts.
 
 Browser execution contributes measured Python coverage through Coverage.py.
 There are no production JavaScript targets, so no JavaScript LCOV is required.

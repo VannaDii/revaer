@@ -33,8 +33,7 @@ checkout; see the [launcher guide](../../../launcher/README.md).
 | `tasks/setup.py` | Static setup task: verify uv, provision the selected profile, and install the launcher through uv. |
 | `external/bash.py` | Typed bootstrap arguments, explicit Bash/kcov executables, exact kcov version and failing diagnostics. |
 | `external/python.py` | Invoke the native child through uv's supported `UV_RUN_RLIMIT_NOFILE` option. |
-| `coverage.py` | Validate source identity, expected outcomes and complete native records across the required setup cases. |
-| `tasks/bootstrap.py` | Run the measured bootstrap tests under an operation lock and publish the generic coverage input after validation. |
+| `tasks/bootstrap.py` | Run bootstrap behavior tests under an operation lock and retain raw upstream reports. |
 | `install.py` / `external/cmake.py` | Verify the existing source pin, build/install with CMake, and check cached native files. |
 
 uv owns the child process limit through its documented
@@ -62,8 +61,7 @@ rv setup --profile python --no-launcher --kcov
 
 This requires CMake, a C++ compiler, pkg-config, and the curl/OpenSSL, ELF/DWARF,
 binutils/libiberty and zlib development packages from the native package manager.
-The workflow's coverage package profile supplies them. Its migration is still
-in progress.
+The workflow's coverage package profile supplies them.
 
 The commit and archive SHA-256 are in `tools/versions.toml`. Installation defaults
 to `~/.local/revaer/kcov/COMMIT/installed`; `REVAER_KCOV_INSTALL_ROOT` changes the
@@ -109,20 +107,12 @@ checkouts, both directly and through kcov. It checks:
 - Paths containing spaces work, and foreign environment/project selectors leave
   an unrelated checkout untouched.
 
-`rv script-coverage` runs the measured cases and retains their private logs,
-source hashes, expected exit codes and raw kcov reports in `coverage/scripts/cases`.
-The merger requires the same complete executable-line inventory in every case.
-It changes only temporary source paths back to `setup.sh` after verifying the
-source bytes. A line becomes covered only if a native report observed it running.
-Missing, changed, malformed or out-of-tree evidence fails. The final configured
-Sonar input is `coverage/script-coverage.xml`.
-
-The collected installer case currently measures all **9/9** executable lines.
-The operator-approved rule permits at most one uncovered executable line in
-root `setup.sh`, and also accepts full coverage. Empty or wholly unexecuted
-reports fail. The producer retains every real zero-hit record and does not
-alter measured counts. See
-[ADR 592](../../../../docs/adr/592-python-tooling.md#bootstrap-coverage-allowance).
+`rv script-coverage` runs the same behavior cases under the pinned kcov and
+retains its unmodified output in `coverage/scripts/cases`. Bootstrap is outside
+the required production/`rv` coverage scope. No repository-written merger,
+executable-line inventory, hit-count validator or combined Sonar coverage report
+is required. Failures still propagate from the executed behavior tests and
+upstream tool. `setup.sh` remains in first-party analysis and security scope.
 
 ## Upstream interfaces
 

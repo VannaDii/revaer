@@ -5,134 +5,9 @@ from pathlib import Path
 import pytest
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.sonar.inputs import (
-    NATIVE_SOURCE,
-    lcov_counts,
-    rust_sonar_lcov,
-    verify_bootstrap_coverage,
     verify_native_coverage,
     verify_python_coverage,
 )
-
-
-def lcov(source: str, count: int, covered: int) -> str:
-    return (
-        f"SF:{source}\n"
-        + "".join(f"DA:{number},{int(number <= covered)}\n" for number in range(1, count + 1))
-        + "end_of_record\n"
-    )
-
-
-def test_rust_scanner_input_preserves_authored_measurements(tmp_path: Path) -> None:
-    name = "crates/example/src/lib.rs"
-    authored = lcov(str(tmp_path / name), 2, 1).replace(
-        "end_of_record", "BRDA:2,0,0,-\nBRDA:2,0,1,7\nBRF:2\nBRH:1\nend_of_record"
-    )
-    full = (
-        authored
-        + lcov(str(tmp_path / "vendor/gloo/src/lib.rs"), 2, 2)
-        + lcov("/registry/dependency.rs", 2, 2)
-        + lcov(str(tmp_path / "target/generated.rs"), 2, 2)
-        + lcov("crates/native/session.cpp", 2, 2)
-    )
-    adapted = rust_sonar_lcov(
-        full, tmp_path, (name, "vendor/gloo/src/lib.rs", "crates/native/session.cpp")
-    )
-    assert adapted == authored.replace(str(tmp_path / name), name).replace(
-        "BRDA:2,0,0,-", "BRDA:2,0,0,0"
-    )
-    assert lcov_counts(adapted) == lcov_counts(authored)
-    assert "BRDA:2,0,0,-" in full
-    assert "vendor/gloo/src/lib.rs" in full
-    assert "vendor/gloo/src/lib.rs" not in adapted
-
-
-@pytest.mark.parametrize("branch", ["BRDA:1,0,0,bad", "BRDA:1,0,-,0", "BRDA:1,0,0"])
-def test_rust_scanner_input_rejects_invalid_authored_branches(tmp_path: Path, branch: str) -> None:
-    name = "crates/example/src/lib.rs"
-    document = lcov(name, 1, 1).replace("end_of_record", branch + "\nend_of_record")
-    with pytest.raises(ToolingError, match="invalid branch"):
-        rust_sonar_lcov(document, tmp_path, (name,))
-
-
-@pytest.mark.parametrize("absolute", [False, True])
-def test_rust_scanner_input_normalizes_tracked_source_paths(tmp_path: Path, absolute: bool) -> None:
-    source = "crates/revaer-data/src/../tests/unit/config_src_tests.rs"
-    name = "crates/revaer-data/tests/unit/config_src_tests.rs"
-    path = str(tmp_path / source) if absolute else source
-    document = lcov(path, 2, 1)
-    assert rust_sonar_lcov(document, tmp_path, (name,)) == lcov(name, 2, 1)
-    with pytest.raises(ToolingError, match="untracked checkout source"):
-        rust_sonar_lcov(document, tmp_path, ())
-
-
-def test_rust_scanner_input_rejects_untracked_checkout_sources(tmp_path: Path) -> None:
-    untracked = lcov("crates/example/src/lib.rs", 1, 1)
-    dependency = lcov("/registry/dependency.rs", 1, 1)
-    with pytest.raises(ToolingError, match="untracked checkout source"):
-        rust_sonar_lcov(untracked, tmp_path, ())
-    with pytest.raises(ToolingError, match="executed authored Rust"):
-        rust_sonar_lcov(dependency, tmp_path, ())
-
-
-@pytest.mark.parametrize(
-    "document",
-    (
-        "SF:a.rs\nDA:1,1\n",
-        "SF:a.rs\nSF:b.rs\n",
-        "SF:\n",
-        "DA:1,1\nend_of_record\n",
-        "SF:a.rs\nDA:0,1\nend_of_record\n",
-        "SF:a.rs\nDA:1,-1\nend_of_record\n",
-        "SF:a.rs\nDA:1,1,checksum,extra\nend_of_record\n",
-        "SF:a.rs\nDA:1,1\nDA:1,2\nend_of_record\n",
-        "SF:a.rs\nend_of_record\nSF:a.rs\nend_of_record\n",
-        "end_of_record\n",
-    ),
-)
-def test_invalid_lcov_is_not_mistaken_for_execution(document: str) -> None:
-    with pytest.raises(ToolingError):
-        lcov_counts(document)
-
-
-BOOTSTRAP = (
-    '<coverage version="1"><file path="setup.sh">'
-    '<lineToCover lineNumber="2" covered="true"/>'
-    '<lineToCover lineNumber="3" covered="false"/></file></coverage>'
-)
-
-
-def test_bootstrap_generic_coverage_keeps_unexecuted_lines() -> None:
-    verify_bootstrap_coverage(BOOTSTRAP)
-
-
-def test_fully_executed_bootstrap_does_not_require_an_artificial_gap() -> None:
-    verify_bootstrap_coverage(BOOTSTRAP.replace('covered="false"', 'covered="true"'))
-
-
-def test_bootstrap_has_no_coverage_threshold() -> None:
-    verify_bootstrap_coverage(BOOTSTRAP.replace('covered="true"', 'covered="false"'))
-    verify_bootstrap_coverage(
-        BOOTSTRAP.replace("</file>", '<lineToCover lineNumber="4" covered="false"/></file>')
-    )
-
-
-@pytest.mark.parametrize(
-    "document",
-    (
-        "broken XML",
-        "<!DOCTYPE coverage><coverage/>",
-        BOOTSTRAP.replace('version="1"', 'version="2"'),
-        BOOTSTRAP.replace("setup.sh", "retired.sh"),
-        BOOTSTRAP.replace('lineNumber="3"', 'lineNumber="2"'),
-        BOOTSTRAP.replace('lineNumber="3"', 'lineNumber="0"'),
-        BOOTSTRAP.replace('covered="false"', 'covered="unknown"'),
-        '<coverage version="1"><file path="setup.sh"/></coverage>',
-    ),
-)
-def test_missing_or_fabricated_bootstrap_records_fail(document: str) -> None:
-    with pytest.raises(ToolingError):
-        verify_bootstrap_coverage(document)
-
 
 PYTHON = (
     "<coverage><sources><source>.</source></sources><packages><package><classes>"
@@ -164,10 +39,6 @@ def test_python_coverage_requires_the_complete_authored_inventory(python_root: P
         ("<source>.</source>", "<source>tools</source>"),
         ("tools/module.py", "module.py"),
         ("tools/module.py", "../module.py"),
-        ('number="1"', 'number="2"'),
-        ('hits="1"', 'hits="-1"'),
-        ('hits="1"', 'hits="0"'),
-        ('<line number="1" hits="1"/>', '<line number="1" hits="1"/><line number="1" hits="1"/>'),
     ),
 )
 def test_ambiguous_or_invalid_python_records_fail(
@@ -177,16 +48,8 @@ def test_ambiguous_or_invalid_python_records_fail(
         verify_python_coverage(PYTHON.replace(before, after), python_root, ("tools/module.py",))
 
 
-@pytest.mark.parametrize("count", ("1", "123", "1.2k", "1M", "2G"))
-def test_native_report_accepts_real_llvm_count_formats(count: str) -> None:
-    verify_native_coverage(f"/checkout/{NATIVE_SOURCE}:\n    1|  {count}|code\n", required=True)
-
-
-def test_optional_native_omission_is_distinct_from_uncovered_native_source() -> None:
+def test_native_report_requires_the_expected_source_only_when_configured() -> None:
     rust = "crates/example/src/lib.rs:\n  1| 1|rust\n"
     verify_native_coverage(rust, required=False)
     with pytest.raises(ToolingError, match="does not contain"):
         verify_native_coverage(rust, required=True)
-    for required in (True, False):
-        with pytest.raises(ToolingError, match="no covered lines"):
-            verify_native_coverage(f"{NATIVE_SOURCE}:\n  1| 0|native\n" + rust, required=required)

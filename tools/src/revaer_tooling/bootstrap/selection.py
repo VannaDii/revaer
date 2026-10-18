@@ -24,6 +24,7 @@ APT_PROFILES: dict[str, tuple[str, ...]] = {
     "coverage": (
         *DATABASE_PACKAGES,
         "e2fsprogs",
+        "lcov",
         "ffmpeg",
         "clang-19",
         "ca-certificates",

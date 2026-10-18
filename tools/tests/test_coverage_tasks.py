@@ -14,8 +14,9 @@ import pytest
 from revaer_tooling.cli import make_context
 from revaer_tooling.context import Context, Options
 from revaer_tooling.errors import ToolingError
+from revaer_tooling.tasks import coverage as coverage_tasks
 from revaer_tooling.tasks import e2e
-from revaer_tooling.tasks.coverage import Coverage, CoverageReport, rust_lcov
+from revaer_tooling.tasks.coverage import Coverage, CoverageReport
 
 
 @pytest.fixture
@@ -129,13 +130,12 @@ def test_native_and_rust_reports_preserve_other_producers_and_gate_each_crate(
     Coverage.run(context)
     assert (output / "python.xml").read_text() == "other producer"
     assert (output / "html/index.html").is_file()
-    report = (output / "lcov.info").read_text()
+    report = (output / "rust-sonar.xml").read_text()
     assert "src/fixture.cpp" not in report
     assert "src/fixture.cpp" in (output / "workspace-lcov.info").read_text()
     assert "crates/native/src/lib.rs" in report
     assert "fixture.cpp" in (output / "llvm-cov.txt").read_text()
     assert "crates/pure/src/lib.rs" in report
-    assert "build.rs" in report
     native_text = (output / "llvm-cov.txt").read_text()
     assert "src/fixture.cpp" in native_text
     assert "|    if (input > 0) return POSITIVE(input) ? INCREMENT(input) : 0;" in native_text
@@ -156,9 +156,12 @@ def test_native_and_rust_reports_preserve_other_producers_and_gate_each_crate(
         )
     )
     Coverage.run(context)
+    context.tools.lcov.check_native(
+        output / "workspace-lcov.info", native, output / "native-lcov.info"
+    )
     native_report = json.loads((output / "crates/native.json").read_text())
     assert native_report["data"][0]["totals"]["lines"]["percent"] < 90
-    assert "crates/native/src/lib.rs" in (output / "lcov.info").read_text()
+    assert "crates/native/src/lib.rs" in (output / "rust-sonar.xml").read_text()
     # Introduce real uncovered Rust code. A workspace-wide average must not hide
     # a package regression, and failed gates must still leave inspectable output.
     library = context.root / "crates/pure/src/lib.rs"
@@ -170,7 +173,7 @@ def test_native_and_rust_reports_preserve_other_producers_and_gate_each_crate(
     )
     with pytest.raises(ToolingError, match=r"Coverage failed.*diagnostic reports retained"):
         Coverage.run(context)
-    assert "crates/native/src/lib.rs" in (output / "lcov.info").read_text()
+    assert "crates/native/src/lib.rs" in (output / "rust-sonar.xml").read_text()
     assert (output / "html/index.html").is_file()
     assert (output / "python.xml").read_text() == "other producer"
     failed = json.loads((output / "crates/pure.json").read_text())
@@ -178,9 +181,25 @@ def test_native_and_rust_reports_preserve_other_producers_and_gate_each_crate(
     library.write_text("use std::io;\n" + library.read_text())
     with pytest.raises(ToolingError):
         Coverage.run(context)
-    assert not (output / "lcov.info").exists()
+    assert not (output / "rust-sonar.xml").exists()
     assert not (output / "html").exists()
     assert (output / "python.xml").read_text() == "other producer"
+
+
+def test_unexecuted_native_source_fails_the_upstream_gate(
+    coverage_workspace: Context,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(coverage_tasks, "NATIVE_SOURCE", "crates/native/src/fixture.cpp")
+    library = coverage_workspace.root / "crates/native/src/lib.rs"
+    library.write_text(
+        library.read_text().replace(
+            "assert_eq!(super::value(1), 2); assert_eq!(super::value(0), 0);",
+            "assert_eq!(2 + 2, 4);",
+        )
+    )
+    with pytest.raises(ToolingError, match="Native coverage"):
+        Coverage.run(coverage_workspace)
 
 
 def test_coverage_refuses_symlinked_output_without_touching_the_destination(
@@ -194,42 +213,6 @@ def test_coverage_refuses_symlinked_output_without_touching_the_destination(
     with pytest.raises(ToolingError, match="must not be a symlink"):
         CoverageReport.run(coverage_workspace)
     assert (outside / "lcov.info").read_text() == "must survive"
-
-
-def test_rust_sensor_input_retains_uncovered_lines_and_routes_native_separately(
-    tmp_path: Path,
-) -> None:
-    rust = "SF:src/lib.rs\nDA:1,0\nDA:2,7\nend_of_record\n"
-    native = "SF:src/lib.cpp\nDA:1,0\nBRDA:1,0,0,-\nend_of_record\n"
-    dependency = "SF:/cargo/registry/dependency.rs\nDA:1,3\nend_of_record\n"
-    assert rust_lcov(native + rust + dependency, tmp_path, ("src/lib.rs", "src/lib.cpp")) == rust
-    with pytest.raises(ToolingError, match="no authored Rust"):
-        rust_lcov(native + dependency, tmp_path, ("src/lib.rs",))
-    with pytest.raises(ToolingError, match="exactly one source"):
-        rust_lcov("DA:1,1\nend_of_record", tmp_path, ("src/lib.rs",))
-
-
-@pytest.mark.parametrize("absolute", (False, True))
-def test_rust_sensor_retains_tracked_source_path_aliases(tmp_path: Path, absolute: bool) -> None:
-    name = "crates/example/src/../tests/unit.rs"
-    source = str(tmp_path / name) if absolute else name
-    measured = "DA:1,0\nDA:2,7\nBRDA:2,0,0,7\nend_of_record\n"
-    document = "SF:" + source + "\n" + measured
-    expected = "crates/example/tests/unit.rs"
-    assert rust_lcov(document, tmp_path, (expected,)) == document
-    with pytest.raises(ToolingError, match="no authored Rust"):
-        rust_lcov(document, tmp_path, ())
-
-
-def test_rust_sensor_merges_separately_compiled_source_measurements(tmp_path: Path) -> None:
-    name = "crates/example/build_support.rs"
-    alias = "crates/example/tests/../build_support.rs"
-    direct = "SF:" + name + "\nDA:1,0\nDA:2,3\nend_of_record\n"
-    included = "SF:" + alias + "\nDA:1,7\nDA:2,2\nend_of_record\n"
-    merged = rust_lcov(direct + included, tmp_path, (name,))
-    assert merged.count("SF:") == 1
-    assert "DA:1,7\nDA:2,5\n" in merged
-    assert "LF:2\nLH:2\n" in merged
 
 
 @pytest.mark.parametrize("managed", (False, True))
@@ -319,11 +302,11 @@ pub fn recovery_value() -> u32 { 4243 }
     )
     subprocess.run(["git", "add", "crates/revaer-app"], check=True, capture_output=True, timeout=30)
     Coverage.run(context)
-    lcov = (root / "coverage/lcov.info").read_text()
+    report = (root / "coverage/rust-sonar.xml").read_text()
     original = (root / "coverage/workspace-lcov.info").read_text()
     assert "src/fixture.cpp" in original
-    assert "src/fixture.cpp" not in lcov
-    assert "crates/pure/src/lib.rs" in lcov
-    assert "crates/revaer-app/src/lib.rs" in lcov
+    assert "src/fixture.cpp" not in report
+    assert "crates/pure/src/lib.rs" in report
+    assert "crates/revaer-app/src/lib.rs" in report
     report = json.loads((root / "coverage/crates/revaer-app.json").read_text())
     assert report["data"][0]["totals"]["lines"]["percent"] >= 90

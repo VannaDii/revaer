@@ -35,5 +35,7 @@ applyTo:
 
 - When an owned persistent Linux mount is supplied through `REVAER_NATIVE_RECOVERY_ROOT`, coverage must also run the existing native service-recovery scenario with the same instrumentation and retain the workspace measurements. This opt-in execution does not lower the per-crate floor or replace ordinary tests.
 
-- Feed native coverage to the CFamily LLVM importer and Rust LCOV to the Rust importer. Keep complete native line/branch counts and source scope; native LCOV dash counters must not reach the Rust parser.
-- Build-helper tests include the canonical manifest-root source path so LLVM merges their measurements with the build script instead of producing a duplicate `tests/../` source record. Rust LCOV omits compiler and registry files outside the analyzed checkout.
+- Feed complete native coverage to the CFamily LLVM importer and upstream Rust Cobertura to the Rust importer. Keep complete native line/branch measurements and source scope; use supported report filters instead of repository-written counter conversion.
+- Build-helper tests include the canonical manifest-root source path so LLVM merges their measurements with the build script instead of producing a duplicate `tests/../` source record. The Rust importer report uses the coverage tool's supported compiler and registry filters.
+
+- The existing positive native-execution gate delegates to LCOV extraction and its line-threshold command for the selected production source and uses its exit status. Input binding checks may identify the expected source, but must not parse native hit counts.

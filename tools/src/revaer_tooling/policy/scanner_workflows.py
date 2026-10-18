@@ -14,7 +14,7 @@ from .workflows import mapping, needs, steps
 PYTHON_COVERAGE_STEP = "Python tooling coverage"
 BROWSER_COVERAGE_STEP = "Run Playwright with Python coverage"
 NATIVE_DATABASE_STEP = "Build native compile database"
-SCRIPT_COVERAGE_PATH = "coverage/script-coverage.xml"
+BOOTSTRAP_OUTPUT_PATH = "coverage/scripts/cases"
 
 SCANNER_STEPS = {
     "Coverage": "cov",
@@ -30,11 +30,11 @@ SCANNER_STEPS = {
     "Verify Sonar published result": "sonar-verify-result",
 }
 COVERAGE_PATHS = (
-    "coverage/lcov.info",
-    "coverage/rust-sonar-lcov.info",
+    "coverage/workspace-lcov.info",
+    "coverage/rust-sonar.xml",
     "coverage/llvm-cov.txt",
     "coverage/python.xml",
-    SCRIPT_COVERAGE_PATH,
+    BOOTSTRAP_OUTPUT_PATH,
     "coverage/compile_commands.json",
     "coverage/cxxbridge/include/rust/cxx.h",
     "coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h",
@@ -206,7 +206,7 @@ def _distributed_producers(policy: Contract) -> None:
             if path
             not in (
                 "coverage/python.xml",
-                SCRIPT_COVERAGE_PATH,
+                BOOTSTRAP_OUTPUT_PATH,
             )
         ),
     )
@@ -214,7 +214,7 @@ def _distributed_producers(policy: Contract) -> None:
     policy.paths(tooling, (".coverage",))
     policy.paths(
         policy.step(policy.job("tooling-coverage"), "Upload bootstrap execution input"),
-        (SCRIPT_COVERAGE_PATH,),
+        (BOOTSTRAP_OUTPUT_PATH,),
     )
     policy.require(
         mapping(tooling.get("with")).get("include-hidden-files") == "true",
