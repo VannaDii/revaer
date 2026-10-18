@@ -8,7 +8,7 @@ applyTo:
   - ".uv-version"
 ---
 
-`AGENTS.md` is the root contract. The accepted tooling migration is recorded in `docs/adr/592-python-tooling.md`; this file specializes its Python implementation. Workflow, release and installation policy remains in `devops.instructions.md`.
+`AGENTS.md` is the root contract. This file specializes Python implementation; architectural rationale is recorded in `docs/adr/592-python-tooling.md`. Workflow, release and installation policy remains in `devops.instructions.md`.
 
 # Package management
 
@@ -36,7 +36,7 @@ applyTo:
 
 - The essential `rv` percentage floor uses the implementation-only include set in `[tool.coverage.report]` of `pyproject.toml`. Raw execution data may retain tests, and the aggregate Sonar report preserves authored inventory, but neither makes test scaffolding part of that percentage denominator.
 
-- Follow Section 3 of `AGENTS.md` for coverage targets and validation order. The independent tooling/launcher gate measures implementation code in the designated essential paths; test modules and embedded fixture scripts do not acquire coverage targets from inclusion in a Python report. Collector tests must protect required measurement behavior, not arbitrary fixture hit totals. Before changing a collector assertion, establish its effect on required measurements and follow the root investigation limit.
+- Follow Section 3 of `AGENTS.md` for coverage targets and validation order. The independent tooling/launcher gate measures implementation code in the designated essential paths; test modules and embedded fixture scripts do not acquire coverage targets from inclusion in a Python report. Use supported coverage reports; do not test third-party collector behavior or create fixture hit-count requirements.
 
 - Instruction drift receives PR author/repository identity from workflow event fields at the CLI boundary. Limit the Dependabot exception to same-repository dependency-only changes; spoofed authors, forks and mixed source changes retain normal drift findings. Native auto-merge must validate provider metadata, paginate all PRs and propagate API/merge failures.
 
@@ -48,15 +48,13 @@ applyTo:
 - Browser startup regressions in `tools/tests/fixtures/browser_startup.py` exercise the shipped page helper in Chromium and WebKit. Keep delayed rendering and missing-control cases together; use the readiness contract in `revaer-ui.instructions.md` without changing application timeout defaults.
 
 - Keep a structured README for each substantial tooling package: purpose, commands/inputs, module responsibilities, failure/cleanup behavior and evidence. Comment non-obvious invariants and native protocol details at their implementation.
-- Validate migrated behavior against the existing native operation and retained artifacts. Test meaningful failures and ownership boundaries. Fixtures do not establish application, hosted workflow or publication acceptance.
+- Test task behavior through the supported native operation. Test meaningful failures and ownership boundaries. Fixtures do not establish application, hosted workflow or publication acceptance.
 - Chart orchestration fixtures stage explicit media or empty chart values so the checkout's compliance settings cannot change the scenario being tested.
-- Run `rv tooling-check`, `rv tooling-cov` and `rv tooling-audit` as applicable to the change. Keep the full project acceptance gates and migration inventory current; Python checks alone do not complete a tooling migration.
 - Distributed coverage consumes separately downloaded producer artifacts. Use the existing shard selection/completion validator before combining measurements; reject missing phases, inconsistent partitions, corrupt databases and absent Chromium captures. Keep the unsharded local/main scanner path functional.
-- The internal, dev-dependency-only `revaer-test-support` crate retains complete validated coverage measurements without a production percentage threshold, under the operator-approved production-only coverage requirement. Other crate thresholds and all workspace instrumentation remain unchanged.
 - Scanner extraction materializes upstream internal JRE license links from regular archive members. Reject escaping, missing or chained targets and retain expanded-byte limits, pinned archive hashes and signature verification.
 
 - Keep distributed producer validation in focused functions, share repeated coverage paths and workflow step names as constants, and keep regression assertions and expected-failure calls individually scoped.
-- Fixtures must supply their own browser phase selection, Sonar PR identity, instruction-diff refs and native recovery roots; operator qualification settings must not change the controlled fixture data.
+- Fixtures must supply their own browser phase selection, instruction-diff refs and native recovery roots; operator qualification settings must not change the controlled fixture data.
 - Composite qualification must enter through the same uv dotenv-loading boundary as standalone E2E before constructing its task context.
 - Rust coverage routing normalizes paths for tracked-source membership and merges same-source compilation records using their measured counters. Retain separate compilation records in the complete engine reports; follow root operator consent.
 - Sonar source preparation removes untracked Python bytecode caches beside authored Python files, including caches left by earlier runs; refuse tracked content and links.

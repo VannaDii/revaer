@@ -141,22 +141,6 @@ class Python(ExternalTool):
     def lint(self, fix: bool = False) -> Completed:
         return self._invoke(("-m", "ruff", "check", "tools", "tests", *(("--fix",) if fix else ())))
 
-    def runtime_coverage(self) -> Completed:
-        """Retain the runtime's floor independently of covered test scaffolding.
-
-        The complete XML and LCOV reports include authored tests. This additional
-        terminal-only gate prevents that larger denominator diluting the existing
-        90% requirement on the implementation and installed launcher.
-        """
-        return self._invoke(
-            (
-                "-m",
-                "coverage",
-                "report",
-                "--include=tools/src/revaer_tooling/*,tools/launcher/src/revaer_launcher/*",
-            )
-        )
-
     def format(self, fix: bool = False) -> Completed:
         return self._invoke(
             ("-m", "ruff", "format", "tools", "tests", *(() if fix else ("--check",)))

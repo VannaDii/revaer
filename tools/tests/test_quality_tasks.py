@@ -18,21 +18,9 @@ from revaer_tooling.context import Context, Options, TaskResult
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.external.database import with_database
 from revaer_tooling.tasks import quality
-from revaer_tooling.tasks.bootstrap import ScriptCoverage
 from revaer_tooling.tasks.build import BuildRelease
 from revaer_tooling.tasks.database import DatabaseStart
 from revaer_tooling.tasks.e2e import UiE2e, UiE2eCoverage
-from revaer_tooling.tasks.javascript_coverage import JavaScriptCoverageMerge
-from revaer_tooling.tasks.native import SonarCompileDatabase
-from revaer_tooling.tasks.python_coverage import PythonCoverageMerge
-from revaer_tooling.tasks.sonar import (
-    SonarPackageReport,
-    SonarPrepareScm,
-    SonarPrepareSources,
-    SonarScan,
-    SonarVerifyInputs,
-    SonarVerifyResult,
-)
 
 
 @pytest.mark.parametrize("failure", [None, "start", "gate", "build"])
@@ -141,21 +129,8 @@ def test_database_selection_rejects_ambiguous_or_invalid_identity(url: str, name
         with_database(url, name)
 
 
-def test_complete_qualification_rejects_missing_authentication_before_tests() -> None:
-    context = make_context(Options())
-    context = replace(
-        context,
-        settings=replace(
-            context.settings,
-            sonar=replace(context.settings.sonar, scanner_token="", auth_token=""),
-        ),
-    )
-    with pytest.raises(ToolingError, match="Sonar credentials"):
-        quality.CiQualify.run(context)
-
-
-@pytest.mark.parametrize("failure", (None, "scan", "result"))
-def test_complete_qualification_requires_scanner_and_published_result(
+@pytest.mark.parametrize("failure", (None, "ci", "ui", "routes"))
+def test_local_qualification_needs_no_pr_or_sonar_credentials_and_propagates_failure(
     monkeypatch: pytest.MonkeyPatch, failure: str | None
 ) -> None:
     context = make_context(Options())
@@ -163,14 +138,7 @@ def test_complete_qualification_requires_scanner_and_published_result(
         context,
         settings=replace(
             context.settings,
-            sonar=replace(
-                context.settings.sonar,
-                scanner_token="fixture-token",
-                auth_token="fixture-token",
-                pull_request="272",
-                head_ref="ci/balanced-coverage",
-                native_required=True,
-            ),
+            sonar=replace(context.settings.sonar, scanner_token="", auth_token="", pull_request=""),
             e2e=replace(
                 context.settings.e2e,
                 browsers=("chromium", "firefox", "webkit"),
@@ -185,6 +153,7 @@ def test_complete_qualification_requires_scanner_and_published_result(
 
     def execute(name: str) -> Callable[[Context], TaskResult]:
         def run(active: Context) -> TaskResult:
+            assert not active.settings.sonar.pull_request
             calls.append(name)
             if name == failure:
                 raise ToolingError("required " + name + " failure")
@@ -192,22 +161,7 @@ def test_complete_qualification_requires_scanner_and_published_result(
 
         return run
 
-    monkeypatch.setattr(context.tools.kcov, "verify", lambda: None)
-    for task, name in (
-        (SonarPrepareScm, "scm"),
-        (quality.Ci, "ci"),
-        (UiE2e, "ui"),
-        (UiE2eCoverage, "routes"),
-        (ScriptCoverage, "bootstrap"),
-        (PythonCoverageMerge, "python"),
-        (JavaScriptCoverageMerge, "javascript"),
-        (SonarCompileDatabase, "native"),
-        (SonarVerifyInputs, "inputs"),
-        (SonarPrepareSources, "sources"),
-        (SonarScan, "scan"),
-        (SonarPackageReport, "report"),
-        (SonarVerifyResult, "result"),
-    ):
+    for task, name in ((quality.Ci, "ci"), (UiE2e, "ui"), (UiE2eCoverage, "routes")):
         monkeypatch.setattr(task, "run", execute(name))
     if failure:
         with pytest.raises(ToolingError, match="required " + failure):
@@ -215,4 +169,4 @@ def test_complete_qualification_requires_scanner_and_published_result(
         assert calls[-1] == failure
     else:
         quality.CiQualify.run(context)
-        assert calls[-3:] == ["scan", "report", "result"]
+        assert calls == ["ci", "ui", "routes"]

@@ -108,6 +108,27 @@ class CoverageReportArgs:
 class CargoLlvmCov(ExternalTool):
     version_args = ("llvm-cov", "--version")
 
+    def check_lines(self, package: str, environment: Mapping[str, str]) -> Completed:
+        """Let cargo-llvm-cov enforce the existing per-package Rust floor.
+
+        Its standard test/generated/dependency exclusions remain active. Native
+        sources retain measurements in complete reports, outside this Rust gate.
+        """
+        return self._invoke(
+            (
+                "llvm-cov",
+                "report",
+                "--locked",
+                "--package",
+                package,
+                "--fail-under-lines",
+                "90",
+                "--ignore-filename-regex",
+                r"\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$",
+            ),
+            env=environment,
+        )
+
     def clean(self, environment: Mapping[str, str]) -> Completed:
         return self._invoke(("llvm-cov", "clean", "--workspace"), env=environment)
 
@@ -145,12 +166,10 @@ class CargoLlvmCov(ExternalTool):
         # --all-features despite listing that flag in report --help.
         command = ["llvm-cov", "report", "--locked", "--include-ffi"]
         if args.package:
-            # Retain every measurement in the package report. The task checks
-            # the existing Rust-only threshold from these engine counts; newly
-            # instrumented C++ remains visible without changing that criterion.
+            # Retain complete measurements separately from the tool's scoped
+            # threshold report, including native sources and test scaffolding.
             command.extend(("--package", args.package, "--summary-only"))
-        else:
-            command.extend(("--no-default-ignore-filename-regex", "--include-build-script"))
+        command.extend(("--no-default-ignore-filename-regex", "--include-build-script"))
         command.extend(
             (
                 f"--{args.format}",

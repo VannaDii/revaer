@@ -15,7 +15,7 @@ from revaer_tooling.cli import make_context
 from revaer_tooling.context import Context, Options
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.tasks import e2e
-from revaer_tooling.tasks.coverage import Coverage, CoverageReport, rust_lcov, rust_line_gate
+from revaer_tooling.tasks.coverage import Coverage, CoverageReport, rust_lcov
 
 
 @pytest.fixture
@@ -194,73 +194,6 @@ def test_coverage_refuses_symlinked_output_without_touching_the_destination(
     with pytest.raises(ToolingError, match="must not be a symlink"):
         CoverageReport.run(coverage_workspace)
     assert (outside / "lcov.info").read_text() == "must survive"
-
-
-def test_rust_threshold_uses_counts_instead_of_rounded_percentages(tmp_path: Path) -> None:
-    def report(covered: int, filename: str = "crates/example/src/lib.rs") -> str:
-        return json.dumps(
-            {
-                "data": [
-                    {
-                        "files": [
-                            {
-                                "filename": filename,
-                                "summary": {
-                                    "lines": {"count": 100000, "covered": covered, "percent": 90.0}
-                                },
-                            }
-                        ]
-                    }
-                ]
-            }
-        )
-
-    tracked = ("crates/example/src/lib.rs", "crates/revaer-test-support/src/lib.rs")
-    with pytest.raises(ToolingError, match="below 90%"):
-        rust_line_gate(report(89999), "example", tmp_path, tracked)
-    assert "90.00%" in rust_line_gate(report(90000), "example", tmp_path, tracked)
-    utility = report(0, tracked[1])
-    assert "no production coverage target" in rust_line_gate(
-        utility, "revaer-test-support", tmp_path, tracked
-    )
-    with pytest.raises(ToolingError, match="Invalid coverage line counts"):
-        rust_line_gate(report(100001), "example", tmp_path, tracked)
-    for package in ("example", "revaer-test-support"):
-        with pytest.raises(ToolingError, match="no line records"):
-            rust_line_gate('{"data": []}', package, tmp_path, tracked)
-
-
-@pytest.mark.parametrize("production_hits", (89, 90))
-def test_rust_gate_neither_counts_uncovered_scaffolding_nor_credits_covered_tests(
-    tmp_path: Path, production_hits: int
-) -> None:
-    production = "crates/example/src/lib.rs"
-    scaffolding = (
-        "crates/example/src/tests.rs",
-        "crates/example/examples/demo.rs",
-        "crates/example/benches/benchmark.rs",
-        "crates/revaer-ui/tools/asset_sync/src/lib.rs",
-        "vendor/dependency/src/lib.rs",
-        "target/generated.rs",
-    )
-    for helper_hits in (0, 100000):
-        files = [
-            {
-                "filename": str(tmp_path / production),
-                "summary": {"lines": {"count": 100, "covered": production_hits}},
-            },
-            *(
-                {"filename": name, "summary": {"lines": {"count": 100000, "covered": helper_hits}}}
-                for name in scaffolding
-            ),
-        ]
-        document = json.dumps({"data": [{"files": files}]})
-        tracked = (production, *scaffolding[:-1])
-        if production_hits == 89:
-            with pytest.raises(ToolingError, match="below 90%"):
-                rust_line_gate(document, "example", tmp_path, tracked)
-        else:
-            assert "90/100" in rust_line_gate(document, "example", tmp_path, tracked)
 
 
 def test_rust_sensor_input_retains_uncovered_lines_and_routes_native_separately(

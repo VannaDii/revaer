@@ -12,7 +12,7 @@ applyTo:
   - "scripts/**/*.rs"
 ---
 
-`AGENTS.md` is the root contract. This file tightens Rust-specific guidance for the paths in `applyTo`. Root policy takes precedence; these scoped rules may only tighten or specialize it.
+`AGENTS.md` is the root contract. This file specializes Rust implementation for the paths in `applyTo`; root policy defines all acceptance gates, coverage targets and required deliverables.
 
 # Rust Quality Rules
 
@@ -59,8 +59,8 @@ applyTo:
 
 - Use the canonical `rv` database and test tasks. Preserve injected credential-safe database URLs, explicit managed-service provenance, isolated data directories, bounded readiness/recovery handling and failure propagation. Use `tasks/database.py` and the test-task registry for exact behavior; never copy password-bearing URLs or legacy shell invocation bodies into instructions.
 - Canonical setup installs Rust CLI tools from the exact reviewed pins and published lockfiles in `tools/versions.toml`. Tasks consume provisioned executables; never install floating or unlocked Cargo tools ad hoc.
-- `rv cov` measures the workspace with all features and applies the existing per-package threshold to the targets designated in Section 3 of `AGENTS.md`. Keep measurements workspace-sourced so libraries receive credit for execution by downstream crates and integration tests. Rust test modules, test-only support and examples have no independent coverage targets, including when their records share a source file or package report with production code. Preserve collected records and required production/native measurements; do not add tests merely to execute test scaffolding.
-- The per-package gate uses tracked source membership and the shared production-path policy; keep test/support, examples, build scripts, generated files and dependencies out of its denominator and numerator while preserving their complete engine measurements.
+- `rv cov` measures the workspace with all features and applies the existing per-package threshold to the targets designated in Section 3 of `AGENTS.md`. Keep measurements workspace-sourced so libraries receive credit for execution by downstream crates and integration tests. Test-only support and examples have no independent coverage targets; use the coverage tool's supported classification, including its documented limitations for inline test code. Preserve collected records and required production/native measurements; do not add tests merely to execute test scaffolding.
+- The per-package gate delegates its 90% Rust line threshold to `cargo-llvm-cov report --fail-under-lines` using supported source exclusions. Do not parse coverage counters or implement another percentage gate. Keep complete diagnostic reports separate from that scoped threshold report.
 - The dev-dependency-only `revaer-test-support` fixture is an internal utility: under the approved production-only coverage requirement, retain its full validated measurements without applying the production percentage threshold.
 - The `revaer-torrent-libt` build script must select exactly one native source per build: bundle, paired explicit include/library override, pkg-config, or one coherent fallback prefix. It must propagate pkg-config defines, select Boost and OpenSSL headers from the same installation family ahead of ambient system headers, accept libtorrent `>=2.0.10,<2.2.0`, and verify that the selected macOS libtorrent library contains the Cargo target architecture before enabling the native backend. When pkg-config omits `TORRENT_ABI_VERSION`, query the configured C++ preprocessor for the effective packaged-header ABI and fail closed if it cannot be proven. Manual bundle, override, and fallback sources must provide their complete build definitions through `LIBTORRENT_DEFINES`, including `TORRENT_ABI_VERSION`; missing native ABI metadata fails closed.
 - Preserve native test serialization in `rv test-native` and the nextest resource configuration; do not introduce overlapping native sessions outside their supported contracts.
@@ -106,7 +106,7 @@ applyTo:
 - For performance-driven changes, measure the actual behavior and report the relevant command and result briefly in chat. Root artifact policy applies: no routine task record, ADR or saved proof file is required.
 - Prefer simpler, more explicit code unless measurement shows a real hotspot.
 
-- The migrated `rv test-runtime-shutdown` and `rv lint-runtime-shutdown` retain both all-feature and no-default-feature configurations. Each test selection must execute positive passing tests; preserve both existing Clippy passes.
+- `rv test-runtime-shutdown` and `rv lint-runtime-shutdown` retain both all-feature and no-default-feature configurations. Each test selection must execute positive passing tests; preserve both existing Clippy passes.
 
 - The reusable database initializer has its own success-path integration test in the foundation. It verifies exact initializer digest sealing, restricted runtime identity, owner login disablement, repeated-init rejection and owned database/role cleanup; do not rely on downstream media consumers for coverage.
 

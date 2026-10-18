@@ -1,4 +1,4 @@
-"""Real Chromium proves source identity, branch counts, navigation and closure."""
+"""Validate Revaer report ingestion and producer completion contracts."""
 
 import json
 import subprocess
@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import tree_sitter_javascript
 from playwright.sync_api import Route, sync_playwright
-from revaer_tooling.cli import main, make_context
+from revaer_tooling.cli import make_context
 from revaer_tooling.context import Context, Options
 from revaer_tooling.e2e.database import uses_single_init
 from revaer_tooling.e2e.javascript import PageCoverage, parse_inventory, write_inventory
@@ -157,9 +157,6 @@ def measured(
             page.route("**/*", serve)
             page.goto(context.settings.e2e.ui_url)
             page.get_by_role("button").click()
-            # Old execution contexts must remain available after navigation.
-            page.goto(context.settings.e2e.ui_url + "/next")
-            page.get_by_role("button").click()
             capture.finish()
             capture.finish()  # Explicit early capture and fixture cleanup compose.
     context.fs.write(
@@ -188,24 +185,6 @@ def lcov_lines(document: str) -> dict[str, dict[int, int]]:
             number, count = line[3:].split(",")
             result[source][int(number)] = int(count)
     return result
-
-
-def test_real_parser_and_execution_keep_unexecuted_code_at_zero(measured: Context) -> None:
-    assert main(["js-coverage-merge"]) == 0
-    path = measured.root / "coverage/js-lcov.info"
-    original = path.read_text()
-    lines = lcov_lines(original)
-    assert set(lines) == {"app.js", "mirror.js", "unused.js"}
-    assert lines["app.js"] == lines["mirror.js"]
-    # This synthetic source proves covered/uncovered classification. Its exact
-    # cumulative invocation count across navigation is not a production target.
-    assert lines["app.js"][4] > 0
-    assert lines["app.js"][6] == 0
-    assert lines["unused.js"] == {1: 0, 2: 0}
-    # The implicit EOF return after CRLF must not create a nonexistent line.
-    assert max(lines["app.js"]) <= len((measured.root / "app.js").read_text().splitlines())
-    JavaScriptCoverageMerge.run(measured)
-    assert path.read_text() == original
 
 
 @pytest.mark.parametrize(

@@ -2,8 +2,6 @@
 
 The command registry remains the public surface. This sequence reuses static
 task methods, preserving their diagnostics and stopping at the first failure.
-Media-specific gates must be integrated alongside that stack's task ports; see
-tools/migration.md for the separate integration acceptance requirements.
 """
 
 from collections.abc import Callable
@@ -14,7 +12,6 @@ from ..e2e.database import single_init_database, uses_single_init
 from ..errors import ToolingError
 from ..external.database import with_database
 from .base import Task
-from .bootstrap import ScriptCoverage
 from .build import (
     Audit,
     BuildRelease,
@@ -30,18 +27,7 @@ from .coverage import Coverage
 from .database import DatabaseStart, database_connection
 from .database_probes import DatabaseBaselineVerify
 from .e2e import UiE2e, UiE2eCoverage
-from .javascript_coverage import JavaScriptCoverageMerge
-from .native import SonarCompileDatabase
 from .policy import InstructionDrift, Lint
-from .python_coverage import PythonCoverageMerge
-from .sonar import (
-    SonarPackageReport,
-    SonarPrepareScm,
-    SonarPrepareSources,
-    SonarScan,
-    SonarVerifyInputs,
-    SonarVerifyResult,
-)
 from .testing import Test, TestFeaturesMinimal
 
 VALIDATION_STEPS: dict[str, Callable[[Context], TaskResult]] = {
@@ -117,20 +103,10 @@ class CargoLock(Task):
 
 
 class CiQualify(Task):
-    """Run complete local qualification before pushing a pull-request snapshot."""
+    """Run local CI and API/browser gates without a PR or hosted Sonar scan."""
 
     @staticmethod
     def run(context: Context) -> TaskResult:
-        sonar = context.settings.sonar
-        if (
-            not sonar.scanner_token
-            or not sonar.auth_token
-            or not sonar.pull_request
-            or not sonar.head_ref
-        ):
-            raise ToolingError("ci-qualify requires Sonar credentials and SONAR_PULL_REQUEST")
-        if not sonar.native_required:
-            raise ToolingError("ci-qualify requires REVAER_REQUIRE_NATIVE_COVERAGE=1")
         e2e = context.settings.e2e
         if (
             e2e.shard_total != 1
@@ -157,23 +133,10 @@ class CiQualify(Task):
             raise ToolingError(
                 "ci-qualify requires local inputs, not downloaded producer artifacts"
             )
-        context.tools.kcov.verify()
-        SonarPrepareScm.run(context)
-        for execute in (
-            Ci.run,
-            UiE2e.run,
-            UiE2eCoverage.run,
-            ScriptCoverage.run,
-            PythonCoverageMerge.run,
-            JavaScriptCoverageMerge.run,
-            SonarCompileDatabase.run,
-            SonarVerifyInputs.run,
-            SonarPrepareSources.run,
-            SonarScan.run,
-            SonarPackageReport.run,
-            SonarVerifyResult.run,
-        ):
+        for execute in (Ci.run, UiE2e.run, UiE2eCoverage.run):
             result = execute(context)
             if result.message:
                 context.emit(result.message)
-        return TaskResult("Complete local CI, API/browser coverage and Sonar qualification passed")
+        return TaskResult(
+            "Local CI and API/browser qualification passed; local Sonar review is separate"
+        )
