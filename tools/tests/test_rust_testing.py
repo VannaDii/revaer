@@ -89,7 +89,17 @@ def test_filter_runs_selected_real_tests_and_preserves_features(
             source.read_text() + "\n#[test] fn unselected_failure() -> Result<(), u8> { Err(1) }\n"
         )
     arguments = parser().parse_args((task_name, "--filter", "selected_inputs"))
-    context = replace(test_workspace, options=Options(test_filter=arguments.test_filter))
+    context = Context(
+        root=test_workspace.root,
+        settings=test_workspace.settings,
+        options=Options(test_filter=arguments.test_filter),
+        tools=test_workspace.tools,
+        fs=test_workspace.fs,
+        emit=test_workspace.emit,
+        host=test_workspace.host,
+        invoked_at=test_workspace.invoked_at,
+        command_names=test_workspace.command_names,
+    )
     task = RustTest if task_name == "test" else MinimalFeatures
     task.run(context)
     packages: tuple[str, ...] = ("revaer-api", "revaer-app")
