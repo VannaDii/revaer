@@ -9,6 +9,7 @@ from ..context import Context, TaskResult
 from ..errors import ToolingError
 from ..external.coverage import CoverageFormat, CoverageReportArgs
 from ..json_data import array_value, decode, object_value, string_value
+from ..policy.sonar import production_source
 from ..sonar.lcov import merge_compilations
 from .base import Task
 from .testing import native_test_environment
@@ -68,7 +69,7 @@ def coverage_environment(context: Context) -> dict[str, str]:
     return environment
 
 
-def rust_line_gate(document: str, package: str) -> str:
+def rust_line_gate(document: str, package: str, root: Path, tracked: tuple[str, ...]) -> str:
     """Preserve the original Rust gate using the engine's unrounded line counts.
 
     JSON, native text and HTML retain complete measurements. Sonar's Rust LCOV
@@ -76,22 +77,35 @@ def rust_line_gate(document: str, package: str) -> str:
     """
     report = object_value(decode(document))
     count = covered = 0
+    records = 0
+    required = False
     for unit in array_value(report.get("data")):
         for item in array_value(object_value(unit).get("files")):
             source = object_value(item)
-            if string_value(source.get("filename")).endswith(".rs"):
+            filename = string_value(source.get("filename"))
+            records += 1
+            if filename.endswith(".rs"):
                 lines = object_value(object_value(source.get("summary")).get("lines"))
                 total, hits = lines.get("count"), lines.get("covered")
                 if type(total) is not int or type(hits) is not int or not 0 <= hits <= total:
                     raise ToolingError(f"Invalid coverage line counts for {package}")
-                count += total
-                covered += hits
+                path = Path(os.path.normpath(filename))
+                if not path.is_absolute():
+                    path = root / path
+                if path.is_relative_to(root):
+                    relative = path.relative_to(root).as_posix()
+                    if relative in tracked and production_source(relative):
+                        required = True
+                        count += total
+                        covered += hits
+    if records == 0:
+        raise ToolingError(f"Rust coverage has no line records for {package}")
+    if not required:
+        return f"{package}: measurements retained; no production coverage target"
     if count == 0:
         raise ToolingError(f"Rust coverage has no line records for {package}")
     summary = f"{package}: {covered}/{count} Rust lines ({100 * covered / count:.2f}%)"
-    # This internal database fixture is consumed only by dev-dependencies.
-    # Its measurements remain complete; production thresholds do not apply.
-    if package != "revaer-test-support" and covered * 100 < count * 90:
+    if covered * 100 < count * 90:
         raise ToolingError(summary + " is below 90%")
     return summary
 
@@ -136,20 +150,18 @@ class CoverageReport(Task):
         # to separate producers and must survive a Rust report refresh.
         reset_reports(context)
         failures = []
+        tracked = context.tools.git.files()
         for package in context.tools.cargo.metadata().workspace_packages:
-            requirement = (
-                "internal test utility measurements"
-                if package == "revaer-test-support"
-                else "90% Rust line minimum"
-            )
-            context.emit(f"Coverage: {package} ({requirement})")
+            context.emit(f"Coverage: {package} (production source scope)")
             try:
                 report = output / "crates" / f"{package}.json"
                 context.tools.cargo_llvm_cov.report(
                     CoverageReportArgs(CoverageFormat.JSON, report, package),
                     environment,
                 )
-                context.emit(rust_line_gate(context.fs.read(report), package))
+                context.emit(
+                    rust_line_gate(context.fs.read(report), package, context.root, tracked)
+                )
             except ToolingError as error:
                 failures.append(f"{package}: {error}")
         for format, destination in (

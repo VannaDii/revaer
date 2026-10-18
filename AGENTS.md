@@ -9,17 +9,17 @@
 > 5. **Stored procedures or bust**. Runtime database access goes through stored procedures; raw SQL belongs only in migrations and tightly scoped operational bootstrap scripts.
 > 6. **Deterministic, panic-free production code**. No `panic!`, `unwrap()`, `expect()`, `unreachable!()`, or silent error suppression in authored production or bootstrap code.
 > 7. **No source-level lint suppressions**. `#[allow(...)]` and `#[expect(...)]` are not permitted in authored code, except for the operator-approved generated CXX documentation exception defined in the FFI instructions.
-> 8. **`rv ci` and `rv ui-e2e` before final delivery**. Intermediate checkpoints use the focused validation described in Section 3; they are not qualification for pushing or merging.
+> 8. **Qualify locally before pushing**. Section 3 defines the single qualification command, targeted-first validation and the initial draft-push exception.
 > 9. **Dependencies are injected**. Runtime logic receives collaborators from callers; only bootstrap/wiring code constructs concrete implementations or reads the environment.
 >
-> **Completion Rule:** Final implementation delivery requires all requirements in this file and the scoped instruction files to be satisfied, `rv ci` to pass without warnings or errors, and `rv ui-e2e` to pass. An operator-requested planning or review checkpoint completes only that stage; report its focused checks and outstanding qualification without starting unrequested implementation or full validation.
+> **Completion Rule:** Final implementation delivery requires the applicable invariants and Section 3 qualification to pass. An operator-requested planning or review checkpoint completes only that stage; report its focused checks and outstanding qualification without starting unrequested implementation or full validation.
 
 ---
 
 ## 0) Policy Precedence And Source Of Truth
 
 - [`AGENTS.md`](./AGENTS.md) is the non-negotiable root contract.
-- Scoped instruction files under [`.github/instructions/`](./.github/instructions/) may only tighten or specialize the root contract for their matching paths. They may not relax root policy.
+- Scoped instruction files under [`.github/instructions/`](./.github/instructions/) specialize implementation requirements for their matching paths. They may neither relax root policy nor invent acceptance gates, expand coverage targets or require additional deliverables. Changes to the acceptance contract require operator approval.
 - Product documentation, generated documentation indexes, dated plans, ADR implementation notes, examples, and test fixtures are reference material, not independent authorization or agent operating rules. Preserve accepted product decisions; check the source's status, date, and current implementation before treating historical completion claims or next steps as current work.
 - If two instruction files appear to conflict, precedence is:
   1. [`AGENTS.md`](./AGENTS.md)
@@ -93,10 +93,8 @@
 
 - All local and CI operations run through `rv` tasks. Workflows may install tools or stage artifacts, but build/test/lint/release gates must call `uv run --locked -- rv`.
 - Bootstrap once with `./setup.sh`; use the uv-managed `rv` CLI thereafter. The approved migration retires Just, Node tooling and shell automation except this root bootstrap.
-- Final implementation delivery requires:
-  - `rv ci`
-  - `rv ui-e2e`
-- A new branch may receive one initial push to open a draft PR and obtain its real PR number for Sonar. This standing exception needs no separate approval and may precede local qualification. Before any follow-up push, marking the PR ready for review, or merging, `rv ci-qualify` must pass the complete local API/browser coverage and strict Sonar scan/published-result sequence. `rv ci` alone does not qualify the hosted analysis gates.
+- Local qualification is one clean `rv ci-qualify` run on the exact candidate commit and reviewed base. It already executes `rv ci`, `rv ui-e2e`, required coverage and Sonar verification; do not rerun its component gates separately on that unchanged candidate. Targeted checks precede qualification and do not replace it. Qualify locally first, then push for independent GitHub CI verification; required hosted checks and normal branch protections remain mandatory.
+- A new branch may receive one initial push to open a draft PR and obtain its real PR number for Sonar. This standing exception needs no separate approval and may precede local qualification. Before any follow-up push, marking the PR ready for review, or merging, `rv ci-qualify` must pass the complete local qualification defined above. `rv ci` alone does not qualify the hosted analysis gates.
 - [the `rv` task registry](./tools/src/revaer_tooling/cli.py) is the canonical command surface for build, lint, test, coverage, release, docs, and local dev loops.
 - [`ci.yml`](./.github/workflows/ci.yml), [`pr.yml`](./.github/workflows/pr.yml), and [`sonar.yml`](./.github/workflows/sonar.yml) must stay aligned with the `rv` registry and this policy.
 - Sonar analysis scope and first-party signal shaping are versioned in [`sonar-project.properties`](./sonar-project.properties). `sonar.sources` must enumerate every authored tracked top-level repository entry so all authored content remains in main-code scope without treating the untracked `.git` object database as source. `sonar.tests` must point only to the committed empty `.sonar-test-scope` sentinel: this disables Sonar's path heuristic, prevents `docs` and `tests` paths from silently skipping secrets analysis, and keeps every authored test under main-code analysis and security rules without imposing coverage targets on test code. Strict empty scope filters are intentional scanner-side overrides of any project-side narrowing. Rust coverage must exercise the complete workspace with all features, Python coverage must come from executed tooling and E2E code, browser JavaScript coverage must come from Playwright execution, and all coverage streams must retain real source and line records, and Sonar must publish positive coverage and lines-to-cover metrics.
@@ -114,7 +112,7 @@ Coverage targets and investigation limits are defined in Section 3. Preserve col
 
 The operator-approved source exclusions are the intentionally malformed YAML fixture `scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml` and vendor packages/assets: `vendor/**`, `crates/revaer-ui/ui_vendor/**`, and `crates/revaer-ui/static/nexus/**`, plus the copied `docs/mermaid.min.js` library. Vendor code is not scanned or patched. First-party wrappers, the runtime SQL initializer, FFI code, tests and tools remain in analysis. Keep dependency security audits and complete native coverage gates. The exact exclusions are enforced by `tools/src/revaer_tooling/policy/sonar.py`; ADR 592 records the operator instruction. This permanent policy supersedes blanket vendor-analysis requirements above; it authorizes no first-party exclusions.
 
-- Keep one canonical statement of each global rule. Root policy belongs here; scoped files should reference it and add path-specific details instead of repeating or rewording it inconsistently.
+- Keep one canonical statement of each global rule. Root policy belongs here; scoped files reference it and add path-specific implementation details. Reference the `rv` registry and workflows for command composition and configuration files for pins. Keep historical migration procedures, expired PR exceptions and repair narratives in existing reference documentation, not in active instructions; retain their current invariants without creating replacement ledgers.
 - Write instruction prose as one physical line per paragraph or list item. Do not insert manual line wrapping; retain structural newlines for Markdown, YAML front matter, tables and code blocks.
 - Any change to [the `rv` task registry](./tools/src/revaer_tooling/cli.py), workflow files, release scripts, lint posture, or [`sonar-project.properties`](./sonar-project.properties) must update the relevant instruction file in the same change.
 - Review the instruction set whenever crate layout, workflow layout, release flow, or quality gates change materially.
@@ -125,6 +123,7 @@ The operator-approved source exclusions are the intentionally malformed YAML fix
 ## 5) No substantiating artifacts
 
 - Do not create proof reports, evidence bundles, qualification reports, verification documents, audit packages, saved test transcripts, screenshots used as proof, redundant checklists, verification manifests, per-file hash inventories, copied logs, coverage exports, checkpoint files, or duplicate completion records unless Vanna explicitly requests that specific artifact. A request to implement, fix, test, qualify, or complete work is not a request for an evidence package.
+- In particular, do not write agent-created JSON proof files, status manifests or checkpoint inventories to substantiate work; they are not deliverables or acceptance criteria. Report measurements and results briefly in chat.
 - Do not create independent auditors, duplicate verification frameworks, or bespoke evidence generators. Do not add acceptance gates or expand task scope to justify substantiating artifacts.
 - Use focused functional regression tests and existing checks. Report results, limitations and relevant commit hashes briefly in chat. Extra paperwork is not an acceptance gate.
 - Keep normal command output temporary; do not copy it into the workspace or commit it. Do not copy, package, or retain it as a separate evidence collection. Remove disposable task artifacts when finished without deleting caller-owned work or needed persistent state.

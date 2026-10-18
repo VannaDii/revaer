@@ -63,6 +63,8 @@ COVERAGE_EXCLUSIONS = (
     "**/tests.rs",
     "**/*_tests.rs",
     "**/*_tests/**",
+    "**/examples/**",
+    "**/benches/**",
     "**/build.rs",
 )
 

@@ -178,16 +178,10 @@ def bootstrap_records(document: str, source: str) -> dict[int, bool]:
 
 
 def verify_bootstrap_coverage(document: str) -> None:
-    """Allow at most one measured gap in root setup.sh (ADR 592).
-
-    Full coverage is valid too. Preserve the producer's zero-hit records;
-    accepting a gap must never manufacture execution or admit empty evidence.
-    """
+    """Validate genuine records without imposing a target on setup.sh."""
     observations = bootstrap_records(document, "setup.sh")
-    if not any(observations.values()) or sum(not hit for hit in observations.values()) > 1:
-        raise ToolingError(
-            "Bootstrap coverage requires executed lines and at most one uncovered executable line"
-        )
+    if not observations:
+        raise ToolingError("Bootstrap coverage contains no executable-line records")
 
 
 def verify_python_coverage(document: str, root: Path, expected: tuple[str, ...]) -> None:

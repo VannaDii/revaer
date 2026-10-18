@@ -29,6 +29,9 @@ SENTINEL = {".gitkeep": b""}
         "crates/revaer-ui/static/nexus/js/app.js",
         "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/js/app.js",
         "crates/revaer-app/src/bootstrap/service_recovery_tests/operator.rs",
+        "crates/revaer-ui/tools/asset_sync/src/main.rs",
+        "crates/example/examples/demo.rs",
+        "crates/example/benches/benchmark.rs",
     ),
 )
 def test_nonproduction_paths_do_not_affect_coverage(path: str) -> None:
@@ -201,6 +204,9 @@ def test_advisory_lists_must_exist_and_be_empty() -> None:
         "crates/revaer-ui/static/nexus/js/app.js",
         "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/js/app.js",
         "crates/revaer-app/src/bootstrap/service_recovery_tests/operator.rs",
+        "crates/revaer-ui/tools/asset_sync/src/main.rs",
+        "crates/example/examples/demo.rs",
+        "crates/example/benches/benchmark.rs",
         "crates/revaer-app/src/bootstrap/tests.rs",
         "crates/revaer-app/tests/bootstrap.rs",
     ),

@@ -34,6 +34,8 @@ applyTo:
 
 # Documentation and verification
 
+- The essential `rv` percentage floor uses the implementation-only include set in `[tool.coverage.report]` of `pyproject.toml`. Raw execution data may retain tests, and the aggregate Sonar report preserves authored inventory, but neither makes test scaffolding part of that percentage denominator.
+
 - Follow Section 3 of `AGENTS.md` for coverage targets and validation order. The independent tooling/launcher gate measures implementation code in the designated essential paths; test modules and embedded fixture scripts do not acquire coverage targets from inclusion in a Python report. Collector tests must protect required measurement behavior, not arbitrary fixture hit totals. Before changing a collector assertion, establish its effect on required measurements and follow the root investigation limit.
 
 - Instruction drift receives PR author/repository identity from workflow event fields at the CLI boundary. Limit the Dependabot exception to same-repository dependency-only changes; spoofed authors, forks and mixed source changes retain normal drift findings. Native auto-merge must validate provider metadata, paginate all PRs and propagate API/merge failures.

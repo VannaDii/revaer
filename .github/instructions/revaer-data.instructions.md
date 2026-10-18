@@ -72,7 +72,7 @@ applyTo:
 - Pristine catalog proofs use the complete reviewed projection and a direct constrained owner in the pinned disposable server. Preserve every catalog class, security definition, exact reference comparison and explicit physical exclusion. Populated credential-bearing catalogs must fail when their complete projection is unreadable. Never substitute privileged reads or truncated output.
 - Exercise database behavior through the same stored procedure entry points that production uses.
 - Keep migration and procedure tests representative of runtime call patterns.
-- If a migration or procedure change affects API or CLI behavior, update the relevant docs and task record in the same change.
+- If a migration or procedure change affects API or CLI behavior, update the relevant existing docs in the same change. Follow root artifact policy; routine changes do not require task records.
 
 # Disposable Single-Init Test Lifecycle
 

@@ -177,7 +177,7 @@ paths. Analysis never installs components. See the engine's
 | Output | Purpose |
 | --- | --- |
 | `coverage/toolchain.txt` | Rust host/LLVM details and the four selected native tools and versions. |
-| `coverage/crates/*.json` | Complete per-package engine measurements; the existing 90% Rust line gate uses their exact counts. Cargo expands workspace member globs. |
+| `coverage/crates/*.json` | Complete per-package engine measurements; the 90% Rust line gate selects tracked production-source counts without changing these complete reports. Cargo expands workspace member globs. |
 | `coverage/rust-sources.rsp` | LLVM response file mapping compiler source paths to the matching installed `rust-src`, including paths with spaces/quotes. |
 | `coverage/lcov.info` | Complete source/line records for downstream analysis. |
 | `coverage/llvm-cov.txt` | Text evidence, including native sources. |
@@ -186,7 +186,7 @@ paths. Analysis never installs components. See the engine's
 The three complete reports disable the engine's default filename filtering and
 include build scripts. No authored C++ file is removed from these reports.
 Per-crate summaries retain C++ measurements as well. The pre-migration numeric
-threshold measured Rust, so it still checks Rust counts at 90%; it does not
+threshold measured Rust, so it still checks production Rust counts at 90%; it does not
 silently become a new combined Rust/C++ threshold. No files are removed from the
 published reports. Sonar's independent requirements continue to apply.
 

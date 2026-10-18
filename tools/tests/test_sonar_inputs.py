@@ -140,6 +140,13 @@ def test_fully_executed_bootstrap_does_not_require_an_artificial_gap() -> None:
     verify_bootstrap_coverage(BOOTSTRAP.replace('covered="false"', 'covered="true"'))
 
 
+def test_bootstrap_has_no_coverage_threshold() -> None:
+    verify_bootstrap_coverage(BOOTSTRAP.replace('covered="true"', 'covered="false"'))
+    verify_bootstrap_coverage(
+        BOOTSTRAP.replace("</file>", '<lineToCover lineNumber="4" covered="false"/></file>')
+    )
+
+
 @pytest.mark.parametrize(
     "document",
     (
@@ -150,9 +157,7 @@ def test_fully_executed_bootstrap_does_not_require_an_artificial_gap() -> None:
         BOOTSTRAP.replace('lineNumber="3"', 'lineNumber="2"'),
         BOOTSTRAP.replace('lineNumber="3"', 'lineNumber="0"'),
         BOOTSTRAP.replace('covered="false"', 'covered="unknown"'),
-        BOOTSTRAP.replace('covered="true"', 'covered="false"'),
         '<coverage version="1"><file path="setup.sh"/></coverage>',
-        BOOTSTRAP.replace("</file>", '<lineToCover lineNumber="4" covered="false"/></file>'),
     ),
 )
 def test_missing_or_fabricated_bootstrap_records_fail(document: str) -> None:

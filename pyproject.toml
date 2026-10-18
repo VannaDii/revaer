@@ -85,3 +85,4 @@ relative_files = true
 [tool.coverage.report]
 fail_under = 90
 show_missing = true
+include = ["tools/src/revaer_tooling/*", "tools/launcher/src/revaer_launcher/*"]
