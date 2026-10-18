@@ -59,5 +59,5 @@ applyTo:
 - Composite qualification must enter through the same uv dotenv-loading boundary as standalone E2E before constructing its task context.
 - Generate the Rust importer report through the supported `cargo-llvm-cov --cobertura` interface. Keep ingestion limited to requiring the report; upstream tools own coverage calculations and report validation.
 - Sonar source preparation removes untracked Python bytecode caches beside authored Python files, including caches left by earlier runs; refuse tracked content and links.
-- Coverage fixtures construct Context with their existing injected collaborators and explicit Options; URL fixtures generate credentials at runtime while retaining percent-encoding cases.
+- Coverage fixtures construct Context with their existing injected collaborators and explicit Options, and own their managed-root/native-required settings so qualification flags cannot enable unrelated integration scenarios. URL fixtures generate credentials at runtime while retaining percent-encoding cases.
 - Exact SCM preparation must reject a stale local target branch that would shadow the fetched event base. Preserve shared worktrees; qualify in an independent checkout.

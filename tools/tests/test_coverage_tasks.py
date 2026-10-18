@@ -32,6 +32,8 @@ def coverage_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Conte
         "RUSTC_COMMAND",
         "RUSTC",
         "REVAER_NATIVE_RECOVERY_ROOT",
+        "E2E_MANAGED_MEDIA_ROOTS",
+        "REVAER_REQUIRE_NATIVE_COVERAGE",
     ):
         monkeypatch.delenv(name, raising=False)
     # CI supplies Clang on PATH. Homebrew keeps its LLVM formula keg-only;
