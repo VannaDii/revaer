@@ -86,8 +86,8 @@ def test_wrong_parser_major_and_missing_optional_dependency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     parser = import_module("pglast.parser")
-    monkeypatch.setattr(parser, "get_postgresql_version", lambda: (18, 1))
-    with pytest.raises(ToolingError, match="PostgreSQL 16"):
+    monkeypatch.setattr(parser, "get_postgresql_version", lambda: (17, 1))
+    with pytest.raises(ToolingError, match="PostgreSQL 18"):
         Statements.parse(b"SELECT 1;")
 
     def missing(name: str) -> None:

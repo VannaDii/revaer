@@ -111,7 +111,7 @@ serialization participates in that hash.
 
 ## Statement boundaries
 
-`statements.py` uses the locked `pglast` 6.16 PostgreSQL scanner. PostgreSQL owns
+`statements.py` uses the locked `pglast` PostgreSQL 18 scanner. PostgreSQL owns
 recognition of strings, dollar quotes and nested comments. The adapter converts
 documented Unicode token indexes to UTF-8 offsets and retains the existing rule:
 a terminating semicolon includes following tabs, spaces or CR and the next LF
@@ -119,9 +119,14 @@ only when nothing else occurs before that LF. Line numbers identify the
 semicolon, starting at one.
 
 The scanner is intentionally separate from execution. It can identify a complete
-lexical boundary in syntactically invalid SQL; the pinned PostgreSQL 16.14 server
+lexical boundary in syntactically invalid SQL; the reviewed PostgreSQL server
 must still accept candidate and final SQL in their disposable proof databases.
 No generated SQL is trusted merely because it has the expected statement count.
+
+The scanner uses the maintained published release matching the PostgreSQL 18
+runtime. The prior unavailable release could not pass the strict dependency
+audit; the remaining published 6.x candidate is yanked. The token adapter and
+UTF-8 boundary contract remain covered by their existing regression tests.
 
 The dependency loads only when database tooling needs it. Container build/runtime
 commands can continue to use the core uv dependency group without a SQL parser.

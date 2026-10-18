@@ -14,6 +14,7 @@ applyTo:
 
 - Use uv's official supported installer, project, dependency-group and tool interfaces. uv owns its environments and executables; do not alter them by hand or introduce parallel installation/resolution mechanisms.
 - Ordinary invocations use the checked-in pins and `uv run --locked`. Dependency changes use uv's resolver and include the lockfile and written rationale. Select the appropriate group; keep core-only container commands independent of browser, development and release dependencies.
+- Keep the SQL scanner on a published, auditable `pglast` release matching the reviewed PostgreSQL runtime major and preserve the existing token/UTF-8 boundary contract. The manifest and uv lockfile own the exact pin. Retired JavaScript collectors do not justify retaining their unused parser dependencies.
 - Install the small worktree-aware launcher through `uv tool install`. It selects the checkout implementation; it must not carry another full dependency graph.
 
 # Architecture and errors
