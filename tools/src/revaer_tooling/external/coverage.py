@@ -125,7 +125,7 @@ class CargoLlvmCov(ExternalTool):
                 "--fail-under-lines",
                 "90",
                 "--ignore-filename-regex",
-                r"\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$",
+                r"\.(c|cc|cpp|cxx|h|hh|hpp|hxx|ipp|inl|s|S)$",
             ),
             env=environment,
         )
