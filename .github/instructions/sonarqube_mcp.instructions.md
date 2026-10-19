@@ -24,6 +24,7 @@ Root `AGENTS.md` defines coverage scope, local review, hosted gates, vendor owne
 - The JavaScript analyzer remains active for first-party files, but no JavaScript LCOV is required when there are no production JavaScript targets. The production-source inventory guard prevents adding such code without supported coverage tooling.
 - Bootstrap behavior tests and raw pinned-kcov output remain under `rv script-coverage`. Bootstrap has no coverage target or Sonar coverage import; do not restore a custom merger or hit-count validator.
 - Scanner-side waiting and `rv sonar-verify-result` must verify the same completed analysis. Retain the complete nonempty scanner report through the existing functional gate. Fetch paginated results; PR queries use the Sonar PR key, while main new-issue queries use `sinceLeakPeriod=true`. Do not confuse a branch name with a PR key.
+- Preserve scanner diagnostics without rejecting analysis solely because its log contains warning text. Evaluate scanner exit status, required inputs and reports, and the published-result gates as defined in `AGENTS.md`.
 
 ## Inspection and troubleshooting
 

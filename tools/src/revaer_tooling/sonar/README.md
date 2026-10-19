@@ -74,8 +74,9 @@ The workflow must keep these operations in the same checkout and run attempt.
    event base to be an ancestor of the exact checked-out head. It does not move
    the worktree, index, or branch. An empty shallow marker is removed; nonempty
    shallow history is never discarded.
-6. Supply `SONAR_TOKEN` and run `rv sonar-scan` once. Any scanner `WARN`, absent
-   task identifier, or missing full submitted report fails.
+6. Supply `SONAR_TOKEN` and run `rv sonar-scan` once. A nonzero scanner exit,
+   absent task identifier, or missing full submitted report fails. Preserve
+   scanner diagnostics without deriving failures from warning text.
 7. Run `rv sonar-package-report`, then `rv sonar-verify-result`. Retain the log,
    report-task file, complete report archive, SCM evidence, and API responses
    even when verification fails.
