@@ -31,7 +31,7 @@ release = [
     "python-semantic-release==10.6.1",
 ]
 testing = [
-    "playwright==1.58.0",
+    "playwright==1.63.0",
     "pytest==9.1.1",
     "pytest-cov==7.1.0",
     "pytest-html==4.2.0",

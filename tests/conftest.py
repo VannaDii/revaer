@@ -183,7 +183,7 @@ def connect_options(runtime: E2eRuntime) -> dict[str, str | int] | None:
     if endpoint is None:
         return None
     return {
-        "ws_endpoint": endpoint,
+        "endpoint": endpoint,
         "expose_network": "<loopback>",
         "timeout": runtime.settings.action_timeout_ms,
     }
