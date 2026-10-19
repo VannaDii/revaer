@@ -23,8 +23,8 @@ def _semicolons(source: str) -> tuple[int, ...]:
     except ImportError as error:
         raise ToolingError("Database scanning requires uv sync --locked --group dev") from error
     version: object = parser.get_postgresql_version()
-    if not isinstance(version, tuple) or not version or version[0] != 16:
-        raise ToolingError("Database scanning requires the locked PostgreSQL 16 binding")
+    if not isinstance(version, tuple) or not version or version[0] != 18:
+        raise ToolingError("Database scanning requires the locked PostgreSQL 18 binding")
     try:
         tokens: object = parser.scan(source)
     except parser.ParseError as error:

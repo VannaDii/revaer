@@ -118,7 +118,8 @@ def test_coverage_floor_fails_with_evidence_then_passes_with_real_branch_coverag
     assert (python_project.root / "coverage/python.xml").stat().st_size > 0
     assert (python_project.root / "coverage/python.lcov").stat().st_size > 0
     assert (
-        "SF:tools/tests/test_value.py" in (python_project.root / "coverage/python.lcov").read_text()
+        "SF:tools/tests/test_value.py"
+        not in (python_project.root / "coverage/python.lcov").read_text()
     )
     tests = python_project.root / "tools/tests/test_value.py"
     tests.write_text(
@@ -129,6 +130,13 @@ def test_coverage_floor_fails_with_evidence_then_passes_with_real_branch_coverag
         + "\n\ndef test_negative() -> None:\n"
         + '    with pytest.raises(ValueError, match="negative"):\n        double(-1)\n'
     )
+    tests.write_text(
+        tests.read_text()
+        + "\n\ndef unused_test_helper():\n"
+        + "\n".join(f"    value_{index} = {index}" for index in range(100))
+        + "\n"
+    )
+    # Unexecuted test scaffolding cannot lower the essential rv implementation's floor.
     ToolingCoverage.run(python_project)
 
 
@@ -156,9 +164,7 @@ def test_tooling_coverage_cannot_replace_data_while_a_merge_reads_it(
     assert report.read_text() == "current report"
 
 
-@pytest.mark.parametrize(
-    "command", ("ci-qualify", "ui-e2e", "runbook", "python-coverage-merge", "js-coverage-merge")
-)
+@pytest.mark.parametrize("command", ("ci-qualify", "ui-e2e", "runbook", "python-coverage-merge"))
 def test_e2e_reentry_uses_uv_dotenv_precedence_and_keeps_the_lockfile(
     python_project: Context, monkeypatch: pytest.MonkeyPatch, command: str
 ) -> None:

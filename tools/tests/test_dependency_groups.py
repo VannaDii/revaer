@@ -88,7 +88,7 @@ def test_core_install_uses_the_same_locked_cli_and_audit_exports_all_groups(tmp_
         "export", "--locked", "--all-groups", "--no-emit-project", "--format", "pylock.toml"
     )
     exported_packages = {item["name"]: item for item in tomllib.loads(exported)["packages"]}
-    for name in ("playwright", "pytest", "python-semantic-release", "tree-sitter", "ruff"):
+    for name in ("playwright", "pytest", "python-semantic-release", "ruff"):
         assert exported_packages[name]["version"]
     assert exported_packages["python-semantic-release"]["archive"]["hashes"]["sha256"]
     assert (tmp_path / "uv.lock").read_bytes() == lock

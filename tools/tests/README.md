@@ -55,7 +55,7 @@ rendering; those values are not credentials for external integrations.
 | Python analysis coverage | Actual Coverage.py databases merge into full checkout-relative paths; never-imported files remain uncovered. Partial E2E phases and corrupt databases cannot reuse previous reports. |
 | Browser source coverage | Real Chromium executes classic scripts and ES modules with Unicode and CRLF, repeated navigation and early closure. Unused modules remain zero without fetching imports. Changed sources, invalid counters, partial reports and incomplete runs fail; capture errors retain traces/videos. |
 | Scanner installation | Real HTTPS and GPG fixtures verify archive bytes, primary signing identity, safe ZIP extraction, cache revalidation, and repair of modified extracted files. |
-| Scanner execution and results | An explicitly simulated child process tests one scanner invocation, warning failures, redaction, and full binary report retention. Real local HTTP tests exact analysis IDs, retry limits, PR/main scope, blocking hotspots, and retained failure evidence. |
+| Scanner execution and results | An explicitly simulated child process tests one scanner invocation, preserved warning diagnostics, scanner failures, redaction, and full binary report retention. Real local HTTP tests exact analysis IDs, retry limits, PR/main scope, blocking hotspots, and retained failure evidence. |
 | Scanner preparation | Real shallow Git clones preserve working changes while enforcing exact event ancestry. Input gates require retained native headers and complete coverage; source cleanup refuses tracked files and archives browser reports. |
 
 Fixtures and wrapper checks do not establish that the Revaer application builds

@@ -1,7 +1,7 @@
 """Scenarios run in a child pytest session against the real application fixtures."""
 
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -34,7 +34,6 @@ def test_retry_records_both_attempts(
     app: AppShell,
     request: pytest.FixtureRequest,
     session: ApiSession,
-    close_page: Callable[[Page], None],
 ) -> None:
     context.route("**/*", document)
     app.goto("/")
@@ -52,7 +51,7 @@ def test_retry_records_both_attempts(
         # for Playwright's assigned video artifact before closing the popup;
         # a page closed before recording starts has no video to retain.
         assert Path(popup.video.path()).suffix == ".webm"
-    close_page(popup)
+    popup.close()
     app.navigate("Settings")
     assert getattr(request.node, "execution_count", 1) == 2
 

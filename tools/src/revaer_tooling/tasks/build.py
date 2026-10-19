@@ -53,7 +53,6 @@ class ToolingCoverage(Task):
             for path in (context.root / ".coverage", output / "python.xml", output / "python.lcov"):
                 context.fs.remove_owned(path, context.root)
             context.tools.python.pytest(PytestArgs(("tools/tests",), coverage=True))
-            context.tools.python.runtime_coverage()
         return TaskResult()
 
 

@@ -18,7 +18,7 @@ def distributed_runs(
     """Validate each producer before exposing its named execution inputs.
 
     Actions downloads artifacts from this workflow run into separate directories;
-    keeping them separate prevents summaries or V8 captures overwriting a shard.
+    keeping them separate prevents execution summaries overwriting a shard.
     The existing partition validator still proves every scenario was selected.
     """
     producers = root / "coverage/producers"
@@ -52,27 +52,14 @@ def distributed_runs(
             {index: path / "tests/test-results" for index, path in directories.items()},
         )
         for index, path in directories.items():
-            verify_producer(filesystem, path, phases, suffix=f"-shard-{index}" if count > 1 else "")
+            if path.is_symlink():
+                raise ToolingError("Coverage producer must not be a symlink")
             suffix = f"-shard-{index}" if count > 1 else ""
             result.extend((path, phase, suffix) for phase in phases)
     return tuple(result)
 
 
-def verify_producer(
-    filesystem: FileSystem, path: Path, phases: tuple[str, ...], *, suffix: str
-) -> None:
-    if path.is_symlink():
-        raise ToolingError("Coverage producer must not be a symlink")
-    summary = object_value(
-        decode(filesystem.read(path / f"tests/test-results/python-e2e-summary{suffix}.json"))
-    )
-    if "ui-chromium" in phases and summary.get("browser_coverage") is not True:
-        raise ToolingError("Chromium shards must collect browser line coverage")
-
-
-def verify_analysis_run(
-    summary: JsonObject, expected: tuple[str, ...], *, browser: bool = False
-) -> None:
+def verify_analysis_run(summary: JsonObject, expected: tuple[str, ...]) -> None:
     """Analysis consumes all named phases of one completed, unsharded run."""
     if (
         summary.get("status") != "passed"
@@ -85,10 +72,6 @@ def verify_analysis_run(
         or not any(name.startswith("ui-") for name in expected)
     ):
         raise ToolingError("Analysis coverage requires a completed, unsharded API and UI run")
-    if browser and (summary.get("browser_coverage") is not True or "ui-chromium" not in expected):
-        raise ToolingError(
-            "JavaScript analysis coverage requires a completed Chromium coverage run"
-        )
 
 
 class RouteCoverage:

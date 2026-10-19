@@ -5,7 +5,6 @@ HTTP interception supplies a small page; no Revaer service or developer database
 is needed to verify fixture ownership and browser recording semantics.
 """
 
-import hashlib
 import json
 import os
 import shutil
@@ -75,7 +74,6 @@ def run_browser(python: Python, settings: E2eSettings, browser: str = "chromium"
             "E2E_UI_WORKERS": str(settings.workers),
             "PLAYWRIGHT_SHARD_INDEX": str(settings.shard_index),
             "PLAYWRIGHT_SHARD_TOTAL": str(settings.shard_total),
-            "E2E_BROWSER_COVERAGE": str(settings.browser_coverage),
         },
     )
     return result
@@ -89,57 +87,6 @@ def test_async_shell_and_overlay_startup(browser_project: Python, browser: str) 
         {"E2E_RETRIES": "0", "E2E_TRACE": "off", "E2E_VIDEO": "off", "E2E_SCREENSHOT": "off"}
     )
     run_browser(browser_project, settings, browser)
-
-
-def test_browser_line_coverage_uses_the_shipped_pytest_fixture(browser_project: Python) -> None:
-    source = Path(__file__).parent / "fixtures/browser_javascript.py"
-    shutil.copy2(source, browser_project.root / "tests/specs/ui/test_browser.py")
-    script = 'document.title = "Collected";\n'
-    (browser_project.root / "fixture.js").write_text(script)
-    results = browser_project.root / "results"
-    results.mkdir()
-    (results / "javascript-sources.json").write_text('["fixture.js"]\n')
-    settings = load_e2e_settings(
-        {"E2E_BROWSER_COVERAGE": "true", "E2E_RETRIES": "0", "E2E_TRACE": "off", "E2E_VIDEO": "off"}
-    )
-    run_browser(browser_project, settings)
-    baseline = json.loads((results / "javascript-baseline-main.json").read_text())
-    assert baseline["sources"][0]["source"] == script
-    pages = sorted((results / "ui-chromium").glob("*/javascript-page-*.json"))
-    assert len(pages) == 2
-    for path in pages:
-        evidence = json.loads(path.read_text())
-        assert evidence["complete"] is True
-        assert any(
-            capture["sha256"] == hashlib.sha256(script.encode()).hexdigest()
-            for capture in evidence["captures"]
-        )
-
-
-def test_browser_coverage_failure_keeps_trace_video_and_partial_data(
-    browser_project: Python,
-) -> None:
-    source = Path(__file__).parent / "fixtures/browser_javascript_failure.py"
-    shutil.copy2(source, browser_project.root / "tests/specs/ui/test_browser.py")
-    (browser_project.root / "fixture.js").write_text('document.title = "Collected";\n')
-    results = browser_project.root / "results"
-    results.mkdir()
-    (results / "javascript-sources.json").write_text('["fixture.js"]\n')
-    settings = load_e2e_settings(
-        {
-            "E2E_BROWSER_COVERAGE": "true",
-            "E2E_RETRIES": "0",
-            "E2E_TRACE": "retain-on-failure",
-            "E2E_VIDEO": "retain-on-failure",
-        }
-    )
-    with pytest.raises(CommandError):
-        run_browser(browser_project, settings)
-    attempts = list((results / "ui-chromium").glob("*attempt-1"))
-    assert len(attempts) == 1
-    assert (attempts[0] / "trace.zip").stat().st_size > 0
-    assert (attempts[0] / "video-1.webm").stat().st_size > 0
-    assert json.loads((attempts[0] / "javascript-page-1.json").read_text())["complete"] is False
 
 
 @pytest.mark.parametrize("browser", ["chromium", "firefox", "webkit"])

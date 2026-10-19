@@ -6,20 +6,21 @@ installation, or other checkout is changed. The script-coverage task opts these
 same tests into kcov, keeping behavior assertions and measured execution together.
 """
 
-import hashlib
-import json
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
-from revaer_tooling.bootstrap.coverage import BOOTSTRAP_CASES
 from revaer_tooling.cli import make_context
 from revaer_tooling.context import Options
 from revaer_tooling.external.bash import BootstrapArgs
 
+BOOTSTRAP_CASES = {"installed": 0, "unmanaged": 0, "install-directory": 0, "stale-lock": 1}
+
 
 def run_bootstrap_case(case: str, tmp_path: Path, artifacts: Path | None) -> None:
+    context = make_context(Options())
     source = Path(__file__).resolve().parents[2]
     root = tmp_path / "checkout with spaces"
     root.mkdir()
@@ -35,6 +36,20 @@ def run_bootstrap_case(case: str, tmp_path: Path, artifacts: Path | None) -> Non
     )
     (root / ".git").mkdir()
     (root / "tests").mkdir()
+    if case == "stale-lock":
+        # Lock rejection must not depend on resolving Revaer's dependency graph
+        # against a live registry before uv can explain the stale-lock failure.
+        manifest = root / "pyproject.toml"
+        manifest.write_text(
+            '[project]\nname = "bootstrap-fixture"\nversion = "0.1.0"\n'
+            'requires-python = ">=3.13,<3.14"\n'
+        )
+        subprocess.run(
+            [str(context.tools.uv.locate()), "lock", "--offline", "--project", str(root)],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
     before = (root / "uv.lock").read_bytes()
     if case == "stale-lock":
         manifest = root / "pyproject.toml"
@@ -79,7 +94,6 @@ def run_bootstrap_case(case: str, tmp_path: Path, artifacts: Path | None) -> Non
             environment["UV_UNMANAGED_INSTALL"] = str(tmp_path / "unused install")
             environment["UV_INSTALL_DIR"] = str(install)
 
-    context = make_context(Options())
     measured = artifacts is not None
     artifacts = artifacts or tmp_path / "artifacts"
     context.fs.mkdir(artifacts)
@@ -118,19 +132,6 @@ def run_bootstrap_case(case: str, tmp_path: Path, artifacts: Path | None) -> Non
             assert not (tmp_path / "unused install").exists()
     if measured:
         assert (root / "setup.sh").read_bytes() == (source / "setup.sh").read_bytes()
-        context.fs.write(
-            artifacts / "source.json",
-            json.dumps(
-                {
-                    "version": 1,
-                    "source": str((root / "setup.sh").resolve()),
-                    "sha256": hashlib.sha256((root / "setup.sh").read_bytes()).hexdigest(),
-                    "exit_code": result.code,
-                }
-            )
-            + "\n",
-            0o600,
-        )
 
 
 @pytest.mark.parametrize("case", BOOTSTRAP_CASES)

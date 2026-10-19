@@ -131,7 +131,6 @@ or `DATABASE_URL`; the tracked defaults contain no database password.
 | `E2E_API_RUNNER` | Overrides `[api].runner` in `tests/e2e.toml`: `binary` or media's `lib-test`. |
 | `E2E_BROWSERS` | `chromium`; comma-separated `chromium`, `firefox`, `webkit`. |
 | `E2E_BROWSER_CHANNEL` | Optional installed browser channel passed to Playwright. |
-| `E2E_BROWSER_COVERAGE` | False; true records Chromium JavaScript execution and requires `ui-chromium` among the selected phases. |
 | `E2E_HEADLESS` | True. |
 | `E2E_VIEWPORT_WIDTH`, `E2E_VIEWPORT_HEIGHT` | 1440 × 900. |
 | `E2E_RETRIES` | Two in CI, zero locally. |
@@ -164,59 +163,24 @@ Build/startup failures retain a failed current-run summary. A failed phase stops
 the dependent phases, preserves its evidence, and makes the command fail. An
 occupied port is reported to its operator; the runner never kills by port/name.
 
-## JavaScript source coverage
+## Coverage scope
 
-The Sonar run enables `E2E_BROWSER_COVERAGE=1`, completes the unsharded API and
-browser phases, then calls `rv js-coverage-merge` with the same settings. This
-publishes `coverage/js-lcov.info`. Functional operation/route evidence remains
-independent of this line coverage.
+API and browser execution use Coverage.py for the required Python reports.
+The Rust/Yew application is measured by the Rust/native coverage tools. The
+repository currently has no production JavaScript coverage target; vendor code,
+documentation and fixtures do not acquire targets from browser execution.
+Sonar policy rejects new production JavaScript until supported coverage tooling
+is configured. There is no custom JavaScript collector, counter converter,
+source-location inventory or collector-conformance suite.
 
-There are two inputs, each with a separate responsibility:
-
-1. Tree-sitter's official Python bindings and JavaScript grammar parse every
-   tracked or nonignored working `.js`, `.mjs`, and `.cjs` file. The inventory
-   includes unexecuted modules without fetching imports or running their code.
-   Named code tokens, statements and declarations supply source locations;
-   comments and punctuation-only containers do not. Every location starts at zero.
-2. Chromium's native precise-coverage API supplies the execution counts. Source
-   SHA-256 and UTF-16 length from its script events bind those counters to the
-   exact parsed bytes. The narrowest containing V8 range determines each count,
-   so an unexecuted nested branch stays at zero inside an executed function.
-
-The merger combines the measured locations into line records. A line is covered
-when at least one of its code locations ran. Identical source copies share the
-same measurement but retain distinct checkout paths. Generated Trunk loaders
-without matching authored bytes keep their raw captures; their execution is not
-attributed to an unrelated source file. This reports line coverage, not an
-independent statement or branch percentage. Sonar coverage concerns apply only
-to production code. When the production Rust/Wasm UI has no authored JavaScript,
-the complete browser run may produce honest zero-hit records for nonproduction
-scripts; the merger never requires documentation execution to manufacture hits.
-
-The `page` fixture is instrumented before a scenario receives it. Scenarios that
-need another page request `new_page: Callable[[], Page]`; scenarios that close a
-page early request `close_page: Callable[[Page], None]`. These helpers also work
-with coverage disabled and with Firefox/WebKit. The close helper captures pending
-execution before closing the native page. Creating pages directly on the context
-or through an automatic popup currently fails a coverage-enabled run; add an
-explicitly verified lifecycle when a scenario requires such a popup.
-
-Partial captures, syntax errors, changed sources, missing files, invalid counters,
-worker disagreement and unsuccessful/partial runs fail the merge. It holds the
-E2E operation lock while reading and publishing. A capture failure retains traces
-and videos alongside the private partial JSON. Baselines are
-`tests/test-results/javascript-baseline-*.json`; per-attempt captures are
-`tests/test-results/ui-chromium/*/javascript-page-*.json`. A new run invalidates
-the old inputs before collection. Never combine evidence across workflow attempts.
+Use Playwright's native page/new_page fixtures and page.close(). Context cleanup
+continues to retain traces, videos and screenshots according to test outcomes.
 
 ## Upstream interfaces
 
 - [Playwright pytest integration](https://playwright.dev/python/docs/test-runners)
 - [Playwright Python API testing](https://playwright.dev/python/docs/api-testing)
 - [Playwright CDP sessions](https://playwright.dev/python/docs/api/class-cdpsession)
-- [V8 precise coverage protocol](https://chromedevtools.github.io/devtools-protocol/tot/Profiler/)
-- [Tree-sitter Python bindings](https://github.com/tree-sitter/py-tree-sitter) and
-  [JavaScript grammar](https://github.com/tree-sitter/tree-sitter-javascript)
 - [pytest-timeout 2.4.0](https://pypi.org/project/pytest-timeout/2.4.0/); 2.5.0 was
   [withdrawn by its maintainers](https://pypi.org/project/pytest-timeout/2.5.0/).
 - [Cargo JSON artifact messages](https://doc.rust-lang.org/cargo/reference/external-tools.html#json-messages)

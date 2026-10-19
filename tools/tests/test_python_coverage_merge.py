@@ -179,7 +179,6 @@ def test_merge_combines_real_data_from_separate_producer_directories(
                     "shard": 1,
                     "total_shards": 1,
                     "phases": dict.fromkeys(phases, "passed"),
-                    "browser_coverage": True,
                 }
             )
         )

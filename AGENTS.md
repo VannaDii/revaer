@@ -9,17 +9,17 @@
 > 5. **Stored procedures or bust**. Runtime database access goes through stored procedures; raw SQL belongs only in migrations and tightly scoped operational bootstrap scripts.
 > 6. **Deterministic, panic-free production code**. No `panic!`, `unwrap()`, `expect()`, `unreachable!()`, or silent error suppression in authored production or bootstrap code.
 > 7. **No source-level lint suppressions**. `#[allow(...)]` and `#[expect(...)]` are not permitted in authored code, except for the operator-approved generated CXX documentation exception defined in the FFI instructions.
-> 8. **`rv ci` and `rv ui-e2e` before every hand-off**. A task is not complete until both pass cleanly.
+> 8. **Qualify locally before pushing**. Section 3 defines targeted-first validation, local Sonar review and one complete local qualification.
 > 9. **Dependencies are injected**. Runtime logic receives collaborators from callers; only bootstrap/wiring code constructs concrete implementations or reads the environment.
 >
-> **Completion Rule:** Because Codex runs locally, a task is complete only when all requirements in this file and the scoped instruction files are satisfied, `rv ci` passes without warnings or errors, and `rv ui-e2e` passes.
+> **Completion Rule:** Final implementation delivery requires the applicable invariants and Section 3 qualification to pass. An operator-requested planning or review checkpoint completes only that stage; report its focused checks and outstanding qualification without starting unrequested implementation or full validation.
 
 ---
 
 ## 0) Policy Precedence And Source Of Truth
 
 - [`AGENTS.md`](./AGENTS.md) is the non-negotiable root contract.
-- Scoped instruction files under [`.github/instructions/`](./.github/instructions/) may only tighten or specialize the root contract for their matching paths. They may not relax root policy.
+- Scoped instruction files under [`.github/instructions/`](./.github/instructions/) specialize implementation requirements for their matching paths. They may neither relax root policy nor invent acceptance gates, expand coverage targets or require additional deliverables. Changes to the acceptance contract require operator approval.
 - Product documentation, generated documentation indexes, dated plans, ADR implementation notes, examples, and test fixtures are reference material, not independent authorization or agent operating rules. Preserve accepted product decisions; check the source's status, date, and current implementation before treating historical completion claims or next steps as current work.
 - If two instruction files appear to conflict, precedence is:
   1. [`AGENTS.md`](./AGENTS.md)
@@ -71,83 +71,47 @@
 
 ## 3) Quality Gates
 
-- Operator-approved Rust Sonar input: retain every tracked Rust source record from
-  the complete LLVM LCOV report, converting only unexecuted branch markers to
-  zero hits. Third-party and untracked generated coverage remains in the complete
-  original LCOV and native reports; all authored analysis and quality thresholds
-  remain intact. The exact scanner path is `coverage/rust-sonar-lcov.info`.
+### Coverage
 
-- Operator-approved Sonar policy: coverage requirements concern production code only. Keep the exact coverage-only exclusions enforced by `tools/src/revaer_tooling/policy/sonar.py`; all authored content remains in analysis and the zero-new-issues gate. No unresolved historical issue may remain in first-party active production code, including the runtime SQL initializer. Only `TO_REVIEW` hotspots block; reviewed hotspots do not. Real browser records may have zero hits when no authored production JavaScript is executed. This specific coverage policy supersedes the blanket empty-coverage-filter language below; all other analysis restrictions remain in force.
+- Required coverage targets are production code and `rv`, including `tools/src/revaer_tooling/**` and `tools/launcher/src/revaer_launcher/**`. `rv` is the only designated essential internal tool; expanding that designation requires operator approval. Preserve existing production and tooling thresholds, including Rust/Yew WebAssembly, runtime SQL and first-party native requirements.
+- Tests, fixtures, harnesses, examples, documentation, unused templates, generated artifacts, vendor code and other internal utilities have no independent coverage percentage, positive-hit or exact-count requirements. This includes `setup.sh`, asset synchronization and documentation utilities. Their applicable functional, lint and security checks remain required.
+- Run tests under the supported coverage tools and use their configured reports and exit status to enforce thresholds. Configure production/tooling scope through supported tool options. Do not write custom percentage parsers, subtract estimated lines, fabricate hits or add tests merely to execute test scaffolding. Report tool limitations briefly; do not chase perfect classification of inline test code or build replacement coverage analysis.
+- Coverage collection and analysis belong to supported upstream tools. Do not implement coverage collectors, calculate source locations or hit counts, or verify collector behavior with synthetic tests; this prohibition is not limited to third-party code. Consume tools' reports and exit statuses. Ordinary tests of our task invocation, report ingestion and failure propagation remain appropriate.
+- This Rust/Yew WebAssembly application has no production JavaScript coverage targets. Policy rejects new JavaScript in production or the designated `rv` implementation paths until a supported coverage tool is configured; do not build a custom collector or require reports for vendor, documentation or fixture JavaScript. First-party JavaScript analysis and security rules remain active.
+- Keep complete genuine measurements required by existing functional gates. Their inventory does not expand coverage targets. Sonar coverage-only scope is defined in `sonar-project.properties` and enforced by `tools/src/revaer_tooling/policy/sonar.py`; the separate `rv` gate covers its designated implementation paths. Coverage scope does not narrow first-party analysis or security checks.
 
-- All local and CI operations run through `rv` tasks. Workflows may install tools or stage artifacts, but build/test/lint/release gates must call `uv run --locked -- rv`.
-- Bootstrap once with `./setup.sh`; use the uv-managed `rv` CLI thereafter. The approved migration retires Just, Node tooling and shell automation except this root bootstrap.
-- Handoff requires:
-  - `rv ci`
-  - `rv ui-e2e`
-- A new branch may receive one initial push to open a draft PR and obtain its
-  real PR number for Sonar. This standing exception needs no separate approval
-  and may precede local qualification. Before any follow-up push, marking the PR
-  ready for review, or merging, `rv ci-qualify` must pass the complete local
-  API/browser coverage and strict Sonar scan/published-result sequence.
-  `rv ci` alone does not qualify the hosted analysis gates.
-- [the `rv` task registry](./tools/src/revaer_tooling/cli.py) is the canonical command surface for build, lint, test, coverage, release, docs, and local dev loops.
-- [`ci.yml`](./.github/workflows/ci.yml), [`pr.yml`](./.github/workflows/pr.yml), and [`sonar.yml`](./.github/workflows/sonar.yml) must stay aligned with the `rv` registry and this policy.
-- Sonar analysis scope and first-party signal shaping are versioned in [`sonar-project.properties`](./sonar-project.properties). `sonar.sources` must enumerate every authored tracked top-level repository entry so all authored content remains in main-code scope without treating the untracked `.git` object database as source. `sonar.tests` must point only to the committed empty `.sonar-test-scope` sentinel: this disables Sonar's path heuristic, prevents `docs` and `tests` paths from silently skipping secrets analysis, and keeps every authored test under main-code rules and coverage. Strict empty scope filters are intentional scanner-side overrides of any project-side narrowing. Rust coverage must exercise the complete workspace with all features, Python coverage must come from executed tooling and E2E code, browser JavaScript coverage must come from Playwright execution, and all coverage streams must retain real source and line records, and Sonar must publish positive coverage and lines-to-cover metrics.
-- Sonar strictness is mandatory and fail-closed. Do not add, broaden, or reintroduce Sonar issue ignores, rule-scope restrictions, source/test inclusions or exclusions, coverage exclusions, duplication exclusions, analyzer default exclusions, binary suffix exclusions, bundle/generated-code skips, dependency-analysis degradation, disabled available analyzers, disabled or unavailable analyzer caches that reduce cross-file analysis, partial SCM reload, discarded scanner evidence, file-size lowering, SCM disablement, SCM-ignore-based hiding, scanner skip switches, quality-gate relaxation, `NOSONAR`, or comparable suppressions without explicit operator consent recorded in the task ADR. `sonar-project.properties` is the only permitted scanner-criteria source: workflow overrides, duplicate keys, and unreviewed properties are forbidden, and every accepted property must remain on the exact allowlist enforced by [`tools/src/revaer_tooling/policy/sonar.py`](./tools/src/revaer_tooling/policy/sonar.py). Do not classify any authored first-party file as test-only or out of the source gate to make findings disappear, alter or populate `.sonar-test-scope`, restore automatic test-path detection, route files into the wrong language analyzer, or remove coverage instrumentation to manufacture a cleaner log. The post-scan gate must prove that positive coverage and lines-to-cover metrics were published, the quality gate evaluated without ignored conditions, no new unresolved issue or unreviewed hotspot remains, and the complete submitted scanner report was retained as nonempty evidence. Do not use vendored/generated discomfort, binary assets, scanner noise, time pressure, coverage discomfort, dependency-resolution failures, or a desire to make CI pass as an excuse to relax Sonar. A failing Sonar gate, skipped scan, skipped entitled dependency analysis, missing coverage input or metric, missing native analyzer input, disabled analyzer feature flag, unavailable analyzer cache, missing SCM blame, quality-of-analysis warning, deprecated analysis parameter, absent scanner evidence, or scanner `WARN` line is a required fix, not permission to hide files or soften criteria. Fix the finding, add real coverage, supply the precise analyzer input, delete or regenerate the offending artifact, or stop and obtain explicit operator consent before weakening the gate. This prohibition applies equally to repository files and Sonar server state: agents MUST NOT weaken quality-profile rule activation or severity, quality-gate conditions or thresholds, the new-code definition, project or organization analysis settings, issue or hotspot dispositions, or branch-protection requirements as a substitute for fixing code. Agents MUST stop before making any criteria-relaxing edit or remote mutation and ask the operator for consent that names the exact property or server setting, scope, reason, and expiry. Silence, prior consent for another exception, inferred intent, a green quality gate, and an ADR written by the agent are not consent. An agent MUST NOT create the consent record on the operator's behalf, mark an issue false-positive or accepted to manufacture a pass, or reinterpret a suppression as classification, cleanup, or temporary CI repair.
+### Validation and delivery
 
----
+- For each fix, pass the smallest relevant check first; for multiple issues, pass each targeted check before related validation. Then run `rv ci-qualify` once on the final candidate before any push. It includes `rv ci`, `rv ui-e2e` and route checks; do not run those components again on an unchanged candidate. Follow the registry and `tasks/quality.py` for composition and prerequisites.
+- Complete local Sonar file/project analysis of changed authored code before pushing, using the available Sonar integration with the project's rules. No PR number, published server analysis, or draft push is required for local review. Report supported languages and any unavailable analysis honestly; do not substitute a scan of main, create a PR to unlock analysis, or claim a full hosted gate from local feedback. Fix new local findings and applicable findings in changed production code; distinguish unchanged baseline findings without expanding the task. Raise a material analysis limitation before pushing if it leaves changed production code unchecked.
+- Push only after local qualification and local Sonar review succeed. GitHub CI provides independent verification and the authoritative published Sonar quality gate. Required hosted checks and branch protections must pass before merge; local feedback does not replace them.
+- Repeat full qualification only after a relevant correction passes targeted checks. Never restart a live run, retry unchanged failures blindly, or combine separate partial successes into a clean qualification.
+- An operator-requested planning or review checkpoint ends at that stage: report focused checks and remaining work without starting full qualification or claiming final delivery.
+- Use `./setup.sh` for initial bootstrap and the locked `rv` CLI thereafter. Workflows may install tools and stage artifacts; build/test/lint/release gates call `uv run --locked -- rv`. Do not restore legacy Just, Node or shell implementations as gate authorities.
 
-## 4) Maintainability Guardrails
+### Sonar and security
 
-- The operator approved `sonar.scm.forceReloadAll=false` for this CI repair.
-  Complete Git history, enabled SCM analysis and missing-blame validation remain
-  required; this exact consent does not authorize other analysis relaxations.
-- The operator approved routing every measured tracked Rust source to Sonar's
-  Rust LCOV importer while retaining the complete original workspace LCOV,
-  native LLVM text, JSON and HTML. Preserve all instrumentation, measurements
-  and thresholds; dependency/generated/native records are omitted only from
-  this Rust-specific importer input, never from the complete reports.
-- The operator approved merging measured compilation records for the same
-  physical Rust source into one importer record. Sum measured counters, retain
-  uncovered locations and recompute summaries; keep the original separate
-  records in complete LLVM, JSON and HTML reports. Instrumentation and thresholds
-  remain unchanged.
-
-The operator-approved production-only coverage scope is the exact
-`sonar.coverage.exclusions` list enforced by
-`tools/src/revaer_tooling/policy/sonar.py`. Internal utilities, test sources and
-unused Nexus templates remain in analysis and complete coverage measurements;
-only production sources carry coverage requirements. A JavaScript inventory
-containing no production sources requires no fabricated execution counts.
-
-The operator-approved source exclusions are the intentionally malformed YAML
-fixture `scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml` and vendor
-packages/assets: `vendor/**`, `crates/revaer-ui/ui_vendor/**`, and
-`crates/revaer-ui/static/nexus/**`, plus the copied `docs/mermaid.min.js` library.
-Vendor code is not scanned or patched.
-First-party wrappers, the runtime SQL initializer, FFI code, tests and tools remain
-in analysis. Keep dependency security audits and complete native coverage gates.
-The exact exclusions are enforced by `tools/src/revaer_tooling/policy/sonar.py`;
-ADR 592 records the operator instruction. This permanent policy supersedes
-blanket vendor-analysis requirements above; it authorizes no first-party exclusions.
-
-- Keep one canonical statement of each global rule. Root policy belongs here; scoped files should reference it and add path-specific details instead of repeating or rewording it inconsistently.
-- Any change to [the `rv` task registry](./tools/src/revaer_tooling/cli.py), workflow files, release scripts, lint posture, or [`sonar-project.properties`](./sonar-project.properties) must update the relevant instruction file in the same change.
-- Review the instruction set whenever crate layout, workflow layout, release flow, or quality gates change materially.
-- Keep user-facing docs, examples, and generated API/reference artifacts in sync when exposed surfaces change.
+- `sonar-project.properties` is the sole source of scanner criteria; its exact allowlist is enforced by `policy/sonar.py`. No workflow overrides, duplicate keys, undocumented properties or alternate scanner criteria are permitted. Hosted PR and main scans retain the same required analyzer and coverage inputs, verified published results and complete nonempty scanner report.
+- Keep all authored tracked entries in main-code analysis and security scope; `sonar.tests` points only to the committed empty `.sonar-test-scope` sentinel. Do not populate it, restore automatic test-path classification or misroute languages to hide findings. Coverage exclusions do not remove first-party analysis. No new unresolved issue or `TO_REVIEW` hotspot may remain; historical unresolved issues also block in active first-party production code, including the runtime SQL initializer. Reviewed hotspots do not block.
+- Vendor packages/assets and the intentionally malformed YAML fixture follow the exact source exclusions in `policy/sonar.py`. We own dependency selection, security audits, tracking relevant upstream issues and updating when fixes are available; we do not own vendor code quality or patch vendors to satisfy our source gates. First-party wrappers and FFI remain our responsibility.
+- Hosted analysis fails on missing required inputs or published metrics, ignored gate conditions, missing SCM blame, incomplete scanner evidence, skipped entitled analysis, analyzer degradation or quality-of-analysis warnings. Scanner warning text alone is not an acceptance failure: preserve diagnostics and evaluate scanner exit status, required inputs and reports, and the published-result gates. Preserve complete history, configured SCM behavior, native compiler inputs and supported analyzer caches. Fix the owning input or code; do not hide sources or findings.
+- Without explicit operator consent naming the exact setting, scope, reason and expiry, do not weaken scanner scope, rules, severity, thresholds, analysis features, dependency analysis, source attribution, coverage/duplication filters, quality profiles/gates, new-code definitions or branch protection. This applies locally and on the server. Do not use suppressions, issue/hotspot dispositions, scanner skips or artifact deletion to manufacture a pass. An agent-written ADR, silence, another exception or a green gate is not consent. Apply only the change actually authorized.
 
 ---
 
-## 5) No substantiating artifacts
+## 4) Efficient Work And Maintainability
 
-- Do not create proof reports, evidence bundles, qualification reports, verification documents, audit packages, saved test transcripts, screenshots used as proof, redundant checklists, verification manifests, per-file hash inventories, copied logs, coverage exports, checkpoint files, or duplicate completion records unless Vanna explicitly requests that specific artifact. A request to implement, fix, test, qualify, or complete work is not a request for an evidence package.
-- Do not create independent auditors, duplicate verification frameworks, or bespoke evidence generators. Do not add acceptance gates or expand task scope to justify substantiating artifacts.
-- Use focused functional regression tests and existing checks. Report results, limitations and relevant commit hashes briefly in chat. Extra paperwork is not an acceptance gate.
-- Keep normal command output temporary; do not copy it into the workspace or commit it. Do not copy, package, or retain it as a separate evidence collection. Remove disposable task artifacts when finished without deleting caller-owned work or needed persistent state.
-- Do not create an ADR or task record for routine implementation, fixes, testing, cleanup, or instruction edits. Use an ADR only for an architectural decision requiring operator approval or when Vanna explicitly requests one. Keep it concise and use the existing ADR template and indexes only when an ADR is actually warranted.
-- Update existing documentation when behavior or an operating contract changes. Do not add documentation, ledger entries, index entries, or status files merely to substantiate completed work.
-- Only an explicit user request for a specific substantiating artifact authorizes an exception. A task, skill, old document, previous habit, or agent interpretation of a requirement does not grant permission. This section overrides blanket evidence-retention and per-task record requirements in scoped instructions and supporting documents. Product records used by the application as domain evidence, required contracts, and functional test fixtures must remain intact. Existing functional quality gates remain required.
+- Stay on the requested critical path. Follow instruction precedence when unsure, inspect the owning task/configuration and reproduce narrowly. If uncertainty affects correctness or scope, a tool is unavailable, or a targeted attempt yields no new information, report the blocker and smallest decision needed before repeating experiments or expanding validation. Continue independent authorized work; do not invent requirements to resolve uncertainty.
+- Keep one canonical statement of each global rule here. Scoped files add implementation details without adding gates, targets or deliverables. Reference the registry/workflows for command composition and configuration for pins. Historical rationale belongs in existing ADRs and reference docs, not active procedures or new ledgers.
+- Generate the Rust Sonar Cobertura input directly with `cargo-llvm-cov`; Sonar imports it without repository-written counter parsing, merging or normalization. Keep complete original LLVM/native reports and the existing production thresholds. Read exact paths and SCM settings from the canonical configuration; do not duplicate repair narratives.
+- Changes to the task registry, workflows, release automation, lint posture or Sonar configuration must update the relevant instruction file in the same change. Keep exposed docs/examples/API artifacts aligned with behavior. Review instructions when layouts or operating contracts change materially.
+- Write prose as one physical line per paragraph/list item. Keep structural Markdown/YAML/code newlines; do not manually wrap prose.
 
-Local PR qualification supplies only explicit pull-request identity (key, base,
-head branch) to the scanner; quality criteria remain exclusively in
-`sonar-project.properties`. Local analysis must never default to the main branch.
+---
+
+## 5) Measurements And Artifacts
+
+- Measure actual behavior and report relevant results, limitations and commit hashes briefly in chat. Do not create routine task records, ADRs, proof reports, evidence bundles, saved transcripts/log copies, screenshots as proof, checklists, verification manifests, hash inventories, coverage exports, JSON proof/status files or checkpoint ledgers. Implementing, testing or qualifying work does not authorize those artifacts.
+- Use existing functional checks and focused regressions. Do not create independent auditors, duplicate verification frameworks, bespoke evidence generators or acceptance gates. Keep ordinary output temporary and remove disposable task artifacts without deleting caller-owned work or needed persistent state.
+- Update existing documentation when behavior or contracts change. Create an ADR only for an architectural decision requiring operator approval or when explicitly requested. Do not add docs/index entries merely to substantiate completion.
+- Only an explicit request for a specific substantiating artifact authorizes it. Existing functional gates' required outputs, application domain evidence, required contracts and functional fixtures remain intact; their retention is not permission for a separate evidence package. This section overrides blanket retention or per-task-record demands in scoped instructions and supporting docs.

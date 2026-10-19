@@ -12,16 +12,15 @@ from .formats import Document
 from .workflows import mapping, needs, steps
 
 PYTHON_COVERAGE_STEP = "Python tooling coverage"
-BROWSER_COVERAGE_STEP = "Run Playwright with browser coverage"
+BROWSER_COVERAGE_STEP = "Run Playwright with Python coverage"
 NATIVE_DATABASE_STEP = "Build native compile database"
-SCRIPT_COVERAGE_PATH = "coverage/script-coverage.xml"
+BOOTSTRAP_OUTPUT_PATH = "coverage/scripts/cases"
 
 SCANNER_STEPS = {
     "Coverage": "cov",
     PYTHON_COVERAGE_STEP: "tooling-cov",
     BROWSER_COVERAGE_STEP: "ui-e2e",
     "Merge Python coverage inputs": "python-coverage-merge",
-    "Merge browser coverage inputs": "js-coverage-merge",
     NATIVE_DATABASE_STEP: "sonar-compile-db",
     "Verify Sonar analysis inputs": "sonar-verify-inputs",
     "Prepare Sonar source inputs": "sonar-prepare-sources",
@@ -31,13 +30,11 @@ SCANNER_STEPS = {
     "Verify Sonar published result": "sonar-verify-result",
 }
 COVERAGE_PATHS = (
-    "coverage/lcov.info",
-    "coverage/rust-sonar-lcov.info",
+    "coverage/workspace-lcov.info",
+    "coverage/rust-sonar.xml",
     "coverage/llvm-cov.txt",
-    "coverage/js-lcov.info",
-    "coverage/js-sonar-lcov.info",
     "coverage/python.xml",
-    SCRIPT_COVERAGE_PATH,
+    BOOTSTRAP_OUTPUT_PATH,
     "coverage/compile_commands.json",
     "coverage/cxxbridge/include/rust/cxx.h",
     "coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h",
@@ -104,12 +101,7 @@ def scanner_workflow_findings(documents: Mapping[str, Document]) -> list[str]:
         }
         if distributed:
             _distributed_producers(policy)
-        else:
-            browser_environment = mapping(policy.step(job, BROWSER_COVERAGE_STEP).get("env"))
-            policy.require(
-                browser_environment.get("E2E_BROWSER_COVERAGE") == "1",
-                "Sonar browser execution must collect precise Chromium coverage",
-            )
+
         for step_name, command in scanner_steps.items():
             step = policy.step(job, step_name)
             policy.require(runs(step, command), f"{step_name} must run rv {command}")
@@ -213,10 +205,8 @@ def _distributed_producers(policy: Contract) -> None:
             for path in COVERAGE_PATHS
             if path
             not in (
-                "coverage/js-lcov.info",
-                "coverage/js-sonar-lcov.info",
                 "coverage/python.xml",
-                SCRIPT_COVERAGE_PATH,
+                BOOTSTRAP_OUTPUT_PATH,
             )
         ),
     )
@@ -224,7 +214,7 @@ def _distributed_producers(policy: Contract) -> None:
     policy.paths(tooling, (".coverage",))
     policy.paths(
         policy.step(policy.job("tooling-coverage"), "Upload bootstrap execution input"),
-        (SCRIPT_COVERAGE_PATH,),
+        (BOOTSTRAP_OUTPUT_PATH,),
     )
     policy.require(
         mapping(tooling.get("with")).get("include-hidden-files") == "true",
@@ -256,7 +246,6 @@ def _distributed_producers(policy: Contract) -> None:
         (
             *downloads,
             "Merge Python coverage inputs",
-            "Merge browser coverage inputs",
             "Verify Sonar analysis inputs",
         ),
     )

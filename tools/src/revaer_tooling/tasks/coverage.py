@@ -1,19 +1,17 @@
 """Collect complete Rust/native coverage and retain reports on a threshold failure."""
 
-import os
 import re
 import tomllib
-from pathlib import Path
 
 from ..context import Context, TaskResult
 from ..errors import ToolingError
 from ..external.coverage import CoverageFormat, CoverageReportArgs
-from ..json_data import array_value, decode, object_value, string_value
-from ..sonar.lcov import merge_compilations
+from ..sonar.inputs import NATIVE_SOURCE
 from .base import Task
 from .testing import native_test_environment
 
 WORKSPACE_LCOV = "workspace-lcov.info"
+NONPRODUCTION_PACKAGES = frozenset(("revaer-test-support", "revaer-doc-indexer", "asset_sync"))
 
 
 def reset_reports(context: Context) -> None:
@@ -25,6 +23,8 @@ def reset_reports(context: Context) -> None:
         "lcov.info",
         WORKSPACE_LCOV,
         "rust-sonar-lcov.info",
+        "rust-sonar.xml",
+        "native-lcov.info",
         "llvm-cov.txt",
         "html",
         "crates",
@@ -68,65 +68,6 @@ def coverage_environment(context: Context) -> dict[str, str]:
     return environment
 
 
-def rust_line_gate(document: str, package: str) -> str:
-    """Preserve the original Rust gate using the engine's unrounded line counts.
-
-    JSON, native text and HTML retain complete measurements. Sonar's Rust LCOV
-    input contains authored Rust; its native sensor consumes the native text.
-    """
-    report = object_value(decode(document))
-    count = covered = 0
-    for unit in array_value(report.get("data")):
-        for item in array_value(object_value(unit).get("files")):
-            source = object_value(item)
-            if string_value(source.get("filename")).endswith(".rs"):
-                lines = object_value(object_value(source.get("summary")).get("lines"))
-                total, hits = lines.get("count"), lines.get("covered")
-                if type(total) is not int or type(hits) is not int or not 0 <= hits <= total:
-                    raise ToolingError(f"Invalid coverage line counts for {package}")
-                count += total
-                covered += hits
-    if count == 0:
-        raise ToolingError(f"Rust coverage has no line records for {package}")
-    summary = f"{package}: {covered}/{count} Rust lines ({100 * covered / count:.2f}%)"
-    # This internal database fixture is consumed only by dev-dependencies.
-    # Its measurements remain complete; production thresholds do not apply.
-    if package != "revaer-test-support" and covered * 100 < count * 90:
-        raise ToolingError(summary + " is below 90%")
-    return summary
-
-
-def rust_lcov(document: str, root: Path, tracked: tuple[str, ...]) -> str:
-    """Route measured authored Rust records to the Rust-only scanner sensor.
-
-    LLVM also exports native, dependency and generated records. Those are not
-    indexed authored Rust inputs. Preserve their measurements in text/HTML and
-    package JSON, rather than sending them to an incompatible language sensor.
-    """
-    sources = {root / name for name in tracked if name.endswith(".rs")}
-    compilations: dict[Path, list[list[str]]] = {}
-    for record in document.split("end_of_record"):
-        lines = record.strip().splitlines()
-        filenames = [line[3:] for line in lines if line.startswith("SF:")]
-        if not lines:
-            continue
-        if len(filenames) != 1:
-            raise ToolingError("LLVM coverage record must identify exactly one source")
-        filename = os.path.normpath(filenames[0])
-        source = Path(filename)
-        if not source.is_absolute():
-            source = root / source
-        if source in sources:
-            compilations.setdefault(source, []).append(lines)
-    if not compilations:
-        raise ToolingError("LLVM coverage has no authored Rust records")
-    selected: list[str] = []
-    for source, records in compilations.items():
-        lines = records[0] if len(records) == 1 else merge_compilations(str(source), records)
-        selected.extend((*lines, "end_of_record"))
-    return "\n".join(selected) + "\n"
-
-
 class CoverageReport(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
@@ -137,36 +78,36 @@ class CoverageReport(Task):
         reset_reports(context)
         failures = []
         for package in context.tools.cargo.metadata().workspace_packages:
-            requirement = (
-                "internal test utility measurements"
-                if package == "revaer-test-support"
-                else "90% Rust line minimum"
-            )
-            context.emit(f"Coverage: {package} ({requirement})")
+            context.emit(f"Coverage: {package} (production source scope)")
             try:
                 report = output / "crates" / f"{package}.json"
                 context.tools.cargo_llvm_cov.report(
                     CoverageReportArgs(CoverageFormat.JSON, report, package),
                     environment,
                 )
-                context.emit(rust_line_gate(context.fs.read(report), package))
+                if package not in NONPRODUCTION_PACKAGES:
+                    context.tools.cargo_llvm_cov.check_lines(package, environment)
             except ToolingError as error:
                 failures.append(f"{package}: {error}")
         for format, destination in (
             (CoverageFormat.LCOV, output / WORKSPACE_LCOV),
+            (CoverageFormat.COBERTURA, output / "rust-sonar.xml"),
             (CoverageFormat.TEXT, output / "llvm-cov.txt"),
             (CoverageFormat.HTML, output),
         ):
             context.tools.cargo_llvm_cov.report(
                 CoverageReportArgs(format, destination), environment
             )
-        lcov = context.fs.read(output / WORKSPACE_LCOV)
-        lcov = rust_lcov(lcov, context.root, context.tools.git.files())
-        context.fs.write(output / "lcov.info", lcov)
-        if not any(line.startswith("SF:") for line in lcov.splitlines()) or not any(
-            line.startswith("DA:") for line in lcov.splitlines()
-        ):
-            raise ToolingError("LLVM coverage report has no source and line records")
+        native = context.root / NATIVE_SOURCE
+        if context.fs.is_file(native):
+            try:
+                context.tools.lcov.check_native(
+                    output / WORKSPACE_LCOV, native, output / "native-lcov.info"
+                )
+            except ToolingError as error:
+                failures.append(f"Native coverage: {error}")
+        elif context.settings.sonar.native_required:
+            failures.append("Native coverage source is missing: " + NATIVE_SOURCE)
         if failures:
             raise ToolingError(
                 "Coverage failed; diagnostic reports retained:\n" + "\n".join(failures)

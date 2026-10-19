@@ -27,7 +27,7 @@ from .external.bash import Bash, Kcov
 from .external.charts import Gpg, GpgConf, Helm, Oras
 from .external.cmake import Cmake
 from .external.cosign import Cosign
-from .external.coverage import CargoLlvmCov, LlvmTool, Rustc
+from .external.coverage import CargoLlvmCov, Lcov, LlvmTool, Rustc
 from .external.curl import Curl
 from .external.database import PgIsReady, Psql, Sqlx
 from .external.database_lifecycle import LifecycleDocker
@@ -145,7 +145,6 @@ from .tasks.image_release import (
     ImageSignAttest,
 )
 from .tasks.images import DockerBuild, DockerScan
-from .tasks.javascript_coverage import JavaScriptCoverageMerge
 from .tasks.media import (
     CleanFixtures,
     CleanTestMedia,
@@ -270,7 +269,6 @@ COMMANDS: dict[str, Callable[[Context], TaskResult]] = {
     "sonar-prepare-scm": SonarPrepareScm.run,
     "sonar-prepare-sources": SonarPrepareSources.run,
     "python-coverage-merge": PythonCoverageMerge.run,
-    "js-coverage-merge": JavaScriptCoverageMerge.run,
     "sonar-package-report": SonarPackageReport.run,
     "sonar-verify-result": SonarVerifyResult.run,
     "docker-build": DockerBuild.run,
@@ -319,9 +317,7 @@ COMMANDS: dict[str, Callable[[Context], TaskResult]] = {
     "docs-prepare": DocsPrepare.run,
 }
 
-E2E_ENVIRONMENT_TASKS = frozenset(
-    ("ci-qualify", "ui-e2e", "runbook", "python-coverage-merge", "js-coverage-merge")
-)
+E2E_ENVIRONMENT_TASKS = frozenset(("ci-qualify", "ui-e2e", "runbook", "python-coverage-merge"))
 
 
 def parser() -> argparse.ArgumentParser:
@@ -499,6 +495,13 @@ def make_context(options: Options) -> Context:
         lychee=Lychee("lychee", runner, root, env),
         cargo_audit=ExternalTool("cargo-audit", runner, root, env),
         cargo_deny=ExternalTool("cargo-deny", runner, root, env),
+        lcov=Lcov(
+            "lcov",
+            runner,
+            root,
+            env,
+            installation_hint="install lcov with your system package manager",
+        ),
         cargo_llvm_cov=CargoLlvmCov("cargo-llvm-cov", runner, root, env),
         cargo_nextest=CargoNextest("cargo-nextest", runner, root, env),
         cargo_udeps=CargoUdeps("cargo-udeps", runner, root, env),

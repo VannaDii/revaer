@@ -121,6 +121,16 @@ class CargoNextest(ExternalTool):
 
 class Cargo(ExternalTool):
     def recovery_scenarios(self, environment: Mapping[str, str]) -> Completed:
+        # Cargo configuration is not reliably forwarded through the external
+        # nextest subcommand. Preserve caller flags and enforce the compiler gate
+        # at the environment boundary consumed by nextest's Cargo build.
+        active = {**self.environment, **environment}
+        encoded = active.get("CARGO_ENCODED_RUSTFLAGS")
+        flags = (
+            {"CARGO_ENCODED_RUSTFLAGS": "\x1f".join(filter(None, (encoded, "-Dwarnings")))}
+            if encoded is not None
+            else {"RUSTFLAGS": f"{active.get('RUSTFLAGS', '')} -Dwarnings".strip()}
+        )
         return self._invoke(
             (
                 "nextest",
@@ -136,7 +146,7 @@ class Cargo(ExternalTool):
                 "-E",
                 "test(bootstrap::service_recovery_tests::native_service_recovery_)",
             ),
-            env={**environment, "CARGO_TERM_COLOR": "never"},
+            env={**environment, **flags, "CARGO_TERM_COLOR": "never"},
             capture=True,
         )
 

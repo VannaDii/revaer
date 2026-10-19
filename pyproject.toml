@@ -18,7 +18,7 @@ rv = "revaer_tooling.cli:main"
 [dependency-groups]
 dev = [
   "mypy==2.3.1",
-  "pglast==6.16",
+  "pglast==8.7",
   "pip-audit==2.10.1",
   "psutil==7.2.2",
   "ruff==0.16.7",
@@ -39,8 +39,6 @@ testing = [
     "pytest-rerunfailures==16.6.1",
     "pytest-timeout==2.4.0",
     "pytest-xdist==3.8.0",
-    "tree-sitter==0.26.0",
-    "tree-sitter-javascript==0.25.0",
 ]
 
 [tool.uv]
@@ -85,3 +83,4 @@ relative_files = true
 [tool.coverage.report]
 fail_under = 90
 show_missing = true
+include = ["tools/src/revaer_tooling/*", "tools/launcher/src/revaer_launcher/*"]

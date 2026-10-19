@@ -29,6 +29,9 @@ SENTINEL = {".gitkeep": b""}
         "crates/revaer-ui/static/nexus/js/app.js",
         "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/js/app.js",
         "crates/revaer-app/src/bootstrap/service_recovery_tests/operator.rs",
+        "crates/revaer-ui/tools/asset_sync/src/main.rs",
+        "crates/example/examples/demo.rs",
+        "crates/example/benches/benchmark.rs",
     ),
 )
 def test_nonproduction_paths_do_not_affect_coverage(path: str) -> None:
@@ -93,6 +96,28 @@ def change(source: str, key: str, value: str) -> str:
     assert len(matches) == 1, "mutation must change an existing property"
     lines[matches[0]] = f"{key}={value}"
     return "\n".join(lines) + "\n"
+
+
+@pytest.mark.parametrize(
+    "path,requires_reporter",
+    (
+        ("crates/revaer-ui/static/runtime.js", True),
+        ("crates/revaer-ui/static/runtime.mjs", True),
+        ("crates/revaer-ui/static/runtime.cjs", True),
+        ("tools/src/revaer_tooling/runtime.js", True),
+        ("tools/launcher/src/revaer_launcher/runtime.js", True),
+        ("crates/revaer-ui/static/nexus/js/app.js", False),
+        ("docs/fixture.js", False),
+        ("tools/tests/fixture.js", False),
+    ),
+)
+def test_production_javascript_requires_supported_coverage(
+    sonar: str, path: str, requires_reporter: bool
+) -> None:
+    findings = sonar_findings(sonar, (*INVENTORY, path), SENTINEL)
+    assert bool(findings) is requires_reporter
+    if requires_reporter:
+        assert all("supported coverage tool" in message for message in findings)
 
 
 def test_reviewed_configuration_and_all_sources_are_accepted(sonar: str) -> None:
@@ -201,6 +226,9 @@ def test_advisory_lists_must_exist_and_be_empty() -> None:
         "crates/revaer-ui/static/nexus/js/app.js",
         "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/js/app.js",
         "crates/revaer-app/src/bootstrap/service_recovery_tests/operator.rs",
+        "crates/revaer-ui/tools/asset_sync/src/main.rs",
+        "crates/example/examples/demo.rs",
+        "crates/example/benches/benchmark.rs",
         "crates/revaer-app/src/bootstrap/tests.rs",
         "crates/revaer-app/tests/bootstrap.rs",
     ),

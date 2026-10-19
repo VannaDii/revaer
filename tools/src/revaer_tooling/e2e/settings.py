@@ -57,7 +57,6 @@ class E2eSettings:
     startup_interval_ms: int
     shard_index: int
     shard_total: int
-    browser_coverage: bool
 
     @property
     def shard_suffix(self) -> str:
@@ -74,8 +73,6 @@ class E2eSettings:
         unknown = selected - set(available)
         if unknown:
             raise ToolingError("Unknown E2E projects: " + ", ".join(sorted(unknown)))
-        if self.browser_coverage and "ui-chromium" not in selected:
-            raise ToolingError("Browser line coverage requires the Chromium phase")
         if not self.no_dependencies:
             self.add_dependencies(selected, media=media)
         return tuple(phase for phase in available if phase in selected)
@@ -209,5 +206,4 @@ def load_e2e_settings(environment: Mapping[str, str]) -> E2eSettings:
         startup_interval_ms=interval,
         shard_index=shard_index,
         shard_total=shard_total,
-        browser_coverage=boolean(environment, "E2E_BROWSER_COVERAGE", False),
     )

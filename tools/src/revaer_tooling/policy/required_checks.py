@@ -325,10 +325,8 @@ def _distributed_ui_coverage(policy: Contract) -> None:
     policy.require(
         environment.get("E2E_PLAYWRIGHT_PROJECTS") == "ui-${{ matrix.browser }}"
         and environment.get("E2E_BROWSERS") == "${{ matrix.browser }}"
-        and environment.get("E2E_PLAYWRIGHT_NO_DEPS") == "1"
-        and environment.get("E2E_BROWSER_COVERAGE")
-        == "${{ matrix.browser == 'chromium' && '1' || '0' }}",
-        "every browser shard must execute its selected browser with Chromium line coverage",
+        and environment.get("E2E_PLAYWRIGHT_NO_DEPS") == "1",
+        "every browser shard must execute its selected browser",
     )
     api = policy.job("api-e2e")
     policy.require(

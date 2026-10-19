@@ -27,8 +27,7 @@ actual ignored integration suite.
   remove data merely because their names resemble Revaer resources.
 - Preserve errors from failed tools. A later cleanup or reporting step must not
   turn an incomplete operation into success.
-- Verify generated artifacts and update the relevant README and migration row
-  before calling a replacement equivalent to an existing recipe.
+- Verify functional outputs and update the relevant README when behavior changes.
 
 ## Rust tests
 
@@ -36,7 +35,7 @@ actual ignored integration suite.
 the ordered gates in [`quality.py`](quality.py). It carries the normalized
 connection to every gate and preserves an explicit test database override.
 `rv ci` adds the release build after validation succeeds. Both stop on the first
-failure. Their full repository acceptance is tracked in the migration inventory.
+failure. Root `AGENTS.md` defines delivery requirements.
 
 `rv lock` (also `rv release-lock`) invokes the official `uv lock` resolver.
 Review the resulting manifest and lockfile diff together; ordinary command runs
@@ -61,9 +60,7 @@ neither set, test commands stop before launching Cargo and ask for a disposable
 database. This retains the active media stack's ownership requirement.
 
 These targeted commands use an available database. Use `rv db-start` to prepare
-a development database, or pass the disposable database supplied by CI. The
-combined CI/E2E lifecycle is still being migrated; its status is tracked in the
-[inventory](../../../migration.md).
+a development database, or pass the disposable database supplied by CI. Use `rv ci-qualify` for the complete local CI/E2E lifecycle.
 
 ## Runtime shutdown gates
 
@@ -125,16 +122,14 @@ separate command families in the migration inventory.
 installer and native kcov. Each invocation uses a private disposable pytest base
 directory, cleaned on success or failure without touching other pytest sessions.
 Its [guide](../bootstrap/README.md) documents the
-platform prerequisites, descriptor ownership, raw evidence and pending legacy
-acceptance-check correction.
+platform prerequisites, descriptor ownership and raw upstream reports. Bootstrap
+has no required coverage target or merged Sonar report.
 
 Policy tasks share the validators described in the
 [policy guide](../policy/README.md). Direct audit, deny and scanner entry points
 enforce their relevant contracts as well as the full `rv policy` composition.
-`js-coverage-merge` holds the E2E lock while binding the complete parsed source
-inventory to actual Chromium execution. See the
-[browser coverage guide](../e2e/README.md#javascript-source-coverage) before changing
-source locations, counter conversion, or page cleanup.
+Browser Python execution uses Coverage.py. Root policy defines required coverage
+targets; the current Rust/Yew application needs no JavaScript coverage collector.
 
 `rv sonar-compile-db` builds the libtorrent bridge with native integration enabled
 into `target/sonar-build`. The Rust build script supplies actual compiler flags
@@ -162,9 +157,9 @@ Cargo's negative CPU offsets and `default` job setting remain available.
 An explicitly managed Linux fixture or `REVAER_NATIVE_RECOVERY_ROOT` also runs
 the existing service-recovery test before reporting coverage. The managed mount
 remains available until that test and reporting finish.
-The internal `revaer-test-support` database fixture keeps its complete measured
-records but is exempt from the production percentage threshold; other crates
-retain the 90% Rust line minimum.
+Internal-only packages (`revaer-test-support`, `revaer-doc-indexer` and `asset_sync`)
+keep complete measurements without a percentage target. Production packages
+retain the 90% Rust line minimum, enforced by `cargo-llvm-cov report --fail-under-lines`.
 
 The coverage adapter uses the pinned cargo-llvm-cov and the selected Rust
 compiler's `llvm-tools-preview` and `rust-src`. Set `CC`, `CXX`, `LLVM_COV`, and
@@ -177,18 +172,20 @@ paths. Analysis never installs components. See the engine's
 | Output | Purpose |
 | --- | --- |
 | `coverage/toolchain.txt` | Rust host/LLVM details and the four selected native tools and versions. |
-| `coverage/crates/*.json` | Complete per-package engine measurements; the existing 90% Rust line gate uses their exact counts. Cargo expands workspace member globs. |
+| `coverage/crates/*.json` | Complete per-package engine measurements, separate from cargo-llvm-cov's scoped 90% Rust line gate. Cargo expands workspace member globs. |
 | `coverage/rust-sources.rsp` | LLVM response file mapping compiler source paths to the matching installed `rust-src`, including paths with spaces/quotes. |
-| `coverage/lcov.info` | Complete source/line records for downstream analysis. |
+| `coverage/workspace-lcov.info` | Complete original LLVM source/line records. |
+| `coverage/native-lcov.info` | LCOV-selected native source report for the existing positive-execution gate. |
+| `coverage/rust-sonar.xml` | Upstream Cobertura for Sonar Rust, without custom counter analysis. |
 | `coverage/llvm-cov.txt` | Text evidence, including native sources. |
 | `coverage/html/index.html` | Browsable complete report. |
 
-The three complete reports disable the engine's default filename filtering and
-include build scripts. No authored C++ file is removed from these reports.
-Per-crate summaries retain C++ measurements as well. The pre-migration numeric
-threshold measured Rust, so it still checks Rust counts at 90%; it does not
-silently become a new combined Rust/C++ threshold. No files are removed from the
-published reports. Sonar's independent requirements continue to apply.
+Complete reports disable default filename filtering and include build scripts,
+native measurements and test scaffolding. The separate threshold invocation uses
+the tool's default test/generated/dependency exclusions and excludes native file
+suffixes from the Rust percentage. Inline test code follows the tool's supported
+classification; no custom parser changes the result. Sonar's hosted gates remain
+independent.
 
 Rust embeds its compiler commit in standard-library source paths. LLVM's supported
 `-path-equivalence` option maps those paths to the matching source component.
@@ -329,21 +326,17 @@ compiler.
 - [`release.py`](release.py), [`charts.py`](charts.py): release coordination and
   chart operations; see the [release guide](../../../../release/README.md).
 
-## Complete local PR qualification
+## Complete local qualification
 
-`rv ci-qualify` runs foundation CI, all API and browser phases, route checks,
-bootstrap/native measurements, Python/JavaScript merges, scanner input/SCM
-validation and the strict scanner published-result gate. Follow the root
-[`AGENTS.md`](../../../../AGENTS.md) qualification rule and initial draft-push exception. Use the
-pinned native toolchain with `REVAER_REQUIRE_NATIVE_COVERAGE=1`, `E2E_BROWSER_COVERAGE=1`,
-`E2E_BROWSERS=chromium,firefox,webkit`,
-`E2E_PLAYWRIGHT_PROJECTS=api-none,api-api-key,ui-chromium,ui-firefox,ui-webkit`,
-`E2E_RETRIES=0`, one local shard, runtime Sonar credentials and exact
-`SONAR_PULL_REQUEST`, `SONAR_HEAD_REF`, `SONAR_BASE_REF`, `SONAR_BASE_SHA`, `SONAR_HEAD_SHA`.
-Missing prerequisites fail before costly tests. Hosted CI still verifies its
-shards, artifact transfers, caches and packaging.
-Like `ui-e2e`, qualification loads `tests/.env` through uv before constructing
-the task context; caller-supplied runtime settings retain precedence.
-The Just entrypoint sets `PYTHONDONTWRITEBYTECODE=1`; direct CLI callers must do
-the same. Remove untracked generated bytecode left under authored sources by
-older runs before qualification; no scanner exclusions hide those files.
+`rv ci-qualify` runs local CI, all API/browser phases and route checks once. It
+requires the full browser/phase selection with coverage, one local shard and no
+retries; it does not require Sonar credentials or a PR number and does not publish
+server analysis. As with `ui-e2e`, uv loads `tests/.env` before task construction;
+caller settings retain precedence. Follow root `AGENTS.md` for local Sonar
+file/project review before pushing. Hosted workflows independently produce all
+scanner inputs and enforce the published Sonar quality gate before merge.
+
+LCOV is a native coverage-profile prerequisite (apt `lcov` or the platform
+package manager). It replaces repository-written native counter analysis: its
+extract and threshold commands enforce the existing positive-execution gate
+for `session.cpp`, without adding a production percentage requirement.

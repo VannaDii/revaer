@@ -170,9 +170,8 @@ jobs:
         with:
           name: rust-native-coverage
           path: |
-            coverage/lcov.info
             coverage/workspace-lcov.info
-            coverage/rust-sonar-lcov.info
+            coverage/rust-sonar.xml
             coverage/llvm-cov.txt
             coverage/compile_commands.json
             coverage/cxxbridge/include/rust/cxx.h
@@ -223,7 +222,7 @@ jobs:
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: bootstrap-coverage
-          path: coverage/script-coverage.xml
+          path: coverage/scripts/cases
           if-no-files-found: error
           overwrite: true
 
@@ -240,7 +239,6 @@ jobs:
       SONAR_AUTH_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
       REVAER_REQUIRE_NATIVE_COVERAGE: '1'
       E2E_BROWSERS: chromium,firefox,webkit
-      E2E_BROWSER_COVERAGE: '1'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -279,8 +277,6 @@ jobs:
           path: coverage/producers
       - name: Merge Python coverage inputs
         run: uv run --locked -- rv python-coverage-merge
-      - name: Merge browser coverage inputs
-        run: uv run --locked -- rv js-coverage-merge
       - name: Verify Sonar analysis inputs
         run: uv run --locked -- rv sonar-verify-inputs
       - name: Prepare Sonar source inputs
@@ -309,13 +305,10 @@ jobs:
         with:
           name: sonar-coverage
           path: |
-            coverage/lcov.info
             coverage/workspace-lcov.info
-            coverage/rust-sonar-lcov.info
+            coverage/rust-sonar.xml
             coverage/llvm-cov.txt
-            coverage/js-lcov.info
-            coverage/js-sonar-lcov.info
-            coverage/script-coverage.xml
+            coverage/scripts/cases
             coverage/compile_commands.json
             coverage/cxxbridge/include/rust/cxx.h
             coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h
@@ -583,9 +576,9 @@ jobs:
         }}@localhost:5432/revaer
       DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer
       E2E_VIDEO: 'off'
+      E2E_TRACE: retain-on-failure
       PLAYWRIGHT_SHARD_INDEX: ${{ matrix.shard }}
       PLAYWRIGHT_SHARD_TOTAL: '3'
-      E2E_BROWSER_COVERAGE: ${{ matrix.browser == 'chromium' && '1' || '0' }}
     services:
       postgres:
         image: docker.io/library/postgres@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
@@ -624,10 +617,10 @@ jobs:
           path: |
             tests/test-results/api-coverage-*.json
             tests/test-results/ui-coverage-*.json
-            tests/test-results/javascript-baseline-*.json
-            tests/test-results/ui-*-shard-*/*/javascript-page-*.json
             tests/test-results/python-e2e-summary-shard-*.json
             tests/test-results/selection-*-shard-*.json
+            tests/test-results/ui-*-shard-*/
+            tests/playwright-report/ui-*-shard-*/
             coverage/e2e/ui-*-shard-*/.coverage
           include-hidden-files: true
           if-no-files-found: error
@@ -642,7 +635,6 @@ jobs:
       - ui-e2e
     env:
       E2E_BROWSERS: chromium,firefox,webkit
-      E2E_BROWSER_COVERAGE: '1'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:

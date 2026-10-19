@@ -69,7 +69,7 @@ jobs:
         run: uv run --locked -- rv tooling-cov
       - name: Bootstrap execution coverage
         run: uv run --locked -- rv script-coverage
-      - name: Run Playwright with browser coverage
+      - name: Run Playwright with Python coverage
         env:
           PG_CONTAINER: ${{ job.services.postgres.id }}
           REVAER_LOCAL_DB_USER: revaer
@@ -81,12 +81,9 @@ jobs:
           E2E_DB_ADMIN_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job)
             }}@localhost:5432/postgres
           E2E_SKIP_DB_START: '1'
-          E2E_BROWSER_COVERAGE: '1'
         run: uv run --locked -- rv ui-e2e
       - name: Merge Python coverage inputs
         run: uv run --locked -- rv python-coverage-merge
-      - name: Merge browser coverage inputs
-        run: uv run --locked -- rv js-coverage-merge
       - name: Build native compile database
         run: uv run --locked -- rv sonar-compile-db
       - name: Verify Sonar analysis inputs
@@ -116,13 +113,10 @@ jobs:
         with:
           name: sonar-coverage
           path: |
-            coverage/lcov.info
             coverage/workspace-lcov.info
-            coverage/rust-sonar-lcov.info
+            coverage/rust-sonar.xml
             coverage/llvm-cov.txt
-            coverage/js-lcov.info
-            coverage/js-sonar-lcov.info
-            coverage/script-coverage.xml
+            coverage/scripts/cases
             coverage/compile_commands.json
             coverage/cxxbridge/include/rust/cxx.h
             coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h

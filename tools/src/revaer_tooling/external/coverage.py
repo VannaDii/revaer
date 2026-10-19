@@ -94,6 +94,7 @@ class LlvmTool(ExternalTool):
 class CoverageFormat(StrEnum):
     JSON = "json"
     LCOV = "lcov"
+    COBERTURA = "cobertura"
     HTML = "html"
     TEXT = "text"
 
@@ -107,6 +108,27 @@ class CoverageReportArgs:
 
 class CargoLlvmCov(ExternalTool):
     version_args = ("llvm-cov", "--version")
+
+    def check_lines(self, package: str, environment: Mapping[str, str]) -> Completed:
+        """Let cargo-llvm-cov enforce the existing per-package Rust floor.
+
+        Its standard test/generated/dependency exclusions remain active. Native
+        sources retain measurements in complete reports, outside this Rust gate.
+        """
+        return self._invoke(
+            (
+                "llvm-cov",
+                "report",
+                "--locked",
+                "--package",
+                package,
+                "--fail-under-lines",
+                "90",
+                "--ignore-filename-regex",
+                r"\.(c|cc|cpp|cxx|h|hh|hpp|hxx|ipp|inl|s|S)$",
+            ),
+            env=environment,
+        )
 
     def clean(self, environment: Mapping[str, str]) -> Completed:
         return self._invoke(("llvm-cov", "clean", "--workspace"), env=environment)
@@ -145,10 +167,18 @@ class CargoLlvmCov(ExternalTool):
         # --all-features despite listing that flag in report --help.
         command = ["llvm-cov", "report", "--locked", "--include-ffi"]
         if args.package:
-            # Retain every measurement in the package report. The task checks
-            # the existing Rust-only threshold from these engine counts; newly
-            # instrumented C++ remains visible without changing that criterion.
+            # Retain complete measurements separately from the tool's scoped
+            # threshold report, including native sources and test scaffolding.
             command.extend(("--package", args.package, "--summary-only"))
+        if args.format == CoverageFormat.COBERTURA:
+            # The Rust importer consumes the upstream report directly. Keep
+            # complete native/generated/dependency measurements in other formats.
+            command.extend(
+                (
+                    "--ignore-filename-regex",
+                    r"\.(c|cc|cpp|cxx|h|hh|hpp|hxx|ipp|inl|s|S)$|/vendor/",
+                )
+            )
         else:
             command.extend(("--no-default-ignore-filename-regex", "--include-build-script"))
         command.extend(
@@ -168,3 +198,32 @@ class CargoLlvmCov(ExternalTool):
                 " -show-line-counts=true"
             ).strip()
         return self._invoke(tuple(command), env=report_environment)
+
+
+class Lcov(ExternalTool):
+    def check_native(self, complete: Path, source: Path, output: Path) -> None:
+        """Let LCOV select and enforce the existing positive native line gate."""
+        self.verify()
+        self._invoke(
+            (
+                "--extract",
+                str(complete),
+                str(source),
+                "--output-file",
+                str(output),
+                "--rc",
+                "lcov_branch_coverage=1",
+            ),
+            capture=True,
+        )
+        self._invoke(
+            (
+                "--summary",
+                str(output),
+                "--fail-under-lines",
+                "0.000001",
+                "--rc",
+                "lcov_branch_coverage=1",
+            ),
+            capture=True,
+        )

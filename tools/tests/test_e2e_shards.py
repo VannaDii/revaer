@@ -137,7 +137,6 @@ def distributed(tmp_path: Path) -> Path:
                         "shard": index,
                         "total_shards": total,
                         "phases": dict.fromkeys(phases, "passed"),
-                        "browser_coverage": "ui-chromium" in phases,
                     }
                 )
             )
@@ -177,7 +176,7 @@ def test_distributed_browser_partitions_keep_each_producer_separate(distributed:
         distributed_runs(filesystem, distributed, phases, 3)
 
 
-@pytest.mark.parametrize("case", ("failed", "partition", "no-line-coverage"))
+@pytest.mark.parametrize("case", ("failed", "partition"))
 def test_distributed_coverage_rejects_incomplete_runs(distributed: Path, case: str) -> None:
     results = distributed / "coverage/producers/ui-e2e-chromium-shard-1/tests/test-results"
     path = results / (
@@ -190,8 +189,6 @@ def test_distributed_coverage_rejects_incomplete_runs(distributed: Path, case: s
         record.update({"status": "failed"})
     elif case == "partition":
         record.update({"selected": ["test_b"]})
-    else:
-        record.update({"browser_coverage": False})
     path.write_text(json.dumps(record))
     phases = ("api-none", "api-api-key", "ui-chromium", "ui-firefox", "ui-webkit")
     filesystem = FileSystem()

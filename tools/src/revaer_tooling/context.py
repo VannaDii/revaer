@@ -14,7 +14,7 @@ from .external.bash import Bash, Kcov
 from .external.charts import Gpg, GpgConf, Helm, Oras
 from .external.cmake import Cmake
 from .external.cosign import Cosign
-from .external.coverage import CargoLlvmCov, LlvmTool, Rustc
+from .external.coverage import CargoLlvmCov, Lcov, LlvmTool, Rustc
 from .external.curl import Curl
 from .external.database import PgIsReady, Psql, Sqlx
 from .external.database_lifecycle import LifecycleDocker
@@ -96,6 +96,7 @@ class Tools:
     lychee: Lychee
     cargo_audit: ExternalTool
     cargo_deny: ExternalTool
+    lcov: Lcov
     cargo_llvm_cov: CargoLlvmCov
     cargo_nextest: ExternalTool
     cargo_udeps: ExternalTool

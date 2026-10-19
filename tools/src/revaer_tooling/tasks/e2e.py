@@ -208,13 +208,6 @@ def prepare_outputs(context: Context, paths: RunPaths, phases: tuple[str, ...]) 
         for path in (args.results, args.report, args.coverage):
             context.fs.remove_owned(path, context.root)
             context.fs.mkdir(path)
-    if context.settings.e2e.browser_coverage:
-        sources = [
-            path
-            for path in context.tools.git.files(include_untracked=True)
-            if path.endswith((".js", ".mjs", ".cjs")) and (context.root / path).is_file()
-        ]
-        context.fs.write(paths.results / "javascript-sources.json", json.dumps(sources) + "\n")
 
 
 def write_summary(
@@ -246,7 +239,6 @@ def write_summary(
                 "phases": outcomes,
                 "shard": context.settings.e2e.shard_index,
                 "total_shards": context.settings.e2e.shard_total,
-                "browser_coverage": context.settings.e2e.browser_coverage,
             },
             indent=2,
         )
