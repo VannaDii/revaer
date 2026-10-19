@@ -576,6 +576,7 @@ jobs:
         }}@localhost:5432/revaer
       DATABASE_URL: postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer
       E2E_VIDEO: 'off'
+      E2E_TRACE: retain-on-failure
       PLAYWRIGHT_SHARD_INDEX: ${{ matrix.shard }}
       PLAYWRIGHT_SHARD_TOTAL: '3'
     services:
@@ -618,6 +619,8 @@ jobs:
             tests/test-results/ui-coverage-*.json
             tests/test-results/python-e2e-summary-shard-*.json
             tests/test-results/selection-*-shard-*.json
+            tests/test-results/ui-*-shard-*/
+            tests/playwright-report/ui-*-shard-*/
             coverage/e2e/ui-*-shard-*/.coverage
           include-hidden-files: true
           if-no-files-found: error
