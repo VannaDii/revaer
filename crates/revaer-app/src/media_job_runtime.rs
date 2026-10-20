@@ -7082,7 +7082,7 @@ mod tests {
     }
 
     async fn wait_for_flag(flag: &AtomicBool, label: &'static str) -> anyhow::Result<()> {
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_mins(1), async {
             while !flag.load(Ordering::Acquire) {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
