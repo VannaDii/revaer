@@ -31,6 +31,7 @@ applyTo:
 - Alpine interpreter fixtures run as the caller on rootful Docker and as mapped container root on rootless Docker. Keep interpreter/cache writes inside their owned checkout and verify bind-mounted outputs retain caller ownership.
 - `rv test-media-root-catalog` exercises both runtime catalog primitives and native application attestation against its managed repo-local directories.
 - `rv test` and `rv test-features-min` accept `--filter` for focused Rust diagnosis. Composite CI and qualification retain their unfiltered defaults.
+- Register diagnostic options only on their owning subparsers; composite qualification must not accept a test filter.
 
 - Keep the explicit CLI dictionary mapped to derived tasks' static `run(context)` methods. Internal steps stay ordinary calls unless useful as independent commands. Follow `tools/src/revaer_tooling/tasks/README.md`.
 - Load environment settings and construct concrete external collaborators at the CLI boundary. Pass immutable typed settings/options and injected tools, filesystem operations and output functions to tasks.

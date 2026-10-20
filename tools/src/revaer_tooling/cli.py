@@ -333,10 +333,6 @@ def parser() -> argparse.ArgumentParser:
             else commands.add_parser(name)
         )
         command.set_defaults(task=name)
-        if name == "cargo-lock":
-            command.add_argument("--online", dest="cargo_lock_online", action="store_true")
-        if name in ("test", "test-features-min"):
-            command.add_argument("--filter", dest="test_filter", help="Rust test name substring")
         if name in ("container-build", "container-runtime"):
             command.set_defaults(source_archive=True)
         if name in ("db-test-init", "db-test-drop"):
@@ -409,6 +405,15 @@ def parser() -> argparse.ArgumentParser:
             command.add_argument("release_tag", help="Existing release tag at the current commit")
         if name == "release publish":
             command.add_argument("--tag", dest="release_tag", help="Publish an existing stable tag")
+    commands.choices["cargo-lock"].add_argument(
+        "--online", dest="cargo_lock_online", action="store_true"
+    )
+    commands.choices["test"].add_argument(
+        "--filter", dest="test_filter", help="Rust test name substring"
+    )
+    commands.choices["test-features-min"].add_argument(
+        "--filter", dest="test_filter", help="Rust test name substring"
+    )
     return result
 
 
