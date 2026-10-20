@@ -131,6 +131,7 @@ or `DATABASE_URL`; the tracked defaults contain no database password.
 | `E2E_API_RUNNER` | Overrides `[api].runner` in `tests/e2e.toml`: `binary` or media's `lib-test`. |
 | `E2E_BROWSERS` | `chromium`; comma-separated `chromium`, `firefox`, `webkit`. |
 | `E2E_BROWSER_CHANNEL` | Optional installed browser channel passed to Playwright. |
+| `E2E_BROWSER_WS_ENDPOINT` | Optional local `ws` origin for a same-host Playwright server. Client and server versions must match. Only client loopback services are exposed to the browser. |
 | `E2E_HEADLESS` | True. |
 | `E2E_VIEWPORT_WIDTH`, `E2E_VIEWPORT_HEIGHT` | 1440 × 900. |
 | `E2E_RETRIES` | Two in CI, zero locally. |

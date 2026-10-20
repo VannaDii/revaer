@@ -57,6 +57,7 @@ class E2eSettings:
     startup_interval_ms: int
     shard_index: int
     shard_total: int
+    browser_endpoint: str | None = None
 
     @property
     def shard_suffix(self) -> str:
@@ -109,10 +110,10 @@ def boolean(environment: Mapping[str, str], name: str, default: bool) -> bool:
     return value in ("1", "true", "yes", "on")
 
 
-def local_http_url(value: str) -> str:
+def local_service_url(value: str, scheme: str = "http") -> str:
     parsed = urlsplit(value)
     if (
-        parsed.scheme != "http"
+        parsed.scheme != scheme
         or parsed.hostname not in ("127.0.0.1", "localhost", "::1")
         or parsed.username is not None
         or parsed.password is not None
@@ -121,13 +122,16 @@ def local_http_url(value: str) -> str:
         or parsed.fragment
         or not 1 <= (parsed.port if parsed.port is not None else 80) <= 65535
     ):
-        raise ToolingError("The owned E2E services require local HTTP origins without credentials")
+        raise ToolingError(
+            f"The owned E2E services require local {scheme.upper()} origins without credentials"
+        )
     return value.rstrip("/")
 
 
 def load_e2e_settings(environment: Mapping[str, str]) -> E2eSettings:
-    api_url = local_http_url(environment.get("E2E_API_BASE_URL") or "http://localhost:7070")
-    ui_url = local_http_url(environment.get("E2E_BASE_URL") or "http://localhost:8080")
+    api_url = local_service_url(environment.get("E2E_API_BASE_URL") or "http://localhost:7070")
+    ui_url = local_service_url(environment.get("E2E_BASE_URL") or "http://localhost:8080")
+    browser_endpoint = environment.get("E2E_BROWSER_WS_ENDPOINT")
     prefix = environment.get("E2E_DB_PREFIX") or "revaer_e2e"
     if re.fullmatch(r"[a-z][a-z0-9_]{0,29}", prefix) is None:
         raise ToolingError(
@@ -206,4 +210,5 @@ def load_e2e_settings(environment: Mapping[str, str]) -> E2eSettings:
         startup_interval_ms=interval,
         shard_index=shard_index,
         shard_total=shard_total,
+        browser_endpoint=local_service_url(browser_endpoint, "ws") if browser_endpoint else None,
     )

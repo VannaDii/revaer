@@ -185,6 +185,16 @@ class WorkflowPolicy:
             command = command[4:]
         elif command[:6] == ["uv", "run", "--locked", "--no-build", "--", "rv"]:
             command = command[5:]
+        elif command[:7] == [
+            "uv",
+            "run",
+            "--locked",
+            "--no-build",
+            "--no-sync",
+            "--",
+            "rv",
+        ]:
+            command = command[6:]
         elif command[:8] == [
             "uv",
             "run",

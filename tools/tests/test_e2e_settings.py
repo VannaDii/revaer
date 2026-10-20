@@ -10,6 +10,7 @@ def test_defaults_and_project_dependencies_preserve_order() -> None:
     assert default.phases() == ("api-none", "api-api-key", "ui-chromium")
     assert default.workers == 1
     assert default.retries == 0
+    assert default.browser_endpoint is None
     assert default.trace == Recording.RETRY
     selected = load_e2e_settings(
         {
@@ -30,6 +31,8 @@ def test_defaults_and_project_dependencies_preserve_order() -> None:
         }
     )
     assert diagnostic.phases() == ("ui-chromium",)
+    connected = load_e2e_settings({"E2E_BROWSER_WS_ENDPOINT": "ws://127.0.0.1:3000/"})
+    assert connected.browser_endpoint == "ws://127.0.0.1:3000"
 
 
 @pytest.mark.parametrize(
@@ -44,6 +47,10 @@ def test_defaults_and_project_dependencies_preserve_order() -> None:
         {"E2E_BASE_URL": "https://external.invalid"},
         {"E2E_BASE_URL": "http://127.0.0.1:0"},
         {"E2E_BASE_URL": "http://127.0.0.1/?key=value"},
+        {"E2E_BROWSER_WS_ENDPOINT": "ws://example.com:3000"},
+        {"E2E_BROWSER_WS_ENDPOINT": "http://127.0.0.1:3000"},
+        {"E2E_BROWSER_WS_ENDPOINT": "ws://127.0.0.1:3000/?extra=1"},
+        {"E2E_BROWSER_WS_ENDPOINT": "ws://127.0.0.1:0"},
         {"E2E_API_RUNNER": "guess"},
         {"E2E_TRACE": "unknown"},
         {"E2E_VIDEO": "unknown"},

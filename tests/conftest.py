@@ -178,6 +178,18 @@ def runtime(pytestconfig: pytest.Config) -> E2eRuntime:
 
 
 @pytest.fixture(scope="session")
+def connect_options(runtime: E2eRuntime) -> dict[str, str | int] | None:
+    endpoint = runtime.settings.browser_endpoint
+    if endpoint is None:
+        return None
+    return {
+        "endpoint": endpoint,
+        "expose_network": "<loopback>",
+        "timeout": runtime.settings.action_timeout_ms,
+    }
+
+
+@pytest.fixture(scope="session")
 def session(runtime: E2eRuntime) -> ApiSession:
     return runtime.session
 
