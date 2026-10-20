@@ -47,7 +47,7 @@ def test_defaults_and_project_dependencies_preserve_order() -> None:
         {"E2E_BASE_URL": "https://external.invalid"},
         {"E2E_BASE_URL": "http://127.0.0.1:0"},
         {"E2E_BASE_URL": "http://127.0.0.1/?key=value"},
-        {"E2E_BROWSER_WS_ENDPOINT": "ws://external.invalid:3000"},
+        {"E2E_BROWSER_WS_ENDPOINT": "ws://example.com:3000"},
         {"E2E_BROWSER_WS_ENDPOINT": "http://127.0.0.1:3000"},
         {"E2E_BROWSER_WS_ENDPOINT": "ws://127.0.0.1:3000/?extra=1"},
         {"E2E_BROWSER_WS_ENDPOINT": "ws://127.0.0.1:0"},
