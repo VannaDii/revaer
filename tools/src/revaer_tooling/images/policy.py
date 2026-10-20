@@ -7,7 +7,6 @@ from .validation import read_document, validate_inventory
 RUNTIME_PACKAGES = frozenset(
     (
         "bento4",
-        "ca-certificates",
         "curl",
         "exiftool",
         "ffmpeg",

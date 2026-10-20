@@ -17,6 +17,8 @@ from revaer_tooling.filesystem import FileSystem
 from revaer_tooling.images.inputs import BuildInputs
 from test_images import docker, selected_builders
 
+BUSYBOX = "/bin/busybox"
+
 
 def test_real_dockerfile_uses_uv_and_keeps_tooling_out_of_the_runtime(tmp_path: Path) -> None:
     source = Path(__file__).parents[2]
@@ -114,19 +116,28 @@ def test_real_dockerfile_uses_uv_and_keeps_tooling_out_of_the_runtime(tmp_path: 
         for pin in inputs.runtime_packages:
             name, version = pin.split("=", 1)
             assert f"{name}-{version}" in packages
+        assert docker(
+            "run",
+            "--rm",
+            "--entrypoint",
+            BUSYBOX,
+            tag,
+            "head",
+            "-c",
+            "1",
+            "/etc/ssl/certs/ca-certificates.crt",
+        )
         assert not any(name.startswith(("python3-", "uv-")) for name in packages)
         # Inspect the actual mount destinations and executable directory. An
         # installed uv environment has files here; empty mount directories alone
         # are not additional runtime packages.
-        assert not docker(
-            "run", "--rm", "--entrypoint", "/bin/busybox", tag, "find", "/opt", "-type", "f"
-        )
+        assert not docker("run", "--rm", "--entrypoint", BUSYBOX, tag, "find", "/opt", "-type", "f")
         assert (
             docker(
                 "run",
                 "--rm",
                 "--entrypoint",
-                "/bin/busybox",
+                BUSYBOX,
                 tag,
                 "find",
                 "/usr/local/bin",
@@ -135,8 +146,8 @@ def test_real_dockerfile_uses_uv_and_keeps_tooling_out_of_the_runtime(tmp_path: 
             )
             == "/usr/local/bin/revaer-app"
         )
-        uid = docker("run", "--rm", "--entrypoint", "/bin/busybox", tag, "id", "-u")
-        gid = docker("run", "--rm", "--entrypoint", "/bin/busybox", tag, "id", "-g")
+        uid = docker("run", "--rm", "--entrypoint", BUSYBOX, tag, "id", "-u")
+        gid = docker("run", "--rm", "--entrypoint", BUSYBOX, tag, "id", "-g")
         assert int(uid) > 0 and int(gid) > 0
         for path, permission in (
             ("/usr/local/bin/revaer-app", "555:0:0"),
@@ -151,7 +162,7 @@ def test_real_dockerfile_uses_uv_and_keeps_tooling_out_of_the_runtime(tmp_path: 
                     "run",
                     "--rm",
                     "--entrypoint",
-                    "/bin/busybox",
+                    BUSYBOX,
                     tag,
                     "stat",
                     "-c",
