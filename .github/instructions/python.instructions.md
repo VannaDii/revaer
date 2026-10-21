@@ -45,7 +45,7 @@ applyTo:
 
 - Follow Section 3 of `AGENTS.md` for coverage targets and validation order. The independent tooling/launcher gate measures implementation code in the designated essential paths; test modules and embedded fixture scripts do not acquire coverage targets from inclusion in a Python report. Use supported coverage reports; do not implement or test collector behavior or create fixture hit-count requirements.
 
-- Instruction drift receives PR author/repository identity from workflow event fields at the CLI boundary. Limit the Dependabot exception to same-repository dependency-only changes; spoofed authors, forks and mixed source changes retain normal drift findings. Native auto-merge must validate provider metadata, paginate all PRs and propagate API/merge failures.
+- Instruction drift receives PR author/repository identity from workflow event fields at the CLI boundary. Limit the Dependabot exception to same-repository dependency-only changes; spoofed authors, forks and mixed source changes retain normal drift findings. Dependabot maintenance must validate fresh provider metadata, paginate PRs/commits/reviews/comments, preserve human edits, bind approvals and merges to the current head, and report provider failures without abandoning other eligible PRs. Refresh deduplication uses the existing PR command records and a bounded one-hour wait, never a separate state store.
 
 - Bound the complete tooling suite to two file-grouped pytest workers. Preserve module fixture isolation and complete coverage merging. Measure tool setup and test execution separately.
 

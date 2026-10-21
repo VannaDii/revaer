@@ -322,7 +322,7 @@ compiler.
 - [`build.py`](build.py): build outputs, assets, documentation, dependency audits,
   and the Python quality commands.
 - [`policy.py`](policy.py): source/workflow policy and instruction drift.
-- [`dependabot.py`](dependabot.py): request protected squash auto-merge for eligible Dependabot PRs; GitHub retains every required check and branch rule. `rv dependabot-auto-merge` is also the manual reconciliation entry point.
+- [`dependabot.py`](dependabot.py): reconcile current validation, exact-commit App approval, protected squash merging and bounded rebase/recreate recovery for same-repository Dependabot PRs. `rv dependabot-auto-merge` defaults to inspection; `--apply` requires enabled protected-main automation. The [workflow integration guide](../automation/README.md#dependabot-maintenance) owns credentials, activation and recovery.
 - [`setup.py`](setup.py): official package-manager installation and diagnostics.
 - [`automation.py`](automation.py), [`docs.py`](docs.py): workflow metadata,
   report handling and the documentation deployment payload.

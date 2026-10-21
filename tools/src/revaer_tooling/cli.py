@@ -391,6 +391,9 @@ def parser() -> argparse.ArgumentParser:
             command.add_argument(
                 "--kcov", action="store_true", help="Build the pinned native kcov for Linux CI"
             )
+        if name == "dependabot-auto-merge":
+            command.add_argument("--apply", dest="dependabot_apply", action="store_true")
+            command.add_argument("--pr-number", dest="pull_request", type=int)
         if name == "instruction-drift":
             command.add_argument("--base", help="Base Git revision; defaults to the branch diff")
             command.add_argument("--head", help="Head Git revision; defaults to HEAD")
@@ -600,6 +603,7 @@ def make_context(options: Options) -> Context:
 def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
     options = Options(
+        dependabot_apply=getattr(args, "dependabot_apply", False),
         cargo_lock_online=getattr(args, "cargo_lock_online", False),
         test_filter=getattr(args, "test_filter", None),
         database_name=getattr(args, "database_name", ""),

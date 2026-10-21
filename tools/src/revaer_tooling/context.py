@@ -66,6 +66,7 @@ class Options:
     cache_ref: str = ""
     cargo_lock_online: bool = False
     test_filter: str | None = None
+    dependabot_apply: bool = False
 
 
 @dataclass(frozen=True)

@@ -212,7 +212,7 @@ class Lcov(ExternalTool):
                 "--output-file",
                 str(output),
                 "--rc",
-                "lcov_branch_coverage=1",
+                "branch_coverage=1",
             ),
             capture=True,
         )
@@ -223,7 +223,7 @@ class Lcov(ExternalTool):
                 "--fail-under-lines",
                 "0.000001",
                 "--rc",
-                "lcov_branch_coverage=1",
+                "branch_coverage=1",
             ),
             capture=True,
         )

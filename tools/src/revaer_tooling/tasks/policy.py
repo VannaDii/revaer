@@ -5,7 +5,9 @@ import re
 
 from ..context import Context, TaskResult
 from ..errors import ToolingError
+from ..external.git import CommitFileArgs
 from ..policy.advisories import advisory_findings
+from ..policy.dependency_updates import reference_only
 from ..policy.isolation import isolation_findings
 from ..policy.workflows import workflow_findings
 from .base import Task
@@ -145,13 +147,16 @@ class Policy(Task):
         return TaskResult("Policy checks passed")
 
 
-def drift_findings(changed: tuple[str, ...], *, dependabot: bool = False) -> list[str]:
+def drift_findings(
+    changed: tuple[str, ...], *, dependabot: bool = False, references: frozenset[str] = frozenset()
+) -> list[str]:
     dependency_files = (
         "Cargo.toml",
         "Cargo.lock",
         "crates/*/Cargo.toml",
         "pyproject.toml",
         "uv.lock",
+        "tools/launcher/uv.lock",
         "release/package.json",
         "release/package-lock.json",
     )
@@ -159,7 +164,8 @@ def drift_findings(changed: tuple[str, ...], *, dependabot: bool = False) -> lis
         dependabot
         and changed
         and all(
-            any(fnmatch.fnmatchcase(path, pattern) for pattern in dependency_files)
+            path in references
+            or any(fnmatch.fnmatchcase(path, pattern) for pattern in dependency_files)
             for path in changed
         )
     ):
@@ -244,7 +250,26 @@ class InstructionDrift(Task):
             and workflow.pull_request_head_repository.casefold()
             == context.settings.chart.repository.casefold()
         )
-        failures = drift_findings(changed, dependabot=dependabot)
+        references: set[str] = set()
+        if dependabot and base:
+            before = context.tools.git.exact_commit(base)
+            after = context.tools.git.exact_commit(head)
+            for path in changed:
+                if (
+                    path == "Dockerfile"
+                    or path == "rust-toolchain.toml"
+                    or path == "tools/launcher/pyproject.toml"
+                    or path.startswith((".github/workflows/", ".github/actions/"))
+                ):
+                    old = context.tools.git.committed_file(CommitFileArgs(before, path)).decode(
+                        "utf-8"
+                    )
+                    new = context.tools.git.committed_file(CommitFileArgs(after, path)).decode(
+                        "utf-8"
+                    )
+                    if reference_only(path, old, new):
+                        references.add(path)
+        failures = drift_findings(changed, dependabot=dependabot, references=frozenset(references))
         if failures:
             raise ToolingError("Instruction drift:\n" + "\n".join(failures))
         return TaskResult("Instruction drift checks passed")

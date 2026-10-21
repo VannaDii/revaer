@@ -72,3 +72,20 @@ Tests use fixture-owned command files and simulated privilege boundaries. A real
 Debian/uv container separately verifies apt installation, repeat execution,
 invalid input, missing-package failure and subsequent recovery. No test installs
 apt packages on the developer's host.
+
+
+## Dependabot maintenance
+
+Deploy the maintenance workflow with mutations disabled, verify inspection and credentials, then deploy the scheduled updater configuration.
+
+`uv run --locked -- rv dependabot-auto-merge` inspects open Dependabot PRs without mutations. `--pr-number N` limits inspection. `--apply` additionally requires `REVAER_DEPENDABOT_ENABLED=true`, a protected main event and the configured App identity; it is intended for the trusted maintenance workflow. Manual workflow dispatch defaults to dry-run.
+
+The workflow reuses `REVAER_APP_CLIENT_ID` and `REVAER_APP_PRIVATE_KEY`. Its repository-scoped installation token needs contents/pull-requests/workflows write and actions/checks/statuses read access; install/approve those grants before activation. Inspection uses only the read-only built-in token; mutation credentials are created only when enabled and not in a manual dry-run. App merges preserve ordinary main CI/release triggers. `DEPENDABOT_AUTOMATION_ENABLED=true` activates mutations; absent or false leaves inspection enabled. Keep the built-in token read-only and the App outside ruleset bypasses.
+
+Configure Actions secret `REVAER_DEPENDABOT_REFRESH_TOKEN` with a repository-scoped user token from an account with push access and permission to comment on PRs. GitHub App comments cannot be assumed to invoke Dependabot commands. Keep this credential out of Dependabot secrets and PR jobs; expose it only after trusted setup in the maintenance step. The credential owner renews/replaces it before its configured expiry; authentication failures must stop mutations rather than use a broader fallback.
+
+The controller preserves GitHub protections. It checks expected dependency-file paths and actual main ancestry even without merge conflicts, pauses on human edits or requested changes, and disarms obsolete queued merges before refresh. A current successful PR run plus required statuses permits an App review bound to that commit, followed by protected native squash auto-merge with an exact head guard. Head/base or validation changes defer merging. One PR failure is reported while the remaining PRs are still reconciled.
+
+A stale bot-owned branch receives one `@dependabot rebase` request. Existing maintainer commands and controller markers prevent duplicate requests while the branch is unchanged, including when main advances again. Subsequent events observe progress without holding a runner open. After at least one hour without progress, one `@dependabot recreate` request is allowed only after rechecking the head and ownership. Another hour without progress fails for maintainer action; it does not loop or suppress the dependency. Recreation overwrites edits, so never use it on a human-modified or uncertain branch. A bot acknowledgement alone does not establish a completed refresh; the branch must include current main and its current validation must pass.
+
+To recover, inspect the failed maintenance run and PR, fix the owning credential/update/compatibility problem, then dispatch a dry-run for that PR. Resume through a normal branch update or an explicit maintainer refresh command after resolving the cause. To suspend mutation, set `DEPENDABOT_AUTOMATION_ENABLED=false` and disable outstanding controller-managed native auto-merges; already-queued native merges are independent of the workflow switch. Preserve security updates, open PRs and existing branch protections.

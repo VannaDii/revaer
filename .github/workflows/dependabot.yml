@@ -1,13 +1,30 @@
-name: Dependabot Auto-merge
+name: Dependabot Maintenance
 
 on:
   workflow_run:
     workflows: [PR]
     types: [completed]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 * * * *"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Inspect without changing PRs
+        type: boolean
+        default: true
+      pr_number:
+        description: Optional open Dependabot PR number
+        type: string
+        default: ""
 
 permissions:
   contents: read
+  actions: read
+  checks: read
+  pull-requests: read
+  statuses: read
 
 concurrency:
   group: dependabot-auto-merge
@@ -15,10 +32,10 @@ concurrency:
 
 jobs:
   auto-merge:
-    name: Request protected Dependabot auto-merge
-    if: github.ref == 'refs/heads/main'
+    name: Refresh and merge validated Dependabot PRs
+    if: github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       # workflow_run executes trusted default-branch code. Never check out a PR head.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -31,6 +48,7 @@ jobs:
           cargo-cache: "false"
       - name: Create repository-scoped merge token
         id: merge-token
+        if: vars.DEPENDABOT_AUTOMATION_ENABLED == 'true' && (github.event_name != 'workflow_dispatch' || !inputs.dry_run)
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ vars.REVAER_APP_CLIENT_ID }}
@@ -39,7 +57,22 @@ jobs:
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
           permission-pull-requests: write
-      - name: Request protected auto-merge
+          permission-actions: read
+          permission-checks: read
+          permission-statuses: read
+          permission-workflows: write
+      - name: Inspect Dependabot PRs
+        if: vars.DEPENDABOT_AUTOMATION_ENABLED != 'true' || (github.event_name == 'workflow_dispatch' && inputs.dry_run)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVAER_DEPENDABOT_PR_NUMBER: ${{ inputs.pr_number }}
+        run: uv run --locked --no-build --no-sync -- rv dependabot-auto-merge
+      - name: Reconcile Dependabot PRs
+        if: vars.DEPENDABOT_AUTOMATION_ENABLED == 'true' && (github.event_name != 'workflow_dispatch' || !inputs.dry_run)
         env:
           GH_TOKEN: ${{ steps.merge-token.outputs.token }}
-        run: uv run --locked --no-build --no-sync -- rv dependabot-auto-merge
+          REVAER_DEPENDABOT_REFRESH_TOKEN: ${{ secrets.REVAER_DEPENDABOT_REFRESH_TOKEN }}
+          REVAER_DEPENDABOT_APP_SLUG: ${{ steps.merge-token.outputs.app-slug }}
+          REVAER_DEPENDABOT_ENABLED: ${{ vars.DEPENDABOT_AUTOMATION_ENABLED }}
+          REVAER_DEPENDABOT_PR_NUMBER: ${{ inputs.pr_number }}
+        run: uv run --locked --no-build --no-sync -- rv dependabot-auto-merge --apply

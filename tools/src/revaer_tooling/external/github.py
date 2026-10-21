@@ -12,8 +12,9 @@ from pathlib import Path
 from urllib.parse import quote
 
 from ..artifacts import digest_file
+from ..automation.dependabot import commit_sha
 from ..errors import ToolingError
-from ..json_data import Json, array_value, decode, object_value
+from ..json_data import Json, JsonObject, array_value, decode, decode_unique, object_value
 from .base import ExternalTool
 from .release import ReleaseRepository
 
@@ -73,7 +74,6 @@ class AutoMergeArgs:
         if (
             item.get("state") != "open"
             or item.get("draft") is not False
-            or item.get("auto_merge") is not None
             or base.get("ref") != "main"
             or str(object_value(head_repository).get("full_name")).casefold()
             != repository.name.casefold()
@@ -150,7 +150,8 @@ class GitHub(ExternalTool):
             args
             for line in response.stdout.splitlines()
             if line.strip()
-            and (args := AutoMergeArgs.from_pull_request(repository, decode(line))) is not None
+            and (args := AutoMergeArgs.from_pull_request(repository, decode_unique(line)))
+            is not None
         )
 
     def enable_auto_merge(self, args: AutoMergeArgs) -> None:
@@ -167,6 +168,176 @@ class GitHub(ExternalTool):
                 "--match-head-commit",
                 args.head,
             ),
+            env=self._environment(args.repository),
+            capture=True,
+            timeout=60,
+        )
+
+    def _dependency_api(
+        self,
+        repository: ReleaseRepository,
+        path: str,
+        *,
+        fields: tuple[tuple[str, str], ...] = (),
+        body: JsonObject | None = None,
+        refresh: bool = False,
+    ) -> Json:
+        environment = self._environment(repository)
+        if refresh:
+            token = self.environment.get("REVAER_DEPENDABOT_REFRESH_TOKEN", "")
+            if not token:
+                raise ToolingError("Configure REVAER_DEPENDABOT_REFRESH_TOKEN before refreshing")
+            environment["GH_TOKEN"] = token
+        arguments: tuple[str, ...] = (
+            "api",
+            "--hostname",
+            repository.host,
+            "--method",
+            "GET" if body is None else "POST",
+            path,
+        )
+        for key, value in fields:
+            arguments += ("--raw-field", key + "=" + value)
+        if body is not None:
+            arguments += ("--input", "-")
+        result = self._invoke(
+            arguments,
+            env=environment,
+            capture=True,
+            timeout=60,
+            input_text=json.dumps(body) if body is not None else None,
+        )
+        return decode_unique(result.stdout)
+
+    def dependency_records(self, args: AutoMergeArgs, kind: str) -> tuple[JsonObject, ...]:
+        args.validate()
+        if kind not in ("commits", "comments", "reviews", "files"):
+            raise ToolingError("Unknown Dependabot record kind")
+        group = "issues" if kind == "comments" else "pulls"
+        result = self._invoke(
+            (
+                "api",
+                "--hostname",
+                args.repository.host,
+                "--method",
+                "GET",
+                "--paginate",
+                "--jq",
+                ".[] | @json",
+                f"repos/{args.repository.name}/{group}/{args.number}/{kind}",
+                "--field",
+                "per_page=100",
+            ),
+            env=self._environment(args.repository),
+            capture=True,
+            timeout=60,
+        )
+        return tuple(
+            object_value(decode_unique(line)) for line in result.stdout.splitlines() if line.strip()
+        )
+
+    def dependency_request(self, args: AutoMergeArgs) -> JsonObject:
+        args.validate()
+        return object_value(
+            self._dependency_api(
+                args.repository, f"repos/{args.repository.name}/pulls/{args.number}"
+            )
+        )
+
+    def dependency_base(self, repository: ReleaseRepository) -> str:
+        item = object_value(
+            self._dependency_api(repository, f"repos/{repository.name}/git/ref/heads/main")
+        )
+        return commit_sha(object_value(item.get("object")).get("sha"))
+
+    def dependency_behind(self, args: AutoMergeArgs, base: str) -> bool:
+        args.validate()
+        result = object_value(
+            self._dependency_api(
+                args.repository,
+                f"repos/{args.repository.name}/compare/{commit_sha(base)}...{args.head}",
+            )
+        )
+        if object_value(result.get("base_commit")).get("sha") != base:
+            raise ToolingError("Dependabot comparison returned a different base")
+        behind = result.get("behind_by")
+        if type(behind) is not int or behind < 0:
+            raise ToolingError("Dependabot comparison requires a valid ancestry result")
+        return behind > 0
+
+    def dependency_ci_passed(self, args: AutoMergeArgs, branch: str) -> bool:
+        args.validate()
+        result = object_value(
+            self._dependency_api(
+                args.repository,
+                f"repos/{args.repository.name}/actions/workflows/pr.yml/runs",
+                fields=(("head_sha", args.head), ("event", "pull_request"), ("per_page", "1")),
+            )
+        )
+        runs = array_value(result.get("workflow_runs"))
+        if not runs:
+            return False
+        run = object_value(runs[0])
+        if run.get("head_sha") != args.head or run.get("head_branch") != branch:
+            raise ToolingError("Dependabot validation returned a different head")
+        if run.get("event") != "pull_request" or run.get("path") != ".github/workflows/pr.yml":
+            raise ToolingError("Dependabot validation returned a different workflow")
+        if run.get("status") != "completed" or run.get("conclusion") != "success":
+            return False
+        checks = self._invoke(
+            (
+                "pr",
+                "checks",
+                str(args.number),
+                "--repo",
+                args.repository.name,
+                "--required",
+                "--json",
+                "name,bucket,state",
+            ),
+            env=self._environment(args.repository),
+            capture=True,
+            timeout=60,
+            accepted_codes=(0, 1, 8),
+        )
+        required = array_value(decode_unique(checks.stdout))
+        # GitHub treats neutral/conditional skips as passing statuses. The full
+        # PR workflow must also succeed; GitHub retains final ruleset authority.
+        return bool(required) and all(
+            object_value(check).get("bucket") in ("pass", "skipping") for check in required
+        )
+
+    def approve_dependency(self, args: AutoMergeArgs) -> None:
+        args.validate()
+        self._dependency_api(
+            args.repository,
+            f"repos/{args.repository.name}/pulls/{args.number}/reviews",
+            body={
+                "event": "APPROVE",
+                "commit_id": args.head,
+                "body": "Dependency validation passed for this commit. "
+                "Branch protections remain required.",
+            },
+        )
+
+    def refresh_dependency(self, args: AutoMergeArgs, base: str, command: str) -> None:
+        args.validate()
+        if command not in ("rebase", "recreate"):
+            raise ToolingError("Unsupported Dependabot refresh command")
+        self._dependency_api(
+            args.repository,
+            f"repos/{args.repository.name}/issues/{args.number}/comments",
+            body={
+                "body": f"@dependabot {command}\n\n"
+                f"<!-- revaer-dependency-refresh:{args.head}:{commit_sha(base)} -->"
+            },
+            refresh=True,
+        )
+
+    def disable_dependency_merge(self, args: AutoMergeArgs) -> None:
+        args.validate()
+        self._invoke(
+            ("pr", "merge", str(args.number), "--repo", args.repository.name, "--disable-auto"),
             env=self._environment(args.repository),
             capture=True,
             timeout=60,
