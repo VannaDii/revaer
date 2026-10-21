@@ -6,7 +6,6 @@ import shutil
 import socket
 import subprocess
 import time
-from dataclasses import replace
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -35,7 +34,7 @@ def read_page(port: int, running: RunningProcess) -> str:
 def record(processes: ProcessManager, running: RunningProcess, token: str) -> ProcessIdentity:
     result = processes.identity(running.pid)
     assert result is not None
-    return replace(result, token=token)
+    return ProcessIdentity(result.pid, result.created, token)
 
 
 def test_cargo_development_builds_and_runs_real_rust(tmp_path: Path) -> None:
