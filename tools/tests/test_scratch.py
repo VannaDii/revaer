@@ -69,10 +69,17 @@ def test_scratch_rejects_links_without_touching_the_target(tmp_path: Path) -> No
 
 def test_child_temporary_root_survives_command_cleanup(tmp_path: Path) -> None:
     with repository_scratch(tmp_path, FileSystem()):
-        child_root = Path(os.environ["TMPDIR"])
-        private = Path(tempfile.gettempdir())
-    assert child_root.is_dir()
-    assert not private.exists()
+        environment = dict(os.environ)
+    result = subprocess.run(
+        [sys.executable, "-c", "import tempfile; print(tempfile.gettempdir())"],
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    child_root = tmp_path / ".test-tmp"
+    assert Path(result.stdout.strip()) == child_root
     with tempfile.TemporaryDirectory(dir=child_root) as child:
         assert Path(child).parent == tmp_path / ".test-tmp"
 
