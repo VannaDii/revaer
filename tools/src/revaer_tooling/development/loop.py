@@ -1,7 +1,7 @@
 """Small coordinator around native Cargo/Trunk and injected filesystem events."""
 
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ..context import Context
@@ -57,7 +57,10 @@ class DevelopmentLoop:
         # lookup or receipt write. Even a failed ownership check cannot leak it.
         service = Service(process, None)
         self.services[name] = service
-        service.identity = context.tools.processes.identity(process.pid)
+        identity = context.tools.processes.identity(process.pid)
+        service.identity = (
+            replace(identity, token=args.ownership_token) if identity is not None else None
+        )
         self._record()
 
     def _restart(self) -> None:
