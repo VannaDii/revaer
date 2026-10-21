@@ -16,6 +16,9 @@ applyTo:
 
 # Rust Quality Rules
 
+- Test workspace helpers use the common repo-local `.test-tmp/` root. Temporary file builders inherit the private `TMPDIR` provided by `rv`; trusted catalog tests retain their ancestry and owner checks.
+- Native admission uses descriptor/mount identity, ownership and real capability probes for private directories. Filesystem names are identity metadata, not an admission allowlist; no different device from `/` is required.
+
 - Production and bootstrap Rust must be deterministic and panic-free.
 - `panic!`, `unwrap()`, `expect()`, and `unreachable!()` are forbidden in authored production and bootstrap code.
 - In this file, "bootstrap code" means startup/wiring runtime code, not test setup helpers.
@@ -111,3 +114,5 @@ applyTo:
 - The reusable database initializer has its own success-path integration test in the foundation. It verifies exact initializer digest sealing, restricted runtime identity, owner login disablement, repeated-init rejection and owned database/role cleanup; do not rely on downstream media consumers for coverage.
 
 - Coverage executes independent tests in nextest processes. Keep native libtorrent tests in the serial resource group, database-heavy tests in the bounded group, and the nine recovery scenarios independently selectable. Private test state must not become a shared fixture merely to reduce execution time.
+
+- Media directory observations compare bounded raw-name hashes alongside metadata; resumable scans must detect name changes even when filesystem timestamps collide.

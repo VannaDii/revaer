@@ -7,6 +7,7 @@ from revaer_tooling.cli import make_context
 from revaer_tooling.context import Options
 from revaer_tooling.errors import ToolingError
 from revaer_tooling.external.git import Git
+from revaer_tooling.policy.isolation import isolation_findings
 from revaer_tooling.tasks.policy import InstructionDrift, drift_findings, rust_findings
 
 
@@ -142,3 +143,32 @@ def test_privileged_dependabot_workflow_executes_only_trusted_code() -> None:
     assert mapping(entries[3]["env"])["GH_TOKEN"] == "${{ steps.merge-token.outputs.token }}"
     assert entries[3]["run"] == "uv run --locked --no-build --no-sync -- rv dependabot-auto-merge"
     assert len(entries) == 4
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "losetup --find disk.img",
+        "mkfs.ext4 disk.img",
+        '"loop,nodev,nosuid"',
+        "--device=/dev/sda",
+        "/dev/loop0",
+        "--privileged",
+        "privileged: true",
+        "CAP_SYS_ADMIN",
+    ],
+)
+def test_isolation_policy_rejects_device_provisioning(source: str) -> None:
+    for path in (
+        "tools/src/revaer_tooling/tasks/e2e.py",
+        ".github/workflows/pr.yml",
+        "crates/revaer-app/src/bootstrap.rs",
+    ):
+        assert isolation_findings(path, source)
+
+
+def test_isolation_policy_allows_ordinary_ipc_and_storage_observations() -> None:
+    source = '"127.0.0.1:7070 /proc/self/mountinfo /dev/null"; Stdio::piped(); UnixStream::pair();'
+    source += 'symlink("loop", path);'
+    assert not isolation_findings("crates/revaer-app/src/bootstrap.rs", source)
+    assert not isolation_findings("tools/tests/test_policy.py", "losetup disk.img")

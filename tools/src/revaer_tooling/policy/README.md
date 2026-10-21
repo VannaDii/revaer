@@ -11,6 +11,7 @@ Task wiring is implemented; workflow conversion is tracked in the
 | Module | Checks |
 | --- | --- |
 | `formats.py` | YAML syntax trees and Java properties without ambiguous keys, aliases, merges, or hidden overrides. |
+| `isolation.py` | Reject filesystem loopback/device provisioning and privileged device access in runtime adapters and workflows; permit ordinary IPC and filesystem observations. |
 | `advisories.py` | Empty advisory-ignore inputs; malformed or absent required policy fails. |
 | `sonar.py` | Exact scanner property allowlist, complete authored source inventory, analyzer classification, and the empty test-scope sentinel. |
 | `workflows.py` | Action pins, safe single-command steps, job dependencies, conditions, permissions, and bounded timeouts. |

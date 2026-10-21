@@ -272,7 +272,7 @@ def _ui_coverage(policy: Contract) -> None:
         == {
             "name": "ui-e2e-coverage-shard-${{ matrix.shard }}",
             "path": (
-                "tests/test-results/api-coverage-*.json\ntests/test-results/ui-coverage-*.json\n"
+                ".test-tmp/e2e/test-results/api-coverage-*.json\n.test-tmp/e2e/test-results/ui-coverage-*.json\n"
             ),
             "if-no-files-found": "error",
         },
@@ -285,7 +285,7 @@ def _ui_coverage(policy: Contract) -> None:
         and api_upload.get("with")
         == {
             "name": "api-e2e-coverage",
-            "path": "tests/test-results/api-coverage-*.json",
+            "path": ".test-tmp/e2e/test-results/api-coverage-*.json",
             "if-no-files-found": "error",
         },
         "API E2E coverage must be retained as an exact fail-closed artifact",
@@ -307,7 +307,7 @@ def _ui_coverage(policy: Contract) -> None:
             policy.step(aggregate, name).get("with")
             == {
                 "name": artifact,
-                "path": "tests/test-results",
+                "path": ".test-tmp/e2e/test-results",
             },
             f"UI E2E Coverage must download the exact artifact {artifact}",
         )
@@ -339,8 +339,8 @@ def _distributed_ui_coverage(policy: Contract) -> None:
             ui,
             "Upload E2E coverage",
             (
-                "tests/test-results/python-e2e-summary-shard-*.json",
-                "tests/test-results/selection-*-shard-*.json",
+                ".test-tmp/e2e/test-results/python-e2e-summary-shard-*.json",
+                ".test-tmp/e2e/test-results/selection-*-shard-*.json",
                 "coverage/e2e/ui-*-shard-*/.coverage",
             ),
         ),
@@ -348,8 +348,8 @@ def _distributed_ui_coverage(policy: Contract) -> None:
             api,
             "Upload API E2E coverage",
             (
-                "tests/test-results/python-e2e-summary.json",
-                "tests/test-results/selection-*.json",
+                ".test-tmp/e2e/test-results/python-e2e-summary.json",
+                ".test-tmp/e2e/test-results/selection-*.json",
                 "coverage/e2e/api-none-missing-catalog/.coverage",
                 "coverage/e2e/api-none/.coverage",
                 "coverage/e2e/api-api-key-missing-catalog/.coverage",

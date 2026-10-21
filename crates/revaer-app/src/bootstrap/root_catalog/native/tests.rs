@@ -2,18 +2,6 @@ use super::*;
 use revaer_media_runtime::root_catalog::{RootCatalogSource, TrustedLocalRootCatalogSource};
 
 #[test]
-fn unqualified_filesystems_do_not_receive_a_capability_grant() -> anyhow::Result<()> {
-    disposable_filesystem("tmpfs")?;
-    for filesystem in ["", "ext4", "virtiofs", "nfs4", "fuse", "unqualified"] {
-        assert!(matches!(
-            disposable_filesystem(filesystem),
-            Err(ProofError::Durability)
-        ));
-    }
-    Ok(())
-}
-
-#[test]
 fn retained_scan_batches_relative_paths_and_ignores_symlink_targets() -> anyhow::Result<()> {
     use crate::media_discovery_scan::ScanBudget;
     let (directory, source, roots) = fixture()?;
@@ -131,22 +119,47 @@ fn verify_watch_directories(retained: &RetainedRootCatalog) -> anyhow::Result<()
     Ok(())
 }
 
-#[test]
-fn native_persistence_requires_external_nonvolatile_qualified_mount() -> anyhow::Result<()> {
-    persistent_filesystem("ext4", true)?;
-    assert!(persistent_filesystem("ext4", false).is_err());
-    for filesystem in [
-        "tmpfs", "overlay", "ramfs", "virtiofs", "nfs4", "xfs", "btrfs", "",
-    ] {
-        assert!(persistent_filesystem(filesystem, true).is_err());
+struct RootFilesystemMountSource {
+    record: String,
+}
+
+impl RootMountSource for RootFilesystemMountSource {
+    fn snapshot(
+        &self,
+    ) -> Result<
+        revaer_media_runtime::root_catalog::RootMountTopology,
+        revaer_media_runtime::root_catalog::RootMountReadError,
+    > {
+        Ok(revaer_media_runtime::root_catalog::RootMountTopology::parse(&self.record)?)
     }
-    let mounts = revaer_media_runtime::root_catalog::RootMountTopology::parse(
-        "1 0 8:1 / / rw - ext4 /dev/vda rw\n2 1 8:2 / /media rw - ext4 /dev/vdb rw\n4 1 8:1 /alias /image-alias rw - ext4 /dev/vda rw",
-    )?;
-    assert!(!mounts.is_external_mount(1)?);
-    assert!(mounts.is_external_mount(2)?);
-    assert!(!mounts.is_external_mount(4)?);
-    assert!(mounts.is_external_mount(3).is_err());
+}
+
+#[test]
+fn private_directories_on_the_root_filesystem_receive_native_proof() -> anyhow::Result<()> {
+    let (directory, source, roots) = fixture()?;
+    let observations = roots.observations(&ProcRootMountSource.snapshot()?)?;
+    let observed = &observations[0];
+    let device = observed.filesystem_device();
+    // Preserve real descriptors, ownership and capability probes. Model their
+    // filesystem at `/` to exercise admission without a separate storage device.
+    for filesystem in ["ext4", "zfs", "xfs", "fixturefs"] {
+        let mounts = RootFilesystemMountSource {
+            record: format!(
+                "{} 0 {}:{} / / rw - {} fixture rw",
+                observed.mount_id(),
+                rustix::fs::major(device),
+                rustix::fs::minor(device),
+                filesystem,
+            ),
+        };
+        let proof = prove(&source, &roots, &mounts)?;
+        assert_eq!(proof.capabilities[0], [true; 7]);
+        assert_eq!(proof.identity.slots().len(), 2);
+        revalidate(&source, &roots, &mounts, &proof.observations)?;
+    }
+    drop(roots);
+    drop(source);
+    directory.close()?;
     Ok(())
 }
 

@@ -7,7 +7,6 @@ from .validation import read_document, validate_inventory
 RUNTIME_PACKAGES = frozenset(
     (
         "bento4",
-        "ca-certificates",
         "curl",
         "exiftool",
         "ffmpeg",
@@ -96,6 +95,7 @@ def media_compliance_findings(context: Context) -> list[str]:
             name.startswith(("scripts/", "release/", "tools/src/"))
             and name.endswith((".sh", ".js", ".py"))
         )
-        if production and "--enable-nonfree" in context.fs.read(context.root / name):
+        path = context.root / name
+        if production and path.is_file() and "--enable-nonfree" in context.fs.read(path):
             failures.append("Default media runtime must not enable nonfree components: " + name)
     return failures

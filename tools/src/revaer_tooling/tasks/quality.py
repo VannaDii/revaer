@@ -98,8 +98,8 @@ class Lock(Task):
 class CargoLock(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
-        context.tools.cargo.lock_workspace()
-        return TaskResult("Cargo workspace lock reconciled without registry upgrades")
+        context.tools.cargo.lock_workspace(online=context.options.cargo_lock_online)
+        return TaskResult("Cargo workspace lock reconciled")
 
 
 class CiQualify(Task):

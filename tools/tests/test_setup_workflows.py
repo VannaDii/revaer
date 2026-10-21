@@ -44,7 +44,7 @@ def test_media_api_producer_runs_every_phase_required_by_aggregation() -> None:
 
 
 @pytest.mark.parametrize("job_name", ("api-e2e", "ui-e2e"))
-def test_media_e2e_jobs_provision_capability_and_mount_tools(job_name: str) -> None:
+def test_media_e2e_jobs_provision_capability_tools_without_formatters(job_name: str) -> None:
     root = Path(__file__).parents[2]
     path = ".github/workflows/pr.yml"
     document = yaml_document((root / path).read_text(), path)
@@ -57,7 +57,22 @@ def test_media_e2e_jobs_provision_capability_and_mount_tools(job_name: str) -> N
         tuple(str(values.get("apt-packages", "")).split()),
     )
     assert "ffmpeg" in packages
-    assert "e2fsprogs" in packages
+    assert "e2fsprogs" not in packages
+
+
+@pytest.mark.parametrize(("workflow", "expected"), (("pr.yml", 4), ("sonar.yml", 2)))
+def test_managed_media_jobs_use_repository_scratch(workflow: str, expected: int) -> None:
+    path = Path(__file__).parents[2] / ".github/workflows" / workflow
+    document = yaml_document(path.read_text(), str(path))
+    environments = [
+        mapping(step.get("env"))
+        for job in mapping(document["jobs"]).values()
+        for step in steps(mapping(job))
+        if mapping(step.get("env")).get("E2E_MANAGED_MEDIA_ROOTS") == "1"
+    ]
+    assert len(environments) == expected
+    for environment in environments:
+        assert "E2E_FS_ROOT" not in environment
 
 
 def test_committed_setup_action_uses_official_uv_and_valid_commands(action: Document) -> None:

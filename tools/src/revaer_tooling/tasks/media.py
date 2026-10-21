@@ -18,7 +18,7 @@ from ..media.model import FIXTURE_DIRECTORIES, owned_path, regular_file
 from ..media.probes import probe_catalog
 from .automation import outputs
 from .base import Task
-from .testing import test_environment
+from .testing import native_test_environment, test_environment
 
 
 @contextmanager
@@ -163,7 +163,7 @@ class TestMediaConversion(Task):
                 # fixture verification; never describe that as a transcoding run.
                 return verify(context, catalog)
             report = owned_path(context.root, context.settings.fixtures.report)
-            temporary = owned_path(context.root, "target/media-conversion/tmp")
+            temporary = owned_path(context.root, ".test-tmp/media-conversion")
             protect_tracked(context, (report, temporary))
             context.fs.remove_owned(report, context.root)
             preparation = replace(
@@ -217,6 +217,15 @@ class TestMediaRootCatalog(Task):
                 CargoOperation.TEST, packages=("revaer-media-runtime",), test_filter="root_catalog"
             )
         )
+        with native_test_environment(context) as environment:
+            context.tools.cargo.execute(
+                CargoArgs(
+                    CargoOperation.TEST,
+                    packages=("revaer-app",),
+                    test_filter="bootstrap::root_catalog::native::tests",
+                ),
+                environment,
+            )
         return TaskResult("Media root catalog tests passed")
 
 
@@ -269,7 +278,7 @@ class CleanTestMedia(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
         with fixture_operation(context):
-            path = owned_path(context.root, "target/media-conversion")
+            path = owned_path(context.root, ".test-tmp/media-conversion")
             protect_tracked(context, (path,))
             context.fs.remove_owned(path, context.root)
         return TaskResult("Removed temporary media owned by this checkout")

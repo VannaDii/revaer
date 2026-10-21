@@ -24,7 +24,7 @@ rv test-media-conversion
 | `verify-test-fixtures` | Verify all source hashes and snapshots, then publish a fresh preparation report. |
 | `test-media-conversion` | Prepare fixtures and run the media crate's ignored integration suite; require positive audio/video actions and zero failures. |
 | `update-test-fixture-probes` | Explicitly replace ordinary snapshots after every probe succeeds; the ADR 578 F1 snapshot is always compared and never replaced. |
-| `test-media-root-catalog` | Run the media runtime's `root_catalog` tests. |
+| `test-media-root-catalog` | Run runtime catalog tests and native application attestation against managed repo-local directories. |
 | `test-media-root-contract` | Run the API model's `media_root_contract` tests. |
 | `test-media-broker-codec` | Run the media runtime's `process::broker` tests. |
 | `test-fixture-scripts` | Run the Python fixture-tooling regressions, including native curl, FFmpeg and Cargo checks. |
@@ -125,7 +125,7 @@ generation, verification and cleanup share a checkout-local operation lock.
 Acquisition/generation/cleanup refuse tracked destinations. Explicit snapshot
 updates intentionally edit the declared reviewed files.
 
-Conversion subprocesses receive `TMPDIR=target/media-conversion/tmp` as an
+Conversion subprocesses receive `TMPDIR=.test-tmp/media-conversion` as an
 absolute path. Cleanup does not search global temporary directories or other
 worktrees. It preserves manifests, reviewed snapshots and reports. Native tools
 must be installed through their package manager; Linux automation can select

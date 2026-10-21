@@ -27,25 +27,6 @@
       "copyrightText": "See Alpine package source metadata."
     },
     {
-      "name": "ca-certificates",
-      "SPDXID": "SPDXRef-Package-ca-certificates",
-      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=ca-certificates&branch=v3.23",
-      "versionInfo": "20260909-r0",
-      "licenseConcluded": "MPL-2.0 AND MIT",
-      "licenseDeclared": "MPL-2.0 AND MIT",
-      "checksums": [
-        {
-          "algorithm": "SHA256",
-          "checksumValue": "66ed7ee7ef784bc5bd1052d673e6b569496cb5ca42d72f2f0c984b3762e5dfdd"
-        },
-        {
-          "algorithm": "SHA256",
-          "checksumValue": "68ee230255f291fcc7539bacd1cc38cb15debda9cff66e57e9ff022a2c38816c"
-        }
-      ],
-      "copyrightText": "See Alpine package source metadata."
-    },
-    {
       "name": "curl",
       "SPDXID": "SPDXRef-Package-curl",
       "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=curl&branch=v3.23",
@@ -346,11 +327,6 @@
       "spdxElementId": "SPDXRef-DOCUMENT",
       "relationshipType": "DESCRIBES",
       "relatedSpdxElement": "SPDXRef-Package-bento4"
-    },
-    {
-      "spdxElementId": "SPDXRef-DOCUMENT",
-      "relationshipType": "DESCRIBES",
-      "relatedSpdxElement": "SPDXRef-Package-ca-certificates"
     },
     {
       "spdxElementId": "SPDXRef-DOCUMENT",

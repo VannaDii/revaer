@@ -49,7 +49,7 @@ def distributed_runs(
             producers,
             phases,
             count,
-            {index: path / "tests/test-results" for index, path in directories.items()},
+            {index: path / ".test-tmp/e2e/test-results" for index, path in directories.items()},
         )
         for index, path in directories.items():
             if path.is_symlink():

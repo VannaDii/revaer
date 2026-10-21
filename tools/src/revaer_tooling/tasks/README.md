@@ -47,6 +47,9 @@ continue to use `uv run --locked` and do not update the graph.
 | `rv test-native` | `revaer-torrent-libt` with all features, `REVAER_NATIVE_IT=1`, and one test thread. |
 | `rv test-features-min` | `revaer-api`, then `revaer-app`, each with default features disabled. |
 
+`rv test` and `rv test-features-min` accept `--filter <substring>` for focused
+local diagnosis. Composite CI and qualification always use unfiltered defaults.
+
 All variants use the locked Cargo graph and treat compiler warnings as errors.
 An unsuccessful Cargo test is an unsuccessful `rv` command. Existing Cargo and
 Rust test environment settings pass through. The native variant serializes its
@@ -154,9 +157,10 @@ same explicit disposable database selection as Rust tests; database provisioning
 is a separate lifecycle concern. The default is one build job and one test
 thread, with `CARGO_BUILD_JOBS` and `RUST_TEST_THREADS` overrides preserved.
 Cargo's negative CPU offsets and `default` job setting remain available.
-An explicitly managed Linux fixture or `REVAER_NATIVE_RECOVERY_ROOT` also runs
-the existing service-recovery test before reporting coverage. The managed mount
-remains available until that test and reporting finish.
+A private fixture beneath the repository's `.test-tmp/` root, or an explicitly
+selected `REVAER_NATIVE_RECOVERY_ROOT` within that root, also runs the existing service-recovery
+test before reporting coverage. The private fixture directory remains available
+until that test and reporting finish; deployment retains ownership of the volume.
 Internal-only packages (`revaer-test-support`, `revaer-doc-indexer` and `asset_sync`)
 keep complete measurements without a percentage target. Production packages
 retain the 90% Rust line minimum, enforced by `cargo-llvm-cov report --fail-under-lines`.
@@ -340,3 +344,5 @@ LCOV is a native coverage-profile prerequisite (apt `lcov` or the platform
 package manager). It replaces repository-written native counter analysis: its
 extract and threshold commands enforce the existing positive-execution gate
 for `session.cpp`, without adding a production percentage requirement.
+
+`rv cargo-lock` remains offline by default. Use its explicit `--online` option when changed manifest requirements need missing registry metadata; preserve existing unrelated locked registry versions.

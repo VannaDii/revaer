@@ -125,6 +125,21 @@ def test_restart_retires_previous_api_and_preserves_separate_logs(
     assert any("ready on port 7070" in message for message in scenario.messages)
 
 
+def test_worker_receipts_keep_the_generated_launch_tokens(
+    coordinator: tuple[Context, Scenario], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context, scenario = coordinator
+
+    def require_listener(owners: frozenset[int], identity: ProcessIdentity) -> bool:
+        assert identity.token == scenario.arguments[identity.pid - 100].ownership_token
+        return bool(owners)
+
+    monkeypatch.setattr(context.tools.processes, "require_listener", require_listener)
+    with pytest.raises(KeyboardInterrupt):
+        run(context)
+    assert all(child.stopped for child in scenario.children)
+
+
 @pytest.mark.parametrize("exit_code", [0, 101])
 def test_failed_or_exited_api_waits_for_an_edit_then_recovers(
     coordinator: tuple[Context, Scenario],

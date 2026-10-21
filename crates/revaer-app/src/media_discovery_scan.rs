@@ -59,7 +59,7 @@ struct DirectoryCursor {
     depth: usize,
     after: Option<OsString>,
     #[cfg(any(target_os = "linux", test))]
-    observation: Option<rustix::fs::Stat>,
+    observation: Option<crate::media_discovery_fingerprint::DirectoryObservation>,
 }
 
 pub(crate) struct ScanBudget {

@@ -107,7 +107,7 @@ class SonarPrepareSources(Task):
             "crates/revaer-ui/dist",
             "tests/test-results",
             "tests/playwright-report",
-            "tests/logs",
+            ".test-tmp/e2e/logs",
         )
         names += tuple(
             str(path.relative_to(context.root))

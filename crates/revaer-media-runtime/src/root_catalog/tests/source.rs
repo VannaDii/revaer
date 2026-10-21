@@ -21,12 +21,10 @@ fn operator_uid() -> u32 {
 }
 
 fn trusted_tempdir() -> TempDir {
-    // Shared /tmp ancestry is intentionally untrusted, even with a private child.
-    let home = std::env::var_os("HOME").expect("operator home for trusted source fixtures");
-    let trusted_base = fs::canonicalize(home).expect("canonical operator home");
+    // rv supplies private repo-local TMPDIR with protected ancestry.
     Builder::new()
         .prefix("revaer-root-catalog.")
-        .tempdir_in(trusted_base)
+        .tempdir()
         .expect("trusted test directory")
 }
 

@@ -66,7 +66,7 @@ def phase() -> str:
 
 
 def results_root(root: Path) -> Path:
-    return Path(os.environ.get("REVAER_E2E_RESULTS_ROOT", str(root / "tests/test-results")))
+    return Path(os.environ.get("REVAER_E2E_RESULTS_ROOT", str(root / ".test-tmp/e2e/test-results")))
 
 
 def worker_name() -> str:
@@ -196,7 +196,11 @@ def session(runtime: E2eRuntime) -> ApiSession:
 
 @pytest.fixture(scope="session")
 def fs_root(runtime: E2eRuntime) -> Path:
-    return runtime.settings.filesystem_root or runtime.root
+    shared = (runtime.root / ".test-tmp").resolve()
+    root = Path(os.environ.get("E2E_FS_ROOT") or shared).resolve()
+    if not root.is_relative_to(shared):
+        raise ValueError("E2E filesystem must remain beneath the repository test scratch root")
+    return root
 
 
 @pytest.fixture(scope="session")

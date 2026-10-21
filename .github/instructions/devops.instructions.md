@@ -1,5 +1,6 @@
 ---
 applyTo:
+  - ".config/nextest.toml"
   - ".github/workflows/**"
   - ".github/actions/**"
   - "Dockerfile"
@@ -15,12 +16,15 @@ applyTo:
 
 # Workflow And Release Rules
 
-- Cache pinned Cargo tools in independent per-package installation prefixes with native Cargo receipts. Propagate sccache into current setup installers as well as later steps. Cache hits never replace current-source tests or coverage. Save validated tool installations during setup, before later test failures can prevent cache publication. Parse nextest summaries without terminal colouring.
+- Cache pinned Cargo tools in independent per-package installation prefixes with native Cargo receipts. Propagate sccache into current setup installers as well as later steps. Child compiler-cache services use the stable repo-local temporary root, not a command's disposable Python scratch directory. Cache hits never replace current-source tests or coverage. Save validated tool installations during setup, before later test failures can prevent cache publication. Parse nextest summaries without terminal colouring.
 - Build-cache consumers restore only. The stable check/release job and nightly unused-dependency job are the compiler writers; Rust coverage jobs alone write instrumented dependencies. Limit each compiler cache to 512 MiB locally and retain at most two snapshots and 1 GiB per family within the current workflow ref. Skip privileged publication on fork/Dependabot runs. Never prune tools, another ref, or a newer publisher's snapshots. Keep Cargo manifests, target configuration, toolchain and native pins in compatible restore keys; Cargo and sccache still validate actual compilation inputs.
 - Coverage uses pinned nextest process isolation and `.config/nextest.toml` resource groups. Preserve serial native sessions, bounded private database and recovery scenarios, every scenario's internal ordering, and all nine recovery cases. Keep workspace/all-feature compilation consistent across collections. Compiler parallelism is independent of test resource limits; explicit operator overrides remain supported. Python tooling execution follows `python.instructions.md`; preserve the supported raw coverage merge.
+- The subprocess deadline/setup and TERM-grace timing fixtures reserve the nextest runner exclusively. Preserve their millisecond timing assertions; unrelated child-process startup must not consume their setup budget.
 
 
-- API and browser E2E jobs explicitly provision FFmpeg for real capability probes and e2fsprogs for managed media roots. Do not rely on runner-image tools or the installed tools of a developer checkout to satisfy these job dependencies.
+- API and browser E2E jobs explicitly provision FFmpeg for real capability probes. Managed media storage uses the root repo-local test scratch contract. Do not rely on runner-image tools or a developer checkout for job dependencies.
+
+- Real Dockerfile and image-export tooling fixtures may consume an explicitly supplied `REVAER_TEST_BUILDX_BUILDER` without changing its selection or removing it. Retain every actual image/runtime assertion and clean only fixture-owned images; otherwise each fixture owns and removes its unique builder.
 
 - Composed validation provisions an owned single-init fixture or verifies the caller-selected database without repair. Preserve administrative test endpoints and owned cleanup. Cargo lock reconciliation remains offline without registry upgrades.
 - PR feature and scanner fixture commands use `uv run --locked --no-build` with the existing exact `python-semantic-release` source-build exception after setup has synchronized the locked environment. Other package builds remain disabled during runtime fixture execution.
@@ -75,6 +79,7 @@ applyTo:
 - `rv validate` holds the selected database's operation lock across its ordered gates; `rv ci` performs the release build only after all gates succeed. Fixture validation does not stand in for full foundation and media acceptance.
 - `rv runbook` keeps the E2E lock through artifact archival and writes its summary last. Failed and interrupted runs retain evidence and a failing exit status.
 - Local image builds name their Buildx builder explicitly without changing the developer's selected builder. Failed builds invalidate their partial outputs. Container scans use versioned Trivy policy, include unfixed HIGH/CRITICAL findings, preserve failing reports, and do not consume advisory-ignore files.
+- Alpine owns the system CA trust bundle; do not declare an application-managed certificate package version or archive hash. The actual image SBOM and security scan retain the resolved system packages, and container tests verify that the runtime user can read a nonempty trust bundle.
 - The Python E2E runner loads `tests/.env` through `uv run --env-file`, owns a unique database, and checks listener ownership before setup/reset API calls. Its service cleanup precedes database deletion. Preserve phase ordering, recording modes, overrides, route evidence, and current-run failure summaries.
 - E2E CI shard aggregation must consume only the current workflow attempt's artifacts. Run both `rv ui-e2e-shard-coverage --shards N` and the route gate; preserve each shard's completion summary instead of overwriting a shared file.
 - Managed database operations require matching checkout ownership in Docker, persistent storage, and the responding server. Never adopt by container name, reset a caller-owned database, or reset automatically after a migration error. Keep SQLx responsible for migration history and explicit reset. Use official PostgreSQL image options and libpq inputs, and keep passwords out of arguments.
@@ -165,9 +170,9 @@ applyTo:
 
 # Drift Control
 
-- Feature-matrix and API/browser E2E setup includes FFmpeg alongside database prerequisites because those jobs execute native media runtime scenarios. Feature-matrix and Rust coverage also select the owned ext4 fixture for native root tests; a home-directory filesystem is not that proof. Install e2fsprogs for the private loop-backed image and retain it until unmount succeeds.
+- Feature-matrix and API/browser E2E setup includes FFmpeg alongside database prerequisites because those jobs execute native media runtime scenarios. Feature-matrix and Rust coverage also select the owned directory fixture for native root tests. Use private directories beneath the selected repository's `.test-tmp/`; do not require a repository variable or external test root. Missing or unsuitable storage must fail normal application attestation, never skip required tests or fall back to device provisioning. Private directories may share the runner's root filesystem; do not require a particular filesystem name, separate device or dedicated mount.
 
-- Hosted test Postgres services publish `127.0.0.1:5432:5432` for the single-init endpoint check. Media E2E selects `job.services.postgres.id` and its matching admin password. `E2E_MANAGED_MEDIA_ROOTS=1` gives dry-run API/browser scenarios an owned private Linux ext4 catalog, validated by normal application bootstrap; clear the checked-in `E2E_FS_ROOT` default in those managed steps. Stop services before unmounting and removing those disposable roots.
+- Hosted test Postgres services publish `127.0.0.1:5432:5432` for the single-init endpoint check. Media E2E selects `job.services.postgres.id` and its matching admin password. `E2E_MANAGED_MEDIA_ROOTS=1` creates an owned private catalog beneath `.test-tmp/`, validated by normal application bootstrap. Stop services before deleting fixture-owned directories. Browser outputs and their CI upload paths use `.test-tmp/e2e/`; keep mandatory coverage/scanner paths unchanged.
 
 - Database services use the approved PostgreSQL 18.6 image digest from `.github/build-inputs.env`; floating major-version tags are not suitable.
 - Fixture probing uses the pinned Alpine image and ARM64 FFmpeg 8.0.1-r1, whose full version report matches the existing approved F1 profile. The media conversion job uses `ubuntu-24.04-arm` to select that native build. Mount the checkout read-only at `/workspace`, inject the named container, and remove it after use.
@@ -203,6 +208,8 @@ applyTo:
 - The shared build manifest's native PostgreSQL debugger block is optional but all-or-nothing. Validate its exact eleven fields, immutable image ID, artifact hashes, package pins and credential-free HTTPS source URL. Container tasks must reject unknown keys and invalid debugger pins even though they do not install the debugger. Do not replace this contract with prefix-based ignores.
 
 ## Current workflow composition
+
+Focused local Rust diagnosis uses `rv test --filter` or `rv test-features-min --filter`; composite acceptance remains unfiltered.
 
 The ordinary PR gates (instruction drift, formatting, lint, check, audit, deny, unused dependencies, supply-chain aggregation and release build) invoke the locked `rv` CLI through the shared uv setup action. Select native tools through its supported inputs; retain each gate, dependency, condition and failure result. Ordinary setup has a 20-minute bound. Full coverage setup has a 40-minute bound because a cold runner builds every pinned Cargo tool; each job retains its explicit bounded timeout. The shared setup action retains the operator's Node 24-compatible Helm setup pin (`Azure/setup-helm` v5.0.1).
 

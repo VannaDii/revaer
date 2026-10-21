@@ -110,16 +110,35 @@ def test_alpine_core_uses_uv_managed_python_and_the_installed_cli(tmp_path: Path
         "ghcr.io/astral-sh/uv@sha256:"
         "e73003739c99f562680444e8e9a0c605dad7a87ff2fbcc0a715efe875713623e"
     )
+    security = json.loads(
+        subprocess.run(
+            ["docker", "info", "--format", "{{json .SecurityOptions}}"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        ).stdout
+    )
+    # Rootless container root already maps to the caller. Rootful Docker must
+    # explicitly use that caller so bind-mounted files remain caller-owned.
+    user = [] if "name=rootless" in security else ["--user", f"{os.getuid()}:{os.getgid()}"]
     identifier = subprocess.run(
         [
             "docker",
             "create",
+            *user,
             "--workdir",
             "/work",
             "--mount",
             f"type=bind,src={root},dst=/work",
             "--env",
             "UV_LINK_MODE=copy",
+            "--env",
+            "UV_CACHE_DIR=/work/.uv-cache",
+            "--env",
+            "UV_PYTHON_INSTALL_DIR=/work/.uv-python",
+            "--env",
+            "PYTHONDONTWRITEBYTECODE=1",
             image,
             "uv",
             "run",
@@ -158,6 +177,8 @@ def test_alpine_core_uses_uv_managed_python_and_the_installed_cli(tmp_path: Path
         }
         assert proof["lock_unchanged"] is True
         assert (root / "uv.lock").read_bytes() == lock
+        assert (root / ".venv").stat().st_uid == os.getuid()
+        assert (root / "core-proof.json").stat().st_uid == os.getuid()
     finally:
         subprocess.run(
             ["docker", "rm", "--force", identifier], check=True, capture_output=True, timeout=30

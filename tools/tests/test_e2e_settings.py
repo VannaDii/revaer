@@ -101,7 +101,6 @@ def test_shards_and_timeouts_are_explicit() -> None:
             "E2E_TEST_TIMEOUT_MS": "0",
             "E2E_HEADLESS": "false",
             "E2E_API_RUNNER": "lib-test",
-            "E2E_FS_ROOT": "relative/root",
             "E2E_COVERAGE_DIR": "artifacts/coverage",
         }
     )

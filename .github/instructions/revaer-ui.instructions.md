@@ -20,8 +20,8 @@ applyTo:
   - `crates/revaer-ui/dist-serve/**`
   - `crates/revaer-ui/target/**`
   - `tests/node_modules/**`
-  - `tests/logs/**`
-  - `tests/test-results/**`
+  - `.test-tmp/e2e/logs/**`
+  - `.test-tmp/e2e/test-results/**`
 - Do not patch vendor code. Regenerate synchronized assets only for an authorized vendor ingestion or asset synchronization change. Vendor sources and synchronized Nexus assets follow the root Sonar exclusions; first-party UI code remains scanned.
 - The authored-path inventory above defines analysis scope, not coverage targets. Apply Section 3 of `AGENTS.md` to production Rust/Yew WebAssembly. The asset tool retains functional checks without a production coverage target. UI specs, mock pages and synthetic JavaScript fixtures must test required behavior without becoming coverage targets.
 
@@ -40,6 +40,7 @@ applyTo:
 
 - Keep the SSE store exhaustive over media lifecycle events and request refreshed state for those events, preserving the existing refresh behavior.
 
+- Parameterize media route availability probes by method and route so each operation retains the existing timeout and response assertions independently.
 - Keep selectors and test affordances stable. Update E2E fixtures deliberately when UI structure changes.
 - Media catalog save scenarios verify the successful response, completed refresh, and visible saved record without requiring observation of a transient disabled button.
 - E2E navigation waits for the asynchronously rendered Navbar before checking optional overlays. Dismiss visible auth prompts through Playwright's action wait, then assert they are hidden; instantaneous button probes and repeated speculative clicks cannot establish readiness. Retain existing timeout bounds.
@@ -63,7 +64,7 @@ applyTo:
 
 ## Single-init E2E ownership
 
-- Hosted dry-run E2E may explicitly select `E2E_MANAGED_MEDIA_ROOTS=1` to own private ext4 roots and a restart-persistent catalog. Keep real bootstrap attestation and missing-catalog scenarios; unmount only after all owned services stop. Caller-provided filesystem roots remain caller-owned.
+- Hosted dry-run E2E may explicitly select `E2E_MANAGED_MEDIA_ROOTS=1` to own private directories and a restart-persistent catalog beneath the repository's `.test-tmp/` root. Keep real bootstrap attestation and missing-catalog scenarios; remove owned directories only after services stop. Caller-provided storage remains caller-owned; follow root device restrictions.
 
 - In the approved `feature-development` phase, Python E2E uses the complete initializer and sealed restricted runtime role. Require explicit test-service selection and verify its exact loopback binding before provisioning.
 - Keep generated credentials private, bind init/drop to the resolved container ID, refuse malformed phase configuration, and stop every owned service before dropping the test database. Lifecycle/ordering fixtures are not full media application or browser acceptance.

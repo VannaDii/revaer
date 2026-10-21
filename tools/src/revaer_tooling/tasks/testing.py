@@ -28,7 +28,7 @@ def test_environment(context: Context) -> dict[str, str]:
 
 @contextmanager
 def native_test_environment(context: Context) -> Iterator[dict[str, str]]:
-    """Keep an explicitly managed persistent root mounted throughout Rust tests."""
+    """Keep private roots on caller-provided storage throughout Rust tests."""
     from .e2e import RunPaths, media_fixture
 
     environment = test_environment(context)
@@ -42,7 +42,9 @@ class Test(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
         with native_test_environment(context) as environment:
-            context.tools.cargo.execute(CargoArgs(CargoOperation.TEST), environment)
+            context.tools.cargo.execute(
+                CargoArgs(CargoOperation.TEST, test_filter=context.options.test_filter), environment
+            )
         return TaskResult()
 
 
@@ -67,6 +69,7 @@ class TestFeaturesMinimal(Task):
                         (package,),
                         all_features=False,
                         no_default_features=True,
+                        test_filter=context.options.test_filter,
                     ),
                     environment,
                 )

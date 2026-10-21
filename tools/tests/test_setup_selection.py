@@ -173,6 +173,9 @@ def test_linux_setup_delegates_installation_to_apt(tmp_path: Path) -> None:
             f"type=bind,src={root},dst=/work",
             "--env",
             "UV_LINK_MODE=copy",
+            # apt needs container root; keep root-owned bytecode out of the bind mount.
+            "--env",
+            "PYTHONDONTWRITEBYTECODE=1",
             # Keep Linux packages on the container filesystem. Installing a
             # complete environment through a macOS bind mount can exhaust the
             # VM's shared-filesystem handles. uv owns this alternate location.
@@ -204,6 +207,7 @@ def test_linux_setup_delegates_installation_to_apt(tmp_path: Path) -> None:
         proof = json.loads((root / "setup-proof.json").read_text())
         assert proof["lock_unchanged"] is True
         assert proof["missing_package_exit"] == 100
+        assert not any(root.rglob("__pycache__"))
     finally:
         subprocess.run(
             ["docker", "rm", "--force", identifier], check=True, capture_output=True, timeout=30

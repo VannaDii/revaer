@@ -74,19 +74,11 @@ impl AssociationSource for RetainedRootCatalog {
                 let directory = self.roots.open_read_directory(index, path)?;
                 let entries = read_media_directory_at(&directory, entry_limit)?;
                 let current = self.roots.open_read_directory(index, path)?;
-                let observe = |descriptor: &std::os::fd::OwnedFd| {
-                    rustix::fs::fstat(descriptor).map_err(|source| FingerprintError::Io {
-                        path: path.to_path_buf(),
-                        source: std::io::Error::from(source),
-                    })
-                };
-                let after = observe(&current)?;
-                if !crate::media_discovery_fingerprint::directory_observations_match(
+                crate::media_discovery_fingerprint::validate_directory_observation(
+                    &current,
                     &entries.observation,
-                    &after,
-                ) {
-                    return Err(FingerprintError::DirectoryChanged);
-                }
+                    entry_limit,
+                )?;
                 Ok(entries)
             },
         )
@@ -324,7 +316,7 @@ fn prove(
     roots: &OpenedRootCatalog,
     mounts: &dyn RootMountSource,
 ) -> Result<ProofSnapshot, ProofError> {
-    // Do not convert declarations into deployment or persistence proof.
+    // Deployment declarations do not replace live descriptor/capability checks.
     for slot in source.catalog().slots() {
         if slot.sole_writer_evidence() == SoleWriterEvidence::KubernetesReadWriteOncePod {
             return Err(ProofError::Writer);
@@ -333,18 +325,16 @@ fn prove(
     source.revalidate()?;
     let topology = mounts.snapshot().map_err(RootDirectoryError::MountRead)?;
     let observations = roots.observations(&topology)?;
-    for (slot, observation) in source.catalog().slots().iter().zip(&observations) {
-        match (slot.durability_class(), slot.durability_evidence()) {
-            (DurabilityClass::Disposable, DurabilityEvidence::None) => {
-                disposable_filesystem(observation.filesystem_type())?;
-            }
-            (DurabilityClass::RestartPersistent, DurabilityEvidence::LinuxDedicatedMount) => {
-                let external = topology
-                    .is_external_mount(observation.mount_id())
-                    .map_err(RootDirectoryError::Mount)?;
-                persistent_filesystem(observation.filesystem_type(), external)?;
-            }
-            _ => return Err(ProofError::Durability),
+    for slot in source.catalog().slots() {
+        if !matches!(
+            (slot.durability_class(), slot.durability_evidence()),
+            (DurabilityClass::Disposable, DurabilityEvidence::None)
+                | (
+                    DurabilityClass::RestartPersistent,
+                    DurabilityEvidence::LinuxDedicatedMount
+                )
+        ) {
+            return Err(ProofError::Durability);
         }
     }
     let capabilities = roots.probe_capabilities(mounts)?;
@@ -355,24 +345,6 @@ fn prove(
         capabilities,
         identity,
     })
-}
-
-fn disposable_filesystem(filesystem: &str) -> Result<(), ProofError> {
-    // Only private Linux tmpfs has the existing non-destructive proof here.
-    // Other filesystems require their package evidence, not an inferred grant.
-    if filesystem != "tmpfs" {
-        return Err(ProofError::Durability);
-    }
-    Ok(())
-}
-
-fn persistent_filesystem(filesystem: &str, external_mount: bool) -> Result<(), ProofError> {
-    // Native ext4 mounts are exercised by the owned-volume restart fixture.
-    // Other native filesystems and PVCs remain pending their package evidence.
-    if filesystem != "ext4" || !external_mount {
-        return Err(ProofError::Durability);
-    }
-    Ok(())
 }
 
 fn claims<'a>(

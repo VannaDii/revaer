@@ -65,7 +65,7 @@ def coverage_context(
             timeout=15,
         )
     context.fs.write(
-        tests / "test-results/python-e2e-summary.json",
+        tmp_path / ".test-tmp/e2e/test-results/python-e2e-summary.json",
         json.dumps(
             {
                 "status": "passed",
@@ -114,7 +114,7 @@ def test_partial_evidence_cannot_reuse_an_old_merged_report(
     context = coverage_context
     PythonCoverageMerge.run(context)
     if case == "incomplete":
-        path = context.root / "tests/test-results/python-e2e-summary.json"
+        path = context.root / ".test-tmp/e2e/test-results/python-e2e-summary.json"
         path.write_text(path.read_text().replace('"passed"', '"failed"'))
     else:
         data = context.root / "coverage/e2e" / context.settings.e2e.phases()[0] / ".coverage"
@@ -128,7 +128,9 @@ def test_partial_evidence_cannot_reuse_an_old_merged_report(
     assert not (context.root / "coverage/python.lcov").exists()
 
 
-@pytest.mark.parametrize("lock", ("tests/.runtime/e2e.lock", "coverage/.python-coverage.lock"))
+@pytest.mark.parametrize(
+    "lock", (".test-tmp/e2e/runtime/e2e.lock", "coverage/.python-coverage.lock")
+)
 def test_merge_cannot_read_while_either_producer_is_running(
     coverage_context: Context, lock: str
 ) -> None:
@@ -170,7 +172,7 @@ def test_merge_combines_real_data_from_separate_producer_directories(
     )
     for name, phases in groups:
         directory = producers / name
-        results = directory / "tests/test-results"
+        results = directory / ".test-tmp/e2e/test-results"
         results.mkdir(parents=True)
         (results / "python-e2e-summary.json").write_text(
             json.dumps(

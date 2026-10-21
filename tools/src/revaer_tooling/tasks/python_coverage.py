@@ -39,7 +39,7 @@ def coverage_inputs(context: Context) -> tuple[Path, ...]:
             ),
         )
         return checked_inputs(inputs)
-    path = context.root / "tests/test-results/python-e2e-summary.json"
+    path = context.root / ".test-tmp/e2e/test-results/python-e2e-summary.json"
     summary = object_value(decode(context.fs.read(path)))
     verify_analysis_run(summary, expected)
     inputs = (

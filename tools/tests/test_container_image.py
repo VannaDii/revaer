@@ -2,10 +2,12 @@
 
 This proves uv provisioning, native package pins, BuildKit mounts and runtime
 ownership without claiming that the full Revaer application was built or tested.
-Every builder/image belongs to this fixture and cleanup uses those exact names.
+Images and created builders belong to this fixture; an explicitly supplied
+builder remains caller-owned.
 """
 
 import json
+import os
 import secrets
 import shutil
 import subprocess
@@ -14,6 +16,8 @@ from pathlib import Path
 from revaer_tooling.filesystem import FileSystem
 from revaer_tooling.images.inputs import BuildInputs
 from test_images import docker, selected_builders
+
+BUSYBOX = "/bin/busybox"
 
 
 def test_real_dockerfile_uses_uv_and_keeps_tooling_out_of_the_runtime(tmp_path: Path) -> None:
@@ -54,10 +58,13 @@ def test_real_dockerfile_uses_uv_and_keeps_tooling_out_of_the_runtime(tmp_path: 
         ["cargo", "generate-lockfile"], cwd=root, check=True, capture_output=True, timeout=120
     )
     inputs = BuildInputs.load(FileSystem(), root)
-    builder = "rv-container-proof-" + secrets.token_hex(8)
-    tag = builder + ":fixture"
+    identity = "rv-container-proof-" + secrets.token_hex(8)
+    supplied = os.environ.get("REVAER_TEST_BUILDX_BUILDER")
+    builder = supplied or identity
+    tag = identity + ":fixture"
     selected = selected_builders()
-    docker("buildx", "create", "--name", builder, "--driver", "docker-container")
+    if not supplied:
+        docker("buildx", "create", "--name", builder, "--driver", "docker-container")
     try:
         log_path = tmp_path / "docker-build.log"
         with log_path.open("w") as log:
@@ -109,19 +116,28 @@ def test_real_dockerfile_uses_uv_and_keeps_tooling_out_of_the_runtime(tmp_path: 
         for pin in inputs.runtime_packages:
             name, version = pin.split("=", 1)
             assert f"{name}-{version}" in packages
+        assert docker(
+            "run",
+            "--rm",
+            "--entrypoint",
+            BUSYBOX,
+            tag,
+            "head",
+            "-c",
+            "1",
+            "/etc/ssl/certs/ca-certificates.crt",
+        )
         assert not any(name.startswith(("python3-", "uv-")) for name in packages)
         # Inspect the actual mount destinations and executable directory. An
         # installed uv environment has files here; empty mount directories alone
         # are not additional runtime packages.
-        assert not docker(
-            "run", "--rm", "--entrypoint", "/bin/busybox", tag, "find", "/opt", "-type", "f"
-        )
+        assert not docker("run", "--rm", "--entrypoint", BUSYBOX, tag, "find", "/opt", "-type", "f")
         assert (
             docker(
                 "run",
                 "--rm",
                 "--entrypoint",
-                "/bin/busybox",
+                BUSYBOX,
                 tag,
                 "find",
                 "/usr/local/bin",
@@ -130,8 +146,8 @@ def test_real_dockerfile_uses_uv_and_keeps_tooling_out_of_the_runtime(tmp_path: 
             )
             == "/usr/local/bin/revaer-app"
         )
-        uid = docker("run", "--rm", "--entrypoint", "/bin/busybox", tag, "id", "-u")
-        gid = docker("run", "--rm", "--entrypoint", "/bin/busybox", tag, "id", "-g")
+        uid = docker("run", "--rm", "--entrypoint", BUSYBOX, tag, "id", "-u")
+        gid = docker("run", "--rm", "--entrypoint", BUSYBOX, tag, "id", "-g")
         assert int(uid) > 0 and int(gid) > 0
         for path, permission in (
             ("/usr/local/bin/revaer-app", "555:0:0"),
@@ -146,7 +162,7 @@ def test_real_dockerfile_uses_uv_and_keeps_tooling_out_of_the_runtime(tmp_path: 
                     "run",
                     "--rm",
                     "--entrypoint",
-                    "/bin/busybox",
+                    BUSYBOX,
                     tag,
                     "stat",
                     "-c",
@@ -174,4 +190,5 @@ def test_real_dockerfile_uses_uv_and_keeps_tooling_out_of_the_runtime(tmp_path: 
         identifiers = docker("image", "ls", "--quiet", tag).splitlines()
         if identifiers:
             docker("image", "rm", "--force", *identifiers)
-        docker("buildx", "rm", "--force", builder)
+        if not supplied:
+            docker("buildx", "rm", "--force", builder)

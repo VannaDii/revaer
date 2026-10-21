@@ -31,10 +31,10 @@ def read_page(port: int, running: RunningProcess) -> str:
     pytest.fail("Native development server did not become ready")
 
 
-def record(processes: ProcessManager, running: RunningProcess) -> ProcessIdentity:
+def record(processes: ProcessManager, running: RunningProcess, token: str) -> ProcessIdentity:
     result = processes.identity(running.pid)
     assert result is not None
-    return result
+    return ProcessIdentity(result.pid, result.created, token)
 
 
 def test_cargo_development_builds_and_runs_real_rust(tmp_path: Path) -> None:
@@ -77,10 +77,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tmp_path, os.getpid(), os.getuid(), time.monotonic, lambda: secrets.token_hex(32)
     )
     log = tmp_path / "cargo.log"
+    token = processes.token()
     running = Cargo("cargo", runner, tmp_path, environment).development(
-        DevelopmentArgs("postgres://fixture.invalid/development", "debug", log, processes.token())
+        DevelopmentArgs("postgres://fixture.invalid/development", "debug", log, token)
     )
-    identity = record(processes, running)
+    identity = record(processes, running, token)
     try:
         deadline = time.monotonic() + 30
         while not (tmp_path / "api-port").is_file() and time.monotonic() < deadline:
@@ -114,10 +115,11 @@ def test_trunk_development_serves_real_html_and_stops(tmp_path: Path) -> None:
     )
     environment = {**os.environ}
     log = tmp_path / "trunk.log"
+    token = processes.token()
     running = Trunk("trunk", runner, tmp_path, environment).development(
-        DevelopmentArgs("postgres://fixture.invalid/development", "info", log, processes.token())
+        DevelopmentArgs("postgres://fixture.invalid/development", "info", log, token)
     )
-    identity = record(processes, running)
+    identity = record(processes, running, token)
     try:
         assert "Trunk fixture" in read_page(port, running)
         assert (root / "dist-serve/index.html").is_file()
