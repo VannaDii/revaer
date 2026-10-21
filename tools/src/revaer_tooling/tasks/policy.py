@@ -15,6 +15,8 @@ from .compliance import MediaComplianceGuardrails
 from .workflows import SonarPolicy, WorkflowPolicy
 
 YAML_SUFFIXES = (".yaml", ".yml")
+WORKFLOW_DIRECTORY = ".github/workflows/"
+ACTION_DIRECTORY = ".github/actions/"
 
 
 def matching_lines(source: str, pattern: str, insensitive: bool = False) -> tuple[int, ...]:
@@ -87,7 +89,7 @@ class SourcePolicy(Task):
             if relative.endswith(".rs") and relative.startswith(("crates/", "tests/", "scripts/")):
                 failures.extend(rust_findings(relative, context.fs.read(path)))
             if (
-                relative.startswith((".github/workflows/", ".github/actions/"))
+                relative.startswith((WORKFLOW_DIRECTORY, ACTION_DIRECTORY))
                 and path.suffix in YAML_SUFFIXES
             ):
                 failures.extend(
@@ -100,8 +102,8 @@ class SourcePolicy(Task):
                     "scripts/",
                     "release/",
                     "tools/",
-                    ".github/actions/",
-                    ".github/workflows/",
+                    ACTION_DIRECTORY,
+                    WORKFLOW_DIRECTORY,
                 )
             ) and path.suffix in (
                 ".rs",
@@ -235,6 +237,27 @@ def drift_findings(
     return failures
 
 
+def dependency_references(
+    context: Context, changed: tuple[str, ...], base: str | None, head: str
+) -> set[str]:
+    references: set[str] = set()
+    if not base:
+        return references
+    before = context.tools.git.exact_commit(base)
+    after = context.tools.git.exact_commit(head)
+    for path in changed:
+        if path in (
+            "Dockerfile",
+            "rust-toolchain.toml",
+            "tools/launcher/pyproject.toml",
+        ) or path.startswith((WORKFLOW_DIRECTORY, ACTION_DIRECTORY)):
+            old = context.tools.git.committed_file(CommitFileArgs(before, path)).decode("utf-8")
+            new = context.tools.git.committed_file(CommitFileArgs(after, path)).decode("utf-8")
+            if reference_only(path, old, new):
+                references.add(path)
+    return references
+
+
 class InstructionDrift(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
@@ -250,25 +273,7 @@ class InstructionDrift(Task):
             and workflow.pull_request_head_repository.casefold()
             == context.settings.chart.repository.casefold()
         )
-        references: set[str] = set()
-        if dependabot and base:
-            before = context.tools.git.exact_commit(base)
-            after = context.tools.git.exact_commit(head)
-            for path in changed:
-                if (
-                    path == "Dockerfile"
-                    or path == "rust-toolchain.toml"
-                    or path == "tools/launcher/pyproject.toml"
-                    or path.startswith((".github/workflows/", ".github/actions/"))
-                ):
-                    old = context.tools.git.committed_file(CommitFileArgs(before, path)).decode(
-                        "utf-8"
-                    )
-                    new = context.tools.git.committed_file(CommitFileArgs(after, path)).decode(
-                        "utf-8"
-                    )
-                    if reference_only(path, old, new):
-                        references.add(path)
+        references = dependency_references(context, changed, base, head) if dependabot else set()
         failures = drift_findings(changed, dependabot=dependabot, references=frozenset(references))
         if failures:
             raise ToolingError("Instruction drift:\n" + "\n".join(failures))

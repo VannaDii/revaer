@@ -64,7 +64,7 @@ def toolchain_reference(before: str, after: str) -> bool:
     for document in (old, new):
         toolchain = document.get("toolchain")
         if not isinstance(toolchain, dict) or not re.fullmatch(
-            r"[0-9]+\.[0-9]+(?:\.[0-9]+)?", str(toolchain.get("channel"))
+            r"\d+\.\d+(?:\.\d+)?", str(toolchain.get("channel")), flags=re.ASCII
         ):
             return False
         toolchain["channel"] = "<version>"
@@ -81,7 +81,7 @@ def launcher_reference(before: str, after: str) -> bool:
         if (
             not isinstance(requires, list)
             or len(requires) != 1
-            or not re.fullmatch(r"uv_build==[0-9]+\.[0-9]+\.[0-9]+", str(requires[0]))
+            or not re.fullmatch(r"uv_build==\d+\.\d+\.\d+", str(requires[0]), flags=re.ASCII)
         ):
             return False
         build["requires"] = ["uv_build"]

@@ -185,7 +185,10 @@ def context(runner: ProviderRunner, *, apply: bool = True) -> Context:
         dependabot_enabled=True,
         dependabot_app_login=LOGIN,
     )
-    return replace(result, settings=replace(result.settings, workflow=workflow), invoked_at=NOW)
+    active: Context = replace(
+        result, settings=replace(result.settings, workflow=workflow), invoked_at=NOW
+    )
+    return active
 
 
 def mutations(runner: ProviderRunner) -> list[Invocation]:
@@ -241,8 +244,9 @@ def test_pending_or_failed_latest_run_cannot_reuse_an_earlier_success(
 def test_validation_for_another_head_is_rejected() -> None:
     runner = ProviderRunner()
     runner.run_head = OTHER
+    active = context(runner)
     with pytest.raises(ToolingError, match="different head"):
-        DependabotAutoMerge.run(context(runner))
+        DependabotAutoMerge.run(active)
     assert not mutations(runner)
 
 
@@ -300,8 +304,9 @@ def test_stalled_recreation_fails_without_retrying_or_skipping_other_prs() -> No
     runner.behind = 1
     runner.comments = [comment("recreate", hours=2)]
     runner.items = [request(), request(277)]
+    active = context(runner)
     with pytest.raises(ToolingError, match="maintainer action"):
-        DependabotAutoMerge.run(context(runner))
+        DependabotAutoMerge.run(active)
     assert not mutations(runner)
     assert any("repos/VannaDii/Revaer/pulls/277" in call.argv for call in runner.calls)
 
@@ -319,8 +324,9 @@ def test_human_work_and_uncertain_ownership_prevent_recreation_and_approval(chan
         runner.commits = []
     else:
         runner.reviews = [review("maintainer", "CHANGES_REQUESTED")]
+    active = context(runner)
     with pytest.raises(ToolingError, match="maintainer action"):
-        DependabotAutoMerge.run(context(runner))
+        DependabotAutoMerge.run(active)
     assert not mutations(runner)
 
 
@@ -337,7 +343,7 @@ def test_dry_run_never_changes_a_pr(behind: int) -> None:
 )
 def test_mutations_require_enabled_trusted_main_and_app_identity(field: str) -> None:
     runner = ProviderRunner()
-    active = context(runner)
+    active: Context = context(runner)
     workflow = active.settings.workflow
     if field == "dependabot_enabled":
         workflow = replace(workflow, dependabot_enabled=False)
@@ -378,23 +384,25 @@ def test_ineligible_requests_are_untouched(field: str, value: Json) -> None:
 def test_malformed_provider_output_is_not_no_updates(response: str) -> None:
     runner = ProviderRunner()
     runner.list_response = response
+    active = context(runner)
     with pytest.raises(ToolingError):
-        DependabotAutoMerge.run(context(runner))
+        DependabotAutoMerge.run(active)
 
 
 @pytest.mark.parametrize("path", ["/commits", "/reviews", "/runs"])
 def test_provider_errors_propagate_without_mutations(path: str) -> None:
     runner = ProviderRunner()
     runner.fail_path = path
+    active = context(runner)
     with pytest.raises(ToolingError, match="unavailable"):
-        DependabotAutoMerge.run(context(runner))
+        DependabotAutoMerge.run(active)
     assert not mutations(runner)
 
 
 def test_missing_refresh_credential_fails_without_posting() -> None:
     runner = ProviderRunner()
     runner.behind = 1
-    active = context(runner)
+    active: Context = context(runner)
     active.tools.github.environment = {"GH_TOKEN": "app-credential"}
     with pytest.raises(ToolingError, match="REFRESH_TOKEN"):
         DependabotAutoMerge.run(active)
@@ -405,8 +413,9 @@ def test_rejected_merge_has_no_bypass_or_retry(tmp_path: Path) -> None:
     runner = ProviderRunner()
     runner.fail_merge = True
     github = GitHub(sys.executable, runner, tmp_path, {})
+    args = AutoMergeArgs(REPOSITORY, 276, HEAD)
     with pytest.raises(CommandError, match="rejected"):
-        github.enable_auto_merge(AutoMergeArgs(REPOSITORY, 276, HEAD))
+        github.enable_auto_merge(args)
     assert len(runner.calls) == 1
 
 
@@ -423,9 +432,11 @@ def test_refresh_observes_manual_commands_and_ignores_other_heads() -> None:
 def test_partial_commit_inventory_and_cli_scope_fail_closed() -> None:
     assert not bot_owned((commit(),), 2, HEAD)
     parsed = parser().parse_args(["dependabot-auto-merge", "--apply", "--pr-number", "276"])
-    assert parsed.dependabot_apply and parsed.pull_request == 276
+    assert parsed.dependabot_apply
+    assert parsed.pull_request == 276
+    cli = parser()
     with pytest.raises(SystemExit):
-        parser().parse_args(["ci-qualify", "--apply"])
+        cli.parse_args(["ci-qualify", "--apply"])
 
 
 def test_paginated_selection_keeps_each_provider_pr_identity() -> None:
@@ -434,8 +445,10 @@ def test_paginated_selection_keeps_each_provider_pr_identity() -> None:
     active = context(runner, apply=False)
     selected = active.tools.github.dependabot_pull_requests(REPOSITORY)
     assert [item.number for item in selected] == [276, 277]
-    assert "--paginate" in runner.calls[0].argv
-    assert "per_page=100" in runner.calls[0].argv
+    assert len(runner.calls) == 1
+    (call,) = runner.calls
+    assert "--paginate" in call.argv
+    assert "per_page=100" in call.argv
 
 
 @pytest.mark.parametrize(
@@ -450,8 +463,9 @@ def test_paginated_selection_keeps_each_provider_pr_identity() -> None:
 def test_malformed_pr_identity_fails_before_any_mutation(field: str, value: Json) -> None:
     runner = ProviderRunner()
     runner.item[field] = value
+    active = context(runner)
     with pytest.raises(ToolingError):
-        DependabotAutoMerge.run(context(runner))
+        DependabotAutoMerge.run(active)
     assert not mutations(runner)
 
 
@@ -459,7 +473,7 @@ def test_previous_head_approval_is_replaced_and_manual_target_is_respected() -> 
     runner = ProviderRunner()
     runner.items = [request(), request(277)]
     runner.reviews = [review(head=OTHER)]
-    active = context(runner)
+    active: Context = context(runner)
     active = replace(active, options=replace(active.options, pull_request=277))
     DependabotAutoMerge.run(active)
     calls = mutations(runner)
@@ -475,6 +489,7 @@ def test_unexpected_file_changes_pause_approval_and_destructive_refresh(filename
     runner.files[0]["filename"] = filename
     runner.behind = 1
     runner.comments = [comment("rebase", hours=2)]
+    active = context(runner)
     with pytest.raises(ToolingError, match="maintainer action"):
-        DependabotAutoMerge.run(context(runner))
+        DependabotAutoMerge.run(active)
     assert not mutations(runner)

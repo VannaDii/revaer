@@ -16,6 +16,8 @@ from ..json_data import JsonObject, object_value, string_value
 from .base import Task
 from .release import release_repository
 
+STATE_CHANGED = "head or base changed; deferred"
+
 
 def unchanged(context: Context, args: AutoMergeArgs, base: str) -> JsonObject | None:
     github = context.tools.github
@@ -49,7 +51,7 @@ def request_refresh(
     if action == "wait":
         return "refresh pending"
     if unchanged(context, args, base) is None:
-        return "head or base changed; deferred"
+        return STATE_CHANGED
     if context.options.dependabot_apply:
         github.refresh_dependency(args, base, action)
     return f"{'requested' if context.options.dependabot_apply else 'would request'} {action}"
@@ -62,10 +64,10 @@ def request_merge(
     if not github.dependency_ci_passed(args, branch):
         # A same-head rerun must not retain a previously queued merge.
         if queued and not disarm_queue(context, args, base):
-            return "head or base changed; deferred"
+            return STATE_CHANGED
         return "waiting for successful current validation"
     if unchanged(context, args, base) is None:
-        return "head or base changed; deferred"
+        return STATE_CHANGED
     if not context.options.dependabot_apply:
         return "would approve current head and request protected auto-merge"
     if not approved:
@@ -98,7 +100,7 @@ def reconcile(context: Context, initial: AutoMergeArgs, login: str) -> str:
     queued = item.get("auto_merge") is not None
     if queued and (not owned or changes_requested or behind or not approved):
         if not disarm_queue(context, args, base):
-            return "head or base changed; deferred"
+            return STATE_CHANGED
         queued = False
     if not owned or changes_requested:
         raise ToolingError(

@@ -18,6 +18,8 @@ from ..json_data import Json, JsonObject, array_value, decode, decode_unique, ob
 from .base import ExternalTool
 from .release import ReleaseRepository
 
+PAGE_SIZE = "per_page=100"
+
 
 @dataclass(frozen=True)
 class ReleaseAsset:
@@ -140,7 +142,7 @@ class GitHub(ExternalTool):
                 "--raw-field",
                 "state=open",
                 "--field",
-                "per_page=100",
+                PAGE_SIZE,
             ),
             env=self._environment(repository),
             capture=True,
@@ -226,7 +228,7 @@ class GitHub(ExternalTool):
                 ".[] | @json",
                 f"repos/{args.repository.name}/{group}/{args.number}/{kind}",
                 "--field",
-                "per_page=100",
+                PAGE_SIZE,
             ),
             env=self._environment(args.repository),
             capture=True,
@@ -359,7 +361,7 @@ class GitHub(ExternalTool):
                 "--raw-field",
                 "ref=" + ref,
                 "--field",
-                "per_page=100",
+                PAGE_SIZE,
             ),
             env=self._environment(repository),
             capture=True,
