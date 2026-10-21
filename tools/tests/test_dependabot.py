@@ -87,8 +87,10 @@ class ProviderRunner:
         raise AssertionError("Dependabot must not spawn background processes")
 
     def run(self, invocation: Invocation) -> Completed:
-        self.calls.append(invocation)
         args = invocation.argv[1:]
+        if args == ("remote", "get-url", "origin"):
+            return Completed(0, f"https://{REPOSITORY.host}/{REPOSITORY.name}.git\n")
+        self.calls.append(invocation)
         if args[0] == "pr":
             return self.pr_command(args)
         path = next(value for value in args if value.startswith("repos/"))
@@ -167,6 +169,8 @@ class ProviderRunner:
 
 def context(runner: ProviderRunner, *, apply: bool = True) -> Context:
     result = make_context(Options(dependabot_apply=apply))
+    result.tools.git.name = sys.executable
+    result.tools.git.runner = runner
     result.tools.github.name = sys.executable
     result.tools.github.runner = runner
     result.tools.github.environment = {
