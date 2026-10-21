@@ -34,7 +34,7 @@ def test_scratch_is_inherited_isolated_cleaned_and_restored(tmp_path: Path, fail
                 text=True,
                 timeout=10,
             )
-            assert Path(result.stdout.strip()) == root
+            assert Path(result.stdout.strip()) == parent
             with repository_scratch(tmp_path, FileSystem()):
                 nested = Path(tempfile.gettempdir())
                 created.append(nested)
@@ -65,6 +65,16 @@ def test_scratch_rejects_links_without_touching_the_target(tmp_path: Path) -> No
         pytest.fail("linked scratch admitted")
     assert target.is_dir()
     assert not list(target.iterdir())
+
+
+def test_child_temporary_root_survives_command_cleanup(tmp_path: Path) -> None:
+    with repository_scratch(tmp_path, FileSystem()):
+        child_root = Path(os.environ["TMPDIR"])
+        private = Path(tempfile.gettempdir())
+    assert child_root.is_dir()
+    assert not private.exists()
+    with tempfile.TemporaryDirectory(dir=child_root) as child:
+        assert Path(child).parent == tmp_path / ".test-tmp"
 
 
 def test_runtime_image_preparation_does_not_require_writable_source() -> None:

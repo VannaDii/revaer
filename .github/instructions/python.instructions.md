@@ -23,7 +23,7 @@ applyTo:
 
 - Bootstrap behavior runs use a private disposable pytest base directory and remove it on success or failure, leaving other pytest sessions' directories intact. Retain raw upstream reports without a custom merger, hit-count validation or Sonar coverage import.
 
-- Follow the root `.test-tmp/` contract. Test CLI commands supply private run directories through `TMPDIR` and restore environment/cache state afterward. Managed media fixtures create owned children beneath that same repository root; Rust and coverage tasks pass them as `REVAER_NATIVE_RECOVERY_ROOT`. Keep normal bootstrap attestation and production free-space reserves intact. GnuPG homes use short private children of the common root to respect Unix socket limits.
+- Follow the root `.test-tmp/` contract. Test CLI commands isolate in-process Python scratch in private run directories and restore environment/cache state afterward. Child `TMPDIR` uses the stable common root so compiler-cache services can outlive a command; fixtures create and clean their own private children there. Managed media fixtures use that same repository root; Rust and coverage tasks pass them as `REVAER_NATIVE_RECOVERY_ROOT`. Keep normal bootstrap attestation and production free-space reserves intact. GnuPG homes use short private children of the common root to respect Unix socket limits.
 
 - The optional fixture-probe container is caller-selected at bootstrap. Setup provisions the existing approved Alpine build; cleanup verifies project, purpose and read-only checkout ownership before removing that container.
 

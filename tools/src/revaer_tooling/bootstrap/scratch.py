@@ -37,9 +37,9 @@ def repository_scratch(root: Path, fs: FileSystem) -> Iterator[None]:
     previous = {name: os.environ.get(name) for name in ("TMPDIR", "REVAER_TEST_ROOT")}
     cached = tempfile.tempdir
     try:
-        # Publish only the private directory created by mkdtemp, never an
-        # inherited system temporary directory, to this process and children.
-        os.environ.update({"TMPDIR": str(temporary), "REVAER_TEST_ROOT": str(parent)})
+        # Child services such as compiler caches can outlive this command.
+        # Their temporary root must survive cleanup of this process's private child.
+        os.environ.update({"TMPDIR": str(parent), "REVAER_TEST_ROOT": str(parent)})
         tempfile.tempdir = str(temporary)
         yield
     finally:
