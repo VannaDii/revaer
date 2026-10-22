@@ -10,10 +10,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
-from urllib.parse import quote
 
 from .automation.settings import WorkflowSettings, load_workflow_settings
 from .bootstrap.settings import KcovSettings, load_kcov_settings
+from .database.connection import local_database_url, require_database_url
 from .database.lifecycle_settings import LifecycleSettings, load_lifecycle_settings
 from .development.settings import DevelopmentSettings, load_development_settings
 from .e2e.settings import E2eSettings, load_e2e_settings
@@ -49,7 +49,7 @@ class DatabaseSettings:
     """Keep migration and test URL precedence explicit at the CLI boundary."""
 
     test_url: str | None = field(repr=False)
-    url: str = field(repr=False)
+    url: str | None = field(repr=False)
     managed: bool
     reset: bool
     container_name: str | None
@@ -57,6 +57,10 @@ class DatabaseSettings:
     shared_memory_bytes: int
     pool_proof: Path | None
     cancellation_proof: Path | None
+
+    def require_url(self) -> str:
+        """Resolve the connection before starting any database work."""
+        return require_database_url(self.url)
 
 
 @dataclass(frozen=True)
@@ -95,22 +99,6 @@ class Settings:
     sonar: SonarSettings
     kcov: KcovSettings
     fixtures: FixtureSettings
-
-
-def local_database_url(environment: Mapping[str, str], database: str) -> str:
-    """Retain the media stack's local overrides and encode credential characters."""
-    user = environment.get("REVAER_LOCAL_DB_USER") or "revaer"
-    password = environment.get("REVAER_LOCAL_DB_PASSWORD") or user
-    host = environment.get("REVAER_LOCAL_DB_HOST") or "localhost"
-    try:
-        port = int(environment.get("REVAER_LOCAL_DB_PORT") or "5432")
-    except ValueError as error:
-        raise ToolingError("REVAER_LOCAL_DB_PORT must be an integer") from error
-    if not 1 <= port <= 65535:
-        raise ToolingError("REVAER_LOCAL_DB_PORT must be between 1 and 65535")
-    if ":" in host and not host.startswith("["):
-        host = f"[{host}]"
-    return f"postgres://{quote(user, safe='')}:{quote(password, safe='')}@{host}:{port}/{database}"
 
 
 def switch(environment: Mapping[str, str], name: str, default: bool) -> bool:
@@ -203,7 +191,7 @@ def load_settings(environment: Mapping[str, str], *, linux: bool = False) -> Set
             repository_id=environment.get("ARTIFACTHUB_REPOSITORY_ID", ""),
             # Used only for Helm rendering; this does not open a database connection.
             lint_database_url=environment.get("REVAER_HELM_LINT_DATABASE_URL")
-            or "postgres://revaer:revaer@postgres.default.svc.cluster.local:5432/revaer",
+            or "postgres://revaer@postgres.default.svc.cluster.local:5432/revaer",
             registry=RegistryCredentials(
                 host, username, password, Path(registry_ca).resolve() if registry_ca else None
             ),
@@ -218,7 +206,7 @@ def load_settings(environment: Mapping[str, str], *, linux: bool = False) -> Set
         udeps_version=environment.get("REVAER_UDEPS_VERSION") or None,
         database=DatabaseSettings(
             test_url=test_url,
-            # Application operations share the media stack's revaer default.
+            # The local endpoint is absent until the developer supplies credentials.
             # Test commands still require an explicitly supplied disposable URL.
             url=environment.get("DATABASE_URL")
             or test_url

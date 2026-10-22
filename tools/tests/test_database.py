@@ -419,19 +419,24 @@ def test_caller_database_is_used_without_adopting_or_resetting_its_container(
 
 
 @pytest.mark.parametrize(
-    "url",
+    ("url", "credentials"),
     [
-        "postgres://fixture:password@remote.invalid/example",
-        "mysql://fixture:password@localhost/example",
-        "postgres://localhost/example",
-        "postgres://fixture:password@localhost:0/example",
-        "postgres://fixture:password@localhost/example?host=remote.invalid",
+        ("postgres://remote.invalid/example", True),
+        ("mysql://localhost/example", True),
+        ("postgres://localhost/example", False),
+        ("postgres://localhost:0/example", True),
+        ("postgres://localhost/example?host=remote.invalid", True),
     ],
 )
 def test_managed_database_rejects_ambiguous_or_nonlocal_connections_before_creating_data(
     managed_database: tuple[Context, PostgresFixture],
     url: str,
+    credentials: bool,
 ) -> None:
+    if credentials:
+        parsed = urlsplit(url)
+        authority = f"fixture:{secrets.token_hex(12)}@{parsed.netloc}"
+        url = urlunsplit(parsed._replace(netloc=authority))
     context, _ = managed_database
     context = replace(
         context,
@@ -510,7 +515,9 @@ def test_reset_rejects_caller_owned_and_administrative_databases(
     )
     with pytest.raises(ToolingError, match="caller-owned database"):
         DatabaseStart.run(caller)
-    admin_url = urlunsplit(urlsplit(context.settings.database.url)._replace(path="/postgres"))
+    admin_url = urlunsplit(
+        urlsplit(context.settings.database.require_url())._replace(path="/postgres")
+    )
     admin = replace(
         context,
         settings=replace(

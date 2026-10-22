@@ -22,7 +22,7 @@ def test_environment(context: Context) -> dict[str, str]:
         )
     return {
         "REVAER_TEST_DATABASE_URL": database.test_url,
-        "DATABASE_URL": database.url,
+        "DATABASE_URL": database.require_url(),
     }
 
 

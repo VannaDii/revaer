@@ -70,6 +70,7 @@ jobs:
         run: uv run --locked -- rv script-coverage
       - name: Run Playwright with Python coverage
         env:
+          UV_ENV_FILE: ${{ github.workspace }}/.env.template
           PG_CONTAINER: ${{ job.services.postgres.id }}
           REVAER_LOCAL_DB_USER: revaer
           REVAER_LOCAL_DB_PASSWORD: ${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}

@@ -719,14 +719,21 @@ mod tests {
 
     #[test]
     fn local_docker_host_fallback_rewrites_localhost_only() {
-        let local = Url::parse("postgres://user:pass@localhost:55432/postgres")
-            .expect("valid postgres url");
-        let remote = Url::parse("postgres://user:pass@db.example.test:5432/postgres")
-            .expect("valid postgres url");
+        let password = std::process::id();
+        let local = Url::parse(&format!(
+            "postgres://user:{password}@localhost:55432/postgres"
+        ))
+        .expect("valid postgres url");
+        let remote = Url::parse(&format!(
+            "postgres://user:{password}@db.example.test:5432/postgres"
+        ))
+        .expect("valid postgres url");
 
         assert_eq!(
             local_docker_host_fallback(&local).map(|url| url.to_string()),
-            Some("postgres://user:pass@host.docker.internal:55432/postgres".to_string())
+            Some(format!(
+                "postgres://user:{password}@host.docker.internal:55432/postgres"
+            ))
         );
         assert!(local_docker_host_fallback(&remote).is_none());
     }

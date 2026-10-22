@@ -20,8 +20,7 @@ must be free. It never terminates another process merely because it uses a port.
 
 Set `E2E_DB_ADMIN_URL` to use an existing test server. Otherwise the runner uses
 the configured disposable test endpoint or provisions the managed local server.
-Only the new database is dropped. uv loads `tests/.env`; existing environment
-variables retain uv's normal precedence. The [browser support guide](../tools/src/revaer_tooling/e2e/README.md)
+Only the new database is dropped. Copy the root `.env.template` to a private root `.env` and supply `REVAER_LOCAL_DB_PASSWORD`. uv loads that file before task construction; existing environment variables retain uv's normal precedence. The [browser support guide](../tools/src/revaer_tooling/e2e/README.md)
 documents every setting, lifecycle rule and failure behavior.
 
 ```console

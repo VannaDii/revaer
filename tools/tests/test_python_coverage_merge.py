@@ -80,7 +80,7 @@ def coverage_context(
 
 def test_merge_uses_full_paths_and_includes_never_executed_files(coverage_context: Context) -> None:
     context = coverage_context
-    assert main(["python-coverage-merge", "--e2e-environment-ready"]) == 0
+    assert main(["python-coverage-merge", "--environment-ready"]) == 0
     report = ElementTree.parse(context.root / "coverage/python.xml")
     entries = {
         entry.attrib["filename"]: entry

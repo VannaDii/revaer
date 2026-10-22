@@ -45,6 +45,10 @@ the current command surface and retained compatibility entry points.
 For automation, use `uv run --locked -- rv <command>` after the shared setup
 action. Local development and CI use the same task implementations.
 
+## Local environment
+
+Before starting a local database or development services, developers and agents copy `.env.template` to `.env` and supply `REVAER_LOCAL_DB_PASSWORD`. Keep `.env` private (`chmod 600 .env`) and never commit it or overwrite another developer’s file. Use uv’s dotenv quoting for password values containing spaces, `#`, or `$`. `rv` loads it through uv before constructing settings; exported environment values take precedence. Local PostgreSQL and generated local URLs share that password. Explicit external URLs and automatically generated disposable test-role credentials remain supported. Commands that do not use PostgreSQL need no password. Changing `.env` does not change an existing server’s password; update it through the normal administrator workflow. Authentication failures never authorize deleting or resetting existing data.
+
 ## Development Tasks
 
 -   `rv fmt` – check Rust and Python formatting (`rv fmt-fix` applies formatting).
@@ -61,10 +65,10 @@ action. Local development and CI use the same task implementations.
 
 ## UI E2E Testing
 
-The Playwright suite lives under `tests/` and reads configuration from `tests/.env`. API checks (both auth modes) run before UI specs to catch backend failures first. Each run provisions a temp database.
+The Playwright suite lives under `tests/` and reads configuration from the private root `.env`. API checks (both auth modes) run before UI specs to catch backend failures first. Each run provisions a temp database.
 
 1. Ensure ports `7070` and `8080` are free (the runner refuses occupied ports; stop any existing server first).
-2. Update `tests/.env` as needed (notably `E2E_DB_ADMIN_URL`, `E2E_BASE_URL`, `E2E_API_BASE_URL`, `E2E_FS_ROOT`).
+2. Copy `.env.template` to root `.env` once, restrict its permissions with `chmod 600 .env`, and supply `REVAER_LOCAL_DB_PASSWORD`. Preserve any existing `.env`. Adjust nonsecret settings and select the owned test service with `PG_CONTAINER` and its admin user as required.
 3. Run `rv ui-e2e`.
 
 ## Native Libtorrent Integration Test

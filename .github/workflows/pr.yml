@@ -514,6 +514,7 @@ jobs:
           browsers: ''
       - name: API E2E coverage
         env:
+          UV_ENV_FILE: ${{ github.workspace }}/.env.template
           PG_CONTAINER: ${{ job.services.postgres.id }}
           REVAER_LOCAL_DB_USER: revaer
           REVAER_LOCAL_DB_PASSWORD: ${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}
@@ -600,6 +601,7 @@ jobs:
           browsers: ${{ matrix.browser }}
       - name: UI E2E
         env:
+          UV_ENV_FILE: ${{ github.workspace }}/.env.template
           PG_CONTAINER: ${{ job.services.postgres.id }}
           REVAER_LOCAL_DB_USER: revaer
           REVAER_LOCAL_DB_PASSWORD: ${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}

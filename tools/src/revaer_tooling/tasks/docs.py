@@ -15,7 +15,7 @@ from ..errors import ToolingError
 from .automation import outputs, source_values
 from .base import Task
 
-SECRET_PATTERN = re.compile(r"AKIA[0-9A-Z]{16}|SECRET_KEY|token=|password=|x-api-key")
+SECRET_PATTERN = re.compile(r"AKIA[0-9A-Z]{16}|SECRET_KEY|(?:token|password)=|x-api-key")
 FORBIDDEN_SUFFIXES = frozenset((".py", ".ipynb", ".html"))
 
 

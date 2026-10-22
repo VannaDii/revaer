@@ -164,8 +164,11 @@ def test_tooling_coverage_cannot_replace_data_while_a_merge_reads_it(
     assert report.read_text() == "current report"
 
 
-@pytest.mark.parametrize("command", ("ci-qualify", "ui-e2e", "runbook", "python-coverage-merge"))
-def test_e2e_reentry_uses_uv_dotenv_precedence_and_keeps_the_lockfile(
+@pytest.mark.parametrize(
+    "command",
+    ("ci-qualify", "ui-e2e", "runbook", "python-coverage-merge", "fmt", "db-start", "setup"),
+)
+def test_environment_reentry_uses_uv_dotenv_precedence_and_keeps_the_lockfile(
     python_project: Context, monkeypatch: pytest.MonkeyPatch, command: str
 ) -> None:
     root = python_project.root
@@ -173,7 +176,7 @@ def test_e2e_reentry_uses_uv_dotenv_precedence_and_keeps_the_lockfile(
     for name in ("VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "UV_PROJECT"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("RV_FIXTURE_OVERRIDE", "caller")
-    (root / "tests/.env").write_text(
+    (root / ".env").write_text(
         "RV_FIXTURE_OVERRIDE=file\nRV_FIXTURE_TEXT='spaces and # literal text'\n"
         'RV_FIXTURE_EXPANSION="${RV_FIXTURE_OVERRIDE}/expanded"\n'
     )
@@ -192,7 +195,7 @@ def test_e2e_reentry_uses_uv_dotenv_precedence_and_keeps_the_lockfile(
         "override": "caller",
         "text": "spaces and # literal text",
         "expansion": "caller/expanded",
-        "args": [command, "--e2e-environment-ready"],
+        "args": [command, "--environment-ready"],
     }
     assert (root / "uv.lock").read_bytes() == before
 

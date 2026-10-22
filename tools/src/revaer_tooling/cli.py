@@ -318,8 +318,6 @@ COMMANDS: dict[str, Callable[[Context], TaskResult]] = {
     "docs-prepare": DocsPrepare.run,
 }
 
-E2E_ENVIRONMENT_TASKS = frozenset(("ci-qualify", "ui-e2e", "runbook", "python-coverage-merge"))
-
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="rv", description="Revaer development and automation")
@@ -352,10 +350,7 @@ def parser() -> argparse.ArgumentParser:
             command.add_argument("--chart-version", default="")
             command.add_argument("--app-version", default="")
             command.add_argument("--pr-number", dest="pull_request", type=int)
-        if name in E2E_ENVIRONMENT_TASKS:
-            command.add_argument(
-                "--e2e-environment-ready", action="store_true", help=argparse.SUPPRESS
-            )
+        command.add_argument("--environment-ready", action="store_true", help=argparse.SUPPRESS)
         if name == "ui-e2e-shard-coverage":
             command.add_argument(
                 "--shards", type=int, default=3, help="Expected shard count (default: 3)"
@@ -640,13 +635,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     previous = signal.signal(signal.SIGTERM, interrupted)
     try:
         # Use uv's supported dotenv parser, including its environment precedence.
-        # The internal flag prevents recursion after uv has loaded tests/.env.
-        if args.task in E2E_ENVIRONMENT_TASKS and not args.e2e_environment_ready:
-            root = checkout(Path.cwd().resolve())
-            environment_file = root / "tests/.env"
+        # The internal flag prevents recursion after uv has loaded the private root file.
+        if not args.environment_ready:
+            root = checkout(Path.cwd().resolve(), source_archive=options.source_archive)
+            environment_file = root / ".env"
             if environment_file.is_file():
                 uv = Uv("uv", ProcessRunner(stderr_message), root, dict(os.environ))
-                uv.e2e_environment(
+                uv.load_environment(
                     environment_file, tuple(argv if argv is not None else sys.argv[1:])
                 )
                 return 0

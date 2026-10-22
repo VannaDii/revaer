@@ -7,6 +7,7 @@ from revaer_tooling.policy.advisories import advisory_findings
 from revaer_tooling.policy.sonar import SBOM_PATH, production_source, sonar_findings, vendor_source
 
 INVENTORY = (
+    ".env.template",
     ".github/workflows/ci.yml",
     ".sonar-test-scope/.gitkeep",
     "Cargo.toml",
@@ -76,7 +77,7 @@ def sonar() -> str:
     source = Path(__file__).resolve().parents[2] / "sonar-project.properties"
     changes = {
         "sonar.sources": (
-            ".github,Cargo.toml,charts,crates,docs,release,sonar-project.properties,tools"
+            ".env.template,.github,Cargo.toml,charts,crates,docs,release,sonar-project.properties,tools"
         ),
         "sonar.lang.patterns.kubernetes": "charts/revaer/templates/service.yaml",
         "sonar.lang.patterns.yaml": ".github/workflows/ci.yml,charts/revaer/values.yaml",
@@ -130,7 +131,7 @@ def test_reviewed_configuration_and_all_sources_are_accepted(sonar: str) -> None
     without_inventory = change(
         without_inventory,
         "sonar.sources",
-        ".github,Cargo.toml,charts,crates,docs,sonar-project.properties,tools",
+        ".env.template,.github,Cargo.toml,charts,crates,docs,sonar-project.properties,tools",
     )
     assert not sonar_findings(
         without_inventory, tuple(path for path in INVENTORY if path != SBOM_PATH), SENTINEL
@@ -235,3 +236,39 @@ def test_advisory_lists_must_exist_and_be_empty() -> None:
 )
 def test_nonproduction_paths_do_not_affect_coverage_additional_cases(path: str) -> None:
     assert not production_source(path)
+
+
+def test_private_environment_exclusions_do_not_hide_the_template(sonar: str) -> None:
+    from fnmatch import fnmatchcase
+
+    from revaer_tooling.policy.sonar import ANALYSIS_EXCLUSIONS
+
+    assert not sonar_findings(sonar, INVENTORY, SENTINEL)
+    for path in (".env", "tests/.env"):
+        assert any(fnmatchcase(path, pattern) for pattern in ANALYSIS_EXCLUSIONS)
+    assert not any(fnmatchcase(".env.template", pattern) for pattern in ANALYSIS_EXCLUSIONS)
+    assert sonar_findings(change(sonar, "sonar.exclusions", ".env*"), INVENTORY, SENTINEL)
+
+
+def test_git_ignores_private_environment_files_and_keeps_the_template(tmp_path: Path) -> None:
+    import secrets
+    import subprocess
+
+    root = Path(__file__).parents[2]
+    (tmp_path / ".gitignore").write_bytes((root / ".gitignore").read_bytes())
+    (tmp_path / "tests").mkdir()
+    for name in (".env", "tests/.env"):
+        path = tmp_path / name
+        path.write_text(f"REVAER_LOCAL_DB_PASSWORD={secrets.token_hex(16)}\n")
+        path.chmod(0o600)
+    (tmp_path / ".env.template").write_bytes((root / ".env.template").read_bytes())
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True, timeout=10)
+    result = subprocess.run(
+        ["git", "ls-files", "--others", "--exclude-standard"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert set(result.stdout.splitlines()) == {".gitignore", ".env.template"}

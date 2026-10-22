@@ -5,7 +5,7 @@ import path from 'path';
 const envDir = path.resolve(process.env.E2E_ENV_DIR ?? __dirname);
 const testResultsDir = path.join(envDir, 'test-results');
 
-dotenv.config({ path: path.join(envDir, '.env') });
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 type BrowserName = 'chromium' | 'firefox' | 'webkit';
 

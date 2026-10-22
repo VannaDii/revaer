@@ -62,7 +62,7 @@ applyTo:
 
 - Keep distributed producer validation in focused functions, share repeated coverage paths and workflow step names as constants, and keep regression assertions and expected-failure calls individually scoped.
 - Fixtures must supply their own browser phase selection, instruction-diff refs and native recovery roots; operator qualification settings must not change the controlled fixture data.
-- Composite qualification must enter through the same uv dotenv-loading boundary as standalone E2E before constructing its task context.
+- Every CLI task loads an existing root `.env` through the shared uv dotenv re-entry boundary before constructing its task context. Preserve caller-environment precedence and load exactly once. Keep an absent local connection as `None` in immutable settings; database consumers use the shared required-connection resolver before infrastructure work. Local password values are never trimmed, and URL construction percent-encodes them.
 - Generate the Rust importer report through the supported `cargo-llvm-cov --cobertura` interface. Keep ingestion limited to requiring the report; upstream tools own coverage calculations and report validation.
 - Sonar source preparation removes untracked Python bytecode caches beside authored Python files, including caches left by earlier runs; refuse tracked content and links.
 - Coverage fixtures construct Context with their existing injected collaborators and explicit Options, and own their managed-root/native-required settings so qualification flags cannot enable unrelated integration scenarios. URL fixtures generate credentials at runtime while retaining percent-encoding cases.

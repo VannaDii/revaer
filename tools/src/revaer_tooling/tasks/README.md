@@ -224,7 +224,7 @@ It does not create or replace a Docker container in that mode.
 | `DATABASE_URL` | Application connection, with precedence over the test URL. |
 | `REVAER_TEST_DATABASE_URL` | Administrative test connection and application fallback. |
 | `REVAER_DB_MANAGED` | `auto` by default; explicit `1`/`true` selects local managed ownership, `0`/`false` keeps caller ownership. |
-| `REVAER_LOCAL_DB_USER`, `REVAER_LOCAL_DB_PASSWORD` | Credentials for constructing the default local URL. |
+| `REVAER_LOCAL_DB_USER`, `REVAER_LOCAL_DB_PASSWORD` | The local user and required password for constructing the default local URL; no password default exists. |
 | `REVAER_LOCAL_DB_HOST`, `REVAER_LOCAL_DB_PORT` | Default local address and port; use a different port for simultaneous worktrees. |
 | `PG_CONTAINER` | Container name override; the default includes a hash of the checkout path. |
 | `REVAER_DB_DATA_DIR` | Persistent bind directory; defaults to `.server_root/postgres-data`. |
@@ -335,7 +335,7 @@ compiler.
 `rv ci-qualify` runs local CI, all API/browser phases and route checks once. It
 requires the full browser/phase selection with coverage, one local shard and no
 retries; it does not require Sonar credentials or a PR number and does not publish
-server analysis. As with `ui-e2e`, uv loads `tests/.env` before task construction;
+server analysis. As with `ui-e2e`, uv loads the private root `.env` before task construction;
 caller settings retain precedence. Follow root `AGENTS.md` for local Sonar
 file/project review before pushing. Hosted workflows independently produce all
 scanner inputs and enforce the published Sonar quality gate before merge.

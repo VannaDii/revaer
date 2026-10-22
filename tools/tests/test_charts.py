@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import secrets
 import shutil
 import subprocess
 import tarfile
@@ -206,7 +207,7 @@ def test_missing_signing_material_preserves_previous_package(chart_context: Cont
 
 def test_publication_requires_existing_signed_artifacts(chart_context: Context) -> None:
     settings = load_settings(
-        {"HELM_REGISTRY_USERNAME": "test", "HELM_REGISTRY_PASSWORD": "test-only"}
+        {"HELM_REGISTRY_USERNAME": "test", "HELM_REGISTRY_PASSWORD": secrets.token_hex(16)}
     )
     with pytest.raises(ToolingError, match="previously packaged"):
         HelmPublish.run(replace(chart_context, settings=settings))
@@ -250,7 +251,7 @@ def test_real_registry_preserves_signed_chart_and_metadata_and_rejects_bad_auth(
             == (output / "artifacthub-repo.yml").read_bytes()
         )
         for credentials in (
-            replace(service.credentials, password="incorrect-fixture-password"),
+            replace(service.credentials, password=secrets.token_hex(16)),
             replace(service.credentials, ca_file=None),
         ):
             invalid = replace(
