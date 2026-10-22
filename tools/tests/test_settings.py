@@ -189,15 +189,23 @@ def test_local_admin_connection_uses_the_single_supplied_password() -> None:
 def test_database_start_requires_configuration_before_provisioning(
     tmp_path: Path,
 ) -> None:
-    from dataclasses import replace
-
     from revaer_tooling.cli import make_context
-    from revaer_tooling.context import Options
+    from revaer_tooling.context import Context, Options
     from revaer_tooling.tasks.database import DatabaseStart
 
     context = make_context(Options())
     settings = load_settings({"REVAER_DB_DATA_DIR": str(tmp_path / "database")})
-    context = replace(context, settings=settings)
+    context = Context(
+        root=context.root,
+        settings=settings,
+        options=context.options,
+        tools=context.tools,
+        fs=context.fs,
+        emit=context.emit,
+        host=context.host,
+        invoked_at=context.invoked_at,
+        command_names=context.command_names,
+    )
     with pytest.raises(ToolingError, match="REVAER_LOCAL_DB_PASSWORD"):
         DatabaseStart.run(context)
     assert not (tmp_path / "database").exists()
