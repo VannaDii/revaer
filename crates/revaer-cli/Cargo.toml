@@ -15,7 +15,7 @@ tokio.workspace = true
 tracing.workspace = true
 revaer-config = { path = "../revaer-config" }
 clap = { version = "4.5", features = ["derive", "env"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = ">=0.13.1, <0.13.5", default-features = false, features = ["json", "rustls", "stream"] }
 serde.workspace = true
 serde_json.workspace = true
 rpassword = "7.4"
