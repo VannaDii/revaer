@@ -6,6 +6,7 @@ unique database is dropped, and partial runs cannot leave a passing summary.
 """
 
 import json
+import secrets
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -193,7 +194,12 @@ def coordinator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Contex
     # Explicit settings prevent a developer's .env or E2E selection from changing
     # which resource transitions this fault-injection suite exercises.
     context = make_context(Options())
-    context = replace(context, settings=load_settings({"E2E_HTTP_WAIT_ATTEMPTS": "1"}))
+    context = replace(
+        context,
+        settings=load_settings(
+            {"E2E_HTTP_WAIT_ATTEMPTS": "1", "REVAER_LOCAL_DB_PASSWORD": secrets.token_hex(16)}
+        ),
+    )
     scenario = Scenario()
 
     @contextmanager

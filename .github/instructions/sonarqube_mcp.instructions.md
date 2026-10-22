@@ -10,11 +10,15 @@ Root `AGENTS.md` defines coverage scope, local review, hosted gates, vendor owne
 
 ## Local review
 
+- Never read or submit the private `.env` or legacy `tests/.env` for local review. Select tracked authored files, including `.env.template`. The canonical configuration and policy allowlist exclude exactly those two private environment paths; preserve SCM settings and all other source scope.
+
 - Use project key `VannaDii_Revaer` from `sonar-project.properties`. Resolve a different requested project with `sonar list projects --query <project>` before acting. Use the authenticated native CLI; do not recreate an MCP registration or launch `sonar run mcp`.
 - Before pushing, analyze changed authored files with the project's rules using direct `sonar analyze agentic --file <path> --project VannaDii_Revaer --branch <head-branch>` or supported native project analysis. No PR is required. This does not publish a scan of main. Run `sonar analyze secrets <paths...>` for local secrets feedback.
 - Compare local findings with the reviewed base; fix new findings and applicable findings in changed production code before pushing. Unchanged baseline findings in internal utilities do not create a new cleanup task. State unsupported languages, unavailable analyzers and the limits of file-only feedback; raise material gaps affecting changed production code. Vortex entitlement or authorization failure is an analysis limitation, not a clean result. Local feedback does not replace hosted gates.
 
 ## Hosted analysis
+
+- Hosted E2E selects `.env.template` with `UV_ENV_FILE`; job-scoped endpoint, password and phase settings retain precedence. This restores the existing non-password defaults without creating or scanning a private `.env`.
 
 - The workflows, `sonar-project.properties` and `tools/src/revaer_tooling/policy/sonar.py` define scanner configuration, inputs and exact allowlist. Use the canonical `rv sonar-*` tasks; do not copy criteria into commands or alter them remotely. Parse Java properties before validation so escaped/duplicate logical keys cannot bypass policy.
 - Keep YAML inventory current for authored workflows/actions. PostgreSQL sources remain visible to text/secrets analysis; `.sql`, `.pgsql` and `.plpgsql` must not be routed to PL/SQL. The PL/SQL suffix is `.plsql` only.

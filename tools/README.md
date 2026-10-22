@@ -261,6 +261,8 @@ remain separate required gates.
 
 ### Disposable single-init databases
 
+Copy root `.env.template` to a private `.env` and set `REVAER_LOCAL_DB_PASSWORD`; all CLI tasks load it through uv with caller-environment precedence.
+
 `rv db-test-init NAME` and `rv db-test-drop NAME` support the media checkout's
 single initializer. Select an existing disposable PostgreSQL service with
 `PG_CONTAINER`, `REVAER_LOCAL_DB_USER`, and `REVAER_LOCAL_DB_PASSWORD`.

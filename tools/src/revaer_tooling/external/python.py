@@ -221,7 +221,7 @@ class Uv(ExternalTool):
             )
         )
 
-    def e2e_environment(self, environment_file: Path, arguments: tuple[str, ...]) -> Completed:
+    def load_environment(self, environment_file: Path, arguments: tuple[str, ...]) -> Completed:
         """Let uv load dotenv syntax and precedence before rv reads any settings."""
         return self._invoke(
             (
@@ -234,7 +234,7 @@ class Uv(ExternalTool):
                 "-m",
                 "revaer_tooling.cli",
                 *arguments,
-                "--e2e-environment-ready",
+                "--environment-ready",
             )
         )
 

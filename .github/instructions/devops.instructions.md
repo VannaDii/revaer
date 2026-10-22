@@ -80,7 +80,7 @@ applyTo:
 - `rv runbook` keeps the E2E lock through artifact archival and writes its summary last. Failed and interrupted runs retain evidence and a failing exit status.
 - Local image builds name their Buildx builder explicitly without changing the developer's selected builder. Failed builds invalidate their partial outputs. Container scans use versioned Trivy policy, include unfixed HIGH/CRITICAL findings, preserve failing reports, and do not consume advisory-ignore files.
 - Alpine owns the system CA trust bundle; do not declare an application-managed certificate package version or archive hash. The actual image SBOM and security scan retain the resolved system packages, and container tests verify that the runtime user can read a nonempty trust bundle.
-- The Python E2E runner loads `tests/.env` through `uv run --env-file`, owns a unique database, and checks listener ownership before setup/reset API calls. Its service cleanup precedes database deletion. Preserve phase ordering, recording modes, overrides, route evidence, and current-run failure summaries.
+- Hosted E2E steps select the tracked `.env.template` through uv’s supported `UV_ENV_FILE` input; existing job environment values retain precedence. The shared CLI boundary loads the private root `.env` through `uv run --env-file`, owns a unique database, and checks listener ownership before setup/reset API calls. Its service cleanup precedes database deletion. Preserve phase ordering, recording modes, overrides, route evidence, and current-run failure summaries.
 - E2E CI shard aggregation must consume only the current workflow attempt's artifacts. Run both `rv ui-e2e-shard-coverage --shards N` and the route gate; preserve each shard's completion summary instead of overwriting a shared file.
 - Managed database operations require matching checkout ownership in Docker, persistent storage, and the responding server. Never adopt by container name, reset a caller-owned database, or reset automatically after a migration error. Keep SQLx responsible for migration history and explicit reset. Use official PostgreSQL image options and libpq inputs, and keep passwords out of arguments.
 
@@ -228,3 +228,5 @@ Keep scanner E2E phase selection at job scope so execution and both coverage mer
 ## Consolidated media coverage producers
 
 The split coverage producers retain the single-init PostgreSQL baseline and media API catalog phases. Rust coverage retains complete workspace measurements; scanner input verification derives the tracked-Rust importer report after all producer inputs are available. Preserve both reports in the scanner artifact.
+
+- Follow the root environment/password contract. Helm lint uses a credential-free rendering-only endpoint and must not need the developer password. Retained URL helpers use the same encoded local connection builder; CI retains consistent job-scoped PostgreSQL credentials and private environment files stay outside image/package/scanner artifacts.

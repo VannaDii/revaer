@@ -33,6 +33,8 @@ VENDOR_EXCLUSIONS = (
     "docs/mermaid.min.js",
 )
 ANALYSIS_EXCLUSIONS = (
+    ".env",
+    "tests/.env",
     "scripts/tests/fixtures/workflow-guardrails/invalid-yaml.yml",
     *VENDOR_EXCLUSIONS,
 )

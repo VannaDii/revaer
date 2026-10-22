@@ -42,10 +42,12 @@ def test_unverified_endpoint_is_rejected(url: str, binding: str) -> None:
 
 
 @pytest.mark.parametrize("failure", ("", "start-api", "api-api-key"))
+@pytest.mark.parametrize("explicit_admin", (False, True))
 def test_media_coordinator_uses_sealed_runtime_and_preserves_cleanup_order(
     coordinator: tuple[Context, Scenario],
     monkeypatch: pytest.MonkeyPatch,
     failure: str,
+    explicit_admin: bool,
 ) -> None:
 
     context, scenario = coordinator
@@ -56,13 +58,19 @@ def test_media_coordinator_uses_sealed_runtime_and_preserves_cleanup_order(
     )
     (context.root / ".github").mkdir()
     shutil.copyfile(source / ".github/build-inputs.env", context.root / ".github/build-inputs.env")
+    password = secrets.token_hex(16)
     context = replace(
         context,
         settings=replace(
             context.settings,
-            lifecycle=LifecycleSettings("selected", "fixture", secrets.token_hex(16), ""),
+            database=replace(
+                context.settings.database,
+                url=f"postgres://fixture:{password}@localhost:5450/revaer",
+            ),
+            lifecycle=LifecycleSettings("selected", "fixture", password, ""),
             e2e=replace(
-                context.settings.e2e, admin_url="postgres://fixture@localhost:5450/postgres"
+                context.settings.e2e,
+                admin_url="postgres://fixture@localhost:5450/postgres" if explicit_admin else None,
             ),
         ),
     )
@@ -81,6 +89,8 @@ def test_media_coordinator_uses_sealed_runtime_and_preserves_cleanup_order(
         return "127.0.0.1:5450"
 
     def ready(urls: tuple[str, ...]) -> str:
+        if not explicit_admin:
+            assert urlsplit(urls[0]).password == password
         scenario.visit("ready")
         return urls[0]
 

@@ -91,6 +91,7 @@ def qualification(tmp_path: Path) -> Context:
         pool_proof=Path("input.json"),
         cancellation_proof=tmp_path / "input.json",
         test_url="postgres://tests.invalid/admin",
+        url="postgres://tests.invalid/admin",
     )
     return replace(
         context,

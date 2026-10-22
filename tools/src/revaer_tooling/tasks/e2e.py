@@ -101,7 +101,7 @@ def temporary_database(context: Context) -> Iterator[str]:
     supplied = settings.admin_url
     database = replace(
         configured,
-        url=with_database(supplied or configured.url, "postgres"),
+        url=with_database(supplied or configured.require_url(), "postgres"),
         managed=supplied is None and not settings.skip_database_start,
         reset=False,
     )

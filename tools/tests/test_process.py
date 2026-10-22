@@ -2,6 +2,7 @@
 
 import json
 import os
+import secrets
 import stat
 import sys
 import time
@@ -248,7 +249,10 @@ def test_process_log_cannot_overwrite_a_link_target(tmp_path: Path, link_type: s
 def test_redactor_handles_urls_and_overlapping_values() -> None:
     redact = Redactor({"API_KEY": "long-secret", "API_TOKEN": "secret"})
     assert redact("long-secret secret") == "[redacted] [redacted]"
-    assert redact("postgres://user:pass@localhost/db") == "postgres://[redacted]@localhost/db"
+    password = secrets.token_hex(16)
+    assert (
+        redact(f"postgres://user:{password}@localhost/db") == "postgres://[redacted]@localhost/db"
+    )
 
 
 def test_invalid_command_fails_cleanly_and_closes_its_log(tmp_path: Path) -> None:

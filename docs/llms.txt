@@ -22,7 +22,7 @@ Quick start with Docker
        image: postgres:16-alpine
        environment:
          POSTGRES_USER: revaer
-         POSTGRES_PASSWORD: revaer
+         POSTGRES_PASSWORD: ${REVAER_LOCAL_DB_PASSWORD:?set REVAER_LOCAL_DB_PASSWORD}
          POSTGRES_DB: revaer
        volumes:
          - revaer-pgdata:/var/lib/postgresql/data
@@ -31,7 +31,7 @@ Quick start with Docker
      app:
        image: ghcr.io/vannadii/revaer:latest
        environment:
-         DATABASE_URL: postgres://${REVAER_DB_USER:-revaer}:${REVAER_DB_PASSWORD:?set REVAER_DB_PASSWORD}@db:5432/revaer
+         DATABASE_URL: ${DATABASE_URL:?derive an encoded URL from REVAER_LOCAL_DB_PASSWORD for the deployment host}
          RUST_LOG: info
        depends_on: [db]
        ports:

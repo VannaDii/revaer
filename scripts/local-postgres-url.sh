@@ -6,15 +6,22 @@ if [[ "$#" -ne 1 ]]; then
   exit 1
 fi
 
-database_name="$1"
-database_user="${REVAER_LOCAL_DB_USER:-revaer}"
-database_password="${REVAER_LOCAL_DB_PASSWORD:-${database_user}}"
-database_host="${REVAER_LOCAL_DB_HOST:-localhost}"
-database_port="${REVAER_LOCAL_DB_PORT:-5432}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+uv_arguments=(run --locked --directory "${repo_root}")
+if [[ -f "${repo_root}/.env" ]]; then
+  uv_arguments+=(--env-file "${repo_root}/.env")
+fi
 
-printf 'postgres://%s:%s@%s:%s/%s' \
-  "${database_user}" \
-  "${database_password}" \
-  "${database_host}" \
-  "${database_port}" \
-  "${database_name}"
+# Return the URI only to callers that explicitly request it; ordinary rv logs redact it.
+exec uv "${uv_arguments[@]}" -- python -c '
+import os
+import sys
+from revaer_tooling.database.connection import local_database_url, require_database_url
+from revaer_tooling.errors import ToolingError
+
+try:
+    sys.stdout.write(require_database_url(local_database_url(os.environ, sys.argv[1])))
+except ToolingError as error:
+    print(str(error), file=sys.stderr)
+    sys.exit(error.exit_code)
+' "$1"

@@ -1,6 +1,7 @@
 """Policy mutation cases preserve Actions semantics while migrating its executor."""
 
 import copy
+import secrets
 
 import pytest
 import yaml
@@ -206,14 +207,15 @@ def test_permissions_job_and_action_shapes_fail_closed() -> None:
 
 
 def test_postgres_service_matches_all_job_urls() -> None:
-    url = "postgres://fixture:local@localhost:5432/revaer"
+    password = secrets.token_hex(16)
+    url = f"postgres://fixture:{password}@localhost:5432/revaer"
     job: Document = {
         "uses": "./fixture",
         "services": {
             "postgres": {
                 "env": {
                     "POSTGRES_USER": "fixture",
-                    "POSTGRES_PASSWORD": "local",
+                    "POSTGRES_PASSWORD": password,
                     "POSTGRES_DB": "revaer",
                 }
             }

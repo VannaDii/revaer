@@ -306,7 +306,11 @@ def test_conversion_requires_executed_production_worker(
         root=context.root,
         settings=replace(
             context.settings,
-            database=replace(context.settings.database, test_url="postgresql://localhost/fixture"),
+            database=replace(
+                context.settings.database,
+                test_url="postgresql://localhost/fixture",
+                url="postgresql://localhost/fixture",
+            ),
         ),
         options=context.options,
         tools=context.tools,

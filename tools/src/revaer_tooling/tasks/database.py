@@ -39,7 +39,7 @@ def verify_directory(context: Context, directory: Path, owner: str) -> None:
 
 def managed_options(context: Context, owner: str) -> PostgresContainerArgs:
     settings = context.settings.database
-    parsed = urlsplit(settings.url)
+    parsed = urlsplit(settings.require_url())
     if parsed.scheme not in ("postgres", "postgresql") or parsed.fragment:
         raise ToolingError("Managed databases require a PostgreSQL connection URI")
     if parsed.hostname not in ("localhost", "127.0.0.1", "::1", "host.docker.internal"):
@@ -47,7 +47,7 @@ def managed_options(context: Context, owner: str) -> PostgresContainerArgs:
     overrides = {"host", "hostaddr", "port", "user", "password", "dbname", "service", "servicefile"}
     if any(key in overrides for key, _ in parse_qsl(parsed.query, keep_blank_values=True)):
         raise ToolingError("Managed database identity must be in the URI authority and path")
-    if parsed.username is None or parsed.password is None or not parsed.path.strip("/"):
+    if parsed.username is None or not parsed.password or not parsed.path.strip("/"):
         raise ToolingError("Managed database URI must specify its user, password, and database")
     port = parsed.port if parsed.port is not None else 5432
     if not 1 <= port <= 65535:
@@ -107,7 +107,7 @@ def prepare_container(context: Context, args: PostgresContainerArgs) -> None:
 
 
 def managed_connection(context: Context, args: PostgresContainerArgs) -> str:
-    parsed = urlsplit(context.settings.database.url)
+    parsed = urlsplit(context.settings.database.require_url())
     userinfo = parsed.netloc.rpartition("@")[0]
     hosts = (
         ("host.docker.internal", "127.0.0.1")
@@ -140,7 +140,7 @@ def database_connection(context: Context) -> Iterator[str]:
             prepare_container(context, options)
             url = managed_connection(context, options)
         else:
-            url = context.tools.pg_isready.wait((settings.url,))
+            url = context.tools.pg_isready.wait((settings.require_url(),))
         yield url
 
 
@@ -161,7 +161,7 @@ def prepared_database(context: Context, *, seed: bool = False) -> Iterator[str]:
         return
     if settings.reset and not settings.managed:
         raise ToolingError("Refusing to reset a caller-owned database")
-    if settings.reset and unquote(urlsplit(settings.url).path).strip("/") in (
+    if settings.reset and unquote(urlsplit(settings.require_url()).path).strip("/") in (
         "postgres",
         "template0",
         "template1",
@@ -215,7 +215,7 @@ class DatabaseMigrate(Task):
                 "ADR 591 requires the complete single initializer; migrations are historical"
             )
         context.tools.sqlx.migrate(
-            context.settings.database.url,
+            context.settings.database.require_url(),
             context.root / "crates/revaer-data/migrations",
         )
         return TaskResult("Database migrations applied")

@@ -38,7 +38,6 @@ const STOP_PATTERNS = [
 ];
 
 const KNOWN_DEV_PROCESS = /revaer-app|revaer-ui|trunk serve|cargo run -p revaer-app|cargo run -p revaer-ui/;
-const LOCAL_TEST_DB_USER = 'revaer';
 
 const CARGO_BIN_DIR = process.env.CARGO_HOME
   ? path.join(process.env.CARGO_HOME, 'bin')
@@ -96,7 +95,7 @@ const COMMAND_CANDIDATES = new Map<string, string[]>([
 export default async function globalSetup(): Promise<void> {
   const root = repoRoot();
   const testsDir = path.join(root, 'tests');
-  dotenv.config({ path: path.join(testsDir, '.env') });
+  dotenv.config({ path: path.join(root, '.env') });
   if (!process.env.REVAER_E2E_STATE_KEY) {
     process.env.REVAER_E2E_STATE_KEY = randomBytes(32).toString('hex');
   }
@@ -108,6 +107,7 @@ export default async function globalSetup(): Promise<void> {
     const dbAdminUrl =
       process.env.E2E_DB_ADMIN_URL ??
       process.env.REVAER_TEST_DATABASE_URL ??
+      process.env.DATABASE_URL ??
       defaultLocalDbAdminUrl();
     const dbPrefix = process.env.E2E_DB_PREFIX ?? 'revaer_e2e';
     const fsRoot = process.env.E2E_FS_ROOT ?? root;
@@ -348,9 +348,15 @@ function withPath(input: string, pathname: string): string {
 }
 
 function defaultLocalDbAdminUrl(): string {
+  const password = process.env.REVAER_LOCAL_DB_PASSWORD;
+  if (!password) {
+    throw new Error('Copy .env.template to .env and set REVAER_LOCAL_DB_PASSWORD');
+  }
   const parsed = new URL('postgres://localhost:5432/postgres');
-  parsed.username = LOCAL_TEST_DB_USER;
-  parsed.password = LOCAL_TEST_DB_USER;
+  parsed.username = process.env.REVAER_LOCAL_DB_USER || 'revaer';
+  parsed.password = password;
+  parsed.hostname = process.env.REVAER_LOCAL_DB_HOST || 'localhost';
+  parsed.port = process.env.REVAER_LOCAL_DB_PORT || '5432';
   return parsed.toString();
 }
 

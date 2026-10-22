@@ -10,6 +10,7 @@ from ..assignments import literal_assignments
 from ..context import Context
 from ..database.contract import Phase, PostgresPin
 from ..errors import ToolingError
+from ..external.database import with_database
 from ..tasks.database_lifecycle import DatabaseTestDrop, DatabaseTestInit
 
 
@@ -47,9 +48,13 @@ def verify_endpoint(admin_url: str, binding: str) -> None:
 @contextmanager
 def single_init_database(context: Context) -> Iterator[str]:
     settings = context.settings.lifecycle
-    admin_url = context.settings.e2e.admin_url
-    if not admin_url or not settings.container:
-        raise ToolingError("Media E2E requires an explicit test database URL and PG_CONTAINER")
+    admin_url = context.settings.e2e.admin_url or with_database(
+        context.settings.database.require_url(), "postgres"
+    )
+    if not settings.container:
+        raise ToolingError(
+            "Media E2E requires PG_CONTAINER selecting a disposable PostgreSQL service"
+        )
     pins = PostgresPin.load(
         literal_assignments(
             context.fs.read(context.root / ".github/build-inputs.env"), "build inputs"

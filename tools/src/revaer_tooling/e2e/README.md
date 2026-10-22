@@ -121,13 +121,7 @@ Do not mix artifacts from different workflow attempts.
 
 ## Configuration
 
-`rv ui-e2e` loads `tests/.env` using the official
-[`uv run --env-file` interface](https://docs.astral.sh/uv/concepts/projects/run/#environment-files).
-Existing environment variables keep uv's documented precedence. The tool does
-not implement a dotenv parser. The internal re-entry flag only prevents a second
-load after uv has prepared the environment. Supply the database connection in
-the process environment through `E2E_DB_ADMIN_URL`, `REVAER_TEST_DATABASE_URL`,
-or `DATABASE_URL`; the tracked defaults contain no database password.
+All `rv` commands load an existing root `.env` using the official [`uv run --env-file` interface](https://docs.astral.sh/uv/concepts/projects/run/#environment-files). Copy `.env.template` to `.env` once, restrict access to your user, and supply `REVAER_LOCAL_DB_PASSWORD`. Existing environment variables keep uv's documented precedence. The tool does not implement a dotenv parser; the shared internal re-entry flag prevents a second load. Explicit `E2E_DB_ADMIN_URL`, `REVAER_TEST_DATABASE_URL`, and `DATABASE_URL` inputs retain precedence over the generated local administrative URL. Disposable test-role passwords remain automatically generated.
 
 | Setting | Default and behavior |
 | --- | --- |

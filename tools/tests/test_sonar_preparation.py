@@ -98,7 +98,10 @@ def test_source_preparation_preserves_coverage_and_never_deletes_authored_conten
         capture_output=True,
         timeout=10,
     )
+    private_environment = context.root / ".env"
+    private_environment.write_text("private configuration\n")
     SonarPrepareSources.run(context)
+    assert private_environment.read_text() == "private configuration\n"
     assert all(not (context.root / path).exists() for path in paths)
     assert (context.root / "tools/src/revaer_tooling/cli.py").read_text() == "value = 1\n"
     assert not (context.root / "artifacts/sonar/browser-evidence").exists()

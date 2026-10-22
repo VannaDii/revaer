@@ -47,8 +47,8 @@ required-version = "==0.12.13"
 # --no-default-groups to install the core CLI without browser/test binaries.
 default-groups = ["dev", "testing", "release"]
 # The exact upstream archive below fixes PSR's published Click constraint.
-# Keep both security floors explicit; uv resolves the complete supported graph.
-constraint-dependencies = ["click>=8.3.3", "gitpython>=3.1.60"]
+# Keep both security floors explicit; GitPython 3.2.1 fixes CVE-2026-114145.
+constraint-dependencies = ["click>=8.3.3", "gitpython>=3.2.1"]
 
 [tool.uv.build-backend]
 module-root = "tools/src"

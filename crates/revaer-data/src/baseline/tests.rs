@@ -200,7 +200,8 @@ fn baseline_read_errors_expose_only_closed_codes_and_sqlstate() {
         assert_eq!(error.sqlstate(), None);
         assert!(error.source().is_none());
     }
-    let private_url = format!("postgres://{}:{}@host/db", "private", "secret");
+    let password = uuid::Uuid::new_v4();
+    let private_url = format!("postgres://private:{password}@host/db");
     for detail in [private_url.as_str(), "private_owner", "SELECT secret"] {
         let error = BaselineReadError::from_database(Some("P0001"), Some(detail));
         assert_eq!(error.reason(), BaselineReadReason::StatementFailed);
@@ -287,7 +288,8 @@ fn baseline_read_classifies_projection_and_transport_errors_without_raw_sources(
         assert!(!format!("{error:?}").contains("private_"));
         assert!(error.source().is_none());
     }
-    let private_url = format!("postgres://{}:{}@host/db", "private", "secret");
+    let password = uuid::Uuid::new_v4();
+    let private_url = format!("postgres://private:{password}@host/db");
     let error = BaselineReadError::from_query(&sqlx::Error::Io(std::io::Error::other(private_url)));
     assert_eq!(error.reason(), BaselineReadReason::StatementFailed);
     assert!(!format!("{error:?}").contains("private"));

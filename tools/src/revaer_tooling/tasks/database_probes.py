@@ -53,6 +53,6 @@ class DatabaseBaselineVerify(Task):
         context.tools.cargo.run_binary(
             "revaer-data",
             "verify_database_baseline",
-            env={"DATABASE_URL": context.settings.database.url},
+            env={"DATABASE_URL": context.settings.database.require_url()},
         )
         return TaskResult("Packaged database baseline and runtime identity verified")
