@@ -117,11 +117,11 @@ def test_privileged_dependabot_workflow_executes_only_trusted_code() -> None:
     source = Path(__file__).parents[2] / ".github/workflows/dependabot.yml"
     document = yaml_document(source.read_text(), str(source))
     triggers = mapping(document["on"])
-    assert set(triggers) == {"workflow_run", "workflow_dispatch"}
+    assert set(triggers) == {"workflow_run", "workflow_dispatch", "push", "schedule"}
     assert mapping(triggers["workflow_run"]) == {"workflows": ["PR"], "types": ["completed"]}
     job = mapping(mapping(document["jobs"])["auto-merge"])
-    assert job["if"] == "github.ref == 'refs/heads/main'"
-    assert mapping(document["permissions"]) == {"contents": "read"}
+    assert job["if"] == "github.ref == 'refs/heads/main' && github.ref_protected"
+    assert set(mapping(document["permissions"]).values()) == {"read"}
     assert "permissions" not in job
     entries = steps(job)
     assert mapping(entries[0]["with"]) == {
@@ -139,10 +139,29 @@ def test_privileged_dependabot_workflow_executes_only_trusted_code() -> None:
         "repositories": "${{ github.event.repository.name }}",
         "permission-contents": "write",
         "permission-pull-requests": "write",
+        "permission-actions": "read",
+        "permission-checks": "read",
+        "permission-statuses": "read",
+        "permission-workflows": "write",
     }
-    assert mapping(entries[3]["env"])["GH_TOKEN"] == "${{ steps.merge-token.outputs.token }}"
+    assert "DEPENDABOT_AUTOMATION_ENABLED == 'true'" in str(entries[2]["if"])
+    assert mapping(entries[3]["env"])["GH_TOKEN"] == "${{ github.token }}"
     assert entries[3]["run"] == "uv run --locked --no-build --no-sync -- rv dependabot-auto-merge"
-    assert len(entries) == 4
+    assert mapping(entries[4]["env"])["GH_TOKEN"] == "${{ steps.merge-token.outputs.token }}"
+    assert (
+        entries[4]["run"]
+        == "uv run --locked --no-build --no-sync -- rv dependabot-auto-merge --apply"
+    )
+    assert entries[4]["if"] == entries[2]["if"]
+    assert "DEPENDABOT_AUTOMATION_ENABLED != 'true'" in str(entries[3]["if"])
+    assert (
+        mapping(mapping(mapping(triggers["workflow_dispatch"])["inputs"])["dry_run"])["default"]
+        == "true"
+    )
+    assert all(
+        "REVAER_DEPENDABOT_REFRESH_TOKEN" not in mapping(step.get("env")) for step in entries[:4]
+    )
+    assert len(entries) == 5
 
 
 @pytest.mark.parametrize(
@@ -172,3 +191,82 @@ def test_isolation_policy_allows_ordinary_ipc_and_storage_observations() -> None
     source += 'symlink("loop", path);'
     assert not isolation_findings("crates/revaer-app/src/bootstrap.rs", source)
     assert not isolation_findings("tools/tests/test_policy.py", "losetup disk.img")
+
+
+@pytest.mark.parametrize(
+    ("path", "before", "after", "allowed"),
+    [
+        (
+            ".github/actions/setup/action.yml",
+            "runs:\n  steps:\n    - uses: owner/action@" + "a" * 40,
+            "runs:\n  steps:\n    - uses: owner/action@" + "b" * 40,
+            True,
+        ),
+        (
+            ".github/workflows/pr.yml",
+            "permissions: {contents: read}",
+            "permissions: {contents: write}",
+            False,
+        ),
+        (
+            ".github/workflows/pr.yml",
+            "jobs: {test: {steps: [{run: safe}]}}",
+            "jobs: {test: {steps: [{run: unsafe}]}}",
+            False,
+        ),
+        (
+            "Dockerfile",
+            "ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.13@sha256:" + "a" * 64,
+            "ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.19@sha256:" + "b" * 64,
+            True,
+        ),
+        ("Dockerfile", "RUN safe", "RUN unsafe", False),
+        (
+            "Dockerfile",
+            "ARG UV_IMAGE=owner/image@sha256:" + "a" * 64,
+            "ARG UV_IMAGE=other/image@sha256:" + "b" * 64,
+            False,
+        ),
+        (
+            "rust-toolchain.toml",
+            '[toolchain]\nchannel="1.96.0"',
+            '[toolchain]\nchannel="1.97.0"',
+            True,
+        ),
+        (
+            "rust-toolchain.toml",
+            '[toolchain]\nchannel="1.96.0"',
+            '[toolchain]\nchannel="nightly"',
+            False,
+        ),
+        (
+            "tools/launcher/pyproject.toml",
+            '[build-system]\nrequires=["uv_build==0.12.13"]',
+            '[build-system]\nrequires=["uv_build==0.12.19"]',
+            True,
+        ),
+        (
+            "tools/launcher/pyproject.toml",
+            '[project]\nname="launcher"',
+            '[project]\nname="other"',
+            False,
+        ),
+    ],
+)
+def test_dependency_reference_exemption_preserves_behavior(
+    path: str, before: str, after: str, allowed: bool
+) -> None:
+    from revaer_tooling.policy.dependency_updates import reference_only
+
+    assert reference_only(path, before, after) is allowed
+    references = frozenset((path,)) if allowed else frozenset()
+    if path.startswith((".github/", "tools/")) or path == "Dockerfile":
+        assert bool(drift_findings((path,), dependabot=True, references=references)) is not allowed
+
+
+def test_action_reference_exemption_does_not_normalize_environment_values() -> None:
+    from revaer_tooling.policy.dependency_updates import reference_only
+
+    before = "env: {uses: 'owner/action@" + "a" * 40 + "'}"
+    after = "env: {uses: 'owner/action@" + "b" * 40 + "'}"
+    assert not reference_only(".github/workflows/pr.yml", before, after)

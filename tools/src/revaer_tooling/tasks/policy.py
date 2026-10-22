@@ -5,7 +5,9 @@ import re
 
 from ..context import Context, TaskResult
 from ..errors import ToolingError
+from ..external.git import CommitFileArgs
 from ..policy.advisories import advisory_findings
+from ..policy.dependency_updates import reference_only
 from ..policy.isolation import isolation_findings
 from ..policy.workflows import workflow_findings
 from .base import Task
@@ -13,6 +15,8 @@ from .compliance import MediaComplianceGuardrails
 from .workflows import SonarPolicy, WorkflowPolicy
 
 YAML_SUFFIXES = (".yaml", ".yml")
+WORKFLOW_DIRECTORY = ".github/workflows/"
+ACTION_DIRECTORY = ".github/actions/"
 
 
 def matching_lines(source: str, pattern: str, insensitive: bool = False) -> tuple[int, ...]:
@@ -85,7 +89,7 @@ class SourcePolicy(Task):
             if relative.endswith(".rs") and relative.startswith(("crates/", "tests/", "scripts/")):
                 failures.extend(rust_findings(relative, context.fs.read(path)))
             if (
-                relative.startswith((".github/workflows/", ".github/actions/"))
+                relative.startswith((WORKFLOW_DIRECTORY, ACTION_DIRECTORY))
                 and path.suffix in YAML_SUFFIXES
             ):
                 failures.extend(
@@ -98,8 +102,8 @@ class SourcePolicy(Task):
                     "scripts/",
                     "release/",
                     "tools/",
-                    ".github/actions/",
-                    ".github/workflows/",
+                    ACTION_DIRECTORY,
+                    WORKFLOW_DIRECTORY,
                 )
             ) and path.suffix in (
                 ".rs",
@@ -145,13 +149,16 @@ class Policy(Task):
         return TaskResult("Policy checks passed")
 
 
-def drift_findings(changed: tuple[str, ...], *, dependabot: bool = False) -> list[str]:
+def drift_findings(
+    changed: tuple[str, ...], *, dependabot: bool = False, references: frozenset[str] = frozenset()
+) -> list[str]:
     dependency_files = (
         "Cargo.toml",
         "Cargo.lock",
         "crates/*/Cargo.toml",
         "pyproject.toml",
         "uv.lock",
+        "tools/launcher/uv.lock",
         "release/package.json",
         "release/package-lock.json",
     )
@@ -159,7 +166,8 @@ def drift_findings(changed: tuple[str, ...], *, dependabot: bool = False) -> lis
         dependabot
         and changed
         and all(
-            any(fnmatch.fnmatchcase(path, pattern) for pattern in dependency_files)
+            path in references
+            or any(fnmatch.fnmatchcase(path, pattern) for pattern in dependency_files)
             for path in changed
         )
     ):
@@ -229,6 +237,27 @@ def drift_findings(changed: tuple[str, ...], *, dependabot: bool = False) -> lis
     return failures
 
 
+def dependency_references(
+    context: Context, changed: tuple[str, ...], base: str | None, head: str
+) -> set[str]:
+    references: set[str] = set()
+    if not base:
+        return references
+    before = context.tools.git.exact_commit(base)
+    after = context.tools.git.exact_commit(head)
+    for path in changed:
+        if path in (
+            "Dockerfile",
+            "rust-toolchain.toml",
+            "tools/launcher/pyproject.toml",
+        ) or path.startswith((WORKFLOW_DIRECTORY, ACTION_DIRECTORY)):
+            old = context.tools.git.committed_file(CommitFileArgs(before, path)).decode("utf-8")
+            new = context.tools.git.committed_file(CommitFileArgs(after, path)).decode("utf-8")
+            if reference_only(path, old, new):
+                references.add(path)
+    return references
+
+
 class InstructionDrift(Task):
     @staticmethod
     def run(context: Context) -> TaskResult:
@@ -244,7 +273,8 @@ class InstructionDrift(Task):
             and workflow.pull_request_head_repository.casefold()
             == context.settings.chart.repository.casefold()
         )
-        failures = drift_findings(changed, dependabot=dependabot)
+        references = dependency_references(context, changed, base, head) if dependabot else set()
+        failures = drift_findings(changed, dependabot=dependabot, references=frozenset(references))
         if failures:
             raise ToolingError("Instruction drift:\n" + "\n".join(failures))
         return TaskResult("Instruction drift checks passed")

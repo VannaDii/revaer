@@ -51,6 +51,7 @@ def endpoint() -> Iterator[tuple[str, Http]]:
             self.wfile.write(json.dumps({"path": self.path}).encode())
 
         def do_POST(self) -> None:
+            self.rfile.read(int(self.headers.get("content-length", "0")))
             if self.path == "/admin/factory-reset":
                 threading.Event().wait(11)
             elif self.path == "/admin/setup/start":

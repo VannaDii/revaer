@@ -10,9 +10,9 @@ Root `AGENTS.md` defines coverage scope, local review, hosted gates, vendor owne
 
 ## Local review
 
-- Use project key `VannaDii_Revaer` from `sonar-project.properties`. Resolve a different requested project with `search_my_sonarqube_projects` before acting.
-- Before pushing, analyze changed authored files with the project's rules. Prefer the available project/file analysis (`analyze_file_list` through SonarQube for IDE or supported project analysis); otherwise use `analyze_code_snippet` with complete changed file content, project key, explicit supported language and `MAIN` scope. It requires no PR and does not publish a scan of main.
-- Compare local findings with the reviewed base; fix new findings and applicable findings in changed production code before pushing. Unchanged baseline findings in internal utilities do not create a new cleanup task. State unsupported languages, unavailable analyzers and the limits of file-only feedback; raise material gaps affecting changed production code. Do not claim local results are a full hosted analysis. MCP snippet analysis is deprecated; prefer its supported replacement when exposed, without building an analyzer or starting an integration migration as task overhead.
+- Use project key `VannaDii_Revaer` from `sonar-project.properties`. Resolve a different requested project with `sonar list projects --query <project>` before acting. Use the authenticated native CLI; do not recreate an MCP registration or launch `sonar run mcp`.
+- Before pushing, analyze changed authored files with the project's rules using direct `sonar analyze agentic --file <path> --project VannaDii_Revaer --branch <head-branch>` or supported native project analysis. No PR is required. This does not publish a scan of main. Run `sonar analyze secrets <paths...>` for local secrets feedback.
+- Compare local findings with the reviewed base; fix new findings and applicable findings in changed production code before pushing. Unchanged baseline findings in internal utilities do not create a new cleanup task. State unsupported languages, unavailable analyzers and the limits of file-only feedback; raise material gaps affecting changed production code. Vortex entitlement or authorization failure is an analysis limitation, not a clean result. Local feedback does not replace hosted gates.
 
 ## Hosted analysis
 
@@ -28,7 +28,7 @@ Root `AGENTS.md` defines coverage scope, local review, hosted gates, vendor owne
 
 ## Inspection and troubleshooting
 
-- Use `get_project_quality_gate_status` for gate status, `get_component_measures` for metrics, `search_sonar_issues_in_projects` for issues, and hotspot search/detail tools for review. Use explicit PR scope when reviewing a PR; `list_pull_requests` resolves its Sonar key.
+- Use `sonar quality-gate status --project VannaDii_Revaer` and `sonar list issues --project VannaDii_Revaer`. Use `sonar api get` for measures, hotspots and pull-request discovery. Preserve explicit branch/PR context and complete pagination; keep authentication in the CLI credential store.
 - Server ingestion is asynchronous; issue search does not immediately reflect local fixes. Check the exact analysis task/result rather than changing dispositions.
 - For authorization errors, check token type and permissions without exposing credentials. Use project discovery for lookup failures. Follow root stopping guidance when tools or analysis are unavailable.
 - Runtime UI media and canonical `/static/...` URLs follow the UI instructions. Scanner success does not prove release asset resolution, and malformed first-party inputs must be fixed at their owner.
