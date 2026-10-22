@@ -185,10 +185,17 @@ def context(runner: ProviderRunner, *, apply: bool = True) -> Context:
         dependabot_enabled=True,
         dependabot_app_login=LOGIN,
     )
-    active: Context = replace(
-        result, settings=replace(result.settings, workflow=workflow), invoked_at=NOW
+    return Context(
+        root=result.root,
+        settings=replace(result.settings, workflow=workflow),
+        options=result.options,
+        tools=result.tools,
+        fs=result.fs,
+        emit=result.emit,
+        host=result.host,
+        invoked_at=NOW,
+        command_names=result.command_names,
     )
-    return active
 
 
 def mutations(runner: ProviderRunner) -> list[Invocation]:
@@ -355,7 +362,17 @@ def test_mutations_require_enabled_trusted_main_and_app_identity(field: str) -> 
         workflow = replace(workflow, event_name="pull_request")
     else:
         workflow = replace(workflow, dependabot_app_login="")
-    active = replace(active, settings=replace(active.settings, workflow=workflow))
+    active = Context(
+        root=active.root,
+        settings=replace(active.settings, workflow=workflow),
+        options=active.options,
+        tools=active.tools,
+        fs=active.fs,
+        emit=active.emit,
+        host=active.host,
+        invoked_at=active.invoked_at,
+        command_names=active.command_names,
+    )
     with pytest.raises(ToolingError, match="protected main"):
         DependabotAutoMerge.run(active)
     assert not runner.calls
@@ -474,7 +491,17 @@ def test_previous_head_approval_is_replaced_and_manual_target_is_respected() -> 
     runner.items = [request(), request(277)]
     runner.reviews = [review(head=OTHER)]
     active: Context = context(runner)
-    active = replace(active, options=replace(active.options, pull_request=277))
+    active = Context(
+        root=active.root,
+        settings=active.settings,
+        options=replace(active.options, pull_request=277),
+        tools=active.tools,
+        fs=active.fs,
+        emit=active.emit,
+        host=active.host,
+        invoked_at=active.invoked_at,
+        command_names=active.command_names,
+    )
     DependabotAutoMerge.run(active)
     calls = mutations(runner)
     assert len(calls) == 2
