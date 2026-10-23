@@ -22,11 +22,12 @@ serde_json.workspace = true
 prometheus.workspace = true
 tower-http.workspace = true
 tokio.workspace = true
-opentelemetry = { version = "0.31", default-features = false, features = ["trace"], optional = true }
-opentelemetry-otlp = { version = "0.31.1", default-features = false, features = ["http-proto", "reqwest-rustls", "trace"], optional = true }
-opentelemetry_sdk = { version = "0.31", default-features = false, features = ["trace", "rt-tokio"], optional = true }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"], optional = true }
-tracing-opentelemetry = { version = "0.32.1", optional = true }
+opentelemetry = { version = "0.32", default-features = false, features = ["trace"], optional = true }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["http-proto", "reqwest-rustls", "trace"], optional = true }
+opentelemetry_sdk = { version = "0.32", default-features = false, features = ["trace", "rt-tokio"], optional = true }
+# reqwest 0.13.5 requires base64 0.23; the remaining graph still requires 0.22.
+reqwest = { version = ">=0.13.1, <0.13.5", default-features = false, features = ["rustls"], optional = true }
+tracing-opentelemetry = { version = "0.33", optional = true }
 
 [dev-dependencies]
 tempfile = "3.10"
