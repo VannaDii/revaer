@@ -25,6 +25,14 @@
 
 All authenticated requests must include `x-revaer-api-key: key_id:secret`.
 
+## Live manual search
+
+Create an indexer instance using the built-in `torznab` definition. Set its `base_url` through the existing instance field API, create an encrypted `api_key` secret and bind that secret to the instance's `api_key` field. Enable the instance and interactive search. Credential encryption uses the application's existing configured database session key; never put an API key in an example URL or log it.
+
+Open `/search`, enter a free-text query and select **Search**. Use **Refresh pages** to retrieve sealed results. The production dispatcher claims queued work, sends the authenticated Torznab request and ingests results through the normal policy, normalization and canonicalization procedures. Empty responses seal an empty page; failed and deferred sources appear in explainability. Duplicate releases retain one canonical page position. RSS polling and automatic downloading are separate workflows.
+
+Credential-bearing upstream links are retained for server-side acquisition and omitted from manual-search page responses. Safe details links and release metadata remain available.
+
 ## Rate limiting
 
 - Token bucket parameters are `burst` (max outstanding requests) and `per_seconds` (refill interval).

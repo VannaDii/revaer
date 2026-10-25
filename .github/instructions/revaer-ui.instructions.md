@@ -36,6 +36,8 @@ applyTo:
 
 # UI And E2E Maintenance
 
+- Manual-search browser acceptance uses a real controlled Torznab HTTP upstream and normal API configuration. Keep `/search` in the observed route inventory, preserve the explicit Refresh action, and assert persisted source identity and infohash without injecting result rows or intercepting application responses.
+
 - Keep the media operator route connected to the normalized root, profile, association and job APIs. Conditional writes require their server ETag; private configuration reads must disable browser caching. Retain the media authoring, readiness, discovery and job-action regression tests.
 
 - Keep the SSE store exhaustive over media lifecycle events and request refreshed state for those events, preserving the existing refresh behavior.

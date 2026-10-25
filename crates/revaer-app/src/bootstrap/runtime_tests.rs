@@ -856,3 +856,48 @@ async fn run_app_with_database_url_rejects_out_of_range_http_port_changes_before
     postgres.close()?;
     Ok(())
 }
+
+#[tokio::test]
+async fn manual_search_failure_stops_waiting_for_listener() -> Result<()> {
+    let mut search = tokio::spawn(async {
+        Err(revaer_data::DataError::QueryFailed {
+            operation: "manual search claim",
+            source: sqlx::Error::PoolClosed,
+        })
+    });
+    let exit = super::await_listener_or_search(
+        std::future::pending::<Result<(), revaer_api::ApiServerError>>(),
+        &mut search,
+    )
+    .await;
+    anyhow::ensure!(matches!(
+        exit,
+        super::ListenerExit::ManualSearch(Ok(Err(_)))
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn listener_completion_retains_manual_search_owner_for_settlement() -> Result<()> {
+    let (settle, settlement) = tokio::sync::oneshot::channel::<()>();
+    let mut search = tokio::spawn(async {
+        settlement
+            .await
+            .map_err(|source| revaer_data::DataError::BoundaryFailed {
+                operation: "manual search settlement",
+                source: Box::new(source),
+            })?;
+        Ok(())
+    });
+    let exit = super::await_listener_or_search(async { Ok(()) }, &mut search).await;
+    anyhow::ensure!(matches!(exit, super::ListenerExit::Api(Ok(()))));
+    anyhow::ensure!(
+        !search.is_finished(),
+        "The listener must not abort its transaction owner"
+    );
+    settle
+        .send(())
+        .map_err(|()| anyhow::anyhow!("Settlement owner was dropped"))?;
+    search.await??;
+    Ok(())
+}

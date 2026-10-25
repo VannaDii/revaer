@@ -939,6 +939,7 @@ CREATE TYPE public.trust_tier_key AS ENUM (
 --
 
 CREATE TYPE public.upstream_source AS ENUM (
+    'builtin',
     'prowlarr_indexers',
     'cardigann'
 );
@@ -2421,6 +2422,7 @@ BEGIN
 
     PERFORM trust_tier_seed_defaults();
     PERFORM media_domain_seed_defaults();
+    PERFORM indexer_definition_seed_torznab_v1();
 
     IF NOT EXISTS (SELECT 1 FROM deployment_config) THEN
         INSERT INTO deployment_config DEFAULT VALUES;
@@ -3910,6 +3912,40 @@ BEGIN
         FROM unnest(option_values_input) WITH ORDINALITY AS item(option_value, ordinality);
     END IF;
 RETURN true;
+END;
+$$;
+
+
+--
+-- Name: indexer_definition_seed_torznab_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.indexer_definition_seed_torznab_v1() RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    definition_id BIGINT;
+BEGIN
+    INSERT INTO indexer_definition (
+        upstream_source, upstream_slug, display_name, protocol, engine,
+        schema_version, definition_hash, is_deprecated
+    ) VALUES (
+        'builtin', 'torznab', 'Torznab', 'torrent', 'torznab', 1,
+        encode(digest('builtin:torznab:v1:base_url:api_key', 'sha256'), 'hex'), FALSE
+    )
+    ON CONFLICT ON CONSTRAINT indexer_definition_upstream_uq DO NOTHING;
+
+    SELECT indexer_definition_id INTO definition_id
+    FROM indexer_definition
+    WHERE upstream_source = 'builtin' AND upstream_slug = 'torznab';
+
+    INSERT INTO indexer_definition_field (
+        indexer_definition_id, name, label, field_type, is_required, is_advanced, display_order
+    ) VALUES
+        (definition_id, 'base_url', 'Torznab API URL', 'string', TRUE, FALSE, 10),
+        (definition_id, 'api_key', 'API key', 'api_key', TRUE, FALSE, 20)
+    ON CONFLICT DO NOTHING;
+    RETURN TRUE;
 END;
 $$;
 
@@ -19742,6 +19778,385 @@ $$;
 
 
 --
+-- Name: manual_search_active_v1(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.manual_search_active_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, claim_token_input uuid) RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM 1 FROM search_request request
+    JOIN search_request_indexer_run run ON run.search_request_id = request.search_request_id
+    JOIN indexer_instance instance ON instance.indexer_instance_id = run.indexer_instance_id
+    WHERE request.search_request_public_id = search_request_public_id_input
+      AND instance.indexer_instance_public_id = indexer_instance_public_id_input
+      AND request.status = 'running' AND run.status = 'running'
+      AND run.claim_token = claim_token_input
+    FOR UPDATE OF request, run;
+    RETURN FOUND;
+END;
+$$;
+
+
+--
+-- Name: manual_search_ingest_v1; Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.manual_search_ingest_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, source_guid_input character varying, details_url_input character varying, download_url_input character varying, magnet_uri_input character varying, title_raw_input character varying, size_bytes_input bigint, infohash_v1_input character, infohash_v2_input character, magnet_hash_input character, seeders_input integer, leechers_input integer, published_at_input timestamp with time zone, uploader_input character varying, observed_at_input timestamp with time zone, attr_keys_input public.observation_attr_key[], attr_types_input public.attr_value_type[], attr_value_text_input character varying[], attr_value_int_input integer[], attr_value_bigint_input bigint[], attr_value_numeric_input numeric[], attr_value_bool_input boolean[], attr_value_uuid_input uuid[], claim_token_input uuid, details_private_input boolean, download_private_input boolean, magnet_private_input boolean) RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    source_public_id_value UUID;
+    request_id_value BIGINT;
+    canonical_before INTEGER;
+    emitted_before INTEGER;
+    canonical_after INTEGER;
+    emitted_after INTEGER;
+BEGIN
+    IF NOT manual_search_active_v1(search_request_public_id_input, indexer_instance_public_id_input, claim_token_input) THEN
+        RETURN FALSE;
+    END IF;
+    SELECT request.search_request_id INTO request_id_value FROM search_request request
+    WHERE request.search_request_public_id = search_request_public_id_input;
+    SELECT count(*)::integer INTO canonical_before FROM search_request_canonical
+    WHERE search_request_id = request_id_value;
+    SELECT count(*)::integer INTO emitted_before FROM search_page_item item
+    JOIN search_page page ON page.search_page_id = item.search_page_id
+    WHERE page.search_request_id = request_id_value;
+
+    -- Reuse normalization, policy snapshots, canonicalization and append-only pages.
+    SELECT result.canonical_torrent_source_public_id INTO source_public_id_value
+    FROM search_result_ingest(
+        search_request_public_id_input,
+        indexer_instance_public_id_input,
+        source_guid_input,
+        details_url_input,
+        download_url_input,
+        magnet_uri_input,
+        title_raw_input,
+        size_bytes_input,
+        infohash_v1_input,
+        infohash_v2_input,
+        magnet_hash_input,
+        seeders_input,
+        leechers_input,
+        published_at_input,
+        uploader_input,
+        observed_at_input,
+        attr_keys_input,
+        attr_types_input,
+        attr_value_text_input,
+        attr_value_int_input,
+        attr_value_bigint_input,
+        attr_value_numeric_input,
+        attr_value_bool_input,
+        attr_value_uuid_input) AS result;
+
+    UPDATE canonical_torrent_source
+    SET details_url_private = details_private_input,
+        download_url_private = download_private_input,
+        magnet_uri_private = magnet_private_input
+    WHERE canonical_torrent_source_public_id = source_public_id_value
+      AND last_seen_at = observed_at_input;
+
+    SELECT count(*)::integer INTO canonical_after FROM search_request_canonical
+    WHERE search_request_id = request_id_value;
+    SELECT count(*)::integer INTO emitted_after FROM search_page_item item
+    JOIN search_page page ON page.search_page_id = item.search_page_id
+    WHERE page.search_request_id = request_id_value;
+    UPDATE search_request_indexer_run run
+    SET items_seen_count = run.items_seen_count + 1,
+        items_emitted_count = run.items_emitted_count + emitted_after - emitted_before,
+        canonical_added_count = run.canonical_added_count + canonical_after - canonical_before
+    FROM indexer_instance instance
+    WHERE run.search_request_id = request_id_value
+      AND run.indexer_instance_id = instance.indexer_instance_id
+      AND instance.indexer_instance_public_id = indexer_instance_public_id_input
+      AND run.claim_token = claim_token_input;
+    RETURN TRUE;
+END;
+$$;
+
+
+--
+-- Name: manual_search_finish_v1(uuid, uuid, uuid, public.error_class, boolean, integer, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.manual_search_finish_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, claim_token_input uuid, error_class_input public.error_class, canceled_input boolean, http_status_input integer, latency_ms_input integer, result_count_input integer, retry_after_seconds_input integer) RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    owned RECORD;
+    success_value BOOLEAN;
+    error_value error_class;
+    mitigation_value outbound_via_mitigation;
+    already_canceled BOOLEAN := FALSE;
+BEGIN
+    IF NOT manual_search_active_v1(search_request_public_id_input, indexer_instance_public_id_input, claim_token_input) THEN
+        IF NOT canceled_input THEN
+            RETURN FALSE;
+        END IF;
+        -- User cancellation already changed run status. The retained nonce still
+        -- authorizes this owner to settle its outbound log exactly once.
+        PERFORM 1 FROM search_request request
+        JOIN search_request_indexer_run run ON run.search_request_id = request.search_request_id
+        JOIN indexer_instance instance ON instance.indexer_instance_id = run.indexer_instance_id
+        WHERE request.search_request_public_id = search_request_public_id_input
+          AND instance.indexer_instance_public_id = indexer_instance_public_id_input
+          AND request.status = 'canceled' AND run.status = 'canceled'
+          AND run.claim_token = claim_token_input
+        FOR UPDATE OF request, run;
+        IF NOT FOUND THEN RETURN FALSE; END IF;
+        already_canceled := TRUE;
+    END IF;
+    SELECT run.search_request_indexer_run_id AS run_id, run.started_at,
+           run.last_correlation_id AS correlation_id,
+           (run.attempt_count - run.rate_limited_attempt_count - 1)::smallint AS retry_seq,
+           route.routing_policy_public_id AS route_public_id, route.mode AS route_mode
+    INTO owned
+    FROM search_request request
+    JOIN search_request_indexer_run run ON run.search_request_id = request.search_request_id
+    JOIN indexer_instance instance ON instance.indexer_instance_id = run.indexer_instance_id
+    LEFT JOIN routing_policy route ON route.routing_policy_id = instance.routing_policy_id
+    WHERE request.search_request_public_id = search_request_public_id_input
+      AND instance.indexer_instance_public_id = indexer_instance_public_id_input;
+    success_value := error_class_input IS NULL AND NOT canceled_input;
+    error_value := CASE WHEN canceled_input THEN 'unknown'::error_class ELSE error_class_input END;
+    mitigation_value := CASE owned.route_mode
+        WHEN 'http_proxy' THEN 'proxy'::outbound_via_mitigation
+        WHEN 'socks_proxy' THEN 'proxy'::outbound_via_mitigation
+        WHEN 'flaresolverr' THEN 'flaresolverr'::outbound_via_mitigation
+        ELSE 'none'::outbound_via_mitigation END;
+    PERFORM outbound_request_log_write(
+        indexer_instance_public_id_input, owned.route_public_id, search_request_public_id_input,
+        'search', owned.correlation_id, owned.retry_seq, owned.started_at, now(),
+        CASE WHEN success_value THEN 'success'::outbound_request_outcome ELSE 'failure'::outbound_request_outcome END,
+        mitigation_value, NULL, error_value, http_status_input, latency_ms_input,
+        success_value, CASE WHEN success_value THEN result_count_input ELSE NULL END, FALSE, 1, NULL);
+    IF NOT already_canceled THEN
+    IF canceled_input THEN
+        PERFORM search_indexer_run_mark_canceled(search_request_public_id_input, indexer_instance_public_id_input);
+    ELSIF success_value THEN
+        PERFORM search_indexer_run_mark_finished(search_request_public_id_input, indexer_instance_public_id_input, 0, 0, 0);
+    ELSE
+        PERFORM search_indexer_run_mark_failed(
+            search_request_public_id_input, indexer_instance_public_id_input, error_value,
+            error_value::text || ' while executing Torznab search',
+            retry_after_seconds_input, owned.retry_seq, NULL);
+    END IF;
+    END IF;
+    UPDATE search_request_indexer_run run SET claim_token = NULL
+    WHERE run.search_request_indexer_run_id = owned.run_id AND run.claim_token = claim_token_input;
+    RETURN TRUE;
+END;
+$$;
+
+
+--
+-- Name: manual_search_claim_next_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.manual_search_claim_next_v1() RETURNS TABLE(
+    search_request_public_id uuid, indexer_instance_public_id uuid, claim_token uuid,
+    correlation_id uuid, retry_seq smallint, query_text text,
+    connect_timeout_ms integer, read_timeout_ms integer, routing_policy_public_id uuid,
+    routing_mode text, engine text, endpoint text, api_key text, credential_error text,
+    verify_tls boolean, proxy_host text, proxy_port integer, proxy_use_tls boolean,
+    proxy_username text, proxy_password text
+)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    selected RECORD;
+    capacity_value INTEGER;
+    allowed_value BOOLEAN;
+    denied_scope rate_limit_scope;
+    correlation_value UUID;
+    claim_token_value UUID;
+    retry_value SMALLINT;
+    mitigation_value outbound_via_mitigation;
+    encrypted_key RECORD;
+    encrypted_proxy RECORD;
+    active_key TEXT;
+BEGIN
+    -- Lock the request before its run, matching cancellation and finalization.
+    SELECT run.search_request_indexer_run_id AS run_id, run.status AS run_status,
+           run.started_at, run.last_correlation_id,
+           run.attempt_count, run.rate_limited_attempt_count,
+           request.search_request_public_id AS request_public_id,
+           request.query_text AS request_query,
+           instance.indexer_instance_id AS instance_id,
+           instance.indexer_instance_public_id AS instance_public_id,
+           instance.connect_timeout_ms, instance.read_timeout_ms,
+           instance.routing_policy_id AS route_id,
+           route.routing_policy_public_id AS route_public_id,
+           CASE WHEN instance.routing_policy_id IS NULL THEN 'direct'
+                WHEN route.deleted_at IS NULL THEN route.mode::text
+                ELSE 'unavailable' END AS route_mode,
+           definition.engine::text AS engine_key
+    INTO selected
+    FROM search_request request
+    JOIN search_request_indexer_run run ON run.search_request_id = request.search_request_id
+    JOIN indexer_instance instance ON instance.indexer_instance_id = run.indexer_instance_id
+    JOIN indexer_definition definition ON definition.indexer_definition_id = instance.indexer_definition_id
+    LEFT JOIN routing_policy route ON route.routing_policy_id = instance.routing_policy_id
+    WHERE request.status = 'running'
+      AND ((run.status = 'queued' AND COALESCE(run.next_attempt_at, now()) <= now())
+        OR (run.status = 'running' AND run.claim_token IS NOT NULL
+            AND run.started_at < now() - make_interval(
+                secs => (instance.connect_timeout_ms + instance.read_timeout_ms) / 1000.0 + 30)))
+    ORDER BY request.created_at, run.search_request_indexer_run_id
+    LIMIT 1
+    FOR UPDATE OF request, run SKIP LOCKED;
+    IF NOT FOUND THEN
+        RETURN;
+    END IF;
+
+    correlation_value := COALESCE(selected.last_correlation_id, gen_random_uuid());
+    retry_value := (selected.attempt_count - selected.rate_limited_attempt_count)::smallint;
+    mitigation_value := CASE selected.route_mode
+        WHEN 'http_proxy' THEN 'proxy'::outbound_via_mitigation
+        WHEN 'socks_proxy' THEN 'proxy'::outbound_via_mitigation
+        WHEN 'flaresolverr' THEN 'flaresolverr'::outbound_via_mitigation
+        ELSE 'none'::outbound_via_mitigation END;
+
+    IF selected.run_status = 'running' THEN
+        retry_value := retry_value - 1;
+        PERFORM outbound_request_log_write(
+            selected.instance_public_id, selected.route_public_id, selected.request_public_id,
+            'search', correlation_value, retry_value, selected.started_at, now(),
+            'failure', mitigation_value, NULL, 'timeout', NULL, NULL, FALSE, NULL, FALSE, 1, NULL);
+        PERFORM search_indexer_run_mark_failed(
+            selected.request_public_id, selected.instance_public_id, 'timeout',
+            'Manual search attempt lease expired', NULL, retry_value, NULL);
+        UPDATE search_request_indexer_run run SET claim_token = NULL
+        WHERE run.search_request_indexer_run_id = selected.run_id;
+        RETURN;
+    END IF;
+
+    -- v1 capacity is rpm + burst per minute. Routing is charged first, including
+    -- implicit direct routing at scope_id=0; a subsequent denial does not refund it.
+    SELECT policy.requests_per_minute + policy.burst INTO capacity_value
+    FROM rate_limit_policy policy
+    WHERE policy.rate_limit_policy_id = COALESCE(
+        (SELECT binding.rate_limit_policy_id FROM routing_policy_rate_limit binding
+         WHERE binding.routing_policy_id = selected.route_id),
+        (SELECT defaults.rate_limit_policy_id FROM rate_limit_policy defaults
+         WHERE defaults.display_name = 'default_routing' AND defaults.deleted_at IS NULL))
+      AND policy.deleted_at IS NULL;
+    SELECT budget.allowed INTO allowed_value FROM rate_limit_try_consume(
+        'routing_policy', COALESCE(selected.route_id, 0), capacity_value, 1) budget;
+    IF NOT allowed_value THEN
+        denied_scope := 'routing_policy';
+    ELSE
+        SELECT policy.requests_per_minute + policy.burst INTO capacity_value
+        FROM rate_limit_policy policy
+        WHERE policy.rate_limit_policy_id = COALESCE(
+            (SELECT binding.rate_limit_policy_id FROM indexer_instance_rate_limit binding
+             WHERE binding.indexer_instance_id = selected.instance_id),
+            (SELECT defaults.rate_limit_policy_id FROM rate_limit_policy defaults
+             WHERE defaults.display_name = 'default_indexer' AND defaults.deleted_at IS NULL))
+          AND policy.deleted_at IS NULL;
+        SELECT budget.allowed INTO allowed_value FROM rate_limit_try_consume(
+            'indexer_instance', selected.instance_id, capacity_value, 1) budget;
+        IF NOT allowed_value THEN
+            denied_scope := 'indexer_instance';
+        END IF;
+    END IF;
+
+    UPDATE search_request_indexer_run run SET last_correlation_id = correlation_value
+    WHERE run.search_request_indexer_run_id = selected.run_id;
+    IF denied_scope IS NOT NULL THEN
+        PERFORM outbound_request_log_write(
+            selected.instance_public_id, selected.route_public_id, selected.request_public_id,
+            'search', correlation_value, retry_value, now(), now(),
+            'failure', mitigation_value, denied_scope, 'rate_limited', NULL, 0, FALSE, 0, FALSE, 1, NULL);
+        PERFORM search_indexer_run_mark_failed(
+            selected.request_public_id, selected.instance_public_id, 'rate_limited',
+            'Configured outbound rate limit denied this attempt', NULL, retry_value, denied_scope);
+        RETURN;
+    END IF;
+
+    PERFORM search_indexer_run_mark_started(selected.request_public_id, selected.instance_public_id);
+    claim_token_value := gen_random_uuid();
+    UPDATE search_request_indexer_run run SET claim_token = claim_token_value
+    WHERE run.search_request_indexer_run_id = selected.run_id;
+
+    SELECT value.value_plain::text INTO endpoint
+    FROM indexer_instance_field_value value
+    WHERE value.indexer_instance_id = selected.instance_id AND value.field_name = 'base_url';
+    SELECT secret.cipher_text, secret.key_id INTO encrypted_key
+    FROM indexer_instance_field_value value
+    JOIN secret_binding binding ON binding.bound_table = 'indexer_instance_field_value'
+      AND binding.bound_id = value.indexer_instance_field_value_id AND binding.binding_name = 'api_key'
+    JOIN secret ON secret.secret_id = binding.secret_id AND NOT secret.is_revoked
+    WHERE value.indexer_instance_id = selected.instance_id AND value.field_name = 'api_key';
+    active_key := current_setting('revaer.secret_key', true);
+    IF encrypted_key.cipher_text IS NULL THEN
+        credential_error := 'credential_binding_unavailable';
+    ELSIF active_key IS NULL OR active_key = '' OR encrypted_key.key_id IS DISTINCT FROM current_setting('revaer.secret_key_id', true) THEN
+        credential_error := 'credential_key_unavailable';
+    ELSE
+        BEGIN
+            api_key := pgp_sym_decrypt(encrypted_key.cipher_text, active_key);
+        EXCEPTION WHEN external_routine_invocation_exception THEN
+            -- Translate the expected decryption failure to an explicit configuration
+            -- error; the executor settles this owned attempt without exposing input.
+            credential_error := 'credential_decryption_failed';
+        END;
+    END IF;
+    SELECT COALESCE(bool_or(param.value_bool) FILTER (WHERE param.param_key = 'verify_tls'), TRUE),
+           max(param.value_plain::text) FILTER (WHERE param.param_key IN ('proxy_host', 'socks_host')),
+           max(param.value_int) FILTER (WHERE param.param_key IN ('proxy_port', 'socks_port')),
+           COALESCE(bool_or(param.value_bool) FILTER (WHERE param.param_key = 'proxy_use_tls'), FALSE),
+           max(param.value_plain::text) FILTER (WHERE param.param_key IN ('proxy_username', 'socks_username'))
+    INTO verify_tls, proxy_host, proxy_port, proxy_use_tls, proxy_username
+    FROM routing_policy_parameter param
+    WHERE param.routing_policy_id = selected.route_id;
+
+    SELECT binding.secret_id AS bound_secret_id, secret.cipher_text, secret.key_id, secret.is_revoked
+    INTO encrypted_proxy
+    FROM routing_policy_parameter param
+    JOIN secret_binding binding ON binding.bound_table = 'routing_policy_parameter'
+      AND binding.bound_id = param.routing_policy_parameter_id
+      AND binding.binding_name = CASE selected.route_mode
+          WHEN 'http_proxy' THEN 'proxy_password'::secret_binding_name
+          ELSE 'socks_password'::secret_binding_name END
+    LEFT JOIN secret ON secret.secret_id = binding.secret_id
+    WHERE param.routing_policy_id = selected.route_id
+      AND param.param_key = CASE selected.route_mode
+          WHEN 'http_proxy' THEN 'http_proxy_auth'::routing_param_key
+          ELSE 'socks_proxy_auth'::routing_param_key END;
+    IF encrypted_proxy.bound_secret_id IS NOT NULL THEN
+        IF encrypted_proxy.cipher_text IS NULL OR encrypted_proxy.is_revoked THEN
+            credential_error := 'proxy_credential_unavailable';
+        ELSIF active_key IS NULL OR active_key = '' OR encrypted_proxy.key_id IS DISTINCT FROM current_setting('revaer.secret_key_id', true) THEN
+            credential_error := 'proxy_credential_key_unavailable';
+        ELSE
+            BEGIN
+                proxy_password := pgp_sym_decrypt(encrypted_proxy.cipher_text, active_key);
+            EXCEPTION WHEN external_routine_invocation_exception THEN
+                credential_error := 'proxy_credential_decryption_failed';
+            END;
+        END IF;
+    END IF;
+    search_request_public_id := selected.request_public_id;
+    indexer_instance_public_id := selected.instance_public_id;
+    claim_token := claim_token_value;
+    correlation_id := correlation_value;
+    retry_seq := retry_value;
+    query_text := selected.request_query;
+    connect_timeout_ms := selected.connect_timeout_ms;
+    read_timeout_ms := selected.read_timeout_ms;
+    routing_policy_public_id := selected.route_public_id;
+    routing_mode := selected.route_mode;
+    engine := selected.engine_key;
+    RETURN NEXT;
+END;
+$$;
+
+
+--
 -- Name: search_indexer_run_enqueue(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -20530,9 +20945,9 @@ BEGIN
         cts.last_seen_seeders,
         cts.last_seen_leechers,
         cts.last_seen_published_at,
-        cts.last_seen_download_url,
-        cts.last_seen_magnet_uri,
-        cts.last_seen_details_url,
+        CASE WHEN NOT cts.download_url_private THEN cts.last_seen_download_url END,
+        CASE WHEN NOT cts.magnet_uri_private THEN cts.last_seen_magnet_uri END,
+        CASE WHEN NOT cts.details_url_private THEN cts.last_seen_details_url END,
         tracker_name.value_text,
         tracker_category.value_int,
         tracker_subcategory.value_int
@@ -25139,13 +25554,25 @@ BEGIN
                 WHEN observed_at_value > last_seen_at THEN published_at_input
                 ELSE last_seen_published_at
             END,
+            download_url_private = CASE
+                WHEN observed_at_value > last_seen_at THEN FALSE
+                ELSE download_url_private
+            END,
             last_seen_download_url = CASE
                 WHEN observed_at_value > last_seen_at THEN download_url_value
                 ELSE last_seen_download_url
             END,
+            magnet_uri_private = CASE
+                WHEN observed_at_value > last_seen_at THEN FALSE
+                ELSE magnet_uri_private
+            END,
             last_seen_magnet_uri = CASE
                 WHEN observed_at_value > last_seen_at THEN magnet_uri_value
                 ELSE last_seen_magnet_uri
+            END,
+            details_url_private = CASE
+                WHEN observed_at_value > last_seen_at THEN FALSE
+                ELSE details_url_private
             END,
             last_seen_details_url = CASE
                 WHEN observed_at_value > last_seen_at THEN details_url_value
@@ -30494,6 +30921,7 @@ BEGIN
 
     PERFORM trust_tier_seed_defaults();
     PERFORM media_domain_seed_defaults();
+    PERFORM indexer_definition_seed_torznab_v1();
 
     IF NOT EXISTS (SELECT 1 FROM deployment_config) THEN
         INSERT INTO deployment_config DEFAULT VALUES;
@@ -32870,8 +33298,11 @@ CREATE TABLE public.canonical_torrent_source (
     last_seen_leechers integer,
     last_seen_published_at timestamp with time zone,
     last_seen_download_url character varying(2048),
+    download_url_private boolean DEFAULT false NOT NULL,
     last_seen_magnet_uri character varying(2048),
+    magnet_uri_private boolean DEFAULT false NOT NULL,
     last_seen_details_url character varying(2048),
+    details_url_private boolean DEFAULT false NOT NULL,
     last_seen_uploader character varying(256),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -36764,6 +37195,7 @@ CREATE TABLE public.search_request_indexer_run (
     last_error_class public.error_class,
     last_rate_limit_scope public.rate_limit_scope,
     last_correlation_id uuid,
+    claim_token uuid,
     status public.run_status NOT NULL,
     error_class public.error_class,
     error_detail character varying(1024),
@@ -46028,6 +46460,7 @@ ALTER FUNCTION public.indexer_definition_import_cardigann_begin(uuid, character 
 ALTER FUNCTION public.indexer_definition_import_cardigann_complete(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_definition_import_cardigann_field(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_definition_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_seed_torznab_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_health_event_list(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_health_notification_hook_create(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.indexer_health_notification_hook_create_v1(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
@@ -46293,6 +46726,10 @@ ALTER FUNCTION public.routing_policy_set_param(uuid, uuid, public.routing_param_
 ALTER FUNCTION public.routing_policy_set_rate_limit_policy(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.rss_poll_apply(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.rss_poll_claim(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.manual_search_active_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.manual_search_ingest_v1(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[], uuid, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.manual_search_finish_v1(uuid, uuid, uuid, public.error_class, boolean, integer, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.manual_search_claim_next_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_indexer_run_enqueue(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_indexer_run_mark_canceled(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_indexer_run_mark_failed(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope) SECURITY DEFINER SET search_path TO pg_catalog, public;
@@ -46595,6 +47032,7 @@ BEGIN
             'public.indexer_definition_import_cardigann_complete(uuid, character varying)',
             'public.indexer_definition_import_cardigann_field(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[])',
             'public.indexer_definition_list(uuid)',
+            'public.indexer_definition_seed_torznab_v1()',
             'public.indexer_health_event_list(uuid, uuid, integer)',
             'public.indexer_health_notification_hook_create(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying)',
             'public.indexer_health_notification_hook_create_v1(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying)',
@@ -46857,6 +47295,10 @@ BEGIN
             'public.routing_policy_set_rate_limit_policy(uuid, uuid, uuid)',
             'public.rss_poll_apply(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[])',
             'public.rss_poll_claim(integer)',
+            'public.manual_search_active_v1(uuid, uuid, uuid)',
+            'public.manual_search_ingest_v1(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[], uuid, boolean, boolean, boolean)',
+            'public.manual_search_finish_v1(uuid, uuid, uuid, public.error_class, boolean, integer, integer, integer, integer)',
+            'public.manual_search_claim_next_v1()',
             'public.search_indexer_run_enqueue(uuid, uuid)',
             'public.search_indexer_run_mark_canceled(uuid, uuid)',
             'public.search_indexer_run_mark_failed(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope)',

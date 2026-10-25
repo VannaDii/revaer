@@ -15,6 +15,26 @@ pub type AppResult<T> = Result<T, AppError>;
 /// Application-level error type.
 #[derive(Debug, Error)]
 pub enum AppError {
+    /// Both the API listener and its manual-search owner failed during settlement.
+    #[error("API listener and manual search both failed")]
+    ApiAndManualSearch {
+        /// Original listener failure.
+        listener: Box<Self>,
+        /// Manual-search settlement failure retained alongside it.
+        manual_search: Box<Self>,
+    },
+    /// The manual-search transaction owner could not persist its operation.
+    #[error("manual search persistence failed")]
+    ManualSearchPersistence {
+        /// Original database error, retained behind a credential-free diagnostic.
+        source: revaer_data::DataError,
+    },
+    /// The manual-search worker did not exit normally.
+    #[error("manual search owner failed")]
+    ManualSearchOwner {
+        /// Task failure retained for diagnostics.
+        source: tokio::task::JoinError,
+    },
     /// Required compliance metadata failed before infrastructure construction.
     #[error("compliance metadata startup failed")]
     Compliance {

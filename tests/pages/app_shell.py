@@ -22,6 +22,7 @@ class AppShell:
             "/logs",
             "/health",
             "/indexers",
+            "/search",
             "/media",
         ):
             route = "/not-found"

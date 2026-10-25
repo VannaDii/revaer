@@ -18,6 +18,7 @@ pub mod executor;
 pub mod import_jobs;
 pub mod instances;
 pub mod jobs;
+pub mod manual_search;
 pub mod normalization;
 pub mod notifications;
 pub mod outbound_requests;
@@ -48,7 +49,7 @@ use sqlx::postgres::PgPoolOptions;
 /// Shared test database handle for indexer stored-procedure tests.
 #[cfg(test)]
 pub(crate) struct IndexerTestDb {
-    _db: revaer_test_support::postgres::TestDatabase,
+    database: revaer_test_support::postgres::TestDatabase,
     pool: PgPool,
     now: DateTime<Utc>,
 }
@@ -58,6 +59,18 @@ impl IndexerTestDb {
     /// Access the underlying connection pool.
     pub(crate) const fn pool(&self) -> &PgPool {
         &self.pool
+    }
+
+    /// Await owned cleanup while retaining both assertion and cleanup failures.
+    pub(crate) async fn finish(self, outcome: anyhow::Result<()>) -> anyhow::Result<()> {
+        self.pool.close().await;
+        match (outcome, self.database.close()) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
+            (Err(operation), Err(cleanup)) => Err(anyhow::anyhow!(
+                "Indexer operation failed: {operation}; database cleanup failed: {cleanup}"
+            )),
+        }
     }
 
     /// Deterministic clock value captured after migrations.
@@ -102,7 +115,7 @@ pub(crate) async fn setup_indexer_db(label: &str) -> anyhow::Result<IndexerTestD
     let now = sqlx::query_scalar("SELECT now()").fetch_one(&pool).await?;
 
     Ok(IndexerTestDb {
-        _db: postgres,
+        database: postgres,
         pool,
         now,
     })

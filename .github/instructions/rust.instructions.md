@@ -49,6 +49,10 @@ applyTo:
 
 # CI And Recipe Maintenance
 
+- The existing reqwest client enables its dependency-free SOCKS feature for configured SOCKS routes. Proxy authentication remains in private client configuration; never fall back to direct routing when a configured proxy is unavailable.
+
+- Manual Torznab execution uses `roxmltree` for standards-compliant XML parsing instead of an authored parser. Keep DTD resolution disabled and bound response bytes, XML nodes and release counts; never format credential-bearing upstream errors or URLs. Bootstrap constructs and injects HTTP clients, and shutdown awaits owned database writes.
+
 - ZIP extraction uses the non-yanked 9.x release with only its flate2 adapter, sharing the existing Rust deflate backend. Align fsops' Unix dependency with ZIP's nix version instead of introducing a duplicate-crate exception; retain archive traversal, content and permission regression coverage. Restore ZIP directory modes after extracting their children, deepest first; recorded modes must not depend on the caller's process umask.
 
 - Source inspection retains the bounded ffprobe frame sample and attributes frame side data only to its reported stream index; unindexed frames are ignored. Attachments use their stable kind marker when ffprobe omits or varies the codec name; other missing codecs still fail graph or sidecar validation.

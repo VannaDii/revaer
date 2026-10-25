@@ -30,21 +30,21 @@
       "name": "curl",
       "SPDXID": "SPDXRef-Package-curl",
       "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=curl&branch=v3.23",
-      "versionInfo": "8.22.0-r0",
+      "versionInfo": "8.23.0-r0",
       "licenseConcluded": "curl",
       "licenseDeclared": "curl",
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "78829ae535239009c2dd615d0d2f58ecc0abd07855e38c1eea389fc68993f5b1"
+          "checksumValue": "3fa0d88bff24906e311fdc0ea6e8e6400c2181ecef17eb4f51ee191902afbf8d"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "27674b4f5a4a9b51db6673bf7e75e247b51c711294a4fff638fe9a67ae21ed48"
+          "checksumValue": "0cfccc09e110f49c6008f1969e0d203023934157ca62282fdb8752ea16eb2a66"
         }
       ],
       "copyrightText": "See Alpine package source metadata.",
-      "comment": "SHA-256 checksums correspond, in order, to these official Alpine APK archives: https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/curl-8.22.0-r0.apk; https://dl-cdn.alpinelinux.org/alpine/v3.23/main/aarch64/curl-8.22.0-r0.apk"
+      "comment": "SHA-256 checksums correspond, in order, to these official Alpine APK archives: https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/curl-8.23.0-r0.apk; https://dl-cdn.alpinelinux.org/alpine/v3.23/main/aarch64/curl-8.23.0-r0.apk"
     },
     {
       "name": "exiftool",
