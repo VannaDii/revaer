@@ -238,7 +238,7 @@
     {
       "id": "chromium-bear-320x240-webm",
       "path": "test-fixtures/chromium/bear-320x240.webm",
-      "source": "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x240.webm",
+      "source": "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x240.webm?format=TEXT",
       "license": "BSD-3-Clause",
       "attribution": "Copyright The Chromium Authors.",
       "container": "webm",
@@ -257,7 +257,7 @@
     {
       "id": "chromium-bear-vp9-opus-webm",
       "path": "test-fixtures/chromium/bear-vp9-opus.webm",
-      "source": "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-vp9-opus.webm",
+      "source": "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-vp9-opus.webm?format=TEXT",
       "license": "BSD-3-Clause",
       "attribution": "Copyright The Chromium Authors.",
       "container": "webm",
@@ -276,7 +276,7 @@
     {
       "id": "chromium-bear-vp8-webvtt-webm",
       "path": "test-fixtures/chromium/bear-vp8-webvtt.webm",
-      "source": "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-vp8-webvtt.webm",
+      "source": "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-vp8-webvtt.webm?format=TEXT",
       "license": "BSD-3-Clause",
       "attribution": "Copyright The Chromium Authors.",
       "container": "webm",
@@ -295,7 +295,7 @@
     {
       "id": "chromium-bear-1280x720-av-frag-mp4",
       "path": "test-fixtures/chromium/bear-1280x720_av_frag.mp4",
-      "source": "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-1280x720-av_frag.mp4",
+      "source": "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-1280x720-av_frag.mp4?format=TEXT",
       "license": "BSD-3-Clause",
       "attribution": "Copyright The Chromium Authors.",
       "container": "mp4",
@@ -315,7 +315,7 @@
     {
       "id": "chromium-bear-320x180-hi10p-mp4",
       "path": "test-fixtures/chromium/bear-320x180-hi10p.mp4",
-      "source": "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x180-hi10p.mp4",
+      "source": "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x180-hi10p.mp4?format=TEXT",
       "license": "BSD-3-Clause",
       "attribution": "Copyright The Chromium Authors.",
       "container": "mp4",
@@ -334,7 +334,7 @@
     {
       "id": "chromium-bear-vp9-profile2-webm",
       "path": "test-fixtures/chromium/bear-320x240-vp9_profile2.webm",
-      "source": "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x240-vp9_profile2.webm",
+      "source": "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x240-vp9_profile2.webm?format=TEXT",
       "license": "BSD-3-Clause",
       "attribution": "Copyright The Chromium Authors.",
       "container": "webm",
@@ -353,7 +353,7 @@
     {
       "id": "chromium-bear-v-frag-hevc-mp4",
       "path": "test-fixtures/chromium/bear-320x240-v_frag-hevc.mp4",
-      "source": "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x240-v_frag-hevc.mp4",
+      "source": "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x240-v_frag-hevc.mp4?format=TEXT",
       "license": "BSD-3-Clause",
       "attribution": "Copyright The Chromium Authors.",
       "container": "mp4",
@@ -372,7 +372,7 @@
     {
       "id": "chromium-bear-1280x720-aac-he-ts",
       "path": "test-fixtures/chromium/bear-1280x720-aac_he.ts",
-      "source": "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-1280x720-aac_he.ts",
+      "source": "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-1280x720-aac_he.ts?format=TEXT",
       "license": "BSD-3-Clause",
       "attribution": "Copyright The Chromium Authors.",
       "container": "mpegts",
@@ -391,7 +391,7 @@
     {
       "id": "chromium-bbb-2video-2audio-mp4",
       "path": "test-fixtures/chromium/bbb-320x240-2video-2audio.mp4",
-      "source": "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bbb-320x240-2video-2audio.mp4",
+      "source": "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bbb-320x240-2video-2audio.mp4?format=TEXT",
       "license": "BSD-3-Clause",
       "attribution": "Copyright The Chromium Authors.",
       "container": "mp4",
@@ -410,7 +410,7 @@
     {
       "id": "chromium-multitrack-3video-2audio-webm",
       "path": "test-fixtures/chromium/multitrack-3video-2audio.webm",
-      "source": "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/multitrack-3video-2audio.webm",
+      "source": "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/multitrack-3video-2audio.webm?format=TEXT",
       "license": "BSD-3-Clause",
       "attribution": "Copyright The Chromium Authors.",
       "container": "webm",

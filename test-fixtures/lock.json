@@ -159,34 +159,34 @@
     {
       "id": "chromium-bear-320x240-webm",
       "path": "test-fixtures/chromium/bear-320x240.webm",
-      "encoding": "raw",
+      "encoding": "base64",
       "sha256": "834dbadab368d6dbdeaf973d8f2398a36d6fe584965781877ee46ffcc570ed59",
       "minimumBytes": 219229,
       "maximumBytes": 219229,
       "urls": [
-        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x240.webm"
+        "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x240.webm?format=TEXT"
       ]
     },
     {
       "id": "chromium-bear-vp9-opus-webm",
       "path": "test-fixtures/chromium/bear-vp9-opus.webm",
-      "encoding": "raw",
+      "encoding": "base64",
       "sha256": "c7fd18fbb644ca6f49c56cf386e679c0290e79cd50234ddfed9945f71bf07deb",
       "minimumBytes": 101414,
       "maximumBytes": 101414,
       "urls": [
-        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-vp9-opus.webm"
+        "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-vp9-opus.webm?format=TEXT"
       ]
     },
     {
       "id": "chromium-bear-vp8-webvtt-webm",
       "path": "test-fixtures/chromium/bear-vp8-webvtt.webm",
-      "encoding": "raw",
+      "encoding": "base64",
       "sha256": "ec7dfcfeb2867af14307a81b099d70c03d2fb7e3d3bfad2b6130ac8b402e6925",
       "minimumBytes": 219285,
       "maximumBytes": 219285,
       "urls": [
-        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-vp8-webvtt.webm"
+        "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-vp8-webvtt.webm?format=TEXT"
       ]
     },
     {
@@ -203,67 +203,67 @@
     {
       "id": "chromium-bear-320x180-hi10p-mp4",
       "path": "test-fixtures/chromium/bear-320x180-hi10p.mp4",
-      "encoding": "raw",
+      "encoding": "base64",
       "sha256": "04ff92825f6c903e0bc1c662e38f45f9cc50177b7bc82c0e1aacca4ec5dd5610",
       "minimumBytes": 157833,
       "maximumBytes": 157833,
       "urls": [
-        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x180-hi10p.mp4"
+        "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x180-hi10p.mp4?format=TEXT"
       ]
     },
     {
       "id": "chromium-bear-vp9-profile2-webm",
       "path": "test-fixtures/chromium/bear-320x240-vp9_profile2.webm",
-      "encoding": "raw",
+      "encoding": "base64",
       "sha256": "49e4c269afd8ce0be6786cc7fb898c4e958cd749cdfb13ed3ecd37a046bc8f82",
       "minimumBytes": 80621,
       "maximumBytes": 80621,
       "urls": [
-        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x240-vp9_profile2.webm"
+        "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x240-vp9_profile2.webm?format=TEXT"
       ]
     },
     {
       "id": "chromium-bear-v-frag-hevc-mp4",
       "path": "test-fixtures/chromium/bear-320x240-v_frag-hevc.mp4",
-      "encoding": "raw",
+      "encoding": "base64",
       "sha256": "731890bd0da00cb5eba43602ca0572cda022992d4e4c79cd1d62e01a5daea0dc",
       "minimumBytes": 49803,
       "maximumBytes": 49803,
       "urls": [
-        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x240-v_frag-hevc.mp4"
+        "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-320x240-v_frag-hevc.mp4?format=TEXT"
       ]
     },
     {
       "id": "chromium-bear-1280x720-aac-he-ts",
       "path": "test-fixtures/chromium/bear-1280x720-aac_he.ts",
-      "encoding": "raw",
+      "encoding": "base64",
       "sha256": "f5533452bd980f8971f619887f1bcd24b19344cd975b2352b9ab5d8bb7fe21bc",
       "minimumBytes": 849760,
       "maximumBytes": 849760,
       "urls": [
-        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-1280x720-aac_he.ts"
+        "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-1280x720-aac_he.ts?format=TEXT"
       ]
     },
     {
       "id": "chromium-bbb-2video-2audio-mp4",
       "path": "test-fixtures/chromium/bbb-320x240-2video-2audio.mp4",
-      "encoding": "raw",
+      "encoding": "base64",
       "sha256": "080b9eabdc9c309b40b0a97ad38a2eb950bb4ab0980679d806ea5d0d8210e934",
       "minimumBytes": 1047608,
       "maximumBytes": 1047608,
       "urls": [
-        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bbb-320x240-2video-2audio.mp4"
+        "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bbb-320x240-2video-2audio.mp4?format=TEXT"
       ]
     },
     {
       "id": "chromium-multitrack-3video-2audio-webm",
       "path": "test-fixtures/chromium/multitrack-3video-2audio.webm",
-      "encoding": "raw",
+      "encoding": "base64",
       "sha256": "072202594bb39408086bee2ba1c841ff8735cdb787d7bb66c2077aff995ff7cf",
       "minimumBytes": 190935,
       "maximumBytes": 190935,
       "urls": [
-        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/multitrack-3video-2audio.webm"
+        "https://chromium.googlesource.com/chromium/src/+/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/multitrack-3video-2audio.webm?format=TEXT"
       ]
     }
   ]
