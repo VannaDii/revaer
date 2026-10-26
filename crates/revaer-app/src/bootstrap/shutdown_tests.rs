@@ -104,7 +104,7 @@ fn bootstrap_requests_shared_shutdown_before_waiting_for_any_runtime() -> anyhow
         .find("request_runtime_shutdown(&shutdown);")
         .ok_or_else(|| anyhow::anyhow!("bootstrap shutdown request missing"))?;
     for stop in [
-        "stop_runtime_task(indexer_tasks.maintenance",
+        "settle_indexer_maintenance(indexer_tasks.maintenance)",
         "stop_runtime_task(indexer_tasks.imports",
         "stop_media_runtime_tasks(media_runtime_tasks, &shutdown)",
         "stop_runtime_task(fsops_worker",

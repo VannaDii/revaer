@@ -23,6 +23,9 @@ use tokio::task::JoinHandle;
 use tokio::time::{MissedTickBehavior, interval};
 use tracing::{info, warn};
 
+use crate::rss_poll::{ClientFactory, RssPollRuntime};
+use crate::runtime_shutdown::{self, RuntimeShutdownReceiver};
+
 const DEFAULT_TICK_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,10 +42,11 @@ enum JobKind {
     PolicySnapshotRefcountRepair,
     RateLimitStatePurge,
     RssSubscriptionBackfill,
+    RssPoll,
 }
 
 impl JobKind {
-    const ALL: [Self; 12] = [
+    const ALL: [Self; 13] = [
         Self::RetentionPurge,
         Self::ConnectivityProfileRefresh,
         Self::ReputationRollup1h,
@@ -55,6 +59,7 @@ impl JobKind {
         Self::PolicySnapshotRefcountRepair,
         Self::RateLimitStatePurge,
         Self::RssSubscriptionBackfill,
+        Self::RssPoll,
     ];
 
     const fn job_key(self) -> &'static str {
@@ -71,6 +76,7 @@ impl JobKind {
             Self::PolicySnapshotRefcountRepair => "policy_snapshot_refcount_repair",
             Self::RateLimitStatePurge => "rate_limit_state_purge",
             Self::RssSubscriptionBackfill => "rss_subscription_backfill",
+            Self::RssPoll => "rss_poll",
         }
     }
 
@@ -88,6 +94,7 @@ impl JobKind {
             Self::PolicySnapshotRefcountRepair => "indexer_runtime.policy_snapshot_refcount_repair",
             Self::RateLimitStatePurge => "indexer_runtime.rate_limit_state_purge",
             Self::RssSubscriptionBackfill => "indexer_runtime.rss_subscription_backfill",
+            Self::RssPoll => "indexer_runtime.rss_poll",
         }
     }
 }
@@ -100,12 +107,8 @@ trait IndexerJobBackend: Send + Sync {
 
 struct StoredProcIndexerJobBackend {
     config: Arc<ConfigService>,
-}
-
-impl StoredProcIndexerJobBackend {
-    const fn new(config: Arc<ConfigService>) -> Self {
-        Self { config }
-    }
+    rss: RssPollRuntime,
+    shutdown: RuntimeShutdownReceiver,
 }
 
 #[async_trait]
@@ -116,6 +119,7 @@ impl IndexerJobBackend for StoredProcIndexerJobBackend {
 
     async fn run_job(&self, job: JobKind) -> Result<(), DataError> {
         match job {
+            JobKind::RssPoll => self.rss.run_batch(&mut self.shutdown.clone()).await,
             JobKind::RetentionPurge => job_run_retention_purge(self.config.pool()).await,
             JobKind::ConnectivityProfileRefresh => {
                 job_run_connectivity_profile_refresh(self.config.pool()).await
@@ -156,14 +160,26 @@ pub(crate) struct IndexerRuntime {
     backend: Arc<dyn IndexerJobBackend>,
     telemetry: Metrics,
     tick_interval: Duration,
+    shutdown: RuntimeShutdownReceiver,
 }
 
 impl IndexerRuntime {
-    pub(crate) fn new(config: Arc<ConfigService>, telemetry: Metrics) -> Self {
+    pub(crate) fn new(
+        config: Arc<ConfigService>,
+        telemetry: Metrics,
+        client_factory: ClientFactory,
+        shutdown: RuntimeShutdownReceiver,
+    ) -> Self {
+        let backend = StoredProcIndexerJobBackend {
+            rss: RssPollRuntime::new(Arc::clone(&config), client_factory),
+            config,
+            shutdown: shutdown.clone(),
+        };
         Self::with_backend(
-            Arc::new(StoredProcIndexerJobBackend::new(config)),
+            Arc::new(backend),
             telemetry,
             DEFAULT_TICK_INTERVAL,
+            shutdown,
         )
     }
 
@@ -171,11 +187,13 @@ impl IndexerRuntime {
         backend: Arc<dyn IndexerJobBackend>,
         telemetry: Metrics,
         tick_interval: Duration,
+        shutdown: RuntimeShutdownReceiver,
     ) -> Self {
         Self {
             backend,
             telemetry,
             tick_interval,
+            shutdown,
         }
     }
 
@@ -185,12 +203,18 @@ impl IndexerRuntime {
         })
     }
 
-    async fn run_loop(self) {
+    async fn run_loop(mut self) {
         let mut ticker = interval(self.tick_interval);
         ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         loop {
-            ticker.tick().await;
+            tokio::select! {
+                _ = ticker.tick() => {},
+                () = runtime_shutdown::changed(&mut self.shutdown) => break,
+            }
+            if runtime_shutdown::requested(&self.shutdown) {
+                break;
+            }
             self.run_tick().await;
         }
     }
@@ -350,8 +374,13 @@ mod tests {
             vec![Ok(JobClaimOutcome::NotDue)],
             Vec::new(),
         ));
-        let runtime =
-            IndexerRuntime::with_backend(backend.clone(), Metrics::new()?, Duration::from_secs(1));
+        let (_shutdown, receiver) = runtime_shutdown::channel();
+        let runtime = IndexerRuntime::with_backend(
+            backend.clone(),
+            Metrics::new()?,
+            Duration::from_secs(1),
+            receiver,
+        );
 
         runtime.run_job(JobKind::RetentionPurge).await;
 
@@ -365,8 +394,13 @@ mod tests {
             vec![Ok(JobClaimOutcome::Claimed)],
             vec![Ok(())],
         ));
-        let runtime =
-            IndexerRuntime::with_backend(backend.clone(), Metrics::new()?, Duration::from_secs(1));
+        let (_shutdown, receiver) = runtime_shutdown::channel();
+        let runtime = IndexerRuntime::with_backend(
+            backend.clone(),
+            Metrics::new()?,
+            Duration::from_secs(1),
+            receiver,
+        );
 
         runtime.run_job(JobKind::PolicySnapshotGc).await;
 
@@ -392,8 +426,13 @@ mod tests {
                 .collect(),
         ));
         let metrics = Metrics::new()?;
-        let runtime =
-            IndexerRuntime::with_backend(backend.clone(), metrics.clone(), Duration::from_secs(1));
+        let (_shutdown, receiver) = runtime_shutdown::channel();
+        let runtime = IndexerRuntime::with_backend(
+            backend.clone(),
+            metrics.clone(),
+            Duration::from_secs(1),
+            receiver,
+        );
 
         runtime.run_tick().await;
 
@@ -429,8 +468,13 @@ mod tests {
                 Ok(()),
             ],
         ));
-        let runtime =
-            IndexerRuntime::with_backend(backend.clone(), Metrics::new()?, Duration::from_secs(1));
+        let (_shutdown, receiver) = runtime_shutdown::channel();
+        let runtime = IndexerRuntime::with_backend(
+            backend.clone(),
+            Metrics::new()?,
+            Duration::from_secs(1),
+            receiver,
+        );
 
         runtime.run_job(JobKind::RetentionPurge).await;
         runtime.run_job(JobKind::RateLimitStatePurge).await;
@@ -460,8 +504,13 @@ mod tests {
             Vec::new(),
         ));
         let metrics = Metrics::new()?;
-        let runtime =
-            IndexerRuntime::with_backend(backend.clone(), metrics.clone(), Duration::from_secs(1));
+        let (_shutdown, receiver) = runtime_shutdown::channel();
+        let runtime = IndexerRuntime::with_backend(
+            backend.clone(),
+            metrics.clone(),
+            Duration::from_secs(1),
+            receiver,
+        );
 
         runtime.run_job(JobKind::BaseScoreRefreshRecent).await;
 
@@ -477,17 +526,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spawned_runtime_starts_ticks_before_abort() -> anyhow::Result<()> {
+    async fn spawned_runtime_starts_ticks_and_stops_cooperatively() -> anyhow::Result<()> {
         let backend = Arc::new(FakeIndexerJobBackend::new(
             std::iter::repeat_with(|| Ok(JobClaimOutcome::NotDue))
                 .take(JobKind::ALL.len() * 4)
                 .collect(),
             Vec::new(),
         ));
+        let (shutdown, receiver) = runtime_shutdown::channel();
         let runtime = IndexerRuntime::with_backend(
             backend.clone(),
             Metrics::new()?,
             Duration::from_millis(1),
+            receiver,
         );
 
         let handle = runtime.spawn();
@@ -500,8 +551,8 @@ mod tests {
             }
         })
         .await?;
-        handle.abort();
-        let _ = handle.await;
+        let _ = runtime_shutdown::request(&shutdown);
+        timeout(Duration::from_secs(1), handle).await??;
 
         assert!(
             backend

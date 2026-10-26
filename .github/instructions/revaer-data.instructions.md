@@ -94,3 +94,5 @@ applyTo:
 
 - Rust fixtures keep `start_postgres` databases empty for negative bootstrap tests. Application fixtures explicitly call `initialize_runtime` with the checkout's canonical initializer. Verify database identity before setup, seal the exact supplied digest, disable owner login and verify the restricted runtime identity before exposing its URL. Never bypass production validation.
 - Call `close` after collecting a fixture's test result so cleanup failure fails the test. Drop must attempt and report cleanup after early returns. Remove only owned databases and confirmed fixture roles; do not log credential-bearing URLs.
+
+- Scheduled RSS claims persist a correlation lease and subscription revision. The finish procedure fences duplicate/stale results and settles withdrawn eligibility without overwriting operator subscription changes; existing apply policy owns deduplication, scheduling and outbound logging.

@@ -445,7 +445,7 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     request_runtime_shutdown(&shutdown);
     #[cfg(feature = "libtorrent")]
     stop_config_watch_task(&mut config_task, &shutdown).await;
-    stop_runtime_task(indexer_tasks.maintenance, "indexer").await;
+    settle_indexer_maintenance(indexer_tasks.maintenance).await;
     stop_runtime_task(indexer_tasks.imports, "import_job").await;
     stop_media_runtime_tasks(media_runtime_tasks, &shutdown).await;
 
@@ -474,8 +474,14 @@ fn spawn_indexer_runtime_tasks(
     let config = Arc::new(config.clone());
     IndexerRuntimeTasks {
         manual_search: ManualSearchRuntime::new(Arc::clone(&config), manual_search_client)
-            .spawn(shutdown),
-        maintenance: IndexerRuntime::new(Arc::clone(&config), telemetry.clone()).spawn(),
+            .spawn(shutdown.clone()),
+        maintenance: IndexerRuntime::new(
+            Arc::clone(&config),
+            telemetry.clone(),
+            torznab_client,
+            shutdown,
+        )
+        .spawn(),
         imports: ImportJobRuntime::new(config, telemetry.clone()).spawn(),
     }
 }
@@ -588,6 +594,12 @@ async fn stop_config_watch_task(
                 }
             }
         }
+    }
+}
+
+async fn settle_indexer_maintenance(task: tokio::task::JoinHandle<()>) {
+    if let Err(error) = task.await {
+        log_runtime_task_join_error(&error, "indexer", false);
     }
 }
 
@@ -1090,10 +1102,20 @@ async fn settle_listener_and_search(
 pub(crate) fn manual_search_client(
     run: &revaer_data::indexers::manual_search::ManualSearchRun,
 ) -> Result<reqwest::Client, Failure> {
+    torznab_client(&run.connection, run.connect_timeout_ms)
+}
+
+pub(crate) fn torznab_client(
+    connection: &Result<
+        revaer_data::indexers::manual_search::ManualSearchConnection,
+        revaer_data::indexers::manual_search::ManualSearchConfigurationError,
+    >,
+    connect_timeout_ms: i32,
+) -> Result<reqwest::Client, Failure> {
     use revaer_data::indexers::manual_search::{
         ManualSearchConfigurationError, ManualSearchRouting,
     };
-    let connection = run.connection.as_ref().map_err(|error| {
+    let connection = connection.as_ref().map_err(|error| {
         Failure::classified(match error {
             ManualSearchConfigurationError::CredentialUnavailable => "auth_error",
             ManualSearchConfigurationError::MissingEndpoint
@@ -1101,8 +1123,7 @@ pub(crate) fn manual_search_client(
             | ManualSearchConfigurationError::InvalidRoute => "unknown",
         })
     })?;
-    let timeout =
-        u64::try_from(run.connect_timeout_ms).map_err(|_| Failure::classified("unknown"))?;
+    let timeout = u64::try_from(connect_timeout_ms).map_err(|_| Failure::classified("unknown"))?;
     let mut builder = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())

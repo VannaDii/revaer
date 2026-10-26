@@ -281,6 +281,8 @@ def run_phases(
     services: tuple[RunningProcess, ...],
     outcomes: dict[str, str],
     initial_session: ApiSession | None = None,
+    *,
+    database_name: str | None = None,
 ) -> None:
     settings = context.settings.e2e
     schema = ApiSchema(object_value(decode(context.fs.read(context.root / OPENAPI_PATH))))
@@ -302,6 +304,7 @@ def run_phases(
                 "REVAER_E2E_API_KEY": session.api_key or "",
                 "E2E_FS_ROOT": str(paths.filesystem),
                 "REVAER_E2E_RESULTS_ROOT": str(paths.results),
+                "REVAER_E2E_DATABASE_NAME": database_name or "",
             },
         )
         if any(service.poll() is not None for service in services):
@@ -404,7 +407,15 @@ def run_media_phases(
                     context.tools.http, settings.api_url, coverage, schema, session.headers()
                 )
                 require_media_readiness(client, selected_paths.logs)
-            run_phases(context, paths, (phase,), services, outcomes, session)
+            run_phases(
+                context,
+                paths,
+                (phase,),
+                services,
+                outcomes,
+                session,
+                database_name=urlsplit(database_url).path.removeprefix("/"),
+            )
 
 
 def run_suite(context: Context, paths: RunPaths, catalog: Path | None = None) -> None:

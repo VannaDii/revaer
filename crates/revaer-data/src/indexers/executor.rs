@@ -42,6 +42,31 @@ const RSS_POLL_APPLY_CALL: &str = r"
     )
 ";
 
+const RSS_POLL_FINISH_CALL: &str = r"
+    SELECT *
+    FROM rss_poll_finish_v1(
+        rss_subscription_id_input => $1,
+        correlation_id_input => $2,
+        retry_seq_input => $3,
+        started_at_input => $4,
+        finished_at_input => $5,
+        outcome_input => $6::outbound_request_outcome,
+        error_class_input => $7::error_class,
+        http_status_input => $8,
+        latency_ms_input => $9,
+        parse_ok_input => $10,
+        result_count_input => $11,
+        via_mitigation_input => $12::outbound_via_mitigation,
+        rate_limit_denied_scope_input => $13::rate_limit_scope,
+        cf_detected_input => $14,
+        cf_retryable_input => $15,
+        item_guid_input => $16::varchar[],
+        infohash_v1_input => $17::char(40)[],
+        infohash_v2_input => $18::char(64)[],
+        magnet_hash_input => $19::char(64)[]
+    )
+";
+
 const INDEXER_TEST_PREPARE_CALL: &str = r"
     SELECT
         can_execute,
@@ -255,8 +280,27 @@ pub async fn rss_poll_apply(
     pool: &PgPool,
     input: &RssPollApplyInput<'_>,
 ) -> Result<RssPollApplyResult> {
+    apply_poll(pool, input, RSS_POLL_APPLY_CALL).await
+}
+
+/// Settle only the still-owned scheduled claim; stale results are ignored.
+///
+/// # Errors
+/// Returns database errors while preserving the claim for recovery.
+pub async fn rss_poll_finish(
+    pool: &PgPool,
+    input: &RssPollApplyInput<'_>,
+) -> Result<RssPollApplyResult> {
+    apply_poll(pool, input, RSS_POLL_FINISH_CALL).await
+}
+
+async fn apply_poll(
+    pool: &PgPool,
+    input: &RssPollApplyInput<'_>,
+    query: &'static str,
+) -> Result<RssPollApplyResult> {
     try_op("rss poll apply", || {
-        sqlx::query_as(RSS_POLL_APPLY_CALL)
+        sqlx::query_as(query)
             .bind(input.rss_subscription_id)
             .bind(input.correlation_id)
             .bind(input.retry_seq)

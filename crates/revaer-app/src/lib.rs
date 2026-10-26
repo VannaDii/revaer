@@ -28,6 +28,8 @@ pub mod error;
 pub mod import_job_runtime;
 /// In-process indexer maintenance runtime wiring.
 pub mod indexer_runtime;
+#[cfg(test)]
+mod indexer_test_support;
 /// Indexer service wiring for API facade.
 pub mod indexers;
 mod manual_search;
@@ -47,6 +49,8 @@ mod media_workspace_retention;
 /// Torrent orchestrator wiring.
 #[cfg(feature = "libtorrent")]
 pub mod orchestrator;
+mod rss_feed;
+mod rss_poll;
 /// Cooperative background runtime shutdown helpers.
 pub mod runtime_shutdown;
 

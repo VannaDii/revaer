@@ -1,9 +1,8 @@
 //! The production dispatcher owns real `PostgreSQL` work and a real pending HTTP request.
 
 use super::*;
-use revaer_config::DbSessionConfig;
+use crate::indexer_test_support::with_indexer_database;
 use revaer_data::indexers::{instances, search_pages, search_requests, secrets};
-use revaer_test_support::postgres::start_postgres;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
@@ -20,44 +19,10 @@ async fn manual_search_cancellation_stops_pending_http_and_fences_results() -> a
 }
 
 async fn pending_attempt_settles(cancel_request: bool) -> anyhow::Result<()> {
-    with_manual_database(
-        |config| async move { exercise_pending_attempt(config, cancel_request).await },
-    )
+    with_indexer_database(async move |config, _database| {
+        exercise_pending_attempt(config, cancel_request).await
+    })
     .await
-}
-
-async fn with_manual_database<F, Fut>(exercise: F) -> anyhow::Result<()>
-where
-    F: FnOnce(Arc<ConfigService>) -> Fut,
-    Fut: std::future::Future<Output = anyhow::Result<()>>,
-{
-    let mut database = start_postgres()?;
-    let result = async {
-        database
-            .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
-            .await?;
-        let config = Arc::new(
-            ConfigService::new_with_session(
-                database.connection_string(),
-                Some(DbSessionConfig::new(
-                    "manual-search-test",
-                    &Uuid::new_v4().to_string(),
-                )),
-            )
-            .await?,
-        );
-        let result = exercise(Arc::clone(&config)).await;
-        config.pool().close().await;
-        result
-    }
-    .await;
-    match (result, database.close()) {
-        (Ok(()), Ok(())) => Ok(()),
-        (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
-        (Err(operation), Err(cleanup)) => Err(anyhow::anyhow!(
-            "Manual search test failed: {operation}; database cleanup failed: {cleanup}"
-        )),
-    }
 }
 
 async fn exercise_pending_attempt(
@@ -212,17 +177,19 @@ async fn receive_headers(
 
 #[tokio::test]
 async fn manual_search_http_auth_failure_is_classified_without_credentials() -> anyhow::Result<()> {
-    with_manual_database(|config| async move { auth_failure(&config).await }).await
+    with_indexer_database(async move |config, _database| auth_failure(&config).await).await
 }
 
 #[tokio::test]
 async fn manual_search_success_ingests_http_response_and_seals_stable_page() -> anyhow::Result<()> {
-    with_manual_database(|config| async move { completed_attempt(&config, false).await }).await
+    with_indexer_database(async move |config, _database| completed_attempt(&config, false).await)
+        .await
 }
 
 #[tokio::test]
 async fn manual_search_empty_http_response_seals_zero_result_page() -> anyhow::Result<()> {
-    with_manual_database(|config| async move { completed_attempt(&config, true).await }).await
+    with_indexer_database(async move |config, _database| completed_attempt(&config, true).await)
+        .await
 }
 
 async fn completed_attempt(config: &Arc<ConfigService>, empty: bool) -> anyhow::Result<()> {

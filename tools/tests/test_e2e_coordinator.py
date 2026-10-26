@@ -131,6 +131,7 @@ class Scenario:
     failure: str = ""
     events: list[str] = field(default_factory=list)
     phase_count: int = 0
+    database_names: list[str] = field(default_factory=list)
     catalogs: list[Path | None] = field(default_factory=list)
     auth_headers: list[dict[str, str]] = field(default_factory=list)
 
@@ -263,6 +264,7 @@ def coordinator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Contex
         return ApiSession(mode, "fixture-key" if mode == "api_key" else None)
 
     def run_phase(args: E2ePytestArgs, environment: Mapping[str, str]) -> Completed:
+        scenario.database_names.append(environment["REVAER_E2E_DATABASE_NAME"])
         scenario.phase_count += 1
         scenario.visit(args.phase)
         if scenario.failure == "interrupt" and scenario.phase_count == 2:
@@ -331,6 +333,7 @@ def test_media_restarts_after_reset_and_never_manufactures_catalog_readiness(
             e2e.UiE2e.run(context)
     else:
         e2e.UiE2e.run(context)
+        assert scenario.database_names and set(scenario.database_names) == {"owned"}
         missing = context.root / ".test-tmp/e2e/runtime/missing-media-roots.json"
         assert scenario.catalogs == [
             missing,

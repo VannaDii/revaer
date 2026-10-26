@@ -33,6 +33,9 @@ class TorznabUpstream:
     scenario: Literal[
         "matching", "empty", "unauthorized", "malformed", "oversized", "duplicate"
     ] = "matching"
+    response_gate: threading.Event | None = field(default=None, repr=False)
+    status_code: int | None = None
+    requested: threading.Event = field(default_factory=threading.Event, repr=False)
     delay_seconds: float = 0
     stopping: threading.Event = field(default_factory=threading.Event, repr=False)
     responded: threading.Event = field(default_factory=threading.Event, repr=False)
@@ -159,6 +162,11 @@ def torznab_upstream() -> Iterator[TorznabUpstream]:
                 status = 407
             else:
                 status = 401
+            if allowed and upstream.status_code is not None:
+                status = upstream.status_code
+            upstream.requested.set()
+            if upstream.response_gate is not None:
+                upstream.response_gate.wait()
             if upstream.stopping.wait(upstream.delay_seconds):
                 return
             self.send_response(status)
@@ -181,6 +189,8 @@ def torznab_upstream() -> Iterator[TorznabUpstream]:
         yield upstream
     finally:
         upstream.stopping.set()
+        if upstream.response_gate is not None:
+            upstream.response_gate.set()
         server.shutdown()
         server.server_close()
         thread.join(timeout=1)
