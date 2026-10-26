@@ -15,6 +15,70 @@ use crate::indexers::secrets::secret_create;
 use uuid::Uuid;
 
 #[tokio::test]
+async fn disabling_source_settles_owned_manual_attempt_without_losing_partial_results()
+-> anyhow::Result<()> {
+    use crate::indexers::instances::{IndexerInstanceUpdateInput, indexer_instance_update};
+    use crate::indexers::search_requests::search_request_is_terminal;
+
+    let test_db = crate::indexers::setup_indexer_db("disabled partial search source").await?;
+    let result = async {
+        let pool = test_db.pool();
+        let (source, _) = configured_source(pool, "http://127.0.0.1:8765/api", None).await?;
+        let request = create_request(pool, "Disable after partial response").await?;
+        let run = claim_next(pool)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Expected owned work"))?;
+        let input = release_input(request, source);
+        anyhow::ensure!(
+            ingest(pool, &run, &input, ManualSearchLinkPrivacy::default()).await?
+                == ManualSearchWriteOutcome::Applied
+        );
+        anyhow::ensure!(!search_request_is_terminal(pool, Uuid::nil(), request).await?);
+        indexer_instance_update(
+            pool,
+            &IndexerInstanceUpdateInput {
+                actor_user_public_id: Uuid::nil(),
+                indexer_instance_public_id: source,
+                display_name: None,
+                priority: None,
+                trust_tier_key: None,
+                routing_policy_public_id: None,
+                is_enabled: Some(false),
+                enable_rss: None,
+                enable_automatic_search: None,
+                enable_interactive_search: None,
+            },
+        )
+        .await?;
+        anyhow::ensure!(
+            ingest(pool, &run, &input, ManualSearchLinkPrivacy::default()).await?
+                == ManualSearchWriteOutcome::OwnershipLost
+        );
+        anyhow::ensure!(
+            complete(
+                pool,
+                &run,
+                ManualSearchCompletion {
+                    outcome: ManualSearchOutcome::Canceled,
+                    http_status: Some(200),
+                    latency_ms: 0,
+                    result_count: 1,
+                    retry_after_seconds: None,
+                }
+            )
+            .await?
+                == ManualSearchWriteOutcome::Applied
+        );
+        anyhow::ensure!(search_request_is_terminal(pool, Uuid::nil(), request).await?);
+        let page = search_page_fetch(pool, Uuid::nil(), request, 1).await?;
+        anyhow::ensure!(page.len() == 1 && page[0].item_position == Some(1));
+        Ok::<(), anyhow::Error>(())
+    }
+    .await;
+    test_db.finish(result).await
+}
+
+#[tokio::test]
 async fn manual_claim_retries_only_rolled_back_statements() -> anyhow::Result<()> {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -293,6 +357,7 @@ async fn manual_search_rate_denial_defers_and_logs_zero_results() -> anyhow::Res
             } else {
                 let explain = crate::indexers::search_pages::search_request_explainability(pool, actor, request_id).await?;
                 anyhow::ensure!(explain.rate_limited_indexers == 1 && explain.retrying_indexers == 1);
+                anyhow::ensure!(!crate::indexers::search_requests::search_request_is_terminal(pool, actor, request_id).await?);
                 let count: i64 = sqlx::query_scalar("SELECT count(*) FROM outbound_request_log log JOIN search_request request USING (search_request_id) WHERE request.search_request_public_id = $1 AND log.error_class = 'rate_limited' AND log.result_count = 0 AND log.latency_ms = 0 AND NOT log.parse_ok")
                     .bind(request_id).fetch_one(pool).await?;
                 anyhow::ensure!(count == 1, "A deferred attempt must retain its valid ledger row");

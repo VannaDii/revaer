@@ -137,6 +137,13 @@ impl ManualSearchRuntime {
         run: &ManualSearchRun,
         release: &torznab::Release,
     ) -> Result<ManualSearchWriteOutcome, DataError> {
+        let category = release.tracker_category.map(|value| [Some(value)]);
+        let keys = ["tracker_category".to_string()];
+        let types = ["int".to_string()];
+        let empty_text = [None::<String>];
+        let empty_bigint = [None::<i64>];
+        let empty_bool = [None::<bool>];
+        let empty_uuid = [None::<uuid::Uuid>];
         store::ingest(
             self.config.pool(),
             run,
@@ -157,14 +164,14 @@ impl ManualSearchRuntime {
                 published_at: release.published_at,
                 uploader: None,
                 observed_at: chrono::Utc::now(),
-                attr_keys: None,
-                attr_types: None,
-                attr_value_text: None,
-                attr_value_int: None,
-                attr_value_bigint: None,
-                attr_value_numeric: None,
-                attr_value_bool: None,
-                attr_value_uuid: None,
+                attr_keys: category.as_ref().map(|_| keys.as_slice()),
+                attr_types: category.as_ref().map(|_| types.as_slice()),
+                attr_value_text: category.as_ref().map(|_| empty_text.as_slice()),
+                attr_value_int: category.as_ref().map(<[Option<i32>; 1]>::as_slice),
+                attr_value_bigint: category.as_ref().map(|_| empty_bigint.as_slice()),
+                attr_value_numeric: category.as_ref().map(|_| empty_text.as_slice()),
+                attr_value_bool: category.as_ref().map(|_| empty_bool.as_slice()),
+                attr_value_uuid: category.as_ref().map(|_| empty_uuid.as_slice()),
             },
             release.privacy,
         )

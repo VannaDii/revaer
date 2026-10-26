@@ -249,6 +249,7 @@ pub(crate) struct RecordingIndexers {
     >,
     pub(super) search_request_calls: Arc<Mutex<Vec<SearchRequestCreateSnapshot>>>,
     pub(super) search_request_create_error: Arc<Mutex<Option<SearchRequestServiceError>>>,
+    search_terminal_result: Arc<Mutex<Option<Result<bool, SearchRequestServiceError>>>>,
     pub(super) search_request_cancel_error: Arc<Mutex<Option<SearchRequestServiceError>>>,
     pub(super) import_job_create_calls: Arc<Mutex<Vec<ImportJobCreateCall>>>,
     pub(super) import_job_run_prowlarr_api_calls: Arc<Mutex<Vec<ImportJobRunProwlarrApiCall>>>,
@@ -488,6 +489,13 @@ impl RecordingIndexers {
 
     pub(crate) fn set_search_page_list_response(&self, response: SearchPageListResponse) {
         *self.search_page_list_response.lock().expect("lock") = Some(response);
+    }
+
+    pub(crate) fn set_search_terminal_result(
+        &self,
+        result: Result<bool, SearchRequestServiceError>,
+    ) {
+        *self.search_terminal_result.lock().expect("lock") = Some(result);
     }
 
     pub(crate) fn set_search_page_fetch_response(&self, response: SearchPageResponse) {
@@ -1258,6 +1266,27 @@ impl IndexerFacade for RecordingIndexers {
             search_request_public_id: DEFAULT_SEARCH_REQUEST_PUBLIC_ID,
             request_policy_set_public_id: DEFAULT_REQUEST_POLICY_SET_PUBLIC_ID,
         })
+    }
+
+    async fn torznab_search_request_create(
+        &self,
+        _instance: Uuid,
+        _api_key: &str,
+        params: SearchRequestCreateParams<'_>,
+    ) -> Result<SearchRequestCreateResponse, SearchRequestServiceError> {
+        self.search_request_create(params).await
+    }
+
+    async fn search_request_is_terminal(
+        &self,
+        _actor: Uuid,
+        _request: Uuid,
+    ) -> Result<bool, SearchRequestServiceError> {
+        self.search_terminal_result
+            .lock()
+            .expect("lock")
+            .clone()
+            .unwrap_or(Ok(true))
     }
 
     async fn search_request_cancel(

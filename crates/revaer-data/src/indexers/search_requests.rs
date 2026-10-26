@@ -37,6 +37,59 @@ const SEARCH_REQUEST_CANCEL_CALL: &str = r"
     )
 ";
 
+const TORZNAB_SEARCH_CREATE: &str = r"
+    SELECT * FROM torznab_search_request_create(
+        torznab_instance_public_id_input => $1,
+        api_key_plaintext_input => $2,
+        query_text_input => $3,
+        query_type_input => $4::query_type,
+        torznab_mode_input => $5::torznab_mode,
+        season_number_input => $6,
+        episode_number_input => $7,
+        identifier_types_input => $8::identifier_type[],
+        identifier_values_input => $9,
+        torznab_cat_ids_input => $10::int[]
+    )
+";
+
+/// Create under the authenticated Torznab instance's profile and internal page size.
+///
+/// # Errors
+/// Returns authentication, profile, query validation or storage failures.
+pub async fn torznab_search_request_create(
+    pool: &PgPool,
+    instance: Uuid,
+    api_key: &str,
+    input: &SearchRequestCreateInput<'_>,
+) -> Result<SearchRequestCreateRow> {
+    try_op("Torznab search request create", || {
+        sqlx::query_as(TORZNAB_SEARCH_CREATE)
+            .bind(instance)
+            .bind(api_key)
+            .bind(input.query_text)
+            .bind(input.query_type)
+            .bind(input.torznab_mode)
+            .bind(input.season_number)
+            .bind(input.episode_number)
+            .bind(input.identifier_types)
+            .bind(input.identifier_values)
+            .bind(input.torznab_cat_ids)
+            .fetch_one(pool)
+    })
+    .await
+}
+
+/// Observe committed terminal state through the normal request visibility boundary.
+///
+/// # Errors
+/// Returns authorization, missing-request or storage failures.
+pub async fn search_request_is_terminal(pool: &PgPool, actor: Uuid, request: Uuid) -> Result<bool> {
+    try_op("search request terminal state", || {
+        sqlx::query_scalar("SELECT search_request_is_terminal(actor_user_public_id => $1, search_request_public_id_input => $2)")
+            .bind(actor).bind(request).fetch_one(pool)
+    }).await
+}
+
 const SEARCH_INDEXER_RUN_ENQUEUE_CALL: &str = r"
     SELECT search_indexer_run_enqueue(
         search_request_public_id_input => $1,

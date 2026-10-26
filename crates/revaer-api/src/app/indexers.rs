@@ -446,6 +446,27 @@ pub trait IndexerFacade: Send + Sync {
             SearchRequestServiceErrorKind::Storage,
         ))
     }
+    /// Create a search authorized by the authenticated Torznab instance binding.
+    async fn torznab_search_request_create(
+        &self,
+        _instance: Uuid,
+        _api_key: &str,
+        _params: SearchRequestCreateParams<'_>,
+    ) -> Result<SearchRequestCreateResponse, SearchRequestServiceError> {
+        Err(SearchRequestServiceError::new(
+            SearchRequestServiceErrorKind::Storage,
+        ))
+    }
+    /// Observe committed completion without retaining attempt ownership.
+    async fn search_request_is_terminal(
+        &self,
+        _actor: Uuid,
+        _request: Uuid,
+    ) -> Result<bool, SearchRequestServiceError> {
+        Err(SearchRequestServiceError::new(
+            SearchRequestServiceErrorKind::Storage,
+        ))
+    }
     /// Cancel a search request.
     async fn search_request_cancel(
         &self,

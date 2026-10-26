@@ -54,6 +54,8 @@ applyTo:
 
 - Browser startup regressions in `tools/tests/fixtures/browser_startup.py` exercise the shipped page helper in Chromium and WebKit. Keep delayed rendering and missing-control cases together; use the readiness contract in `revaer-ui.instructions.md` without changing application timeout defaults.
 
+- Public Torznab API and manual-search browser scenarios share the controlled upstream and normal configuration helpers in `tests/support/torznab.py`. Search results originate in its HTTP feed; protocol observations omit credentials, and profile-isolation scenarios keep excluded upstreams enabled to exercise actual selection.
+
 - Keep a structured README for each substantial tooling package: purpose, commands/inputs, module responsibilities, failure/cleanup behavior and evidence. Comment non-obvious invariants and native protocol details at their implementation.
 - Test task behavior through the supported native operation. Test meaningful failures and ownership boundaries. Fixtures do not establish application, hosted workflow or publication acceptance.
 - Chart orchestration fixtures stage explicit media or empty chart values so the checkout's compliance settings cannot change the scenario being tested.

@@ -11,120 +11,13 @@ from revaer_tooling.e2e.api import ApiClient, ApiRequest, Method
 from revaer_tooling.json_data import JsonObject, array_value, object_value, string_value
 
 from tests.pages.app_shell import AppShell
-from tests.support.api_assertions import rows
 from tests.support.polling import eventually
-from tests.support.torznab import TorznabUpstream, torznab_upstream
-
-
-@contextmanager
-def configure_torznab(
-    api: ApiClient, upstream: TorznabUpstream, routing_policy: str | None = None
-) -> Iterator[str]:
-    route = "/v1/indexers/instances"
-    created = api.request(
-        ApiRequest(
-            Method.POST,
-            route,
-            {
-                "indexer_definition_upstream_slug": "torznab",
-                "display_name": "Live search " + upstream.infohash[:12],
-                "routing_policy_public_id": routing_policy,
-            },
-        )
-    )
-    assert created.status == 201, "A Torznab upstream must be configurable through the API"
-    identifier = string_value(created.object()["indexer_instance_public_id"])
-    path = {"indexer_instance_public_id": identifier}
-    secret_id: str | None = None
-    try:
-        secret = api.request(
-            ApiRequest(
-                Method.POST,
-                "/v1/indexers/secrets",
-                {"secret_type": "api_key", "secret_value": upstream.api_key},
-            )
-        )
-        assert secret.status == 201
-        secret_id = string_value(secret.object()["secret_public_id"])
-        values: tuple[tuple[str, JsonObject], ...] = (
-            ("value", {"field_name": "base_url", "value_plain": upstream.endpoint}),
-            (
-                "secret",
-                {"field_name": "api_key", "secret_public_id": secret.object()["secret_public_id"]},
-            ),
-        )
-        for kind, body in values:
-            configured = api.request(
-                ApiRequest(
-                    Method.PATCH,
-                    route + "/{indexer_instance_public_id}/fields/" + kind,
-                    body,
-                    path=path,
-                )
-            )
-            assert configured.status == 204
-        enabled = api.request(
-            ApiRequest(
-                Method.PATCH,
-                route + "/{indexer_instance_public_id}",
-                {"indexer_instance_public_id": identifier, "is_enabled": True},
-                path=path,
-            )
-        )
-        assert enabled.ok
-        with isolated_indexer(api, identifier):
-            yield identifier
-    finally:
-        # Stop this source before revoking its credential, and attempt both cleanups.
-        with ExitStack() as cleanup:
-            if secret_id is not None:
-                cleanup.callback(
-                    require_status,
-                    api,
-                    ApiRequest(
-                        Method.DELETE, "/v1/indexers/secrets", {"secret_public_id": secret_id}
-                    ),
-                    204,
-                )
-            cleanup.callback(
-                require_status,
-                api,
-                ApiRequest(
-                    Method.PATCH,
-                    route + "/{indexer_instance_public_id}",
-                    {"indexer_instance_public_id": identifier, "is_enabled": False},
-                    path=path,
-                ),
-                200,
-            )
-
-
-def require_status(api: ApiClient, request: ApiRequest, status: int) -> None:
-    assert api.request(request).status == status
-
-
-@contextmanager
-def isolated_indexer(api: ApiClient, selected: str) -> Iterator[None]:
-    route = "/v1/indexers/instances"
-    with ExitStack() as cleanup:
-        for instance in rows(api, route, "indexer_instances"):
-            identifier = string_value(instance["indexer_instance_public_id"])
-            if identifier == selected or instance["instance_status"] != "enabled":
-                continue
-            path = {"indexer_instance_public_id": identifier}
-            endpoint = route + "/{indexer_instance_public_id}"
-            cleanup.callback(
-                require_status,
-                api,
-                ApiRequest(Method.PATCH, endpoint, {**path, "is_enabled": True}, path=path),
-                200,
-            )
-            require_status(
-                api,
-                ApiRequest(Method.PATCH, endpoint, {**path, "is_enabled": False}, path=path),
-                200,
-            )
-        yield
+from tests.support.torznab import (
+    TorznabUpstream,
+    configure_torznab,
+    require_status,
+    torznab_upstream,
+)
 
 
 @contextmanager

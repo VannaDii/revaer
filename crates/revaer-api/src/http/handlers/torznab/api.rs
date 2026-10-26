@@ -2,7 +2,7 @@
 //!
 //! # Design
 //! - Authenticate requests using the apikey query parameter only.
-//! - Serve caps or empty search responses without committing DB writes.
+//! - Create profile-bound searches and observe committed results with a bounded wait.
 //! - Return empty bodies for unauthorized or disabled instance access.
 
 use std::collections::BTreeSet;
@@ -502,7 +502,7 @@ async fn execute_torznab_search(
             .map_or("free_text", |(identifier_type, _)| *identifier_type),
         torznab_mode: Some(search.mode.as_str()),
         requested_media_domain_key: None,
-        page_size: Some(search.limit),
+        page_size: None,
         search_profile_public_id: None,
         request_policy_set_public_id: None,
         season_number: search.season,
@@ -515,22 +515,21 @@ async fn execute_torznab_search(
 
     let search_request = state
         .indexers
-        .search_request_create(params)
+        .torznab_search_request_create(torznab_instance_public_id, api_key, params)
         .await
         .map_err(|error| map_search_request_failure(error.kind()))?;
 
-    let page_summaries = state
-        .indexers
-        .search_page_list(
-            SYSTEM_ACTOR_PUBLIC_ID,
-            search_request.search_request_public_id,
-        )
-        .await
-        .map_err(|_| TorznabSearchFailure::Internal)?
-        .pages;
+    let page_summaries = super::wait::sealed_pages(
+        state,
+        search_request.search_request_public_id,
+        offset_usize.saturating_add(limit_usize),
+    )
+    .await
+    .map_err(|_| TorznabSearchFailure::Internal)?;
 
     let total = search_result_total(&page_summaries);
-    let page_numbers = page_numbers_for_window(&page_summaries, offset_usize, limit_usize);
+    let (page_numbers, local_offset) =
+        page_numbers_for_window(&page_summaries, offset_usize, limit_usize);
     let mut items = Vec::new();
     for page_number in page_numbers {
         let Ok(page) = state
@@ -548,11 +547,7 @@ async fn execute_torznab_search(
     }
 
     let feed_items = map_feed_items(state, items, torznab_instance_public_id, api_key).await?;
-    let start = if limit_usize == 0 {
-        0
-    } else {
-        (offset_usize % limit_usize).min(feed_items.len())
-    };
+    let start = local_offset.min(feed_items.len());
     let end = start.saturating_add(limit_usize).min(feed_items.len());
 
     build_search_response(&feed_items[start..end], search.offset, total)
@@ -570,25 +565,29 @@ fn page_numbers_for_window(
     page_summaries: &[SearchPageSummaryResponse],
     offset: usize,
     limit: usize,
-) -> Vec<i32> {
+) -> (Vec<i32>, usize) {
     if page_summaries.is_empty() || limit == 0 {
-        return Vec::new();
+        return (Vec::new(), 0);
     }
 
     let start = offset;
     let end = offset.saturating_add(limit);
     let mut page_start = 0usize;
     let mut selected = Vec::new();
+    let mut local_offset = 0;
     for summary in page_summaries {
         let item_count = usize::try_from(summary.item_count).unwrap_or(0);
         let page_end = page_start.saturating_add(item_count);
         if page_end > start && page_start < end {
+            if selected.is_empty() {
+                local_offset = start.saturating_sub(page_start);
+            }
             selected.push(summary.page_number);
         }
         page_start = page_end;
     }
 
-    selected
+    (selected, local_offset)
 }
 
 const fn map_search_request_failure(kind: SearchRequestServiceErrorKind) -> TorznabSearchFailure {
@@ -1052,7 +1051,7 @@ mod tests {
         ];
 
         let selected = page_numbers_for_window(&pages, 55, 20);
-        assert_eq!(selected, vec![2]);
+        assert_eq!(selected, (vec![2], 5));
     }
 
     #[test]
@@ -1075,9 +1074,9 @@ mod tests {
             },
         ];
 
-        assert!(page_numbers_for_window(&pages, 0, 0).is_empty());
-        assert!(page_numbers_for_window(&[], 0, 10).is_empty());
-        assert_eq!(page_numbers_for_window(&pages, 8, 10), vec![1, 2]);
+        assert_eq!(page_numbers_for_window(&pages, 0, 0), (Vec::new(), 0));
+        assert_eq!(page_numbers_for_window(&[], 0, 10), (Vec::new(), 0));
+        assert_eq!(page_numbers_for_window(&pages, 8, 10), (vec![1, 2], 8));
     }
 
     #[test]
@@ -1202,13 +1201,13 @@ mod tests {
             pages: vec![SearchPageSummaryResponse {
                 page_number: 1,
                 item_count: 1,
-                sealed_at: None,
+                sealed_at: Some(Utc::now()),
             }],
             explainability: explainability(),
         });
         indexers.set_search_page_fetch_response(SearchPageResponse {
             page_number: 1,
-            sealed_at: None,
+            sealed_at: Some(Utc::now()),
             item_count: 1,
             items: vec![SearchPageItemResponse {
                 position: 1,
@@ -1266,7 +1265,7 @@ mod tests {
         assert_eq!(calls[0].query_text, "Example");
         assert_eq!(calls[0].query_type, "tvdb");
         assert_eq!(calls[0].torznab_mode.as_deref(), Some("tv"));
-        assert_eq!(calls[0].page_size, Some(10));
+        assert_eq!(calls[0].page_size, None);
         assert_eq!(calls[0].season_number, Some(1));
         assert_eq!(calls[0].episode_number, Some(2));
         assert_eq!(
@@ -1288,7 +1287,7 @@ mod tests {
             pages: vec![SearchPageSummaryResponse {
                 page_number: 1,
                 item_count: 1,
-                sealed_at: None,
+                sealed_at: Some(Utc::now()),
             }],
             explainability: explainability(),
         });

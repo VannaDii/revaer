@@ -51,6 +51,8 @@ mod pure_tests;
 #[path = "indexers_large_tests.rs"]
 mod large_tests;
 
+mod public_search_tests;
+
 async fn import_operator_definition_for_tests(
     service: &IndexerService,
     upstream_slug: &str,

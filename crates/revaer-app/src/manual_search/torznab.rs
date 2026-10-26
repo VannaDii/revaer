@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use reqwest::{Client, Url};
-use revaer_data::indexers::manual_search::{ManualSearchLinkPrivacy, ManualSearchRun};
+use revaer_data::indexers::manual_search::{
+    ManualSearchConnection, ManualSearchLinkPrivacy, ManualSearchRun,
+};
 
 const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_ITEMS: usize = 1000;
@@ -22,6 +24,7 @@ pub(super) struct Release {
     pub seeders: Option<i32>,
     pub leechers: Option<i32>,
     pub published_at: Option<DateTime<Utc>>,
+    pub tracker_category: Option<i32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,25 +59,7 @@ pub(super) async fn fetch(client: &Client, run: &ManualSearchRun) -> Result<Vec<
         .connection
         .as_ref()
         .map_err(|_| Failure::classified("auth_error"))?;
-    let mut url = Url::parse(&connection.endpoint).map_err(|_| Failure::classified("unknown"))?;
-    if !matches!(url.scheme(), "http" | "https")
-        || !url.username().is_empty()
-        || url.password().is_some()
-    {
-        return Err(Failure::classified("unknown"));
-    }
-    // Preserve caller-owned non-authentication endpoint parameters, replacing protocol inputs.
-    let parameters: Vec<(String, String)> = url
-        .query_pairs()
-        .filter(|(key, _)| !matches!(key.as_ref(), "t" | "q" | "apikey"))
-        .map(|(key, value)| (key.into_owned(), value.into_owned()))
-        .collect();
-    url.set_query(None);
-    url.query_pairs_mut()
-        .extend_pairs(parameters)
-        .append_pair("t", "search")
-        .append_pair("q", &run.query_text)
-        .append_pair("apikey", &connection.api_key);
+    let url = request_url(run, connection)?;
     let timeout_ms =
         u64::try_from(run.read_timeout_ms).map_err(|_| Failure::classified("unknown"))?;
     let mut response = client
@@ -122,6 +107,67 @@ pub(super) async fn fetch(client: &Client, run: &ManualSearchRun) -> Result<Vec<
     }
     let text = std::str::from_utf8(&bytes).map_err(|_| Failure::classified("parse_error"))?;
     parse(text, &connection.api_key)
+}
+
+fn request_url(run: &ManualSearchRun, connection: &ManualSearchConnection) -> Result<Url, Failure> {
+    let mut url = Url::parse(&connection.endpoint).map_err(|_| Failure::classified("unknown"))?;
+    if !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(Failure::classified("unknown"));
+    }
+    // Preserve caller-owned non-authentication endpoint parameters, replacing protocol inputs.
+    let parameters: Vec<(String, String)> = url
+        .query_pairs()
+        .filter(|(key, _)| {
+            !matches!(
+                key.as_ref(),
+                "t" | "q" | "apikey" | "cat" | "imdbid" | "tmdbid" | "tvdbid" | "season" | "ep"
+            )
+        })
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect();
+    url.set_query(None);
+    let mode = match run.torznab_mode.as_deref() {
+        None | Some("generic") => "search",
+        Some("tv") => "tvsearch",
+        Some("movie") => "movie",
+        Some(_) => return Err(Failure::classified("unknown")),
+    };
+    {
+        let mut query = url.query_pairs_mut();
+        query
+            .extend_pairs(parameters)
+            .append_pair("t", mode)
+            .append_pair("q", &run.query_text)
+            .append_pair("apikey", &connection.api_key);
+        if let Some((kind, value)) = &run.identifier {
+            let key = match kind.as_str() {
+                "imdb" => "imdbid",
+                "tmdb" => "tmdbid",
+                "tvdb" => "tvdbid",
+                _ => return Err(Failure::classified("unknown")),
+            };
+            // Torznab's inherited movie API uses the numeric IMDb identifier.
+            query.append_pair(key, value.strip_prefix("tt").unwrap_or(value));
+        }
+        for (key, value) in [("season", run.season_number), ("ep", run.episode_number)] {
+            if let Some(value) = value {
+                query.append_pair(key, &value.to_string());
+            }
+        }
+        if !run.category_ids.is_empty() {
+            let categories = run
+                .category_ids
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            query.append_pair("cat", &categories);
+        }
+    }
+    Ok(url)
 }
 
 fn child_text<'a>(node: roxmltree::Node<'a, 'a>, name: &str) -> Option<&'a str> {
@@ -248,6 +294,7 @@ fn parse_release(item: roxmltree::Node<'_, '_>, api_key: &str) -> Result<Release
         seeders,
         leechers,
         published_at,
+        tracker_category: optional_count(attribute(item, "category"))?,
     })
 }
 
@@ -272,6 +319,90 @@ fn private_url(value: Option<&str>, api_key: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn torznab_request_preserves_structured_inputs_and_encodes_reserved_characters()
+    -> anyhow::Result<()> {
+        use revaer_data::indexers::manual_search::ManualSearchRouting;
+        use uuid::Uuid;
+        for (mode, identifier, expected_mode, expected_id) in [
+            ("tv", Some(("tvdb", "7")), "tvsearch", Some(("tvdbid", "7"))),
+            (
+                "movie",
+                Some(("imdb", "tt0019798")),
+                "movie",
+                Some(("imdbid", "0019798")),
+            ),
+            (
+                "movie",
+                Some(("tmdb", "42")),
+                "movie",
+                Some(("tmdbid", "42")),
+            ),
+            ("generic", None, "search", None),
+        ] {
+            let secret = Uuid::new_v4().to_string();
+            let mut endpoint = Url::parse("https://upstream.example.test/api?retained=1")?;
+            endpoint
+                .query_pairs_mut()
+                .append_pair("apikey", &Uuid::new_v4().to_string())
+                .append_pair("cat", "9999")
+                .append_pair("imdbid", "9999999");
+            let connection = ManualSearchConnection {
+                endpoint: endpoint.into(),
+                api_key: secret,
+                routing: ManualSearchRouting::Direct { verify_tls: true },
+            };
+            let run = ManualSearchRun {
+                search_request_public_id: Uuid::new_v4(),
+                indexer_instance_public_id: Uuid::new_v4(),
+                claim_token: Uuid::new_v4(),
+                correlation_id: Uuid::new_v4(),
+                retry_seq: 0,
+                query_text: "A&B + café?".to_owned(),
+                torznab_mode: Some(mode.to_owned()),
+                identifier: identifier.map(|(kind, value)| (kind.to_owned(), value.to_owned())),
+                season_number: (mode == "tv").then_some(0),
+                episode_number: (mode == "tv").then_some(2),
+                category_ids: vec![2000, 5000],
+                connect_timeout_ms: 5000,
+                read_timeout_ms: 15000,
+                routing_policy_public_id: None,
+                connection: Ok(connection),
+            };
+            let connection = run.connection.as_ref().map_err(|error| *error)?;
+            let url =
+                request_url(&run, connection).map_err(|error| anyhow::anyhow!(error.class))?;
+            let observed = url
+                .query_pairs()
+                .into_owned()
+                .collect::<std::collections::BTreeMap<_, _>>();
+            anyhow::ensure!(observed.get("t").map(String::as_str) == Some(expected_mode));
+            anyhow::ensure!(observed.get("q").map(String::as_str) == Some("A&B + café?"));
+            anyhow::ensure!(observed.get("retained").map(String::as_str) == Some("1"));
+            anyhow::ensure!(observed.get("cat").map(String::as_str) == Some("2000,5000"));
+            let credential_matches = observed
+                .get("apikey")
+                .is_some_and(|value| value == &connection.api_key);
+            anyhow::ensure!(
+                credential_matches,
+                "The configured credential must replace endpoint credentials"
+            );
+            for key in ["imdbid", "tmdbid", "tvdbid"] {
+                let expected = expected_id
+                    .filter(|(name, _)| *name == key)
+                    .map(|(_, value)| value);
+                anyhow::ensure!(observed.get(key).map(String::as_str) == expected);
+            }
+            anyhow::ensure!(
+                observed.get("season").map(String::as_str) == (mode == "tv").then_some("0")
+            );
+            anyhow::ensure!(
+                observed.get("ep").map(String::as_str) == (mode == "tv").then_some("2")
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn torznab_private_links_are_retained_and_marked_without_rejecting_release()

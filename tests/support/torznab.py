@@ -5,12 +5,22 @@ import hmac
 import secrets
 import threading
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Literal
 from urllib.parse import parse_qs, urlsplit
 from xml.sax.saxutils import escape
+
+from revaer_tooling.e2e.api import ApiClient, ApiRequest, Method
+from revaer_tooling.json_data import JsonObject, string_value
+
+from tests.support.api_assertions import rows
+
+_ITEM_OPEN = b"<item>"
+_ITEM_CLOSE = b"</item>"
+_SINGLE_TOTAL = b'total="1"'
+_INSTANCE_PATH = "/{indexer_instance_public_id}"
 
 
 @dataclass
@@ -23,6 +33,11 @@ class TorznabUpstream:
     scenario: Literal[
         "matching", "empty", "unauthorized", "malformed", "oversized", "duplicate"
     ] = "matching"
+    delay_seconds: float = 0
+    stopping: threading.Event = field(default_factory=threading.Event, repr=False)
+    responded: threading.Event = field(default_factory=threading.Event, repr=False)
+    release_count: int = 1
+    parameters: list[dict[str, list[str]]] = field(default_factory=list)
     private_download: bool = False
     endpoint: str = ""
     requests: list[tuple[str, bool]] = field(default_factory=list)
@@ -67,20 +82,34 @@ class TorznabUpstream:
             start = feed.index(b'<torznab:attr name="magneturl"')
             end = feed.index(b"/>", start) + 2
             feed = feed[:start] + feed[end:]
-        prefix, _, remainder = feed.partition(b"<item>")
-        item, _, suffix = remainder.partition(b"</item>")
+        prefix, _, remainder = feed.partition(_ITEM_OPEN)
+        item, _, suffix = remainder.partition(_ITEM_CLOSE)
         if self.scenario == "empty":
-            return prefix.replace(b'total="1"', b'total="0"') + suffix
+            return prefix.replace(_SINGLE_TOTAL, b'total="0"') + suffix
         if self.scenario == "duplicate":
             return (
-                prefix.replace(b'total="1"', b'total="2"')
-                + (b"<item>" + item + b"</item>") * 2
+                prefix.replace(_SINGLE_TOTAL, b'total="2"')
+                + (_ITEM_OPEN + item + _ITEM_CLOSE) * 2
                 + suffix
             )
         if self.scenario == "malformed":
             return b"<rss>"
         if self.scenario == "oversized":
             return feed.replace(self.details_url.encode(), (self.details_url + "x" * 2048).encode())
+        if self.release_count > 1:
+            releases = []
+            for index in range(self.release_count):
+                infohash = f"{(int(self.infohash, 16) + index) % (1 << 160):040x}"
+                release = item.replace(self.infohash.encode(), infohash.encode())
+                release = release.replace(
+                    escape(self.title).encode(), escape(f"{self.title} item {index:03}").encode()
+                )
+                releases.append(_ITEM_OPEN + release + _ITEM_CLOSE)
+            return (
+                prefix.replace(_SINGLE_TOTAL, f'total="{self.release_count}"'.encode())
+                + b"".join(releases)
+                + suffix
+            )
         return feed
 
 
@@ -93,6 +122,25 @@ def torznab_upstream() -> Iterator[TorznabUpstream]:
             parsed = urlsplit(self.path)
             upstream.proxied_requests.append(bool(parsed.scheme))
             query = parse_qs(parsed.query)
+            upstream.parameters.append(
+                {
+                    key: value
+                    for key, value in query.items()
+                    if key
+                    in {
+                        "t",
+                        "q",
+                        "cat",
+                        "imdbid",
+                        "tmdbid",
+                        "tvdbid",
+                        "season",
+                        "ep",
+                        "offset",
+                        "limit",
+                    }
+                }
+            )
             authenticated = hmac.compare_digest(query.get("apikey", [""])[0], upstream.api_key)
             upstream.requests.append((query.get("q", [""])[0], authenticated))
             expected_proxy_auth = (
@@ -111,25 +159,145 @@ def torznab_upstream() -> Iterator[TorznabUpstream]:
                 status = 407
             else:
                 status = 401
+            if upstream.stopping.wait(upstream.delay_seconds):
+                return
             self.send_response(status)
             self.send_header("Content-Type", "application/rss+xml")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            upstream.responded.set()
 
         def log_message(self, format: str, *args: object) -> None:
             # HTTP request URLs can contain the upstream credential.
             return
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = False
     upstream.endpoint = f"http://127.0.0.1:{server.server_port}/api"
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
         yield upstream
     finally:
+        upstream.stopping.set()
         server.shutdown()
         server.server_close()
         thread.join(timeout=1)
         if thread.is_alive():
             raise RuntimeError("Owned Torznab upstream did not stop")
+
+
+@contextmanager
+def configure_torznab(
+    api: ApiClient,
+    upstream: TorznabUpstream,
+    routing_policy: str | None = None,
+    *,
+    exclusive: bool = True,
+) -> Iterator[str]:
+    route = "/v1/indexers/instances"
+    created = api.request(
+        ApiRequest(
+            Method.POST,
+            route,
+            {
+                "indexer_definition_upstream_slug": "torznab",
+                "display_name": "Live search " + upstream.infohash[:12],
+                "routing_policy_public_id": routing_policy,
+            },
+        )
+    )
+    assert created.status == 201, "A Torznab upstream must be configurable through the API"
+    identifier = string_value(created.object()["indexer_instance_public_id"])
+    path = {"indexer_instance_public_id": identifier}
+    secret_id: str | None = None
+    try:
+        secret = api.request(
+            ApiRequest(
+                Method.POST,
+                "/v1/indexers/secrets",
+                {"secret_type": "api_key", "secret_value": upstream.api_key},
+            )
+        )
+        assert secret.status == 201
+        secret_id = string_value(secret.object()["secret_public_id"])
+        values: tuple[tuple[str, JsonObject], ...] = (
+            ("value", {"field_name": "base_url", "value_plain": upstream.endpoint}),
+            (
+                "secret",
+                {"field_name": "api_key", "secret_public_id": secret.object()["secret_public_id"]},
+            ),
+        )
+        for kind, body in values:
+            configured = api.request(
+                ApiRequest(
+                    Method.PATCH,
+                    route + "/{indexer_instance_public_id}/fields/" + kind,
+                    body,
+                    path=path,
+                )
+            )
+            assert configured.status == 204
+        enabled = api.request(
+            ApiRequest(
+                Method.PATCH,
+                route + _INSTANCE_PATH,
+                {"indexer_instance_public_id": identifier, "is_enabled": True},
+                path=path,
+            )
+        )
+        assert enabled.ok
+        with isolated_indexer(api, identifier) if exclusive else nullcontext():
+            yield identifier
+    finally:
+        # Stop this source before revoking its credential, and attempt both cleanups.
+        with ExitStack() as cleanup:
+            if secret_id is not None:
+                cleanup.callback(
+                    require_status,
+                    api,
+                    ApiRequest(
+                        Method.DELETE, "/v1/indexers/secrets", {"secret_public_id": secret_id}
+                    ),
+                    204,
+                )
+            cleanup.callback(
+                require_status,
+                api,
+                ApiRequest(
+                    Method.PATCH,
+                    route + _INSTANCE_PATH,
+                    {"indexer_instance_public_id": identifier, "is_enabled": False},
+                    path=path,
+                ),
+                200,
+            )
+
+
+def require_status(api: ApiClient, request: ApiRequest, status: int) -> None:
+    assert api.request(request).status == status
+
+
+@contextmanager
+def isolated_indexer(api: ApiClient, selected: str) -> Iterator[None]:
+    route = "/v1/indexers/instances"
+    with ExitStack() as cleanup:
+        for instance in rows(api, route, "indexer_instances"):
+            identifier = string_value(instance["indexer_instance_public_id"])
+            if identifier == selected or instance["instance_status"] != "enabled":
+                continue
+            path = {"indexer_instance_public_id": identifier}
+            endpoint = route + _INSTANCE_PATH
+            cleanup.callback(
+                require_status,
+                api,
+                ApiRequest(Method.PATCH, endpoint, {**path, "is_enabled": True}, path=path),
+                200,
+            )
+            require_status(
+                api,
+                ApiRequest(Method.PATCH, endpoint, {**path, "is_enabled": False}, path=path),
+                200,
+            )
+        yield
