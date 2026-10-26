@@ -18,6 +18,7 @@ applyTo:
 - Manual-search ingestion records URL privacy alongside durable source links. Search pages omit private links; acquisition retains the original values. Never strip credentials from the stored acquisition target or create a download relay for search presentation.
 
 - Manual-search claims use a unique attempt token separately from the stable outbound correlation. Ingestion and completion fence every write against that token; cancellation permits the retained owner to settle its outbound ledger once without reviving the request. Reuse the existing policy, normalization, page finalization and retry procedures.
+- Claim acquisition retries at most three attempts for PostgreSQL deadlock or serialization rollbacks, then propagates the original failure. Transport failures and failed cleanup are not retryable claims.
 
 - Deployment initialization and factory reset seed the built-in Torznab definition idempotently. Its endpoint uses the existing plain instance field; its API key uses the existing encrypted secret binding. Keep authored defaults credential-free and preserve normal instance authorization and runnable-indexer selection.
 

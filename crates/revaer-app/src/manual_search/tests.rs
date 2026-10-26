@@ -20,6 +20,17 @@ async fn manual_search_cancellation_stops_pending_http_and_fences_results() -> a
 }
 
 async fn pending_attempt_settles(cancel_request: bool) -> anyhow::Result<()> {
+    with_manual_database(
+        |config| async move { exercise_pending_attempt(config, cancel_request).await },
+    )
+    .await
+}
+
+async fn with_manual_database<F, Fut>(exercise: F) -> anyhow::Result<()>
+where
+    F: FnOnce(Arc<ConfigService>) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<()>>,
+{
     let mut database = start_postgres()?;
     let result = async {
         database
@@ -35,7 +46,7 @@ async fn pending_attempt_settles(cancel_request: bool) -> anyhow::Result<()> {
             )
             .await?,
         );
-        let result = exercise_pending_attempt(Arc::clone(&config), cancel_request).await;
+        let result = exercise(Arc::clone(&config)).await;
         config.pool().close().await;
         result
     }
@@ -44,7 +55,7 @@ async fn pending_attempt_settles(cancel_request: bool) -> anyhow::Result<()> {
         (Ok(()), Ok(())) => Ok(()),
         (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
         (Err(operation), Err(cleanup)) => Err(anyhow::anyhow!(
-            "Pending attempt failed: {operation}; database cleanup failed: {cleanup}"
+            "Manual search test failed: {operation}; database cleanup failed: {cleanup}"
         )),
     }
 }
@@ -201,31 +212,102 @@ async fn receive_headers(
 
 #[tokio::test]
 async fn manual_search_http_auth_failure_is_classified_without_credentials() -> anyhow::Result<()> {
-    let mut database = start_postgres()?;
-    let result = async {
-        database
-            .initialize_runtime(include_str!("../../../revaer-data/init.sql"))
-            .await?;
-        let config = ConfigService::new_with_session(
-            database.connection_string(),
-            Some(DbSessionConfig::new(
-                "manual-auth-test",
-                &Uuid::new_v4().to_string(),
-            )),
+    with_manual_database(|config| async move { auth_failure(&config).await }).await
+}
+
+#[tokio::test]
+async fn manual_search_success_ingests_http_response_and_seals_stable_page() -> anyhow::Result<()> {
+    with_manual_database(|config| async move { completed_attempt(&config, false).await }).await
+}
+
+#[tokio::test]
+async fn manual_search_empty_http_response_seals_zero_result_page() -> anyhow::Result<()> {
+    with_manual_database(|config| async move { completed_attempt(&config, true).await }).await
+}
+
+async fn completed_attempt(config: &Arc<ConfigService>, empty: bool) -> anyhow::Result<()> {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
+    let request_id =
+        configured_request(config, &format!("http://{}/api", listener.local_addr()?)).await?;
+    let run = store::claim_next(config.pool())
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Expected an owned HTTP attempt"))?;
+    let source = run.indexer_instance_public_id;
+    let credential = &run.connection.as_ref().map_err(|error| *error)?.api_key;
+    let hash = format!("{}00000000", Uuid::new_v4().simple());
+    let body = if empty {
+        "<rss><channel/></rss>".to_owned()
+    } else {
+        format!(
+            r#"<rss xmlns:t="http://torznab.com/schemas/2015/feed"><channel><item><title>Pending upstream search</title><size>1048576</size><guid>{hash}</guid><enclosure url="https://example.test/download?apikey={credential}"/><comments>https://example.test/details</comments><pubDate>Sat, 24 Oct 2026 00:00:00 GMT</pubDate><t:attr name="infohash" value="{hash}"/><t:attr name="seeders" value="17"/><t:attr name="leechers" value="2"/></item></channel></rss>"#
         )
-        .await?;
-        let result = auth_failure(&config).await;
-        config.pool().close().await;
-        result
+    };
+    let (shutdown, mut receiver) = runtime_shutdown::channel();
+    let server = tokio::spawn(serve_feed(listener, body, receiver.clone()));
+    let runtime =
+        ManualSearchRuntime::new(Arc::clone(config), crate::bootstrap::manual_search_client);
+    let executed = runtime
+        .execute(run, &mut receiver)
+        .await
+        .map_err(anyhow::Error::from);
+    let _ = runtime_shutdown::request(&shutdown);
+    let upstream = server
+        .await
+        .map_err(anyhow::Error::from)
+        .and_then(|result| result);
+    match (executed, upstream) {
+        (Ok(()), Ok(())) => {}
+        (Err(error), Ok(())) | (Ok(()), Err(error)) => return Err(error),
+        (Err(operation), Err(upstream)) => {
+            return Err(anyhow::anyhow!(
+                "HTTP attempt failed: {operation}; upstream settlement: {upstream}"
+            ));
+        }
     }
-    .await;
-    match (result, database.close()) {
-        (Ok(()), Ok(())) => Ok(()),
-        (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
-        (Err(operation), Err(cleanup)) => Err(anyhow::anyhow!(
-            "Authentication test failed: {operation}; cleanup failed: {cleanup}"
-        )),
+    let pages = search_pages::search_page_list(config.pool(), Uuid::nil(), request_id).await?;
+    anyhow::ensure!(pages.len() == 1);
+    anyhow::ensure!(pages[0].sealed_at.is_some());
+    anyhow::ensure!(pages[0].item_count == i32::from(!empty));
+    let explain =
+        search_pages::search_request_explainability(config.pool(), Uuid::nil(), request_id).await?;
+    anyhow::ensure!(explain.skipped_failed_indexers == 0);
+    anyhow::ensure!(explain.retrying_indexers == 0);
+    anyhow::ensure!(store::claim_next(config.pool()).await?.is_none());
+    if !empty {
+        let rows =
+            search_pages::search_page_fetch(config.pool(), Uuid::nil(), request_id, 1).await?;
+        let repeated =
+            search_pages::search_page_fetch(config.pool(), Uuid::nil(), request_id, 1).await?;
+        anyhow::ensure!(rows.len() == 1 && repeated.len() == 1);
+        anyhow::ensure!(rows[0].infohash_v1.as_deref() == Some(hash.as_str()));
+        anyhow::ensure!(rows[0].indexer_instance_public_id == Some(source));
+        anyhow::ensure!(rows[0].download_url.is_none());
+        anyhow::ensure!(rows[0].details_url.as_deref() == Some("https://example.test/details"));
+        anyhow::ensure!(rows[0].item_position == repeated[0].item_position);
+        anyhow::ensure!(
+            rows[0].canonical_torrent_public_id == repeated[0].canonical_torrent_public_id
+        );
     }
+    Ok(())
+}
+
+async fn serve_feed(
+    listener: TcpListener,
+    body: String,
+    mut shutdown: RuntimeShutdownReceiver,
+) -> anyhow::Result<()> {
+    let (mut stream, _) = tokio::select! {
+        result = listener.accept() => result?,
+        () = runtime_shutdown::changed(&mut shutdown) => return Ok(()),
+    };
+    if receive_headers(&mut stream, &mut shutdown).await? {
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        stream.write_all(response.as_bytes()).await?;
+    }
+    Ok(())
 }
 
 async fn auth_failure(config: &ConfigService) -> anyhow::Result<()> {

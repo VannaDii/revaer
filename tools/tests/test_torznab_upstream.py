@@ -3,7 +3,7 @@
 import base64
 import xml.etree.ElementTree as ET
 from urllib.error import HTTPError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
 import pytest
@@ -58,7 +58,7 @@ def test_controlled_torznab_can_fail_an_authenticated_request() -> None:
 def test_controlled_torznab_accepts_absolute_form_proxy_requests(authenticated: bool) -> None:
     with torznab_upstream() as upstream:
         proxy = upstream.endpoint.removesuffix("/api")
-        opener = build_opener(ProxyHandler({"http": proxy}))
+        opener = build_opener(ProxyHandler({}))
         query = urlencode({"t": "search", "q": upstream.title, "apikey": upstream.api_key})
         upstream.require_proxy_auth = authenticated
         headers = {}
@@ -67,7 +67,8 @@ def test_controlled_torznab_accepts_absolute_form_proxy_requests(authenticated: 
                 "Basic "
                 + base64.b64encode(("search-proxy:" + upstream.proxy_password).encode()).decode()
             )
-        request = Request("http://torznab.invalid/api?" + query, headers=headers)
+        request = Request(upstream.endpoint + "?" + query, headers=headers)
+        request.set_proxy(urlsplit(proxy).netloc, "http")
         with opener.open(request, timeout=2) as response:
             assert response.status == 200
             root = ET.fromstring(response.read())

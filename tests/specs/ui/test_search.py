@@ -461,12 +461,12 @@ def test_live_torznab_uses_configured_http_proxy(
                 ),
                 204,
             )
-        # The logical upstream cannot resolve directly. The controlled HTTP proxy
-        # supplies the feed only when the production client uses absolute-form HTTP.
-        upstream.endpoint = "http://torznab.invalid/api"
+        # Both endpoints belong to the loopback fixture. Absolute-form requests
+        # distinguish configured proxy routing from a direct connection.
         with configure_torznab(api, upstream, route_id) as identifier:
             assert_live_results(app, page, api, upstream, identifier)
-            assert upstream.proxied_requests and all(upstream.proxied_requests)
+            assert upstream.proxied_requests
+            assert all(upstream.proxied_requests)
             assert all(upstream.proxy_authenticated)
             private = upstream.proxy_password not in page.content()
             assert private, "Proxy credentials must stay private"

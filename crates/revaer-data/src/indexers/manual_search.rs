@@ -5,6 +5,8 @@
 //! stable across retries. Plain credentials never implement diagnostic output.
 
 use sqlx::{FromRow, PgPool};
+use std::future::Future;
+use std::time::Duration;
 use uuid::Uuid;
 
 use super::search_results::SearchResultIngestInput;
@@ -307,12 +309,43 @@ impl ClaimRow {
 /// Returns database errors without exposing connection configuration or secrets.
 pub async fn claim_next(pool: &PgPool) -> Result<Option<ManualSearchRun>> {
     try_op("manual search claim", || async {
-        sqlx::query_as::<_, ClaimRow>(CLAIM)
-            .fetch_optional(pool)
+        claim_query(|| sqlx::query_as::<_, ClaimRow>(CLAIM).fetch_optional(pool))
             .await
             .map(|row| row.map(ClaimRow::into_run))
     })
     .await
+}
+
+async fn claim_query<F, Fut>(mut query: F) -> sqlx::Result<Option<ClaimRow>>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = sqlx::Result<Option<ClaimRow>>>,
+{
+    let mut attempt = 1_u32;
+    loop {
+        match query().await {
+            Err(error)
+                if attempt < 3
+                    && matches!(
+                        error
+                            .as_database_error()
+                            .and_then(sqlx::error::DatabaseError::code)
+                            .as_deref(),
+                        Some("40P01" | "40001")
+                    ) =>
+            {
+                // PostgreSQL rolled back the complete claim statement. Retrying
+                // cannot retain a token, consume a budget or duplicate an attempt.
+                tracing::warn!(
+                    attempt,
+                    "manual search claim rolled back by contention; retrying"
+                );
+                tokio::time::sleep(Duration::from_millis(100 * u64::from(attempt))).await;
+                attempt += 1;
+            }
+            result => return result,
+        }
+    }
 }
 
 /// Observe whether this attempt still owns the live request.

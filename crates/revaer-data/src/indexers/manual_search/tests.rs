@@ -15,6 +15,106 @@ use crate::indexers::secrets::secret_create;
 use uuid::Uuid;
 
 #[tokio::test]
+async fn manual_claim_retries_only_rolled_back_statements() -> anyhow::Result<()> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let test_db = crate::indexers::setup_indexer_db("claim rollback recovery").await?;
+    let result = async {
+        let pool = test_db.pool();
+        let (source, _) = configured_source(pool, "http://127.0.0.1:8765/api", None).await?;
+        for rollback in [
+            include_str!("sql/claim_deadlock.sql"),
+            include_str!("sql/claim_serialization.sql"),
+        ] {
+            let request = create_request(pool, "Recover rolled back claim").await?;
+            let calls = AtomicUsize::new(0);
+            let row = super::claim_query(|| {
+                let query = if calls.fetch_add(1, Ordering::SeqCst) < 2 {
+                    rollback
+                } else {
+                    super::CLAIM
+                };
+                sqlx::query_as::<_, super::ClaimRow>(query).fetch_optional(pool)
+            })
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Expected a recovered claim"))?;
+            let claim = row.into_run();
+            anyhow::ensure!(calls.load(Ordering::SeqCst) == 3);
+            anyhow::ensure!(claim.search_request_public_id == request);
+            anyhow::ensure!(claim.indexer_instance_public_id == source && claim.retry_seq == 0);
+            anyhow::ensure!(is_active(pool, &claim).await?);
+            anyhow::ensure!(claim_next(pool).await?.is_none());
+            let completion = ManualSearchCompletion {
+                outcome: ManualSearchOutcome::Success,
+                http_status: Some(200),
+                latency_ms: 0,
+                result_count: 0,
+                retry_after_seconds: None,
+            };
+            anyhow::ensure!(
+                complete(pool, &claim, completion).await? == ManualSearchWriteOutcome::Applied
+            );
+            let count: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM outbound_request_log WHERE correlation_id = $1",
+            )
+            .bind(claim.correlation_id)
+            .fetch_one(pool)
+            .await?;
+            anyhow::ensure!(count == 1);
+            let pages = search_page_list(pool, Uuid::nil(), request).await?;
+            anyhow::ensure!(pages.len() == 1 && pages[0].sealed_at.is_some());
+        }
+        Ok::<(), anyhow::Error>(())
+    }
+    .await;
+    test_db.finish(result).await
+}
+
+#[tokio::test]
+async fn manual_claim_preserves_exhausted_and_nonretryable_errors() -> anyhow::Result<()> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let test_db = crate::indexers::setup_indexer_db("claim rollback limits").await?;
+    let result = async {
+        let pool = test_db.pool();
+        for (query, code, expected_calls) in [
+            (include_str!("sql/claim_deadlock.sql"), "40P01", 3),
+            (include_str!("sql/claim_serialization.sql"), "40001", 3),
+            ("SELECT 1 / 0", "22012", 1),
+        ] {
+            let calls = AtomicUsize::new(0);
+            let outcome = super::claim_query(|| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                sqlx::query_as::<_, super::ClaimRow>(query).fetch_optional(pool)
+            })
+            .await;
+            let Err(error) = outcome else {
+                anyhow::bail!("Expected the original claim error");
+            };
+            anyhow::ensure!(calls.load(Ordering::SeqCst) == expected_calls);
+            anyhow::ensure!(
+                error
+                    .as_database_error()
+                    .and_then(sqlx::error::DatabaseError::code)
+                    .as_deref()
+                    == Some(code)
+            );
+        }
+        let calls = AtomicUsize::new(0);
+        let outcome = super::claim_query(|| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            std::future::ready(Err(sqlx::Error::PoolClosed))
+        })
+        .await;
+        anyhow::ensure!(matches!(outcome, Err(sqlx::Error::PoolClosed)));
+        anyhow::ensure!(calls.load(Ordering::SeqCst) == 1);
+        Ok::<(), anyhow::Error>(())
+    }
+    .await;
+    test_db.finish(result).await
+}
+
+#[tokio::test]
 async fn concurrent_manual_claims_own_one_attempt_and_resolve_bound_credentials()
 -> anyhow::Result<()> {
     let test_db = crate::indexers::setup_indexer_db("manual Torznab claim").await?;
