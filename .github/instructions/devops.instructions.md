@@ -22,6 +22,8 @@ applyTo:
 - The subprocess deadline/setup and TERM-grace timing fixtures reserve the nextest runner exclusively. Preserve their millisecond timing assertions; unrelated child-process startup must not consume their setup budget.
 
 
+- Public Torznab API acceptance uses the same controlled upstream and normal configuration helpers as manual-search browser regressions. Keep the five-second response bound, continued upstream execution and sealed append-order checks inside existing E2E phases; preserve the ten-second client request deadline and the existing test timeout.
+
 - API and browser E2E jobs explicitly provision FFmpeg for real capability probes. Managed media storage uses the root repo-local test scratch contract. Do not rely on runner-image tools or a developer checkout for job dependencies.
 
 - Real Dockerfile and image-export tooling fixtures may consume an explicitly supplied `REVAER_TEST_BUILDX_BUILDER` without changing its selection or removing it. Retain every actual image/runtime assertion and clean only fixture-owned images; otherwise each fixture owns and removes its unique builder.
