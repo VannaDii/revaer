@@ -130,6 +130,7 @@ use revaer_data::indexers::search_profiles::{
 };
 use revaer_data::indexers::search_requests::{
     SearchRequestCreateInput, search_request_cancel, search_request_create,
+    search_request_is_terminal, torznab_search_request_create,
 };
 use revaer_data::indexers::secrets::{
     secret_create, secret_metadata_list, secret_revoke, secret_rotate,
@@ -987,21 +988,7 @@ impl IndexerFacade for IndexerService {
             "indexer.search_request_create",
             actor_user_public_id = %params.actor_user_public_id.unwrap_or_default()
         );
-        let input = SearchRequestCreateInput {
-            actor_user_public_id: params.actor_user_public_id,
-            query_text: params.query_text,
-            query_type: params.query_type,
-            torznab_mode: params.torznab_mode,
-            requested_media_domain_key: params.requested_media_domain_key,
-            page_size: params.page_size,
-            search_profile_public_id: params.search_profile_public_id,
-            request_policy_set_public_id: params.request_policy_set_public_id,
-            season_number: params.season_number,
-            episode_number: params.episode_number,
-            identifier_types: params.identifier_types,
-            identifier_values: params.identifier_values,
-            torznab_cat_ids: params.torznab_cat_ids,
-        };
+        let input = search_request_input(&params);
 
         let row = self
             .run_operation(
@@ -1015,6 +1002,39 @@ impl IndexerFacade for IndexerService {
             search_request_public_id: row.search_request_public_id,
             request_policy_set_public_id: row.request_policy_set_public_id,
         })
+    }
+
+    async fn torznab_search_request_create(
+        &self,
+        instance: Uuid,
+        api_key: &str,
+        params: SearchRequestCreateParams<'_>,
+    ) -> Result<SearchRequestCreateResponse, SearchRequestServiceError> {
+        let input = search_request_input(&params);
+        let row = self
+            .run_operation(
+                "indexer.torznab_search_request_create",
+                torznab_search_request_create(self.config.pool(), instance, api_key, &input),
+                |error| map_search_request_error("torznab_search_request_create", error),
+            )
+            .await?;
+        Ok(SearchRequestCreateResponse {
+            search_request_public_id: row.search_request_public_id,
+            request_policy_set_public_id: row.request_policy_set_public_id,
+        })
+    }
+
+    async fn search_request_is_terminal(
+        &self,
+        actor: Uuid,
+        request: Uuid,
+    ) -> Result<bool, SearchRequestServiceError> {
+        self.run_operation(
+            "indexer.search_request_is_terminal",
+            search_request_is_terminal(self.config.pool(), actor, request),
+            |error| map_search_request_error("search_request_is_terminal", error),
+        )
+        .await
     }
 
     async fn search_request_cancel(
@@ -5200,6 +5220,26 @@ fn indexer_instance_field_error_kind(detail: Option<&str>) -> IndexerInstanceFie
             IndexerInstanceFieldErrorKind::Unauthorized
         }
         _ => IndexerInstanceFieldErrorKind::Storage,
+    }
+}
+
+const fn search_request_input<'a>(
+    params: &SearchRequestCreateParams<'a>,
+) -> SearchRequestCreateInput<'a> {
+    SearchRequestCreateInput {
+        actor_user_public_id: params.actor_user_public_id,
+        query_text: params.query_text,
+        query_type: params.query_type,
+        torznab_mode: params.torznab_mode,
+        requested_media_domain_key: params.requested_media_domain_key,
+        page_size: params.page_size,
+        search_profile_public_id: params.search_profile_public_id,
+        request_policy_set_public_id: params.request_policy_set_public_id,
+        season_number: params.season_number,
+        episode_number: params.episode_number,
+        identifier_types: params.identifier_types,
+        identifier_values: params.identifier_values,
+        torznab_cat_ids: params.torznab_cat_ids,
     }
 }
 

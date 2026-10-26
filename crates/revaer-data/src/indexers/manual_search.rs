@@ -186,6 +186,16 @@ pub struct ManualSearchRun {
     pub retry_seq: i16,
     /// Query normalized by the creation procedure.
     pub query_text: String,
+    /// Persisted Torznab mode; absence retains the ordinary manual-search mode.
+    pub torznab_mode: Option<String>,
+    /// Normalized identifier type and value, when the request supplies one.
+    pub identifier: Option<(String, String)>,
+    /// Optional TV season, including specials at season zero.
+    pub season_number: Option<i32>,
+    /// Optional TV episode; the creation procedure validates its season anchor.
+    pub episode_number: Option<i32>,
+    /// Effective Torznab categories after profile and policy filtering.
+    pub category_ids: Vec<i32>,
     /// Configured connection deadline.
     pub connect_timeout_ms: i32,
     /// Configured response deadline.
@@ -204,6 +214,12 @@ struct ClaimRow {
     correlation_id: Uuid,
     retry_seq: i16,
     query_text: String,
+    torznab_mode: Option<String>,
+    identifier_type: Option<String>,
+    identifier_value: Option<String>,
+    season_number: Option<i32>,
+    episode_number: Option<i32>,
+    category_ids: Vec<i32>,
     connect_timeout_ms: i32,
     read_timeout_ms: i32,
     routing_policy_public_id: Option<Uuid>,
@@ -295,6 +311,11 @@ impl ClaimRow {
             correlation_id: self.correlation_id,
             retry_seq: self.retry_seq,
             query_text: self.query_text,
+            torznab_mode: self.torznab_mode,
+            identifier: self.identifier_type.zip(self.identifier_value),
+            season_number: self.season_number,
+            episode_number: self.episode_number,
+            category_ids: self.category_ids,
             connect_timeout_ms: self.connect_timeout_ms,
             read_timeout_ms: self.read_timeout_ms,
             routing_policy_public_id: self.routing_policy_public_id,

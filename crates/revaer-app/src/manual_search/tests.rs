@@ -239,7 +239,7 @@ async fn completed_attempt(config: &Arc<ConfigService>, empty: bool) -> anyhow::
         "<rss><channel/></rss>".to_owned()
     } else {
         format!(
-            r#"<rss xmlns:t="http://torznab.com/schemas/2015/feed"><channel><item><title>Pending upstream search</title><size>1048576</size><guid>{hash}</guid><enclosure url="https://example.test/download?apikey={credential}"/><comments>https://example.test/details</comments><pubDate>Sat, 24 Oct 2026 00:00:00 GMT</pubDate><t:attr name="infohash" value="{hash}"/><t:attr name="seeders" value="17"/><t:attr name="leechers" value="2"/></item></channel></rss>"#
+            r#"<rss xmlns:t="http://torznab.com/schemas/2015/feed"><channel><item><title>Pending upstream search</title><size>1048576</size><guid>{hash}</guid><enclosure url="https://example.test/download?apikey={credential}"/><comments>https://example.test/details</comments><pubDate>Sat, 24 Oct 2026 00:00:00 GMT</pubDate><t:attr name="infohash" value="{hash}"/><t:attr name="category" value="2000"/><t:attr name="seeders" value="17"/><t:attr name="leechers" value="2"/></item></channel></rss>"#
         )
     };
     let (shutdown, mut receiver) = runtime_shutdown::channel();
@@ -281,6 +281,7 @@ async fn completed_attempt(config: &Arc<ConfigService>, empty: bool) -> anyhow::
         anyhow::ensure!(rows.len() == 1 && repeated.len() == 1);
         anyhow::ensure!(rows[0].infohash_v1.as_deref() == Some(hash.as_str()));
         anyhow::ensure!(rows[0].indexer_instance_public_id == Some(source));
+        anyhow::ensure!(rows[0].tracker_category == Some(2000));
         anyhow::ensure!(rows[0].download_url.is_none());
         anyhow::ensure!(rows[0].details_url.as_deref() == Some("https://example.test/details"));
         anyhow::ensure!(rows[0].item_position == repeated[0].item_position);

@@ -33,6 +33,14 @@ Open `/search`, enter a free-text query and select **Search**. Use **Refresh pag
 
 Credential-bearing upstream links are retained for server-side acquisition and omitted from manual-search page responses. Safe details links and release metadata remain available.
 
+## Downstream Torznab search
+
+Bind a Revaer Torznab instance to a search profile that permits the configured upstreams and their media domains. Downstream clients call `/torznab/{torznab_instance_public_id}/api` with that instance's generated `apikey`, using `t=search`, `tvsearch` or `movie`. This downstream key is distinct from each encrypted upstream credential. The bound profile controls indexer eligibility, categories and policy snapshots.
+
+The endpoint uses the same production dispatcher as manual search. It waits up to five seconds for the requested sealed result window or terminal search state, returning sooner when ready. At the deadline it returns HTTP 200 with available sealed results; unfinished, retrying or deferred work continues normally. An empty response can therefore mean that results were not ready by the deadline. Each later request creates a new search; there is no cross-request cache or shared snapshot guarantee.
+
+External `offset` skips flattened append-order results and `limit` applies afterward, including windows crossing internal pages. The profile controls internal page size. Feed details/download links remain scoped to the authenticated Revaer instance and preserve the existing authorized acquisition redirect; upstream credentials and private acquisition targets are never embedded in the feed.
+
 ## Rate limiting
 
 - Token bucket parameters are `burst` (max outstanding requests) and `per_seconds` (refill interval).

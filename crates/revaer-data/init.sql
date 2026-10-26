@@ -19816,6 +19816,14 @@ BEGIN
     IF NOT manual_search_active_v1(search_request_public_id_input, indexer_instance_public_id_input, claim_token_input) THEN
         RETURN FALSE;
     END IF;
+    -- Eligibility can be withdrawn after a partial HTTP response. Fence this
+    -- read against configuration updates, retaining the nonce for settlement.
+    PERFORM 1 FROM indexer_instance instance
+    WHERE instance.indexer_instance_public_id = indexer_instance_public_id_input
+      AND instance.is_enabled AND instance.deleted_at IS NULL
+      AND (instance.migration_state IS NULL OR instance.migration_state = 'ready')
+    FOR SHARE;
+    IF NOT FOUND THEN RETURN FALSE; END IF;
     SELECT request.search_request_id INTO request_id_value FROM search_request request
     WHERE request.search_request_public_id = search_request_public_id_input;
     SELECT count(*)::integer INTO canonical_before FROM search_request_canonical
@@ -19959,6 +19967,8 @@ $$;
 CREATE FUNCTION public.manual_search_claim_next_v1() RETURNS TABLE(
     search_request_public_id uuid, indexer_instance_public_id uuid, claim_token uuid,
     correlation_id uuid, retry_seq smallint, query_text text,
+    torznab_mode text, season_number integer, episode_number integer,
+    identifier_type text, identifier_value text, category_ids integer[],
     connect_timeout_ms integer, read_timeout_ms integer, routing_policy_public_id uuid,
     routing_mode text, engine text, endpoint text, api_key text, credential_error text,
     verify_tls boolean, proxy_host text, proxy_port integer, proxy_use_tls boolean,
@@ -19984,7 +19994,9 @@ BEGIN
            run.started_at, run.last_correlation_id,
            run.attempt_count, run.rate_limited_attempt_count,
            request.search_request_public_id AS request_public_id,
-           request.query_text AS request_query,
+           request.query_text AS request_query, request.search_request_id AS request_id,
+           request.torznab_mode::text AS request_mode,
+           request.season_number AS request_season, request.episode_number AS request_episode,
            instance.indexer_instance_id AS instance_id,
            instance.indexer_instance_public_id AS instance_public_id,
            instance.connect_timeout_ms, instance.read_timeout_ms,
@@ -20146,6 +20158,19 @@ BEGIN
     correlation_id := correlation_value;
     retry_seq := retry_value;
     query_text := selected.request_query;
+    torznab_mode := selected.request_mode;
+    season_number := selected.request_season;
+    episode_number := selected.request_episode;
+    SELECT identifier.id_type::text, identifier.id_value_normalized
+    INTO identifier_type, identifier_value
+    FROM search_request_identifier identifier
+    WHERE identifier.search_request_id = selected.request_id;
+    category_ids := ARRAY(
+        SELECT category.torznab_cat_id
+        FROM search_request_torznab_category_effective effective
+        JOIN torznab_category category ON category.torznab_category_id = effective.torznab_category_id
+        WHERE effective.search_request_id = selected.request_id
+        ORDER BY category.torznab_cat_id);
     connect_timeout_ms := selected.connect_timeout_ms;
     read_timeout_ms := selected.read_timeout_ms;
     routing_policy_public_id := selected.route_public_id;
@@ -24588,6 +24613,68 @@ BEGIN
     RETURN NEXT;
 END;
 $_$;
+
+
+--
+-- Name: torznab_search_request_create(uuid, character varying, character varying, public.query_type, public.torznab_mode, integer, integer, public.identifier_type[], text[], integer[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.torznab_search_request_create(
+    torznab_instance_public_id_input uuid, api_key_plaintext_input character varying,
+    query_text_input character varying, query_type_input public.query_type,
+    torznab_mode_input public.torznab_mode, season_number_input integer,
+    episode_number_input integer, identifier_types_input public.identifier_type[],
+    identifier_values_input text[], torznab_cat_ids_input integer[]
+) RETURNS TABLE(search_request_public_id uuid, request_policy_set_public_id uuid)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    bound_profile_id bigint;
+    profile_public_id uuid;
+    profile_actor_public_id uuid;
+BEGIN
+    -- The authenticated instance, rather than caller-supplied profile/actor IDs,
+    -- authorizes creation under its bound profile and that profile's policies.
+    SELECT authenticated.search_profile_id INTO bound_profile_id
+    FROM public.torznab_instance_authenticate(
+        torznab_instance_public_id_input, api_key_plaintext_input) authenticated;
+    SELECT profile.search_profile_public_id, actor.user_public_id
+    INTO profile_public_id, profile_actor_public_id
+    FROM public.search_profile profile
+    LEFT JOIN public.app_user actor ON actor.user_id = profile.user_id
+    WHERE profile.search_profile_id = bound_profile_id;
+    IF profile_public_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001',
+            MESSAGE = 'Failed to create Torznab search', DETAIL = 'search_profile_not_found';
+    END IF;
+    RETURN QUERY SELECT created.search_request_public_id, created.request_policy_set_public_id
+    FROM public.search_request_create(
+        profile_actor_public_id, query_text_input, query_type_input, torznab_mode_input,
+        NULL, NULL, profile_public_id, NULL, season_number_input, episode_number_input,
+        identifier_types_input, identifier_values_input, torznab_cat_ids_input) created;
+END;
+$$;
+
+--
+-- Name: search_request_is_terminal(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_request_is_terminal(actor_user_public_id uuid, search_request_public_id_input uuid)
+RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    terminal_value boolean;
+BEGIN
+    -- Reuse the established visibility checks without retaining a transaction
+    -- between HTTP observations.
+    PERFORM * FROM public.search_page_list(actor_user_public_id, search_request_public_id_input) LIMIT 1;
+    SELECT request.status <> 'running' INTO STRICT terminal_value
+    FROM public.search_request request
+    WHERE request.search_request_public_id = search_request_public_id_input;
+    RETURN terminal_value;
+END;
+$$;
 
 
 --
@@ -46751,6 +46838,8 @@ ALTER FUNCTION public.search_profile_tag_prefer(uuid, uuid, uuid[], text[]) SECU
 ALTER FUNCTION public.search_profile_update(uuid, uuid, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_request_cancel(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_request_create(uuid, character varying, public.query_type, public.torznab_mode, character varying, integer, uuid, uuid, integer, integer, public.identifier_type[], text[], integer[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_search_request_create(uuid, character varying, character varying, public.query_type, public.torznab_mode, integer, integer, public.identifier_type[], text[], integer[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_request_is_terminal(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_request_explainability(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_request_finalize_on_runs_terminal_v1() SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_result_ingest(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
@@ -47320,6 +47409,8 @@ BEGIN
             'public.search_profile_update(uuid, uuid, character varying, integer)',
             'public.search_request_cancel(uuid, uuid)',
             'public.search_request_create(uuid, character varying, public.query_type, public.torznab_mode, character varying, integer, uuid, uuid, integer, integer, public.identifier_type[], text[], integer[])',
+            'public.torznab_search_request_create(uuid, character varying, character varying, public.query_type, public.torznab_mode, integer, integer, public.identifier_type[], text[], integer[])',
+            'public.search_request_is_terminal(uuid, uuid)',
             'public.search_request_explainability(uuid, uuid)',
             'public.search_result_ingest(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[])',
             'public.search_result_ingest_v1(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[])',

@@ -7,6 +7,7 @@
 
 pub mod api;
 pub mod download;
+mod wait;
 mod xml;
 
 pub(crate) use api::torznab_api;

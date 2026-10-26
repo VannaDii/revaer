@@ -1498,7 +1498,7 @@ Notes:
 - ep -> episode_number.
 - cat -> requested_torznab_category_ids (list).
 - offset -> internal paging cursor (not persisted in search_request).
-- limit -> page_size (clamped 10..200).
+- limit -> external result window (clamped 10..200), applied after offset; the authenticated instance's bound profile controls internal page size.
 - Torznab interactive searches schedule only indexers with is_enabled=true and
   enable_interactive_search=true.
 - Identifiers may be parsed from q only for imdb IDs and prefixed tmdb/tvdb IDs

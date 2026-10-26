@@ -88,6 +88,8 @@ applyTo:
 
 # Maintainability And Layout
 
+- Public Torznab handlers reuse the manual-search dispatcher. Their operator-approved five-second wait observes sealed pages or terminal state without retaining a database transaction or owning an attempt. Deadline expiry returns available sealed results and leaves unfinished work running; external offset/limit slices append order independently of internal page size.
+
 - Media execution retains checkpoint replay, verified replacement, cooperative shutdown and protected scratch cleanup. Filesystem capacity probing is shared by media admission and filesystem post-processing.
 
 - The application media facade and discovery runtime receive the existing media store, native capability detector, catalog source and watcher. `notify` provides the native watcher, `rustix` retains descriptor identity, `sha2` computes aggregate identities, and `yaml-rust2` validates portable configuration before persistence.

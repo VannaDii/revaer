@@ -22,6 +22,8 @@ applyTo:
 - The subprocess deadline/setup and TERM-grace timing fixtures reserve the nextest runner exclusively. Preserve their millisecond timing assertions; unrelated child-process startup must not consume their setup budget.
 
 
+- Public Torznab API acceptance uses the same controlled upstream and normal configuration helpers as manual-search browser regressions. Keep the five-second response bound, continued upstream execution and sealed append-order checks inside existing E2E phases; preserve the ten-second client request deadline and the existing test timeout.
+
 - API and browser E2E jobs explicitly provision FFmpeg for real capability probes. Managed media storage uses the root repo-local test scratch contract. Do not rely on runner-image tools or a developer checkout for job dependencies.
 
 - Real Dockerfile and image-export tooling fixtures may consume an explicitly supplied `REVAER_TEST_BUILDX_BUILDER` without changing its selection or removing it. Retain every actual image/runtime assertion and clean only fixture-owned images; otherwise each fixture owns and removes its unique builder.
@@ -176,6 +178,8 @@ applyTo:
 - Hosted test Postgres services publish `127.0.0.1:5432:5432` for the single-init endpoint check. Media E2E selects `job.services.postgres.id` and its matching admin password. `E2E_MANAGED_MEDIA_ROOTS=1` creates an owned private catalog beneath `.test-tmp/`, validated by normal application bootstrap. Stop services before deleting fixture-owned directories. Browser outputs and their CI upload paths use `.test-tmp/e2e/`; keep mandatory coverage/scanner paths unchanged.
 
 - Database services use the approved PostgreSQL 18.6 image digest from `.github/build-inputs.env`; floating major-version tags are not suitable.
+- Chromium fixture acquisition uses the official Gitiles TEXT endpoint at the locked revision and the existing base64 decoder. Keep decoded SHA-256, exact byte bounds and probe snapshots unchanged when changing transport locations.
+
 - Fixture probing uses the pinned Alpine image and ARM64 FFmpeg 8.0.1-r1, whose full version report matches the existing approved F1 profile. The media conversion job uses `ubuntu-24.04-arm` to select that native build. Mount the checkout read-only at `/workspace`, inject the named container, and remove it after use.
 
 - Any change to a workflow, release script, setup action, the `rv` registry, or `sonar-project.properties` must review the matching instruction file in the same change.
