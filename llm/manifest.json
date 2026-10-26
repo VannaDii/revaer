@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-10-23T00:19:22.878377615+00:00",
+  "generated": "2026-10-26T05:43:08.561240497+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -3178,6 +3178,7 @@
       "tags": [
         "api-key-lifecycle",
         "docker-runtime",
+        "live-manual-search",
         "rate-limiting",
         "rotation-playbook",
         "secrets-and-logging",

@@ -3175,6 +3175,7 @@
     "tags": [
       "api-key-lifecycle",
       "docker-runtime",
+      "live-manual-search",
       "rate-limiting",
       "rotation-playbook",
       "secrets-and-logging",
