@@ -279,6 +279,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn native_torznab_definition_supports_existing_configuration() -> anyhow::Result<()> {
+        use crate::indexers::deployment::deployment_init;
+        use crate::indexers::instances::{
+            IndexerInstanceFieldValueInput, indexer_instance_create,
+            indexer_instance_field_bind_secret, indexer_instance_field_set_value,
+        };
+        use crate::indexers::secrets::secret_create;
+
+        let test_db = setup_db().await?;
+        let result = async {
+            let pool = test_db.pool();
+            let actor = Uuid::parse_str(SYSTEM_USER_PUBLIC_ID)?;
+            deployment_init(pool, actor).await?;
+            deployment_init(pool, actor).await?;
+            let definitions = indexer_definition_list(pool, actor).await?;
+            let native: Vec<_> = definitions
+                .iter()
+                .filter(|row| row.upstream_slug == "torznab")
+                .collect();
+            anyhow::ensure!(
+                native.len() == 1,
+                "Expected one built-in Torznab definition"
+            );
+            anyhow::ensure!(
+                native[0].engine == "torznab" && native[0].upstream_source == "builtin"
+            );
+            let instance =
+                indexer_instance_create(pool, actor, "torznab", "Live upstream", None, None, None)
+                    .await?;
+            indexer_instance_field_set_value(
+                pool,
+                &IndexerInstanceFieldValueInput {
+                    actor_user_public_id: actor,
+                    indexer_instance_public_id: instance,
+                    field_name: "base_url",
+                    value_plain: Some("http://127.0.0.1:8765/api"),
+                    value_int: None,
+                    value_decimal: None,
+                    value_bool: None,
+                },
+            )
+            .await?;
+            let secret = secret_create(pool, actor, "api_key", &Uuid::new_v4().to_string()).await?;
+            indexer_instance_field_bind_secret(pool, actor, instance, "api_key", secret).await?;
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        test_db.finish(result).await
+    }
+
+    #[tokio::test]
     async fn indexer_definition_list_allows_empty_catalog() -> anyhow::Result<()> {
         let Ok(test_db) = setup_db().await else {
             return Ok(());

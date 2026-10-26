@@ -97,18 +97,20 @@ async fn sequential_media_stops_do_not_replenish_expired_authority() -> anyhow::
 fn bootstrap_requests_shared_shutdown_before_waiting_for_any_runtime() -> anyhow::Result<()> {
     let source = include_str!("../bootstrap.rs");
     let scope = source
-        .split_once("let serve_result = api.serve(addr).await;")
+        .split_once("let listener_exit = await_listener_or_search(serving, &mut indexer_tasks.manual_search).await;")
         .ok_or_else(|| anyhow::anyhow!("bootstrap serve boundary missing"))?
         .1;
     let request = scope
         .find("request_runtime_shutdown(&shutdown);")
         .ok_or_else(|| anyhow::anyhow!("bootstrap shutdown request missing"))?;
     for stop in [
-        "stop_runtime_task(indexer_runtime_task",
-        "stop_runtime_task(import_job_runtime_task",
+        "stop_runtime_task(indexer_tasks.maintenance",
+        "stop_runtime_task(indexer_tasks.imports",
         "stop_media_runtime_tasks(media_runtime_tasks, &shutdown)",
         "stop_runtime_task(fsops_worker",
         "stop_config_watch_task(&mut config_task, &shutdown)",
+        "settle_listener_and_search(listener_exit, indexer_tasks.manual_search)",
+        "config.pool().close().await",
     ] {
         assert!(
             request

@@ -11,6 +11,7 @@ use crate::error::{AppError, AppResult};
 use crate::import_job_runtime::ImportJobRuntime;
 use crate::indexer_runtime::IndexerRuntime;
 use crate::indexers::IndexerService;
+use crate::manual_search::{ManualSearchRuntime, torznab::Failure};
 use crate::media::MediaService;
 use crate::media::native_discovery::NativeDiscovery;
 use crate::media_discovery_runtime::{MediaDiscoveryRuntime, WATCH_EVENT_CAPACITY};
@@ -423,10 +424,7 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         Arc::clone(&media),
         source_compliance,
     )?;
-    let indexer_runtime_task =
-        IndexerRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
-    let import_job_runtime_task =
-        ImportJobRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
+    let mut indexer_tasks = spawn_indexer_runtime_tasks(&config, &telemetry, receiver.clone());
     let media_runtime_tasks = spawn_media_runtime_tasks(
         &config,
         &events,
@@ -439,25 +437,47 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     info!(addr = %addr, "Launching API listener");
 
     #[cfg(unix)]
-    let serve_result = signals.serve(api, addr).await;
+    let serving = signals.serve(api, addr);
     #[cfg(not(unix))]
-    let serve_result = api.serve(addr).await;
+    let serving = api.serve(addr);
+    let listener_exit = await_listener_or_search(serving, &mut indexer_tasks.manual_search).await;
 
     request_runtime_shutdown(&shutdown);
     #[cfg(feature = "libtorrent")]
     stop_config_watch_task(&mut config_task, &shutdown).await;
-    stop_runtime_task(indexer_runtime_task, "indexer").await;
-    stop_runtime_task(import_job_runtime_task, "import_job").await;
+    stop_runtime_task(indexer_tasks.maintenance, "indexer").await;
+    stop_runtime_task(indexer_tasks.imports, "import_job").await;
     stop_media_runtime_tasks(media_runtime_tasks, &shutdown).await;
 
     #[cfg(feature = "libtorrent")]
     stop_runtime_task(fsops_worker, "fsops").await;
 
+    let settlement = settle_listener_and_search(listener_exit, indexer_tasks.manual_search).await;
     // Await transaction owners that outlive a cancelled API request before runtime shutdown.
     config.pool().close().await;
-    serve_result.map_err(|err| AppError::api_server("api_server.serve", err))?;
+    settlement?;
     info!("API server shutdown complete");
     Ok(())
+}
+
+struct IndexerRuntimeTasks {
+    manual_search: tokio::task::JoinHandle<Result<(), revaer_data::DataError>>,
+    maintenance: tokio::task::JoinHandle<()>,
+    imports: tokio::task::JoinHandle<()>,
+}
+
+fn spawn_indexer_runtime_tasks(
+    config: &ConfigService,
+    telemetry: &Metrics,
+    shutdown: runtime_shutdown::RuntimeShutdownReceiver,
+) -> IndexerRuntimeTasks {
+    let config = Arc::new(config.clone());
+    IndexerRuntimeTasks {
+        manual_search: ManualSearchRuntime::new(Arc::clone(&config), manual_search_client)
+            .spawn(shutdown),
+        maintenance: IndexerRuntime::new(Arc::clone(&config), telemetry.clone()).spawn(),
+        imports: ImportJobRuntime::new(config, telemetry.clone()).spawn(),
+    }
 }
 
 struct MediaRuntimeTasks {
@@ -1007,3 +1027,106 @@ mod shutdown_tests;
 #[cfg(all(test, target_os = "linux"))]
 #[path = "bootstrap/service_recovery_tests.rs"]
 mod service_recovery_tests;
+
+enum ListenerExit {
+    Api(Result<(), revaer_api::ApiServerError>),
+    ManualSearch(Result<Result<(), revaer_data::DataError>, tokio::task::JoinError>),
+}
+
+async fn await_listener_or_search<F>(
+    serving: F,
+    search: &mut tokio::task::JoinHandle<Result<(), revaer_data::DataError>>,
+) -> ListenerExit
+where
+    F: std::future::Future<Output = Result<(), revaer_api::ApiServerError>>,
+{
+    tokio::select! {
+        result = serving => ListenerExit::Api(result),
+        result = search => ListenerExit::ManualSearch(result),
+    }
+}
+
+async fn settle_listener_and_search(
+    listener_exit: ListenerExit,
+    search: tokio::task::JoinHandle<Result<(), revaer_data::DataError>>,
+) -> AppResult<()> {
+    let (serve_result, manual_search_result) = match listener_exit {
+        ListenerExit::Api(result) => (Some(result), search.await),
+        ListenerExit::ManualSearch(result) => (None, result),
+    };
+    let manual_status = match manual_search_result {
+        Ok(Ok(())) if serve_result.is_some() => Ok(()),
+        Ok(Ok(())) => Err(AppError::MissingState {
+            field: "manual_search_runtime",
+            value: None,
+        }),
+        Ok(Err(source)) => {
+            error!("manual search persistence failed");
+            Err(AppError::ManualSearchPersistence { source })
+        }
+        Err(source) => {
+            error!("manual search owner task failed");
+            Err(AppError::ManualSearchOwner { source })
+        }
+    };
+    let api_status = serve_result.map_or_else(
+        || Ok(()),
+        |result| result.map_err(|err| AppError::api_server("api_server.serve", err)),
+    );
+    match (api_status, manual_status) {
+        (Ok(()), Ok(())) => {}
+        (Err(error), Ok(())) | (Ok(()), Err(error)) => return Err(error),
+        (Err(listener), Err(manual_search)) => {
+            return Err(AppError::ApiAndManualSearch {
+                listener: Box::new(listener),
+                manual_search: Box::new(manual_search),
+            });
+        }
+    }
+    Ok(())
+}
+
+// The client is constructed at the infrastructure boundary and injected into the dispatcher.
+pub(crate) fn manual_search_client(
+    run: &revaer_data::indexers::manual_search::ManualSearchRun,
+) -> Result<reqwest::Client, Failure> {
+    use revaer_data::indexers::manual_search::{
+        ManualSearchConfigurationError, ManualSearchRouting,
+    };
+    let connection = run.connection.as_ref().map_err(|error| {
+        Failure::classified(match error {
+            ManualSearchConfigurationError::CredentialUnavailable => "auth_error",
+            ManualSearchConfigurationError::MissingEndpoint
+            | ManualSearchConfigurationError::UnsupportedEngine
+            | ManualSearchConfigurationError::InvalidRoute => "unknown",
+        })
+    })?;
+    let timeout =
+        u64::try_from(run.connect_timeout_ms).map_err(|_| Failure::classified("unknown"))?;
+    let mut builder = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_millis(timeout));
+    let verify_tls = match &connection.routing {
+        ManualSearchRouting::Direct { verify_tls } => *verify_tls,
+        ManualSearchRouting::Proxy { verify_tls, proxy } => {
+            let host = match proxy.host.parse::<IpAddr>() {
+                Ok(IpAddr::V6(address)) => format!("[{address}]"),
+                Ok(IpAddr::V4(address)) => address.to_string(),
+                Err(_) => proxy.host.clone(),
+            };
+            let proxy_url = format!("{}://{host}:{}", proxy.scheme, proxy.port);
+            let mut transport =
+                reqwest::Proxy::all(proxy_url).map_err(|_| Failure::classified("unknown"))?;
+            if let Some((user, secret)) = &proxy.authentication {
+                transport = transport.basic_auth(user, secret);
+            }
+            builder = builder.proxy(transport);
+            *verify_tls
+        }
+    };
+    builder
+        .danger_accept_invalid_certs(!verify_tls)
+        .build()
+        .map_err(|_| Failure::classified("unknown"))
+}

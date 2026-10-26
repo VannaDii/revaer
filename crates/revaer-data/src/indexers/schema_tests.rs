@@ -126,7 +126,10 @@ const MANDATORY_PUBLIC_ID_TABLES: &[&str] = &[
 const OPTIONAL_PUBLIC_ID_COLUMNS: &[(&str, &str)] = &[("tag", "tag_public_id")];
 
 const EXPECTED_ENUMS: &[(&str, &[&str])] = &[
-    ("upstream_source", &["prowlarr_indexers", "cardigann"]),
+    (
+        "upstream_source",
+        &["builtin", "prowlarr_indexers", "cardigann"],
+    ),
     ("protocol", &["torrent", "usenet"]),
     ("engine", &["torznab", "cardigann"]),
     (

@@ -142,7 +142,15 @@ def test_local_qualification_needs_no_pr_or_sonar_credentials_and_propagates_fai
             e2e=replace(
                 context.settings.e2e,
                 browsers=("chromium", "firefox", "webkit"),
-                projects=("api-none", "api-api-key", "ui-chromium", "ui-firefox", "ui-webkit"),
+                projects=(
+                    "api-none",
+                    "api-api-key",
+                    "api-none-missing-catalog",
+                    "api-api-key-missing-catalog",
+                    "ui-chromium",
+                    "ui-firefox",
+                    "ui-webkit",
+                ),
                 shard_total=1,
                 retries=0,
             ),

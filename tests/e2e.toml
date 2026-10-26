@@ -5,4 +5,4 @@ runner = "binary"
 media_runner = "lib-test"
 
 [ui]
-required_routes = ["/", "/torrents", "/torrents/:id", "/settings", "/logs", "/health", "/not-found"]
+required_routes = ["/", "/torrents", "/torrents/:id", "/settings", "/logs", "/health", "/search", "/not-found"]
