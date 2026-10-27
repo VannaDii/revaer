@@ -46687,7 +46687,7 @@ CREATE TABLE public.cardigann_search_category (
     PRIMARY KEY (indexer_definition_id, source)
 );
 
-CREATE FUNCTION public.cardigann_search_import_v1(actor_input uuid, slug_input text, origin_input text, path_input text, rows_input text, input_names text[], input_values text[], field_names text[], field_selectors text[], field_attributes text[], category_sources text[], category_targets integer[]) RETURNS void
+CREATE FUNCTION public.cardigann_search_import_v1(actor_input uuid, slug_input text, origin_input text, path_input text, rows_input text, input_names text[], input_values text[], field_names text[], field_selectors text[], field_attributes text[], category_sources text[], category_targets integer[]) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -46721,6 +46721,7 @@ BEGIN
     FROM unnest(field_names, field_selectors, field_attributes) item(name,selector,attribute);
     INSERT INTO cardigann_search_category SELECT definition_id, item.source, item.target
     FROM unnest(category_sources, category_targets) item(source,target);
+    RETURN TRUE;
 END;
 $$;
 
