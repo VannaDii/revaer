@@ -7214,11 +7214,11 @@ BEGIN
         IF is_enabled_input THEN
             IF rss_is_enabled THEN
                 UPDATE indexer_rss_subscription
-                SET interval_seconds = COALESCE(interval_seconds_input, interval_seconds)
+                SET revision = revision + 1, interval_seconds = COALESCE(interval_seconds_input, interval_seconds)
                 WHERE indexer_instance_id = instance_id;
             ELSE
                 UPDATE indexer_rss_subscription
-                SET is_enabled = TRUE,
+                SET revision = revision + 1, is_enabled = TRUE,
                     interval_seconds = COALESCE(interval_seconds_input, interval_seconds),
                     last_error_class = NULL,
                     backoff_seconds = NULL,
@@ -7227,7 +7227,7 @@ BEGIN
             END IF;
         ELSE
             UPDATE indexer_rss_subscription
-            SET is_enabled = FALSE,
+            SET revision = revision + 1, is_enabled = FALSE,
                 interval_seconds = COALESCE(interval_seconds_input, interval_seconds),
                 next_poll_at = NULL
             WHERE indexer_instance_id = instance_id;
@@ -19739,8 +19739,10 @@ BEGIN
         FROM indexer_rss_subscription sub
         JOIN indexer_instance inst
             ON inst.indexer_instance_id = sub.indexer_instance_id
-        WHERE sub.is_enabled = TRUE
+        JOIN indexer_definition definition USING (indexer_definition_id)
+        WHERE definition.engine = 'torznab' AND sub.is_enabled = TRUE
           AND sub.next_poll_at <= now()
+          AND (sub.claim_expires_at IS NULL OR sub.claim_expires_at <= now())
           AND inst.is_enabled = TRUE
           AND inst.enable_rss = TRUE
         ORDER BY sub.next_poll_at ASC
@@ -19749,11 +19751,15 @@ BEGIN
     ),
     claimed AS (
         UPDATE indexer_rss_subscription sub
-        SET next_poll_at = now() + make_interval(secs => sub.interval_seconds)
+        SET next_poll_at = now() + make_interval(secs => (due.connect_timeout_ms + due.read_timeout_ms) / 1000.0 + 30),
+            claim_expires_at = now() + make_interval(secs => (due.connect_timeout_ms + due.read_timeout_ms) / 1000.0 + 30),
+            claim_correlation_id = gen_random_uuid(),
+            claim_revision = sub.revision
         FROM due
         WHERE sub.indexer_rss_subscription_id = due.rss_subscription_id
         RETURNING
             due.rss_subscription_id,
+            sub.claim_correlation_id,
             due.indexer_instance_id,
             due.indexer_instance_public_id,
             due.routing_policy_id,
@@ -19768,7 +19774,7 @@ BEGIN
         claimed.interval_seconds,
         claimed.connect_timeout_ms,
         claimed.read_timeout_ms,
-        gen_random_uuid(),
+        claimed.claim_correlation_id,
         0::SMALLINT
     FROM claimed
     LEFT JOIN routing_policy
@@ -19964,6 +19970,216 @@ $$;
 -- Name: manual_search_claim_next_v1(); Type: FUNCTION; Schema: public; Owner: -
 --
 
+CREATE FUNCTION public.rss_poll_finish_v1(rss_subscription_id_input bigint, correlation_id_input uuid, retry_seq_input smallint, started_at_input timestamp with time zone, finished_at_input timestamp with time zone, outcome_input public.outbound_request_outcome, error_class_input public.error_class, http_status_input integer, latency_ms_input integer, parse_ok_input boolean, result_count_input integer, via_mitigation_input public.outbound_via_mitigation, rate_limit_denied_scope_input public.rate_limit_scope, cf_detected_input boolean, cf_retryable_input boolean, item_guid_input character varying[], infohash_v1_input character[], infohash_v2_input character[], magnet_hash_input character[]) RETURNS TABLE(items_parsed integer, items_eligible integer, items_inserted integer, subscription_succeeded boolean)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    subscription RECORD;
+    instance RECORD;
+BEGIN
+    SELECT * INTO subscription FROM indexer_rss_subscription sub
+    WHERE sub.indexer_rss_subscription_id = rss_subscription_id_input FOR UPDATE;
+    IF NOT FOUND OR subscription.claim_correlation_id IS DISTINCT FROM correlation_id_input
+       OR correlation_id_input IS NULL OR subscription.claim_expires_at <= clock_timestamp() THEN
+        RETURN QUERY SELECT 0, 0, 0, FALSE;
+        RETURN;
+    END IF;
+    SELECT inst.indexer_instance_public_id, inst.is_enabled, inst.enable_rss,
+           route.routing_policy_public_id
+    INTO instance
+    FROM indexer_instance inst LEFT JOIN routing_policy route USING (routing_policy_id)
+    WHERE inst.indexer_instance_id = subscription.indexer_instance_id
+    FOR SHARE OF inst;
+    UPDATE indexer_rss_subscription SET claim_correlation_id = NULL,
+        claim_revision = NULL, claim_expires_at = NULL
+    WHERE indexer_rss_subscription_id = rss_subscription_id_input;
+    IF subscription.claim_revision IS DISTINCT FROM subscription.revision
+       OR NOT subscription.is_enabled OR NOT instance.is_enabled OR NOT instance.enable_rss THEN
+        -- Settle this owned outbound attempt once, without changing newer operator intent.
+        PERFORM outbound_request_log_write(instance.indexer_instance_public_id,
+            instance.routing_policy_public_id, NULL, 'rss', correlation_id_input, retry_seq_input,
+            started_at_input, finished_at_input, 'failure', via_mitigation_input,
+            NULL, 'timeout', http_status_input, latency_ms_input, FALSE, NULL, FALSE, NULL, NULL);
+        RETURN QUERY SELECT 0, 0, 0, FALSE;
+        RETURN;
+    END IF;
+    RETURN QUERY SELECT * FROM rss_poll_apply(
+        rss_subscription_id_input,
+        correlation_id_input,
+        retry_seq_input,
+        started_at_input,
+        finished_at_input,
+        outcome_input,
+        error_class_input,
+        http_status_input,
+        latency_ms_input,
+        parse_ok_input,
+        result_count_input,
+        via_mitigation_input,
+        rate_limit_denied_scope_input,
+        cf_detected_input,
+        cf_retryable_input,
+        item_guid_input,
+        infohash_v1_input,
+        infohash_v2_input,
+        magnet_hash_input);
+END;
+$$;
+
+CREATE FUNCTION public.indexer_outbound_budget_v1(instance_id_input bigint, route_id_input bigint) RETURNS public.rate_limit_scope
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    capacity_value INTEGER;
+    allowed_value BOOLEAN;
+    denied_scope rate_limit_scope;
+BEGIN
+    SELECT policy.requests_per_minute + policy.burst INTO capacity_value
+    FROM rate_limit_policy policy
+    WHERE policy.rate_limit_policy_id = COALESCE(
+        (SELECT binding.rate_limit_policy_id FROM routing_policy_rate_limit binding
+         WHERE binding.routing_policy_id = route_id_input),
+        (SELECT defaults.rate_limit_policy_id FROM rate_limit_policy defaults
+         WHERE defaults.display_name = 'default_routing' AND defaults.deleted_at IS NULL))
+      AND policy.deleted_at IS NULL;
+    SELECT budget.allowed INTO allowed_value FROM rate_limit_try_consume(
+        'routing_policy', COALESCE(route_id_input, 0), capacity_value, 1) budget;
+    IF NOT allowed_value THEN
+        denied_scope := 'routing_policy';
+    ELSE
+        SELECT policy.requests_per_minute + policy.burst INTO capacity_value
+        FROM rate_limit_policy policy
+        WHERE policy.rate_limit_policy_id = COALESCE(
+            (SELECT binding.rate_limit_policy_id FROM indexer_instance_rate_limit binding
+             WHERE binding.indexer_instance_id = instance_id_input),
+            (SELECT defaults.rate_limit_policy_id FROM rate_limit_policy defaults
+             WHERE defaults.display_name = 'default_indexer' AND defaults.deleted_at IS NULL))
+          AND policy.deleted_at IS NULL;
+        SELECT budget.allowed INTO allowed_value FROM rate_limit_try_consume(
+            'indexer_instance', instance_id_input, capacity_value, 1) budget;
+        IF NOT allowed_value THEN
+            denied_scope := 'indexer_instance';
+        END IF;
+    END IF;
+
+    RETURN denied_scope;
+END;
+$$;
+
+CREATE FUNCTION public.rss_poll_context_v1(rss_subscription_id_input bigint, correlation_id_input uuid) RETURNS TABLE(
+    rate_limit_denied_scope text, routing_mode text, engine text, endpoint text,
+    api_key text, credential_error text, verify_tls boolean, proxy_host text,
+    proxy_port integer, proxy_use_tls boolean, proxy_username text, proxy_password text
+)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    selected RECORD;
+BEGIN
+    SELECT inst.indexer_instance_public_id AS instance_public_id,
+           inst.indexer_instance_id AS instance_id, inst.routing_policy_id AS route_id
+    INTO selected
+    FROM indexer_rss_subscription sub JOIN indexer_instance inst USING (indexer_instance_id)
+    WHERE sub.indexer_rss_subscription_id = rss_subscription_id_input
+      AND sub.claim_correlation_id = correlation_id_input AND sub.claim_revision = sub.revision
+      AND sub.is_enabled AND inst.is_enabled AND inst.enable_rss
+    FOR UPDATE OF sub;
+    IF NOT FOUND THEN RETURN; END IF;
+    rate_limit_denied_scope := indexer_outbound_budget_v1(selected.instance_id, selected.route_id);
+
+    RETURN QUERY SELECT rate_limit_denied_scope, connection.*
+    FROM indexer_execution_context_v1(selected.instance_public_id) connection;
+END;
+$$;
+
+CREATE FUNCTION public.indexer_execution_context_v1(indexer_instance_public_id_input uuid) RETURNS TABLE(
+    routing_mode text, engine text, endpoint text, api_key text, credential_error text,
+    verify_tls boolean, proxy_host text, proxy_port integer, proxy_use_tls boolean,
+    proxy_username text, proxy_password text
+)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    selected RECORD;
+    encrypted_key RECORD;
+    encrypted_proxy RECORD;
+    active_key TEXT;
+BEGIN
+    SELECT instance.indexer_instance_id AS instance_id, instance.routing_policy_id AS route_id,
+           CASE WHEN instance.routing_policy_id IS NULL THEN 'direct'
+                WHEN route.deleted_at IS NULL THEN route.mode::text
+                ELSE 'unavailable' END AS route_mode,
+           definition.engine::text AS engine_key
+    INTO selected
+    FROM indexer_instance instance
+    JOIN indexer_definition definition USING (indexer_definition_id)
+    LEFT JOIN routing_policy route ON route.routing_policy_id = instance.routing_policy_id
+    WHERE instance.indexer_instance_public_id = indexer_instance_public_id_input;
+    IF NOT FOUND THEN RETURN; END IF;
+    SELECT value.value_plain::text INTO endpoint
+    FROM indexer_instance_field_value value
+    WHERE value.indexer_instance_id = selected.instance_id AND value.field_name = 'base_url';
+    SELECT secret.cipher_text, secret.key_id INTO encrypted_key
+    FROM indexer_instance_field_value value
+    JOIN secret_binding binding ON binding.bound_table = 'indexer_instance_field_value'
+      AND binding.bound_id = value.indexer_instance_field_value_id AND binding.binding_name = 'api_key'
+    JOIN secret ON secret.secret_id = binding.secret_id AND NOT secret.is_revoked
+    WHERE value.indexer_instance_id = selected.instance_id AND value.field_name = 'api_key';
+    active_key := current_setting('revaer.secret_key', true);
+    IF encrypted_key.cipher_text IS NULL THEN
+        credential_error := 'credential_binding_unavailable';
+    ELSIF active_key IS NULL OR active_key = '' OR encrypted_key.key_id IS DISTINCT FROM current_setting('revaer.secret_key_id', true) THEN
+        credential_error := 'credential_key_unavailable';
+    ELSE
+        BEGIN
+            api_key := pgp_sym_decrypt(encrypted_key.cipher_text, active_key);
+        EXCEPTION WHEN external_routine_invocation_exception THEN
+            -- Translate the expected decryption failure to an explicit configuration
+            -- error; the executor settles this owned attempt without exposing input.
+            credential_error := 'credential_decryption_failed';
+        END;
+    END IF;
+    SELECT COALESCE(bool_or(param.value_bool) FILTER (WHERE param.param_key = 'verify_tls'), TRUE),
+           max(param.value_plain::text) FILTER (WHERE param.param_key IN ('proxy_host', 'socks_host')),
+           max(param.value_int) FILTER (WHERE param.param_key IN ('proxy_port', 'socks_port')),
+           COALESCE(bool_or(param.value_bool) FILTER (WHERE param.param_key = 'proxy_use_tls'), FALSE),
+           max(param.value_plain::text) FILTER (WHERE param.param_key IN ('proxy_username', 'socks_username'))
+    INTO verify_tls, proxy_host, proxy_port, proxy_use_tls, proxy_username
+    FROM routing_policy_parameter param
+    WHERE param.routing_policy_id = selected.route_id;
+
+    SELECT binding.secret_id AS bound_secret_id, secret.cipher_text, secret.key_id, secret.is_revoked
+    INTO encrypted_proxy
+    FROM routing_policy_parameter param
+    JOIN secret_binding binding ON binding.bound_table = 'routing_policy_parameter'
+      AND binding.bound_id = param.routing_policy_parameter_id
+      AND binding.binding_name = CASE selected.route_mode
+          WHEN 'http_proxy' THEN 'proxy_password'::secret_binding_name
+          ELSE 'socks_password'::secret_binding_name END
+    LEFT JOIN secret ON secret.secret_id = binding.secret_id
+    WHERE param.routing_policy_id = selected.route_id
+      AND param.param_key = CASE selected.route_mode
+          WHEN 'http_proxy' THEN 'http_proxy_auth'::routing_param_key
+          ELSE 'socks_proxy_auth'::routing_param_key END;
+    IF encrypted_proxy.bound_secret_id IS NOT NULL THEN
+        IF encrypted_proxy.cipher_text IS NULL OR encrypted_proxy.is_revoked THEN
+            credential_error := 'proxy_credential_unavailable';
+        ELSIF active_key IS NULL OR active_key = '' OR encrypted_proxy.key_id IS DISTINCT FROM current_setting('revaer.secret_key_id', true) THEN
+            credential_error := 'proxy_credential_key_unavailable';
+        ELSE
+            BEGIN
+                proxy_password := pgp_sym_decrypt(encrypted_proxy.cipher_text, active_key);
+            EXCEPTION WHEN external_routine_invocation_exception THEN
+                credential_error := 'proxy_credential_decryption_failed';
+            END;
+        END IF;
+    END IF;
+    routing_mode := selected.route_mode;
+    engine := selected.engine_key;
+    RETURN NEXT;
+END;
+$$;
+
 CREATE FUNCTION public.manual_search_claim_next_v1() RETURNS TABLE(
     search_request_public_id uuid, indexer_instance_public_id uuid, claim_token uuid,
     correlation_id uuid, retry_seq smallint, query_text text,
@@ -19978,16 +20194,11 @@ CREATE FUNCTION public.manual_search_claim_next_v1() RETURNS TABLE(
     AS $$
 DECLARE
     selected RECORD;
-    capacity_value INTEGER;
-    allowed_value BOOLEAN;
     denied_scope rate_limit_scope;
     correlation_value UUID;
     claim_token_value UUID;
     retry_value SMALLINT;
     mitigation_value outbound_via_mitigation;
-    encrypted_key RECORD;
-    encrypted_proxy RECORD;
-    active_key TEXT;
 BEGIN
     -- Lock the request before its run, matching cancellation and finalization.
     SELECT run.search_request_indexer_run_id AS run_id, run.status AS run_status,
@@ -20048,33 +20259,7 @@ BEGIN
 
     -- v1 capacity is rpm + burst per minute. Routing is charged first, including
     -- implicit direct routing at scope_id=0; a subsequent denial does not refund it.
-    SELECT policy.requests_per_minute + policy.burst INTO capacity_value
-    FROM rate_limit_policy policy
-    WHERE policy.rate_limit_policy_id = COALESCE(
-        (SELECT binding.rate_limit_policy_id FROM routing_policy_rate_limit binding
-         WHERE binding.routing_policy_id = selected.route_id),
-        (SELECT defaults.rate_limit_policy_id FROM rate_limit_policy defaults
-         WHERE defaults.display_name = 'default_routing' AND defaults.deleted_at IS NULL))
-      AND policy.deleted_at IS NULL;
-    SELECT budget.allowed INTO allowed_value FROM rate_limit_try_consume(
-        'routing_policy', COALESCE(selected.route_id, 0), capacity_value, 1) budget;
-    IF NOT allowed_value THEN
-        denied_scope := 'routing_policy';
-    ELSE
-        SELECT policy.requests_per_minute + policy.burst INTO capacity_value
-        FROM rate_limit_policy policy
-        WHERE policy.rate_limit_policy_id = COALESCE(
-            (SELECT binding.rate_limit_policy_id FROM indexer_instance_rate_limit binding
-             WHERE binding.indexer_instance_id = selected.instance_id),
-            (SELECT defaults.rate_limit_policy_id FROM rate_limit_policy defaults
-             WHERE defaults.display_name = 'default_indexer' AND defaults.deleted_at IS NULL))
-          AND policy.deleted_at IS NULL;
-        SELECT budget.allowed INTO allowed_value FROM rate_limit_try_consume(
-            'indexer_instance', selected.instance_id, capacity_value, 1) budget;
-        IF NOT allowed_value THEN
-            denied_scope := 'indexer_instance';
-        END IF;
-    END IF;
+    denied_scope := indexer_outbound_budget_v1(selected.instance_id, selected.route_id);
 
     UPDATE search_request_indexer_run run SET last_correlation_id = correlation_value
     WHERE run.search_request_indexer_run_id = selected.run_id;
@@ -20094,64 +20279,12 @@ BEGIN
     UPDATE search_request_indexer_run run SET claim_token = claim_token_value
     WHERE run.search_request_indexer_run_id = selected.run_id;
 
-    SELECT value.value_plain::text INTO endpoint
-    FROM indexer_instance_field_value value
-    WHERE value.indexer_instance_id = selected.instance_id AND value.field_name = 'base_url';
-    SELECT secret.cipher_text, secret.key_id INTO encrypted_key
-    FROM indexer_instance_field_value value
-    JOIN secret_binding binding ON binding.bound_table = 'indexer_instance_field_value'
-      AND binding.bound_id = value.indexer_instance_field_value_id AND binding.binding_name = 'api_key'
-    JOIN secret ON secret.secret_id = binding.secret_id AND NOT secret.is_revoked
-    WHERE value.indexer_instance_id = selected.instance_id AND value.field_name = 'api_key';
-    active_key := current_setting('revaer.secret_key', true);
-    IF encrypted_key.cipher_text IS NULL THEN
-        credential_error := 'credential_binding_unavailable';
-    ELSIF active_key IS NULL OR active_key = '' OR encrypted_key.key_id IS DISTINCT FROM current_setting('revaer.secret_key_id', true) THEN
-        credential_error := 'credential_key_unavailable';
-    ELSE
-        BEGIN
-            api_key := pgp_sym_decrypt(encrypted_key.cipher_text, active_key);
-        EXCEPTION WHEN external_routine_invocation_exception THEN
-            -- Translate the expected decryption failure to an explicit configuration
-            -- error; the executor settles this owned attempt without exposing input.
-            credential_error := 'credential_decryption_failed';
-        END;
-    END IF;
-    SELECT COALESCE(bool_or(param.value_bool) FILTER (WHERE param.param_key = 'verify_tls'), TRUE),
-           max(param.value_plain::text) FILTER (WHERE param.param_key IN ('proxy_host', 'socks_host')),
-           max(param.value_int) FILTER (WHERE param.param_key IN ('proxy_port', 'socks_port')),
-           COALESCE(bool_or(param.value_bool) FILTER (WHERE param.param_key = 'proxy_use_tls'), FALSE),
-           max(param.value_plain::text) FILTER (WHERE param.param_key IN ('proxy_username', 'socks_username'))
-    INTO verify_tls, proxy_host, proxy_port, proxy_use_tls, proxy_username
-    FROM routing_policy_parameter param
-    WHERE param.routing_policy_id = selected.route_id;
-
-    SELECT binding.secret_id AS bound_secret_id, secret.cipher_text, secret.key_id, secret.is_revoked
-    INTO encrypted_proxy
-    FROM routing_policy_parameter param
-    JOIN secret_binding binding ON binding.bound_table = 'routing_policy_parameter'
-      AND binding.bound_id = param.routing_policy_parameter_id
-      AND binding.binding_name = CASE selected.route_mode
-          WHEN 'http_proxy' THEN 'proxy_password'::secret_binding_name
-          ELSE 'socks_password'::secret_binding_name END
-    LEFT JOIN secret ON secret.secret_id = binding.secret_id
-    WHERE param.routing_policy_id = selected.route_id
-      AND param.param_key = CASE selected.route_mode
-          WHEN 'http_proxy' THEN 'http_proxy_auth'::routing_param_key
-          ELSE 'socks_proxy_auth'::routing_param_key END;
-    IF encrypted_proxy.bound_secret_id IS NOT NULL THEN
-        IF encrypted_proxy.cipher_text IS NULL OR encrypted_proxy.is_revoked THEN
-            credential_error := 'proxy_credential_unavailable';
-        ELSIF active_key IS NULL OR active_key = '' OR encrypted_proxy.key_id IS DISTINCT FROM current_setting('revaer.secret_key_id', true) THEN
-            credential_error := 'proxy_credential_key_unavailable';
-        ELSE
-            BEGIN
-                proxy_password := pgp_sym_decrypt(encrypted_proxy.cipher_text, active_key);
-            EXCEPTION WHEN external_routine_invocation_exception THEN
-                credential_error := 'proxy_credential_decryption_failed';
-            END;
-        END IF;
-    END IF;
+    SELECT context.routing_mode, context.engine, context.endpoint, context.api_key,
+           context.credential_error, context.verify_tls, context.proxy_host, context.proxy_port,
+           context.proxy_use_tls, context.proxy_username, context.proxy_password
+    INTO routing_mode, engine, endpoint, api_key, credential_error, verify_tls,
+         proxy_host, proxy_port, proxy_use_tls, proxy_username, proxy_password
+    FROM indexer_execution_context_v1(selected.instance_public_id) context;
     search_request_public_id := selected.request_public_id;
     indexer_instance_public_id := selected.instance_public_id;
     claim_token := claim_token_value;
@@ -34579,6 +34712,10 @@ CREATE TABLE public.indexer_rss_subscription (
     next_poll_at timestamp with time zone,
     backoff_seconds integer,
     last_error_class public.error_class,
+    revision bigint DEFAULT 0 NOT NULL,
+    claim_revision bigint,
+    claim_correlation_id uuid,
+    claim_expires_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT indexer_rss_subscription_interval_seconds_check CHECK (((interval_seconds >= 300) AND (interval_seconds <= 86400))),
     CONSTRAINT indexer_rss_subscription_next_poll_chk CHECK ((((is_enabled = true) AND (next_poll_at IS NOT NULL)) OR ((is_enabled = false) AND (next_poll_at IS NULL))))
@@ -46812,6 +46949,10 @@ ALTER FUNCTION public.routing_policy_get(uuid, uuid) SECURITY DEFINER SET search
 ALTER FUNCTION public.routing_policy_set_param(uuid, uuid, public.routing_param_key, character varying, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.routing_policy_set_rate_limit_policy(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.rss_poll_apply(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_execution_context_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_outbound_budget_v1(bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rss_poll_context_v1(bigint, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rss_poll_finish_v1(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.rss_poll_claim(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.manual_search_active_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.manual_search_ingest_v1(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[], uuid, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
@@ -47383,6 +47524,10 @@ BEGIN
             'public.routing_policy_set_param(uuid, uuid, public.routing_param_key, character varying, integer, boolean)',
             'public.routing_policy_set_rate_limit_policy(uuid, uuid, uuid)',
             'public.rss_poll_apply(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[])',
+            'public.indexer_execution_context_v1(uuid)',
+            'public.rss_poll_context_v1(bigint, uuid)',
+            'public.indexer_outbound_budget_v1(bigint, bigint)',
+            'public.rss_poll_finish_v1(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[])',
             'public.rss_poll_claim(integer)',
             'public.manual_search_active_v1(uuid, uuid, uuid)',
             'public.manual_search_ingest_v1(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[], uuid, boolean, boolean, boolean)',

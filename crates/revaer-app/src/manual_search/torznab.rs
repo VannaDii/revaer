@@ -60,8 +60,17 @@ pub(super) async fn fetch(client: &Client, run: &ManualSearchRun) -> Result<Vec<
         .as_ref()
         .map_err(|_| Failure::classified("auth_error"))?;
     let url = request_url(run, connection)?;
-    let timeout_ms =
-        u64::try_from(run.read_timeout_ms).map_err(|_| Failure::classified("unknown"))?;
+    let text = fetch_text(client, url, run.read_timeout_ms).await?;
+    parse(&text, &connection.api_key)
+}
+
+/// Shared bounded transport for search releases and recent RSS identifiers.
+pub(crate) async fn fetch_text(
+    client: &Client,
+    url: Url,
+    read_timeout_ms: i32,
+) -> Result<String, Failure> {
+    let timeout_ms = u64::try_from(read_timeout_ms).map_err(|_| Failure::classified("unknown"))?;
     let mut response = client
         .get(url)
         .timeout(Duration::from_millis(timeout_ms))
@@ -106,7 +115,7 @@ pub(super) async fn fetch(client: &Client, run: &ManualSearchRun) -> Result<Vec<
         bytes.extend_from_slice(&chunk);
     }
     let text = std::str::from_utf8(&bytes).map_err(|_| Failure::classified("parse_error"))?;
-    parse(text, &connection.api_key)
+    Ok(text.to_string())
 }
 
 fn request_url(run: &ManualSearchRun, connection: &ManualSearchConnection) -> Result<Url, Failure> {
@@ -195,12 +204,12 @@ fn optional_count(value: Option<&str>) -> Result<Option<i32>, Failure> {
         .transpose()
 }
 
-fn parse(text: &str, api_key: &str) -> Result<Vec<Release>, Failure> {
+pub(crate) fn document(text: &str) -> Result<roxmltree::Document<'_>, Failure> {
     let invalid = Failure::classified("parse_error");
     if text.len() > MAX_RESPONSE_BYTES {
         return Err(invalid);
     }
-    let document = roxmltree::Document::parse_with_options(
+    roxmltree::Document::parse_with_options(
         text,
         roxmltree::ParsingOptions {
             allow_dtd: false,
@@ -208,7 +217,12 @@ fn parse(text: &str, api_key: &str) -> Result<Vec<Release>, Failure> {
             ..roxmltree::ParsingOptions::default()
         },
     )
-    .map_err(|_| invalid)?;
+    .map_err(|_| invalid)
+}
+
+fn parse(text: &str, api_key: &str) -> Result<Vec<Release>, Failure> {
+    let invalid = Failure::classified("parse_error");
+    let document = document(text)?;
     let root = document.root_element();
     if root.has_tag_name("error") {
         return Err(Failure::classified(match root.attribute("code") {
@@ -298,7 +312,7 @@ fn parse_release(item: roxmltree::Node<'_, '_>, api_key: &str) -> Result<Release
     })
 }
 
-fn private_url(value: Option<&str>, api_key: &str) -> bool {
+pub(crate) fn private_url(value: Option<&str>, api_key: &str) -> bool {
     let Some(value) = value else { return false };
     if !api_key.is_empty() && value.contains(api_key) {
         return true;

@@ -33,6 +33,14 @@ Open `/search`, enter a free-text query and select **Search**. Use **Refresh pag
 
 Credential-bearing upstream links are retained for server-side acquisition and omitted from manual-search page responses. Safe details links and release metadata remain available.
 
+## Scheduled Torznab RSS
+
+Configure the upstream endpoint and encrypted API key as for manual search. Enable the indexer and its **RSS enabled** setting, then enable its subscription using **Update RSS subscription** on `/indexers` or `PUT /v1/indexers/instances/{indexer_instance_public_id}/rss`. The interval accepts 300–86400 seconds. The production `rss_poll` schedule discovers due subscriptions independently of search-profile selection and sends `t=search` with an empty query, preserving endpoint filters.
+
+Use **Fetch RSS status** and **Fetch recent RSS items** to inspect the last successful poll, next scheduled time, error/backoff and deduplicated identifiers in the existing Activity log. Refresh remains explicit. RSS and Atom identifiers do not require full search-release metadata; repeated items preserve their original first-seen time. RSS neither populates canonical search results nor adds torrents or downloads.
+
+Successful polls follow the configured interval plus existing jitter. Network failures, timeouts, HTTP 429/5xx and budget denials retain retry backoff; authentication and malformed-feed failures disable the subscription with a reason. Correct the configuration before re-enabling it. Configured proxy failures never fall back to direct access. Shutdown settles owned work; bounded persisted leases let a later process recover interrupted polling, and stale completions cannot overwrite newer subscription settings.
+
 ## Downstream Torznab search
 
 Bind a Revaer Torznab instance to a search profile that permits the configured upstreams and their media domains. Downstream clients call `/torznab/{torznab_instance_public_id}/api` with that instance's generated `apikey`, using `t=search`, `tvsearch` or `movie`. This downstream key is distinct from each encrypted upstream credential. The bound profile controls indexer eligibility, categories and policy snapshots.

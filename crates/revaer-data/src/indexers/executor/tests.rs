@@ -151,6 +151,46 @@ async fn insert_subscription(
     .map_err(Into::into)
 }
 #[tokio::test]
+async fn rss_poll_finish_rejects_stale_completion() -> anyhow::Result<()> {
+    let test_db = setup_db().await?;
+    let pool = test_db.pool();
+    let (instance_id, _) = insert_indexer_instance(pool, true, true).await?;
+    let subscription = insert_subscription(
+        pool,
+        instance_id,
+        true,
+        test_db.now() - Duration::minutes(1),
+    )
+    .await?;
+    let claim = rss_poll_claim(pool, 1).await?;
+    assert_eq!(claim.len(), 1);
+    let input = RssPollApplyInput {
+        rss_subscription_id: subscription,
+        correlation_id: Uuid::new_v4(),
+        retry_seq: 0,
+        started_at: test_db.now(),
+        finished_at: test_db.now(),
+        outcome: "success",
+        error_class: None,
+        http_status: Some(200),
+        latency_ms: Some(1),
+        parse_ok: true,
+        result_count: Some(0),
+        via_mitigation: "none",
+        rate_limit_denied_scope: None,
+        cf_detected: false,
+        cf_retryable: false,
+        item_guid: None,
+        infohash_v1: None,
+        infohash_v2: None,
+        magnet_hash: None,
+    };
+    let applied = rss_poll_finish(pool, &input).await?.subscription_succeeded;
+    assert!(!applied);
+    Ok(())
+}
+
+#[tokio::test]
 async fn rss_poll_claim_rejects_invalid_limit() -> anyhow::Result<()> {
     let Ok(test_db) = setup_db().await else {
         return Ok(());
@@ -1108,4 +1148,130 @@ async fn secret_read_requires_secret() -> anyhow::Result<()> {
     assert!(matches!(err, DataError::QueryFailed { .. }));
     assert_eq!(err.database_detail(), Some("secret_not_found"));
     Ok(())
+}
+
+fn owned_success<'a>(
+    claim: &RssPollClaimRow,
+    now: chrono::DateTime<Utc>,
+    guid: &'a [String],
+) -> RssPollApplyInput<'a> {
+    RssPollApplyInput {
+        rss_subscription_id: claim.rss_subscription_id,
+        correlation_id: claim.correlation_id,
+        retry_seq: 0,
+        started_at: now,
+        finished_at: now,
+        outcome: "success",
+        error_class: None,
+        http_status: Some(200),
+        latency_ms: Some(1),
+        parse_ok: true,
+        result_count: Some(i32::try_from(guid.len()).unwrap_or(i32::MAX)),
+        via_mitigation: "none",
+        rate_limit_denied_scope: None,
+        cf_detected: false,
+        cf_retryable: false,
+        item_guid: Some(guid),
+        infohash_v1: None,
+        infohash_v2: None,
+        magnet_hash: None,
+    }
+}
+
+#[tokio::test]
+async fn rss_owned_completion_is_once_and_repeated_feed_preserves_first_seen() -> anyhow::Result<()>
+{
+    let db = setup_db().await?;
+    let result = async {
+        let pool = db.pool();
+        let (instance, public) = insert_indexer_instance(pool, true, true).await?;
+        let subscription = insert_subscription(pool, instance, true, db.now() - Duration::minutes(1)).await?;
+        let key = Uuid::new_v4().to_string();
+        let guid = [key.clone(), key, String::new()];
+        let claims = rss_poll_claim(pool, 1).await?;
+        let input = owned_success(&claims[0], db.now(), &guid);
+        let first = rss_poll_finish(pool, &input).await?;
+        assert!(first.subscription_succeeded);
+        assert_eq!(first.items_parsed, 3);
+        assert_eq!(first.items_eligible, 2);
+        assert_eq!(first.items_inserted, 1);
+        let seen = crate::indexers::rss::rss_item_seen_list(pool, Uuid::nil(), public, Some(10)).await?;
+        let duplicate = rss_poll_finish(pool, &input).await?;
+        assert!(!duplicate.subscription_succeeded);
+        assert_eq!(duplicate.items_inserted, 0);
+        let logs: i64 = sqlx::query_scalar("SELECT count(*) FROM outbound_request_log WHERE correlation_id = $1")
+            .bind(input.correlation_id).fetch_one(pool).await?;
+        assert_eq!(logs, 1);
+        sqlx::query("UPDATE indexer_rss_subscription SET next_poll_at = now() - interval '1 second' WHERE indexer_rss_subscription_id = $1")
+            .bind(subscription).execute(pool).await?;
+        let again = rss_poll_claim(pool, 1).await?;
+        assert_ne!(again[0].correlation_id, input.correlation_id);
+        let second = rss_poll_finish(pool, &owned_success(&again[0], db.now(), &guid)).await?;
+        assert_eq!(second.items_parsed, 3);
+        assert_eq!(second.items_eligible, 2);
+        assert_eq!(second.items_inserted, 0);
+        let unchanged = crate::indexers::rss::rss_item_seen_list(pool, Uuid::nil(), public, Some(10)).await?;
+        assert_eq!(seen[0].first_seen_at, unchanged[0].first_seen_at);
+        let acquisitions: i64 = sqlx::query_scalar("SELECT count(*) FROM acquisition_attempt").fetch_one(pool).await?;
+        assert_eq!(acquisitions, 0);
+        Ok(())
+    }.await;
+    db.finish(result).await
+}
+
+#[tokio::test]
+async fn rss_owned_completion_preserves_operator_disable_and_reenable() -> anyhow::Result<()> {
+    let db = setup_db().await?;
+    let result = async {
+        let pool = db.pool();
+        let (instance, public) = insert_indexer_instance(pool, true, true).await?;
+        insert_subscription(pool, instance, true, db.now() - Duration::minutes(1)).await?;
+        let claims = rss_poll_claim(pool, 1).await?;
+        let input = owned_success(&claims[0], db.now(), &[]);
+        crate::indexers::instances::rss_subscription_set(pool, Uuid::nil(), public, false, None)
+            .await?;
+        let disabled = rss_poll_finish(pool, &input).await?;
+        assert!(!disabled.subscription_succeeded);
+        let status = crate::indexers::rss::rss_subscription_get(pool, Uuid::nil(), public).await?;
+        assert!(!status.subscription_is_enabled);
+        assert!(status.next_poll_at.is_none());
+        assert!(status.last_polled_at.is_none());
+        crate::indexers::instances::rss_subscription_set(
+            pool,
+            Uuid::nil(),
+            public,
+            true,
+            Some(600),
+        )
+        .await?;
+        let intent = crate::indexers::rss::rss_subscription_get(pool, Uuid::nil(), public).await?;
+        assert!(!rss_poll_finish(pool, &input).await?.subscription_succeeded);
+        let after = crate::indexers::rss::rss_subscription_get(pool, Uuid::nil(), public).await?;
+        assert_eq!(intent.next_poll_at, after.next_poll_at);
+        assert_eq!(after.interval_seconds, 600);
+        Ok(())
+    }
+    .await;
+    db.finish(result).await
+}
+
+#[tokio::test]
+async fn rss_owned_claim_recovers_expiry_and_fences_previous_process() -> anyhow::Result<()> {
+    let db = setup_db().await?;
+    let result = async {
+        let pool = db.pool();
+        let (instance, _) = insert_indexer_instance(pool, true, true).await?;
+        let subscription = insert_subscription(pool, instance, true, db.now() - Duration::minutes(1)).await?;
+        let first = rss_poll_claim(pool, 1).await?;
+        assert!(rss_poll_claim(pool, 1).await?.is_empty());
+        sqlx::query("UPDATE indexer_rss_subscription SET next_poll_at = now() - interval '1 second', claim_expires_at = now() - interval '1 second' WHERE indexer_rss_subscription_id = $1")
+            .bind(subscription).execute(pool).await?;
+        let second = rss_poll_claim(pool, 1).await?;
+        assert_eq!(second.len(), 1);
+        assert_ne!(first[0].correlation_id, second[0].correlation_id);
+        assert!(!rss_poll_finish(pool, &owned_success(&first[0], db.now(), &[])).await?.subscription_succeeded);
+        assert!(rss_poll_finish(pool, &owned_success(&second[0], db.now(), &[])).await?.subscription_succeeded);
+        Ok(())
+    }.await;
+    db.finish(result).await
 }

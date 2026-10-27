@@ -27,7 +27,7 @@ const RSS_SUBSCRIPTION_GET_CALL: &str = r"
         last_polled_at,
         next_poll_at,
         backoff_seconds,
-        last_error_class
+        last_error_class::text AS last_error_class
     FROM indexer_rss_subscription_get(
         actor_user_public_id => $1,
         indexer_instance_public_id_input => $2

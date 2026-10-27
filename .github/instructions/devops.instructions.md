@@ -235,3 +235,5 @@ Keep scanner E2E phase selection at job scope so execution and both coverage mer
 The split coverage producers retain the single-init PostgreSQL baseline and media API catalog phases. Rust coverage retains complete workspace measurements; scanner input verification derives the tracked-Rust importer report after all producer inputs are available. Preserve both reports in the scanner artifact.
 
 - Follow the root environment/password contract. Helm lint uses a credential-free rendering-only endpoint and must not need the developer password. Retained URL helpers use the same encoded local connection builder; CI retains consistent job-scoped PostgreSQL credentials and private environment files stay outside image/package/scanner artifacts.
+
+- The single-init E2E coordinator passes its selected disposable database name to Python scenarios for guarded scheduling prerequisites. This does not grant the runtime role administrative privileges or permit caller-database adoption.

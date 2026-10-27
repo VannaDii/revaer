@@ -80,3 +80,5 @@ applyTo:
 - `rv ui-e2e-app-test` preserves the media launch-guard and compliance library filters with one test thread, then the `bootstrap` integration binary, under default features. Require an explicit disposable test endpoint and positive passing execution in every group; do not count empty filter matches as coverage.
 
 - Distributed coverage validates each producer’s completion summary and required Chromium line capture before exposing its phase inputs; keep this validation independent of browser startup and preserve every existing shard check.
+
+- Scheduled RSS browser acceptance fetches actual poll status and recent identifiers through the existing explicit controls on `/indexers`; do not inject seen items or add automatic refresh.

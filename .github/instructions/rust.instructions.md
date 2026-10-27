@@ -122,3 +122,5 @@ applyTo:
 - Coverage executes independent tests in nextest processes. Keep native libtorrent tests in the serial resource group, database-heavy tests in the bounded group, and the nine recovery scenarios independently selectable. Private test state must not become a shared fixture merely to reduce execution time.
 
 - Media directory observations compare bounded raw-name hashes alongside metadata; resumable scans must detect name changes even when filesystem timestamps collide.
+
+- Scheduled Torznab RSS runs under the existing deployment job loop, shares bounded transport and private connection resolution with search, and awaits claim settlement during cooperative shutdown. RSS identifiers remain separate from canonical search ingestion and acquisition. Its real database executor regressions use the existing bounded database test group.

@@ -11,6 +11,7 @@ pub mod canonical;
 pub mod category_mapping;
 pub mod cf_state;
 pub mod conflicts;
+mod connection;
 pub mod connectivity;
 pub mod definitions;
 pub mod deployment;
@@ -27,6 +28,7 @@ pub mod policy_match;
 pub mod rate_limits;
 pub mod routing;
 pub mod rss;
+pub mod rss_execution;
 #[cfg(test)]
 mod schema_tests;
 pub mod search_pages;

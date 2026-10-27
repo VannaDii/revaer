@@ -72,3 +72,5 @@ applyTo:
 - E2E authentication setup gives factory reset a bounded 30-second request deadline for normalized-table cleanup. Other API requests retain their 10-second deadline; preserve status, mode-transition and schema assertions.
 
 - `rv cargo-lock` remains offline by default. Use its explicit `--online` option when changed manifest requirements need missing registry metadata; preserve existing unrelated locked registry versions.
+
+- Scheduled RSS API/browser scenarios receive only the coordinator-owned disposable database name for scheduling prerequisites. Validate that identity and owner before fixture-only due-time updates; use the real scheduler and upstream response for outcomes. Disable-during-poll scenarios hold the controlled response until the operator change commits, and fixture cleanup releases any held response.
