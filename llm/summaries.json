@@ -3179,6 +3179,7 @@
       "live-manual-search",
       "rate-limiting",
       "rotation-playbook",
+      "scheduled-torznab-rss",
       "secrets-and-logging",
       "sse-and-resume"
     ],

@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-10-26T22:14:23.396073865+00:00",
+  "generated": "2026-10-27T15:29:28.902689232+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -3182,6 +3182,7 @@
         "live-manual-search",
         "rate-limiting",
         "rotation-playbook",
+        "scheduled-torznab-rss",
         "secrets-and-logging",
         "sse-and-resume"
       ],
