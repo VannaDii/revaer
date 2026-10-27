@@ -333,7 +333,8 @@ def test_media_restarts_after_reset_and_never_manufactures_catalog_readiness(
             e2e.UiE2e.run(context)
     else:
         e2e.UiE2e.run(context)
-        assert scenario.database_names and set(scenario.database_names) == {"owned"}
+        assert scenario.database_names
+        assert set(scenario.database_names) == {"owned"}
         missing = context.root / ".test-tmp/e2e/runtime/missing-media-roots.json"
         assert scenario.catalogs == [
             missing,
