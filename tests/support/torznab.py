@@ -253,7 +253,11 @@ def configure_torznab(
             ApiRequest(
                 Method.PATCH,
                 route + _INSTANCE_PATH,
-                {"indexer_instance_public_id": identifier, "is_enabled": True},
+                {
+                    "indexer_instance_public_id": identifier,
+                    "is_enabled": True,
+                    "enable_rss": False,
+                },
                 path=path,
             )
         )
