@@ -1117,6 +1117,7 @@ pub(crate) fn torznab_client(
     };
     let connection = connection.as_ref().map_err(|error| {
         Failure::classified(match error {
+            ManualSearchConfigurationError::ReimportCardigann => "parse_error",
             ManualSearchConfigurationError::CredentialUnavailable => "auth_error",
             ManualSearchConfigurationError::MissingEndpoint
             | ManualSearchConfigurationError::UnsupportedEngine

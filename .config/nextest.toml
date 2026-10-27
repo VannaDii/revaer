@@ -40,7 +40,7 @@ package(revaer-data) | package(revaer-config) | package(revaer-test-support)
 | (package(revaer-app) & (
     test(bootstrap::) | test(media_discovery_runtime::) | test(media::)
     | test(media_job_runtime::) | test(import_job_runtime::) | test(indexers::)
-    | test(rss_poll::)
+    | test(rss_poll::) | test(cardigann::tests::runtime::) | test(manual_search::tests::)
     | test(handle_event_persists_runtime_status_updates)
     | test(handle_event_removes_runtime_status_after_torrent_removed)
 ))

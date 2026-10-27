@@ -36,3 +36,5 @@ Root `AGENTS.md` defines coverage scope, local review, hosted gates, vendor owne
 - Server ingestion is asynchronous; issue search does not immediately reflect local fixes. Check the exact analysis task/result rather than changing dispositions.
 - For authorization errors, check token type and permissions without exposing credentials. Use project discovery for lookup failures. Follow root stopping guidance when tools or analysis are unavailable.
 - Runtime UI media and canonical `/static/...` URLs follow the UI instructions. Scanner success does not prove release asset resolution, and malformed first-party inputs must be fixed at their owner.
+
+- Keep the Cardigann public-HTML definition fixture in the explicit YAML inventory; it remains authored main-code analysis, not a test-scope exclusion.

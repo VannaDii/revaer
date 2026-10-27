@@ -60,6 +60,7 @@ async fn public_torznab_creation_uses_bound_profile_and_rejects_wrong_key() -> a
                 service.config.pool(),
                 &run,
                 ManualSearchCompletion {
+                    diagnostic: None,
                     outcome: ManualSearchOutcome::Canceled,
                     http_status: None,
                     latency_ms: 0,

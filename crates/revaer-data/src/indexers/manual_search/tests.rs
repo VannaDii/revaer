@@ -59,6 +59,7 @@ async fn disabling_source_settles_owned_manual_attempt_without_losing_partial_re
                 pool,
                 &run,
                 ManualSearchCompletion {
+                    diagnostic: None,
                     outcome: ManualSearchOutcome::Canceled,
                     http_status: Some(200),
                     latency_ms: 0,
@@ -109,6 +110,7 @@ async fn manual_claim_retries_only_rolled_back_statements() -> anyhow::Result<()
             anyhow::ensure!(is_active(pool, &claim).await?);
             anyhow::ensure!(claim_next(pool).await?.is_none());
             let completion = ManualSearchCompletion {
+                diagnostic: None,
                 outcome: ManualSearchOutcome::Success,
                 http_status: Some(200),
                 latency_ms: 0,
@@ -199,7 +201,7 @@ async fn concurrent_manual_claims_own_one_attempt_and_resolve_bound_credentials(
         let connection = claim.connection.as_ref().map_err(|error| *error)?;
         anyhow::ensure!(connection.endpoint == "http://127.0.0.1:8765/api");
         anyhow::ensure!(
-            connection.api_key == credential,
+            connection.api_key.as_deref() == Some(credential.as_str()),
             "Bound credential must match"
         );
         anyhow::ensure!(
@@ -211,6 +213,7 @@ async fn concurrent_manual_claims_own_one_attempt_and_resolve_bound_credentials(
         claim.claim_token = Uuid::new_v4();
         anyhow::ensure!(!is_active(pool, claim).await?);
         let empty = ManualSearchCompletion {
+            diagnostic: None,
             outcome: ManualSearchOutcome::Success,
             http_status: Some(200),
             latency_ms: 0,
@@ -277,6 +280,7 @@ async fn canceled_manual_attempt_records_once_without_reviving_request() -> anyh
         crate::indexers::search_requests::search_request_cancel(pool, actor, request_id).await?;
         anyhow::ensure!(!is_active(pool, &claim).await?);
         let canceled = ManualSearchCompletion {
+            diagnostic: None,
             outcome: ManualSearchOutcome::Canceled,
             http_status: None,
             latency_ms: 1,
@@ -351,7 +355,8 @@ async fn manual_search_rate_denial_defers_and_logs_zero_results() -> anyhow::Res
             let request_id = create_request(pool, "Limited query").await?;
             if let Some(run) = claim_next(pool).await? {
                 complete(pool, &run, ManualSearchCompletion {
-                    outcome: ManualSearchOutcome::Success, http_status: Some(200), latency_ms: 0,
+                    diagnostic: None,
+outcome: ManualSearchOutcome::Success, http_status: Some(200), latency_ms: 0,
                     result_count: 0, retry_after_seconds: None,
                 }).await?;
             } else {
@@ -454,6 +459,7 @@ async fn assert_proxy_claim(mode: &str) -> anyhow::Result<()> {
             pool,
             &run,
             ManualSearchCompletion {
+                diagnostic: None,
                 outcome: ManualSearchOutcome::Canceled,
                 http_status: None,
                 latency_ms: 0,
@@ -543,6 +549,7 @@ async fn manual_search_private_download_is_hidden_but_acquisition_keeps_original
             pool,
             &claim,
             ManualSearchCompletion {
+                diagnostic: None,
                 outcome: ManualSearchOutcome::Success,
                 http_status: Some(200),
                 latency_ms: 1,

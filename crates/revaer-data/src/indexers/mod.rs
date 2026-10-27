@@ -8,6 +8,7 @@
 pub mod app_users;
 pub mod backup;
 pub mod canonical;
+pub mod cardigann;
 pub mod category_mapping;
 pub mod cf_state;
 pub mod conflicts;

@@ -534,6 +534,12 @@ struct CardigannDefinitionDocument {
     id: String,
     name: String,
     #[serde(default)]
+    links: Vec<String>,
+    #[serde(default, rename = "type")]
+    kind: Option<String>,
+    #[serde(default)]
+    encoding: Option<String>,
+    #[serde(default)]
     description: Option<String>,
     #[serde(default)]
     caps: Option<YamlValue>,
@@ -583,12 +589,16 @@ struct PreparedCardigannDefinitionImport {
     display_name: String,
     canonical_definition_text: String,
     fields: Vec<PreparedCardigannFieldImport>,
+    execution: Option<revaer_data::indexers::cardigann::CardigannPlan>,
 }
 
 #[derive(Debug, Serialize)]
 struct CanonicalCardigannDefinition {
     id: String,
     name: String,
+    links: Vec<String>,
+    kind: Option<String>,
+    encoding: Option<String>,
     description: Option<String>,
     caps: Option<YamlValue>,
     login: Option<YamlValue>,
@@ -714,6 +724,15 @@ impl IndexerFacade for IndexerService {
                                             actor_user_public_id,
                                             &prepared.upstream_slug,
                                             &field_import,
+                                        )
+                                        .await?;
+                                    }
+                                    if let Some(plan) = &prepared.execution {
+                                        revaer_data::indexers::cardigann::import(
+                                            &mut tx,
+                                            actor_user_public_id,
+                                            &prepared.upstream_slug,
+                                            plan,
                                         )
                                         .await?;
                                     }
@@ -3482,6 +3501,11 @@ fn map_imported_indexer_definition_row(
 fn parse_cardigann_definition_import(
     yaml_payload: &str,
 ) -> Result<PreparedCardigannDefinitionImport, IndexerDefinitionServiceError> {
+    if yaml_payload.len() > 256 * 1024 {
+        return Err(invalid_indexer_definition_error(
+            "cardigann_search_rules_invalid",
+        ));
+    }
     let trimmed_payload = yaml_payload.trim();
     if trimmed_payload.is_empty() {
         return Err(invalid_indexer_definition_error(
@@ -3493,6 +3517,8 @@ fn parse_cardigann_definition_import(
         .map_err(|_| invalid_indexer_definition_error("cardigann_yaml_invalid"))?;
     let upstream_slug = normalize_cardigann_slug(&document.id)?;
     let display_name = normalize_cardigann_display_name(&document.name)?;
+    let execution =
+        crate::cardigann::prepare(trimmed_payload).map_err(invalid_indexer_definition_error)?;
 
     let mut canonical_settings = Vec::with_capacity(document.settings.len());
     let mut prepared_fields = Vec::with_capacity(document.settings.len());
@@ -3523,6 +3549,9 @@ fn parse_cardigann_definition_import(
     let canonical_definition = CanonicalCardigannDefinition {
         id: upstream_slug.clone(),
         name: display_name.clone(),
+        links: document.links,
+        kind: document.kind,
+        encoding: document.encoding,
         description: document.description.clone(),
         caps: document.caps.clone(),
         login: document.login.clone(),
@@ -3538,6 +3567,7 @@ fn parse_cardigann_definition_import(
         display_name,
         canonical_definition_text,
         fields: prepared_fields,
+        execution,
     })
 }
 

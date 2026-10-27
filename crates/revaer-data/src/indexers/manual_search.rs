@@ -34,7 +34,8 @@ const COMPLETE: &str = r"
         http_status_input => $6,
         latency_ms_input => $7,
         result_count_input => $8,
-        retry_after_seconds_input => $9
+        retry_after_seconds_input => $9,
+        diagnostic_input => $10
     )
 ";
 
@@ -94,6 +95,8 @@ pub enum ManualSearchOutcome {
 /// Bounded outbound measurements passed to the existing attempt ledger.
 #[derive(Debug, Clone, Copy)]
 pub struct ManualSearchCompletion {
+    /// Fixed actionable configuration explanation; raw upstream values are forbidden.
+    pub diagnostic: Option<&'static str>,
     /// Classified outcome; raw upstream messages are deliberately not accepted.
     pub outcome: ManualSearchOutcome,
     /// HTTP status when one was received.
@@ -108,7 +111,8 @@ pub struct ManualSearchCompletion {
 
 use super::connection::ConnectionRow;
 pub use super::connection::{
-    ManualSearchConfigurationError, ManualSearchConnection, ManualSearchProxy, ManualSearchRouting,
+    ManualSearchConfigurationError, ManualSearchConnection, ManualSearchEngine, ManualSearchProxy,
+    ManualSearchRouting,
 };
 
 /// One atomically owned search attempt, consumed by the production executor.
@@ -274,6 +278,7 @@ pub async fn complete(
             .bind(completion.latency_ms)
             .bind(completion.result_count)
             .bind(completion.retry_after_seconds)
+            .bind(completion.diagnostic)
             .fetch_one(pool)
     })
     .await?;

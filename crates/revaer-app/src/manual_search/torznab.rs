@@ -12,7 +12,7 @@ const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_ITEMS: usize = 1000;
 const TORZNAB_NAMESPACE: &str = "http://torznab.com/schemas/2015/feed";
 
-pub(super) struct Release {
+pub(crate) struct Release {
     pub privacy: ManualSearchLinkPrivacy,
     pub title: String,
     pub guid: Option<String>,
@@ -29,6 +29,7 @@ pub(super) struct Release {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Failure {
+    pub diagnostic: Option<&'static str>,
     pub class: &'static str,
     pub http_status: Option<i32>,
     pub retry_after_seconds: Option<i32>,
@@ -37,9 +38,17 @@ pub(crate) struct Failure {
 impl Failure {
     pub(crate) const fn classified(class: &'static str) -> Self {
         Self {
+            diagnostic: None,
             class,
             http_status: None,
             retry_after_seconds: None,
+        }
+    }
+
+    pub(crate) const fn configuration(diagnostic: &'static str) -> Self {
+        Self {
+            diagnostic: Some(diagnostic),
+            ..Self::classified("parse_error")
         }
     }
 }
@@ -61,7 +70,14 @@ pub(super) async fn fetch(client: &Client, run: &ManualSearchRun) -> Result<Vec<
         .map_err(|_| Failure::classified("auth_error"))?;
     let url = request_url(run, connection)?;
     let text = fetch_text(client, url, run.read_timeout_ms).await?;
-    parse(&text, &connection.api_key)
+    parse(&text, api_key(connection)?)
+}
+
+pub(crate) fn api_key(connection: &ManualSearchConnection) -> Result<&str, Failure> {
+    connection
+        .api_key
+        .as_deref()
+        .ok_or(Failure::classified("auth_error"))
 }
 
 /// Shared bounded transport for search releases and recent RSS identifiers.
@@ -87,6 +103,7 @@ pub(crate) async fn fetch_text(
             _ => "unknown",
         };
         return Err(Failure {
+            diagnostic: None,
             class,
             http_status: Some(i32::from(status.as_u16())),
             retry_after_seconds: response
@@ -150,7 +167,7 @@ fn request_url(run: &ManualSearchRun, connection: &ManualSearchConnection) -> Re
             .extend_pairs(parameters)
             .append_pair("t", mode)
             .append_pair("q", &run.query_text)
-            .append_pair("apikey", &connection.api_key);
+            .append_pair("apikey", api_key(connection)?);
         if let Some((kind, value)) = &run.identifier {
             let key = match kind.as_str() {
                 "imdb" => "imdbid",
@@ -364,7 +381,8 @@ mod tests {
                 .append_pair("imdbid", "9999999");
             let connection = ManualSearchConnection {
                 endpoint: endpoint.into(),
-                api_key: secret,
+                engine: revaer_data::indexers::manual_search::ManualSearchEngine::Torznab,
+                api_key: Some(secret),
                 routing: ManualSearchRouting::Direct { verify_tls: true },
             };
             let run = ManualSearchRun {
@@ -397,7 +415,7 @@ mod tests {
             anyhow::ensure!(observed.get("cat").map(String::as_str) == Some("2000,5000"));
             let credential_matches = observed
                 .get("apikey")
-                .is_some_and(|value| value == &connection.api_key);
+                .is_some_and(|value| Some(value.as_str()) == connection.api_key.as_deref());
             anyhow::ensure!(
                 credential_matches,
                 "The configured credential must replace endpoint credentials"

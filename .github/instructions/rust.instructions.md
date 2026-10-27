@@ -124,3 +124,5 @@ applyTo:
 - Media directory observations compare bounded raw-name hashes alongside metadata; resumable scans must detect name changes even when filesystem timestamps collide.
 
 - Scheduled Torznab RSS runs under the existing deployment job loop, shares bounded transport and private connection resolution with search, and awaits claim settlement during cooperative shutdown. RSS identifiers remain separate from canonical search ingestion and acquisition. Its real database executor regressions use the existing bounded database test group.
+
+- Public Cardigann HTML execution uses `scraper` for HTML5 tree construction and CSS selection; do not replace it with a second XML dialect or a handwritten HTML parser. The operator-approved MPL-2.0 allowances are limited to the four CSS dependencies named in `deny.toml`.
