@@ -3177,6 +3177,7 @@
       "docker-runtime",
       "downstream-torznab-search",
       "live-manual-search",
+      "public-cardigann-html-search",
       "rate-limiting",
       "rotation-playbook",
       "scheduled-torznab-rss",
