@@ -74,3 +74,5 @@ applyTo:
 - `rv cargo-lock` remains offline by default. Use its explicit `--online` option when changed manifest requirements need missing registry metadata; preserve existing unrelated locked registry versions.
 
 - Scheduled RSS API/browser scenarios receive only the coordinator-owned disposable database name for scheduling prerequisites. Validate that identity and owner before fixture-only due-time updates; use the real scheduler and upstream response for outcomes. Disable-during-poll scenarios hold the controlled response until the operator change commits, and fixture cleanup releases any held response.
+
+- Cardigann API/browser acceptance imports actual YAML through the normal API and serves controlled HTML from `tests/support/cardigann.py`; never seed canonical results or substitute the dispatcher.

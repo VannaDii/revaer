@@ -61,10 +61,11 @@ impl RssPollRuntime {
             .connection
             .as_ref()
             .map_err(|_| Failure::classified("auth_error"))?;
-        let url = rss_feed::request_url(&connection.endpoint, &connection.api_key)?;
+        let api_key = crate::manual_search::torznab::api_key(connection)?;
+        let url = rss_feed::request_url(&connection.endpoint, api_key)?;
         let request = async {
             let text = fetch_text(&client, url, claim.read_timeout_ms).await?;
-            rss_feed::parse(&text, &connection.api_key)
+            rss_feed::parse(&text, api_key)
         };
         tokio::select! {
             result = request => result,

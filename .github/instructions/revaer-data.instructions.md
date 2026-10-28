@@ -96,3 +96,5 @@ applyTo:
 - Call `close` after collecting a fixture's test result so cleanup failure fails the test. Drop must attempt and report cleanup after early returns. Remove only owned databases and confirmed fixture roles; do not log credential-bearing URLs.
 
 - Scheduled RSS claims persist a correlation lease and subscription revision. The finish procedure fences duplicate/stale results and settles withdrawn eligibility without overwriting operator subscription changes; existing apply policy owns deduplication, scheduling and outbound logging.
+
+- Cardigann executable rules are normalized by definition, query input, field and category. Publish them with definition identity in the existing import transaction; load one owned rule snapshot through `cardigann_search_plan_v1`. Metadata-only replacement removes old executable rules.

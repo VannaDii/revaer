@@ -3676,6 +3676,8 @@ BEGIN
     RETURNING indexer_definition.indexer_definition_id
     INTO definition_id;
 
+    DELETE FROM cardigann_search_definition WHERE indexer_definition_id = definition_id;
+
     DELETE FROM indexer_definition_field_option
     WHERE indexer_definition_field_id IN (
         SELECT indexer_definition_field_id
@@ -19896,7 +19898,7 @@ $$;
 -- Name: manual_search_finish_v1(uuid, uuid, uuid, public.error_class, boolean, integer, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.manual_search_finish_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, claim_token_input uuid, error_class_input public.error_class, canceled_input boolean, http_status_input integer, latency_ms_input integer, result_count_input integer, retry_after_seconds_input integer) RETURNS boolean
+CREATE FUNCTION public.manual_search_finish_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, claim_token_input uuid, error_class_input public.error_class, canceled_input boolean, http_status_input integer, latency_ms_input integer, result_count_input integer, retry_after_seconds_input integer, diagnostic_input text DEFAULT NULL) RETURNS boolean
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -19955,7 +19957,7 @@ BEGIN
     ELSE
         PERFORM search_indexer_run_mark_failed(
             search_request_public_id_input, indexer_instance_public_id_input, error_value,
-            error_value::text || ' while executing Torznab search',
+            COALESCE(diagnostic_input, error_value::text || ' while executing indexer search'),
             retry_after_seconds_input, owned.retry_seq, NULL);
     END IF;
     END IF;
@@ -20126,6 +20128,7 @@ BEGIN
     JOIN secret ON secret.secret_id = binding.secret_id AND NOT secret.is_revoked
     WHERE value.indexer_instance_id = selected.instance_id AND value.field_name = 'api_key';
     active_key := current_setting('revaer.secret_key', true);
+    IF selected.engine_key = 'torznab' THEN
     IF encrypted_key.cipher_text IS NULL THEN
         credential_error := 'credential_binding_unavailable';
     ELSIF active_key IS NULL OR active_key = '' OR encrypted_key.key_id IS DISTINCT FROM current_setting('revaer.secret_key_id', true) THEN
@@ -20138,6 +20141,12 @@ BEGIN
             -- error; the executor settles this owned attempt without exposing input.
             credential_error := 'credential_decryption_failed';
         END;
+    END IF;
+    END IF;
+    IF selected.engine_key = 'cardigann' THEN
+        SELECT plan.origin INTO endpoint FROM cardigann_search_definition plan
+        JOIN indexer_instance instance USING (indexer_definition_id)
+        WHERE instance.indexer_instance_id = selected.instance_id;
     END IF;
     SELECT COALESCE(bool_or(param.value_bool) FILTER (WHERE param.param_key = 'verify_tls'), TRUE),
            max(param.value_plain::text) FILTER (WHERE param.param_key IN ('proxy_host', 'socks_host')),
@@ -46652,7 +46661,92 @@ RETURN true;
 END;
 $$;
 
+CREATE TABLE public.cardigann_search_definition (
+    indexer_definition_id bigint PRIMARY KEY REFERENCES public.indexer_definition(indexer_definition_id) ON DELETE CASCADE,
+    origin text NOT NULL CHECK (octet_length(origin) BETWEEN 1 AND 2048),
+    search_path text NOT NULL CHECK (octet_length(search_path) BETWEEN 1 AND 2048),
+    rows_selector text NOT NULL CHECK (octet_length(rows_selector) BETWEEN 1 AND 512)
+);
+CREATE TABLE public.cardigann_search_input (
+    indexer_definition_id bigint NOT NULL REFERENCES public.cardigann_search_definition ON DELETE CASCADE,
+    name text NOT NULL CHECK (octet_length(name) BETWEEN 1 AND 128),
+    value text NOT NULL CHECK (octet_length(value) <= 2048),
+    PRIMARY KEY (indexer_definition_id, name)
+);
+CREATE TABLE public.cardigann_search_field (
+    indexer_definition_id bigint NOT NULL REFERENCES public.cardigann_search_definition ON DELETE CASCADE,
+    name text NOT NULL CHECK (name IN ('title','details','download','magnet','category','size','seeders','leechers','date')),
+    selector text NOT NULL CHECK (octet_length(selector) BETWEEN 1 AND 512),
+    attribute text CHECK (octet_length(attribute) BETWEEN 1 AND 128),
+    PRIMARY KEY (indexer_definition_id, name)
+);
+CREATE TABLE public.cardigann_search_category (
+    indexer_definition_id bigint NOT NULL REFERENCES public.cardigann_search_definition ON DELETE CASCADE,
+    source text NOT NULL CHECK (octet_length(source) BETWEEN 1 AND 128),
+    target integer NOT NULL REFERENCES public.torznab_category(torznab_cat_id),
+    PRIMARY KEY (indexer_definition_id, source)
+);
+
+CREATE FUNCTION public.cardigann_search_import_v1(actor_input uuid, slug_input text, origin_input text, path_input text, rows_input text, input_names text[], input_values text[], field_names text[], field_selectors text[], field_attributes text[], category_sources text[], category_targets integer[]) RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    definition_id bigint;
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM app_user WHERE user_public_id = actor_input) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Cardigann rule import failed', DETAIL = 'actor_not_found';
+    END IF;
+    SELECT indexer_definition_id INTO definition_id FROM indexer_definition
+    WHERE upstream_source = 'cardigann' AND upstream_slug = slug_input FOR UPDATE;
+    IF definition_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Cardigann rule import failed', DETAIL = 'cardigann_definition_not_found';
+    END IF;
+    IF input_names IS NULL OR input_values IS NULL OR field_names IS NULL
+       OR field_selectors IS NULL OR field_attributes IS NULL OR category_sources IS NULL
+       OR category_targets IS NULL OR cardinality(input_names) <> cardinality(input_values)
+       OR cardinality(field_names) <> cardinality(field_selectors)
+       OR cardinality(field_names) <> cardinality(field_attributes)
+       OR cardinality(category_sources) <> cardinality(category_targets)
+       OR cardinality(input_names) > 32 OR cardinality(field_names) > 9
+       OR cardinality(category_sources) > 256
+       OR NOT ARRAY['title','size']::text[] <@ field_names
+       OR NOT field_names && ARRAY['details','download','magnet']::text[] THEN
+        RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'Invalid Cardigann rule shape';
+    END IF;
+    DELETE FROM cardigann_search_definition WHERE indexer_definition_id = definition_id;
+    INSERT INTO cardigann_search_definition VALUES (definition_id, origin_input, path_input, rows_input);
+    INSERT INTO cardigann_search_input SELECT definition_id, item.name, item.value
+    FROM unnest(input_names, input_values) item(name,value);
+    INSERT INTO cardigann_search_field SELECT definition_id, item.name, item.selector, item.attribute
+    FROM unnest(field_names, field_selectors, field_attributes) item(name,selector,attribute);
+    INSERT INTO cardigann_search_category SELECT definition_id, item.source, item.target
+    FROM unnest(category_sources, category_targets) item(source,target);
+    RETURN TRUE;
+END;
+$$;
+
+CREATE FUNCTION public.cardigann_search_plan_v1(request_input uuid, instance_input uuid, token_input uuid) RETURNS TABLE(
+    origin text, search_path text, rows_selector text, input_names text[], input_values text[],
+    field_names text[], field_selectors text[], field_attributes text[], category_sources text[], category_targets integer[]
+)
+    LANGUAGE sql
+    AS $$
+    SELECT plan.origin, plan.search_path, plan.rows_selector,
+        ARRAY(SELECT name FROM cardigann_search_input WHERE indexer_definition_id = plan.indexer_definition_id ORDER BY name),
+        ARRAY(SELECT value FROM cardigann_search_input WHERE indexer_definition_id = plan.indexer_definition_id ORDER BY name),
+        ARRAY(SELECT name FROM cardigann_search_field WHERE indexer_definition_id = plan.indexer_definition_id ORDER BY name),
+        ARRAY(SELECT selector FROM cardigann_search_field WHERE indexer_definition_id = plan.indexer_definition_id ORDER BY name),
+        ARRAY(SELECT attribute FROM cardigann_search_field WHERE indexer_definition_id = plan.indexer_definition_id ORDER BY name),
+        ARRAY(SELECT source FROM cardigann_search_category WHERE indexer_definition_id = plan.indexer_definition_id ORDER BY source),
+        ARRAY(SELECT target FROM cardigann_search_category WHERE indexer_definition_id = plan.indexer_definition_id ORDER BY source)
+    FROM indexer_instance instance JOIN cardigann_search_definition plan USING (indexer_definition_id)
+    WHERE instance.indexer_instance_public_id = instance_input
+      AND manual_search_active_v1(request_input, instance_input, token_input);
+$$;
+
 -- Generated authored routine security begins.
+ALTER FUNCTION public.cardigann_search_plan_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.cardigann_search_import_v1(uuid, text, text, text, text, text[], text[], text[], text[], text[], text[], integer[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.policy_action_to_decision_type(public.policy_action) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.app_user_create(character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.app_user_update(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
@@ -46956,7 +47050,7 @@ ALTER FUNCTION public.rss_poll_finish_v1(bigint, uuid, smallint, timestamp with 
 ALTER FUNCTION public.rss_poll_claim(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.manual_search_active_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.manual_search_ingest_v1(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[], uuid, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
-ALTER FUNCTION public.manual_search_finish_v1(uuid, uuid, uuid, public.error_class, boolean, integer, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.manual_search_finish_v1(uuid, uuid, uuid, public.error_class, boolean, integer, integer, integer, integer, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.manual_search_claim_next_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_indexer_run_enqueue(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.search_indexer_run_mark_canceled(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
@@ -47231,6 +47325,8 @@ BEGIN
             'public.media_discovery_association_job_enqueue_v1(uuid,uuid,text,boolean,text,bigint,bigint,bigint,text,integer,bigint,bytea,text)',
             'public.media_job_policy_snapshot_root_list_v1(uuid,integer,bigint)',
         -- Generated authored routine grants begin.
+            'public.cardigann_search_plan_v1(uuid, uuid, uuid)',
+            'public.cardigann_search_import_v1(uuid, text, text, text, text, text[], text[], text[], text[], text[], text[], integer[])',
             'public.policy_action_to_decision_type(public.policy_action)',
             'public.app_user_create(character varying, character varying)',
             'public.app_user_update(uuid, character varying)',
@@ -47531,7 +47627,7 @@ BEGIN
             'public.rss_poll_claim(integer)',
             'public.manual_search_active_v1(uuid, uuid, uuid)',
             'public.manual_search_ingest_v1(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[], uuid, boolean, boolean, boolean)',
-            'public.manual_search_finish_v1(uuid, uuid, uuid, public.error_class, boolean, integer, integer, integer, integer)',
+            'public.manual_search_finish_v1(uuid, uuid, uuid, public.error_class, boolean, integer, integer, integer, integer, text)',
             'public.manual_search_claim_next_v1()',
             'public.search_indexer_run_enqueue(uuid, uuid)',
             'public.search_indexer_run_mark_canceled(uuid, uuid)',

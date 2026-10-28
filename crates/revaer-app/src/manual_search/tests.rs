@@ -10,17 +10,27 @@ use uuid::Uuid;
 
 #[tokio::test]
 async fn manual_search_shutdown_settles_pending_http_and_owned_run() -> anyhow::Result<()> {
-    pending_attempt_settles(false).await
+    pending_attempt_settles(false, false).await
 }
 
 #[tokio::test]
 async fn manual_search_cancellation_stops_pending_http_and_fences_results() -> anyhow::Result<()> {
-    pending_attempt_settles(true).await
+    pending_attempt_settles(true, false).await
 }
 
-async fn pending_attempt_settles(cancel_request: bool) -> anyhow::Result<()> {
+#[tokio::test]
+async fn cardigann_shutdown_settles_pending_http_and_owned_run() -> anyhow::Result<()> {
+    pending_attempt_settles(false, true).await
+}
+
+#[tokio::test]
+async fn cardigann_cancellation_stops_pending_http_and_fences_results() -> anyhow::Result<()> {
+    pending_attempt_settles(true, true).await
+}
+
+async fn pending_attempt_settles(cancel_request: bool, cardigann: bool) -> anyhow::Result<()> {
     with_indexer_database(async move |config, _database| {
-        exercise_pending_attempt(config, cancel_request).await
+        exercise_pending_attempt(config, cancel_request, cardigann).await
     })
     .await
 }
@@ -28,10 +38,11 @@ async fn pending_attempt_settles(cancel_request: bool) -> anyhow::Result<()> {
 async fn exercise_pending_attempt(
     config: Arc<ConfigService>,
     cancel_request: bool,
+    cardigann: bool,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
-    let endpoint = format!("http://{}/api", listener.local_addr()?);
-    let request_id = configured_request(&config, &endpoint).await?;
+    let endpoint = format!("http://{}/", listener.local_addr()?);
+    let request_id = configured_request_for_engine(&config, &endpoint, cardigann).await?;
     let (shutdown, receiver) = runtime_shutdown::channel();
     let (seen_sender, seen_receiver) = oneshot::channel();
     let (closed_sender, closed_receiver) = oneshot::channel();
@@ -76,35 +87,62 @@ async fn exercise_pending_attempt(
     Ok(())
 }
 
-async fn configured_request(config: &ConfigService, endpoint: &str) -> anyhow::Result<Uuid> {
+async fn configured_request(config: &Arc<ConfigService>, endpoint: &str) -> anyhow::Result<Uuid> {
+    configured_request_for_engine(config, endpoint, false).await
+}
+
+async fn configured_request_for_engine(
+    config: &Arc<ConfigService>,
+    endpoint: &str,
+    cardigann: bool,
+) -> anyhow::Result<Uuid> {
     let actor = Uuid::nil();
+    let slug = if cardigann {
+        use revaer_api::app::indexers::IndexerFacade;
+        let definition =
+            crate::cardigann::tests::DEFINITION.replace("http://127.0.0.1:8765/", endpoint);
+        crate::indexers::IndexerService::new(Arc::clone(config), revaer_telemetry::Metrics::new()?)
+            .indexer_definition_import_cardigann(actor, &definition, None)
+            .await?;
+        "public-html"
+    } else {
+        "torznab"
+    };
     let source = instances::indexer_instance_create(
         config.pool(),
         actor,
-        "torznab",
+        slug,
         "Pending upstream",
         None,
         None,
         None,
     )
     .await?;
-    instances::indexer_instance_field_set_value(
-        config.pool(),
-        &instances::IndexerInstanceFieldValueInput {
-            actor_user_public_id: actor,
-            indexer_instance_public_id: source,
-            field_name: "base_url",
-            value_plain: Some(endpoint),
-            value_int: None,
-            value_decimal: None,
-            value_bool: None,
-        },
-    )
-    .await?;
-    let credential = Uuid::new_v4().to_string();
-    let secret = secrets::secret_create(config.pool(), actor, "api_key", &credential).await?;
-    instances::indexer_instance_field_bind_secret(config.pool(), actor, source, "api_key", secret)
+    if !cardigann {
+        instances::indexer_instance_field_set_value(
+            config.pool(),
+            &instances::IndexerInstanceFieldValueInput {
+                actor_user_public_id: actor,
+                indexer_instance_public_id: source,
+                field_name: "base_url",
+                value_plain: Some(endpoint),
+                value_int: None,
+                value_decimal: None,
+                value_bool: None,
+            },
+        )
         .await?;
+        let credential = Uuid::new_v4().to_string();
+        let secret = secrets::secret_create(config.pool(), actor, "api_key", &credential).await?;
+        instances::indexer_instance_field_bind_secret(
+            config.pool(),
+            actor,
+            source,
+            "api_key",
+            secret,
+        )
+        .await?;
+    }
     let request = search_requests::search_request_create(
         config.pool(),
         &search_requests::SearchRequestCreateInput {
@@ -200,7 +238,13 @@ async fn completed_attempt(config: &Arc<ConfigService>, empty: bool) -> anyhow::
         .await?
         .ok_or_else(|| anyhow::anyhow!("Expected an owned HTTP attempt"))?;
     let source = run.indexer_instance_public_id;
-    let credential = &run.connection.as_ref().map_err(|error| *error)?.api_key;
+    let credential = &run
+        .connection
+        .as_ref()
+        .map_err(|error| *error)?
+        .api_key
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("Torznab credential absent"))?;
     let hash = format!("{}00000000", Uuid::new_v4().simple());
     let body = if empty {
         "<rss><channel/></rss>".to_owned()
@@ -278,7 +322,7 @@ async fn serve_feed(
     Ok(())
 }
 
-async fn auth_failure(config: &ConfigService) -> anyhow::Result<()> {
+async fn auth_failure(config: &Arc<ConfigService>) -> anyhow::Result<()> {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let request_id =
         configured_request(config, &format!("http://{}/api", listener.local_addr()?)).await?;
@@ -311,7 +355,13 @@ async fn auth_failure(config: &ConfigService) -> anyhow::Result<()> {
         ));
     };
     anyhow::ensure!(failure.class == "auth_error" && failure.http_status == Some(401));
-    let credential = &run.connection.as_ref().map_err(|error| *error)?.api_key;
+    let credential = &run
+        .connection
+        .as_ref()
+        .map_err(|error| *error)?
+        .api_key
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("Torznab credential absent"))?;
     let private = !format!("{failure:?}").contains(credential);
     anyhow::ensure!(
         private,
@@ -321,6 +371,7 @@ async fn auth_failure(config: &ConfigService) -> anyhow::Result<()> {
         config.pool(),
         &run,
         ManualSearchCompletion {
+            diagnostic: None,
             outcome: ManualSearchOutcome::Failure(failure.class),
             http_status: failure.http_status,
             latency_ms: 0,

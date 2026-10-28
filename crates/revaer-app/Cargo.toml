@@ -37,6 +37,8 @@ rustix.workspace = true
 sha2.workspace = true
 notify.workspace = true
 roxmltree = "0.21.2"
+# Cardigann needs HTML5 tree construction and CSS selection; reuse audited parsers.
+scraper = { version = "0.29.0", default-features = false }
 
 [dev-dependencies]
 anyhow.workspace = true

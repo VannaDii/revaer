@@ -19,6 +19,7 @@
 
 /// Application bootstrap and environment loading.
 pub mod bootstrap;
+mod cardigann;
 /// Engine profile normalisation and runtime mapping.
 #[cfg(feature = "libtorrent")]
 pub mod engine_config;

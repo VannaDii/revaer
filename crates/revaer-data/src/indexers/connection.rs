@@ -13,18 +13,31 @@ pub enum ManualSearchConfigurationError {
     CredentialUnavailable,
     /// The configured route is incomplete or unsupported by this executor.
     InvalidRoute,
+    /// The imported Cardigann definition predates executable rules.
+    ReimportCardigann,
+}
+
+impl ManualSearchConfigurationError {
+    /// Fixed actionable diagnostic, never containing configuration values.
+    #[must_use]
+    pub const fn action(self) -> &'static str {
+        match self {
+            Self::InvalidRoute => "configure a supported, complete outbound route",
+            Self::UnsupportedEngine => "configure a supported manual-search engine",
+            Self::MissingEndpoint => "configure the upstream URL",
+            Self::ReimportCardigann => {
+                "Reimport this Cardigann definition with supported public GET HTML search rules"
+            }
+            Self::CredentialUnavailable => {
+                "configure an available credential binding with the active encryption key"
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for ManualSearchConfigurationError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(match self {
-            Self::InvalidRoute => "configure a supported, complete outbound route",
-            Self::UnsupportedEngine => "manual search requires a Torznab indexer",
-            Self::MissingEndpoint => "configure the Torznab API URL",
-            Self::CredentialUnavailable => {
-                "configure an available Torznab API key with the active encryption key"
-            }
-        })
+        formatter.write_str(self.action())
     }
 }
 
@@ -58,12 +71,23 @@ pub struct ManualSearchProxy {
     pub authentication: Option<(String, String)>,
 }
 
+/// Explicit upstream protocol selected by the imported definition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManualSearchEngine {
+    /// Authenticated Torznab RSS/XML protocol.
+    Torznab,
+    /// Public imported HTML rules.
+    Cardigann,
+}
+
 /// Resolved upstream connection; intentionally has no `Debug` implementation.
 pub struct ManualSearchConnection {
+    /// Explicit dispatch target; other engines never silently become Torznab.
+    pub engine: ManualSearchEngine,
     /// Operator-configured endpoint, without any diagnostic formatting.
     pub endpoint: String,
     /// Decrypted key for this owned execution only.
-    pub api_key: String,
+    pub api_key: Option<String>,
     /// Effective route, including the implicit direct route.
     pub routing: ManualSearchRouting,
 }
@@ -133,23 +157,28 @@ impl ConnectionRow {
 
     pub(crate) fn resolve(self) -> Result<ManualSearchConnection, ManualSearchConfigurationError> {
         let routing = self.resolve_routing();
-        if self.engine != "torznab" {
-            Err(ManualSearchConfigurationError::UnsupportedEngine)
-        } else if self.credential_error.is_some() {
-            Err(ManualSearchConfigurationError::CredentialUnavailable)
-        } else if let Some(endpoint) = self.endpoint {
-            self.api_key.map_or_else(
-                || Err(ManualSearchConfigurationError::CredentialUnavailable),
-                |api_key| {
-                    routing.map(|routing| ManualSearchConnection {
-                        endpoint,
-                        api_key,
-                        routing,
-                    })
-                },
-            )
-        } else {
-            Err(ManualSearchConfigurationError::MissingEndpoint)
+        let engine = match self.engine.as_str() {
+            "torznab" => ManualSearchEngine::Torznab,
+            "cardigann" => ManualSearchEngine::Cardigann,
+            _ => return Err(ManualSearchConfigurationError::UnsupportedEngine),
+        };
+        if self.credential_error.is_some()
+            || (engine == ManualSearchEngine::Torznab && self.api_key.is_none())
+        {
+            return Err(ManualSearchConfigurationError::CredentialUnavailable);
         }
+        let endpoint = self
+            .endpoint
+            .ok_or(if engine == ManualSearchEngine::Cardigann {
+                ManualSearchConfigurationError::ReimportCardigann
+            } else {
+                ManualSearchConfigurationError::MissingEndpoint
+            })?;
+        Ok(ManualSearchConnection {
+            engine,
+            endpoint,
+            api_key: self.api_key,
+            routing: routing?,
+        })
     }
 }

@@ -1,0 +1,43 @@
+id: public-html
+name: Public HTML
+description: Controlled public HTML definition
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - http://127.0.0.1:8765/
+settings: []
+caps:
+  categorymappings:
+    - {id: film, cat: Movies}
+  modes:
+    search: [q]
+search:
+  paths:
+    - path: search/releases
+      method: get
+  inputs:
+    term: "{{ .Keywords }}"
+    order: newest
+  rows:
+    selector: table.releases > tbody > tr.release
+  fields:
+    title:
+      selector: a.title
+    details:
+      selector: a.title
+      attribute: href
+    magnet:
+      selector: a.magnet
+      attribute: href
+    category:
+      selector: td.category
+    size:
+      selector: td.bytes
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    date:
+      selector: time
+      attribute: datetime

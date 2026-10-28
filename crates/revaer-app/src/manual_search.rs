@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 use revaer_config::ConfigService;
 use revaer_data::DataError;
 use revaer_data::indexers::manual_search::{
-    self as store, ManualSearchCompletion, ManualSearchOutcome, ManualSearchRun,
-    ManualSearchWriteOutcome,
+    self as store, ManualSearchCompletion, ManualSearchEngine, ManualSearchOutcome,
+    ManualSearchRun, ManualSearchWriteOutcome,
 };
 use revaer_data::indexers::search_results::SearchResultIngestInput;
 use tokio::task::JoinHandle;
@@ -61,13 +61,42 @@ impl ManualSearchRuntime {
         shutdown: &mut RuntimeShutdownReceiver,
     ) -> Result<(), DataError> {
         let started = Instant::now();
+        let plan = if run
+            .connection
+            .as_ref()
+            .is_ok_and(|connection| connection.engine == ManualSearchEngine::Cardigann)
+        {
+            revaer_data::indexers::cardigann::load(self.config.pool(), &run).await?
+        } else {
+            None
+        };
         let fetched = if runtime_shutdown::requested(shutdown) {
             None
         } else {
-            match (self.client_factory)(&run) {
+            match run
+                .connection
+                .as_ref()
+                .map_err(|error| torznab::Failure::configuration(error.action()))
+                .and_then(|_| (self.client_factory)(&run))
+            {
                 Err(failure) => Some(Err(failure)),
                 Ok(client) => {
-                    let fetching = torznab::fetch(&client, &run);
+                    let fetching = async {
+                        match run
+                            .connection
+                            .as_ref()
+                            .map_err(|error| torznab::Failure::configuration(error.action()))?
+                            .engine
+                        {
+                            ManualSearchEngine::Torznab => torznab::fetch(&client, &run).await,
+                            ManualSearchEngine::Cardigann => {
+                                let plan = plan.as_ref().ok_or(torznab::Failure::configuration(
+                                    crate::cardigann::REIMPORT_REQUIRED,
+                                ))?;
+                                crate::cardigann::fetch(&client, &run, plan).await
+                            }
+                        }
+                    };
                     tokio::pin!(fetching);
                     loop {
                         tokio::select! {
@@ -83,6 +112,7 @@ impl ManualSearchRuntime {
             }
         };
         let mut completion = ManualSearchCompletion {
+            diagnostic: None,
             outcome: ManualSearchOutcome::Canceled,
             http_status: None,
             latency_ms: i32::try_from(started.elapsed().as_millis()).unwrap_or(i32::MAX),
@@ -92,6 +122,7 @@ impl ManualSearchRuntime {
         match fetched {
             None => {}
             Some(Err(failure)) => {
+                completion.diagnostic = failure.diagnostic;
                 completion.outcome = ManualSearchOutcome::Failure(failure.class);
                 completion.http_status = failure.http_status;
                 completion.retry_after_seconds = failure.retry_after_seconds;
