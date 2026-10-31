@@ -3,6 +3,7 @@
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
+use super::executor::RssPollClaimRow;
 use super::manual_search::ManualSearchRun;
 use crate::error::{Result, try_op};
 
@@ -76,4 +77,18 @@ pub async fn load(pool: &PgPool, run: &ManualSearchRun) -> Result<Option<Cardiga
             .fetch_optional(pool)
     })
     .await
+}
+
+/// Read one rule snapshot only for the current eligible RSS claim owner.
+/// `None` means missing executable rules or withdrawn ownership/eligibility.
+///
+/// # Errors
+/// Returns database failures without exposing upstream input.
+pub async fn load_rss(pool: &PgPool, claim: &RssPollClaimRow) -> Result<Option<CardigannPlan>> {
+    try_op("Cardigann RSS rules load", || {
+        sqlx::query_as("SELECT * FROM cardigann_rss_plan_v1(subscription_input => $1, correlation_input => $2)")
+            .bind(claim.rss_subscription_id)
+            .bind(claim.correlation_id)
+            .fetch_optional(pool)
+    }).await
 }

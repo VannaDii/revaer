@@ -8,6 +8,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use uuid::Uuid;
 
+mod html_tests;
+
 async fn configure(
     config: &ConfigService,
     database: &TestDatabase,

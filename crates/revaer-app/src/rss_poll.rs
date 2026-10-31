@@ -7,9 +7,9 @@ use chrono::Utc;
 use revaer_config::ConfigService;
 use revaer_data::DataError;
 use revaer_data::indexers::manual_search::{
-    ManualSearchConfigurationError, ManualSearchConnection, ManualSearchRouting,
+    ManualSearchConfigurationError, ManualSearchConnection, ManualSearchEngine, ManualSearchRouting,
 };
-use revaer_data::indexers::{executor, normalization, rss_execution};
+use revaer_data::indexers::{cardigann, executor, normalization, rss_execution};
 
 use crate::manual_search::torznab::{Failure, fetch_text};
 use crate::rss_feed;
@@ -54,18 +54,42 @@ impl RssPollRuntime {
         &self,
         context: &rss_execution::RssExecutionContext,
         claim: &executor::RssPollClaimRow,
+        plan: Option<&cardigann::CardigannPlan>,
         shutdown: &mut RuntimeShutdownReceiver,
-    ) -> Result<Vec<rss_feed::Item>, Failure> {
+    ) -> Result<rss_feed::Listing, Failure> {
+        let connection = context.connection.as_ref().map_err(|error| match error {
+            ManualSearchConfigurationError::ReimportCardigann => {
+                Failure::configuration(crate::cardigann::REIMPORT_REQUIRED)
+            }
+            ManualSearchConfigurationError::CredentialUnavailable => {
+                Failure::classified("auth_error")
+            }
+            ManualSearchConfigurationError::MissingEndpoint
+            | ManualSearchConfigurationError::UnsupportedEngine
+            | ManualSearchConfigurationError::InvalidRoute => Failure::classified("unknown"),
+        })?;
         let client = (self.client_factory)(&context.connection, claim.connect_timeout_ms)?;
-        let connection = context
-            .connection
-            .as_ref()
-            .map_err(|_| Failure::classified("auth_error"))?;
-        let api_key = crate::manual_search::torznab::api_key(connection)?;
-        let url = rss_feed::request_url(&connection.endpoint, api_key)?;
         let request = async {
-            let text = fetch_text(&client, url, claim.read_timeout_ms).await?;
-            rss_feed::parse(&text, api_key)
+            match connection.engine {
+                ManualSearchEngine::Torznab => {
+                    let api_key = crate::manual_search::torznab::api_key(connection)?;
+                    let url = rss_feed::request_url(&connection.endpoint, api_key)?;
+                    let text = fetch_text(&client, url, claim.read_timeout_ms).await?;
+                    let items = rss_feed::parse(&text, api_key)?;
+                    Ok(rss_feed::Listing {
+                        parsed_count: items.len(),
+                        items,
+                    })
+                }
+                ManualSearchEngine::Cardigann => {
+                    let plan =
+                        plan.ok_or(Failure::configuration(crate::cardigann::REIMPORT_REQUIRED))?;
+                    let releases =
+                        crate::cardigann::fetch_recent(&client, claim.read_timeout_ms, plan)
+                            .await?;
+                    Ok(rss_feed::html_listing(releases))
+                }
+            }
         };
         tokio::select! {
             result = request => result,
@@ -118,17 +142,30 @@ impl RssPollRuntime {
                 input.error_class = Some("rate_limited");
                 input.rate_limit_denied_scope = Some(scope);
             } else if !runtime_shutdown::requested(shutdown) {
-                let fetched = self.fetch(context, claim, shutdown).await;
+                let plan = if context
+                    .connection
+                    .as_ref()
+                    .is_ok_and(|connection| connection.engine == ManualSearchEngine::Cardigann)
+                {
+                    cardigann::load_rss(self.config.pool(), claim).await?
+                } else {
+                    None
+                };
+                let fetched = self.fetch(context, claim, plan.as_ref(), shutdown).await;
                 match fetched {
                     Ok(parsed) => {
-                        items = parsed;
+                        input.result_count =
+                            Some(i32::try_from(parsed.parsed_count).unwrap_or(i32::MAX));
+                        items = parsed.items;
                         input.outcome = "success";
                         input.error_class = None;
                         input.http_status = Some(200);
                         input.parse_ok = true;
-                        input.result_count = Some(i32::try_from(items.len()).unwrap_or(i32::MAX));
                     }
                     Err(error) => {
+                        if let Some(diagnostic) = error.diagnostic {
+                            tracing::warn!(indexer_instance_public_id = %claim.indexer_instance_public_id, diagnostic, "RSS configuration requires operator action");
+                        }
                         input.error_class = Some(error.class);
                         input.http_status = error.http_status;
                     }

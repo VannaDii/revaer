@@ -5339,7 +5339,9 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct CandidateMismatchInspector;
+    struct CandidateMismatchInspector {
+        workspace_root: PathBuf,
+    }
 
     impl InspectAdapter for CandidateMismatchInspector {
         fn inspect_with_cancellation(
@@ -5348,7 +5350,7 @@ mod tests {
             cancellation: &dyn InspectCancellation,
         ) -> Result<MediaInspection, InspectError> {
             let source_path = checked_test_source_path(source_path, cancellation)?;
-            let graph = if source_path.contains("/workspace/") {
+            let graph = if Path::new(source_path).starts_with(&self.workspace_root) {
                 video_graph(source_path, "vp9")
             } else {
                 video_graph(source_path, "h264")
@@ -5385,7 +5387,9 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct CandidateDropsChaptersInspector;
+    struct CandidateDropsChaptersInspector {
+        workspace_root: PathBuf,
+    }
 
     impl InspectAdapter for CandidateDropsChaptersInspector {
         fn inspect_with_cancellation(
@@ -5399,7 +5403,7 @@ mod tests {
                 Ok(_) | Err(_) => "h264",
             };
             let inspection = complete_test_inspection(video_graph(source_path_text, codec));
-            if source_path_text.contains("/workspace/") {
+            if source_path.starts_with(&self.workspace_root) {
                 Ok(inspection)
             } else {
                 Ok(with_test_chapters(inspection))
@@ -5408,7 +5412,9 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct CandidateDropsContainerMetadataInspector;
+    struct CandidateDropsContainerMetadataInspector {
+        workspace_root: PathBuf,
+    }
 
     impl InspectAdapter for CandidateDropsContainerMetadataInspector {
         fn inspect_with_cancellation(
@@ -5422,7 +5428,7 @@ mod tests {
                 Ok(_) | Err(_) => "h264",
             };
             let inspection = complete_test_inspection(video_graph(source_path_text, codec));
-            if source_path_text.contains("/workspace/") {
+            if source_path.starts_with(&self.workspace_root) {
                 Ok(inspection)
             } else {
                 Ok(with_test_container_metadata(inspection))
@@ -5431,7 +5437,9 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct PostCommitDropsChaptersInspector;
+    struct PostCommitDropsChaptersInspector {
+        workspace_root: PathBuf,
+    }
 
     impl InspectAdapter for PostCommitDropsChaptersInspector {
         fn inspect_with_cancellation(
@@ -5440,7 +5448,7 @@ mod tests {
             cancellation: &dyn InspectCancellation,
         ) -> Result<MediaInspection, InspectError> {
             let source_path_text = checked_test_source_path(source_path, cancellation)?;
-            let codec = if source_path_text.contains("/workspace/") {
+            let codec = if source_path.starts_with(&self.workspace_root) {
                 "hevc"
             } else {
                 match fs::read(source_path) {
@@ -5449,7 +5457,7 @@ mod tests {
                 }
             };
             let inspection = complete_test_inspection(video_graph(source_path_text, codec));
-            if source_path_text.contains("/workspace/")
+            if source_path.starts_with(&self.workspace_root)
                 || fs::read(source_path).is_ok_and(|bytes| bytes.as_slice() == b"source")
             {
                 Ok(with_test_chapters(inspection))
@@ -5460,7 +5468,9 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct PostCommitDropsContainerMetadataInspector;
+    struct PostCommitDropsContainerMetadataInspector {
+        workspace_root: PathBuf,
+    }
 
     impl InspectAdapter for PostCommitDropsContainerMetadataInspector {
         fn inspect_with_cancellation(
@@ -5469,7 +5479,7 @@ mod tests {
             cancellation: &dyn InspectCancellation,
         ) -> Result<MediaInspection, InspectError> {
             let source_path_text = checked_test_source_path(source_path, cancellation)?;
-            let codec = if source_path_text.contains("/workspace/") {
+            let codec = if source_path.starts_with(&self.workspace_root) {
                 "hevc"
             } else {
                 match fs::read(source_path) {
@@ -5478,7 +5488,7 @@ mod tests {
                 }
             };
             let inspection = complete_test_inspection(video_graph(source_path_text, codec));
-            if source_path_text.contains("/workspace/")
+            if source_path.starts_with(&self.workspace_root)
                 || fs::read(source_path).is_ok_and(|bytes| bytes.as_slice() == b"source")
             {
                 Ok(with_test_container_metadata(inspection))
@@ -5599,7 +5609,9 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct PostCommitMismatchInspector;
+    struct PostCommitMismatchInspector {
+        workspace_root: PathBuf,
+    }
 
     impl InspectAdapter for PostCommitMismatchInspector {
         fn inspect_with_cancellation(
@@ -5608,7 +5620,7 @@ mod tests {
             cancellation: &dyn InspectCancellation,
         ) -> Result<MediaInspection, InspectError> {
             let source_path_text = checked_test_source_path(source_path, cancellation)?;
-            let codec = if source_path_text.contains("/workspace/") {
+            let codec = if source_path.starts_with(&self.workspace_root) {
                 "hevc"
             } else {
                 match fs::read(source_path) {
@@ -8428,7 +8440,9 @@ Integrated loudness:
     async fn media_job_runtime_quarantines_mismatched_candidate_before_replacement()
     -> anyhow::Result<()> {
         let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
-        fixture.runtime.inspector = Arc::new(CandidateMismatchInspector) as Arc<RuntimeInspector>;
+        fixture.runtime.inspector = Arc::new(CandidateMismatchInspector {
+            workspace_root: fixture.runtime.workspace_root.clone(),
+        }) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
 
@@ -8461,8 +8475,9 @@ Integrated loudness:
     async fn media_job_runtime_rejects_candidate_that_drops_source_chapters() -> anyhow::Result<()>
     {
         let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
-        fixture.runtime.inspector =
-            Arc::new(CandidateDropsChaptersInspector) as Arc<RuntimeInspector>;
+        fixture.runtime.inspector = Arc::new(CandidateDropsChaptersInspector {
+            workspace_root: fixture.runtime.workspace_root.clone(),
+        }) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
 
@@ -8493,8 +8508,9 @@ Integrated loudness:
     async fn media_job_runtime_rejects_candidate_that_drops_source_container_metadata()
     -> anyhow::Result<()> {
         let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
-        fixture.runtime.inspector =
-            Arc::new(CandidateDropsContainerMetadataInspector) as Arc<RuntimeInspector>;
+        fixture.runtime.inspector = Arc::new(CandidateDropsContainerMetadataInspector {
+            workspace_root: fixture.runtime.workspace_root.clone(),
+        }) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
 
@@ -8557,7 +8573,9 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rolls_back_mismatched_committed_replacement() -> anyhow::Result<()> {
         let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
-        fixture.runtime.inspector = Arc::new(PostCommitMismatchInspector) as Arc<RuntimeInspector>;
+        fixture.runtime.inspector = Arc::new(PostCommitMismatchInspector {
+            workspace_root: fixture.runtime.workspace_root.clone(),
+        }) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
 
@@ -8594,8 +8612,9 @@ Integrated loudness:
     async fn media_job_runtime_rolls_back_committed_replacement_that_drops_chapters()
     -> anyhow::Result<()> {
         let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
-        fixture.runtime.inspector =
-            Arc::new(PostCommitDropsChaptersInspector) as Arc<RuntimeInspector>;
+        fixture.runtime.inspector = Arc::new(PostCommitDropsChaptersInspector {
+            workspace_root: fixture.runtime.workspace_root.clone(),
+        }) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
 
@@ -8628,8 +8647,9 @@ Integrated loudness:
     async fn media_job_runtime_rolls_back_committed_replacement_that_drops_container_metadata()
     -> anyhow::Result<()> {
         let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
-        fixture.runtime.inspector =
-            Arc::new(PostCommitDropsContainerMetadataInspector) as Arc<RuntimeInspector>;
+        fixture.runtime.inspector = Arc::new(PostCommitDropsContainerMetadataInspector {
+            workspace_root: fixture.runtime.workspace_root.clone(),
+        }) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
 

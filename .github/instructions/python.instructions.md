@@ -27,8 +27,8 @@ applyTo:
 
 - The optional fixture-probe container is caller-selected at bootstrap. Setup provisions the existing approved Alpine build; cleanup verifies project, purpose and read-only checkout ownership before removing that container.
 
-- Rootless Docker database fixtures grant the mapped server group access only to their owned scratch directory, retain PostgreSQL data permissions and restore caller ownership before cleanup. Never widen repository permissions.
-- Alpine interpreter fixtures run as the caller on rootful Docker and as mapped container root on rootless Docker. Keep interpreter/cache writes inside their owned checkout and verify bind-mounted outputs retain caller ownership.
+- Rootless Docker database fixtures grant the mapped server group access only to their owned scratch directory, retain PostgreSQL data permissions and restore caller ownership before cleanup. Resolve the caller identity according to the local daemon owner rather than assuming namespace root belongs to the caller. Never widen repository permissions.
+- Alpine interpreter fixtures use mapped container root only when the local rootless daemon belongs to the caller; otherwise explicitly select the caller UID/GID. Keep interpreter/cache writes inside their owned checkout and verify bind-mounted outputs retain caller ownership.
 - `rv test-media-root-catalog` exercises both runtime catalog primitives and native application attestation against its managed repo-local directories.
 - `rv test` and `rv test-features-min` accept `--filter` for focused Rust diagnosis. Composite CI and qualification retain their unfiltered defaults.
 - Register diagnostic options only on their owning subparsers; composite qualification must not accept a test filter.
@@ -76,3 +76,5 @@ applyTo:
 - Scheduled RSS API/browser scenarios receive only the coordinator-owned disposable database name for scheduling prerequisites. Validate that identity and owner before fixture-only due-time updates; use the real scheduler and upstream response for outcomes. Disable-during-poll scenarios hold the controlled response until the operator change commits, and fixture cleanup releases any held response.
 
 - Cardigann API/browser acceptance imports actual YAML through the normal API and serves controlled HTML from `tests/support/cardigann.py`; never seed canonical results or substitute the dispatcher.
+
+- Cardigann scheduled-discovery acceptance uses the existing guarded due-time fixture and production scheduler, then fetches persisted RSS identifiers through the existing indexer controls. Empty keyword inputs are omitted while literal inputs remain; repeated polls preserve first-seen times.
