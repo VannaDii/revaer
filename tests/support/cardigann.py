@@ -25,6 +25,10 @@ class HtmlUpstream:
     empty: bool = False
     invalid_size: bool = False
     status_code: int = 200
+    links: Literal["both", "details", "magnet", "unsafe", "download"] = "both"
+    response_gate: threading.Event | None = None
+    requested: threading.Event = field(default_factory=threading.Event)
+    responded: threading.Event = field(default_factory=threading.Event)
 
     @property
     def search_path(self) -> str:
@@ -95,6 +99,17 @@ search:
                 .replace("td.seeders", "span.seeders")
                 .replace("td.leechers", "span.leechers")
             )
+        if self.links in ("details", "unsafe", "download"):
+            definition = definition.replace(
+                "    magnet:\n      selector: a.magnet\n      attribute: href\n", ""
+            )
+        elif self.links == "magnet":
+            selector = "a.title" if self.layout == "table" else "a.release-name"
+            definition = definition.replace(
+                f"    details:\n      selector: {selector}\n      attribute: href\n", ""
+            )
+        if self.links == "download":
+            definition = definition.replace("    details:", "    download:")
         return definition
 
 
@@ -105,6 +120,7 @@ def html_upstream(layout: Literal["table", "list"] = "table") -> Iterator[HtmlUp
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             upstream.requests.append(self.path)
+            upstream.requested.set()
             row = f"""<tr class="release"><td>
 <a class="title" href="/details/{upstream.identity}">{escape(upstream.title)}</a>
 <a class="magnet" href="magnet:?xt=urn:btih:{upstream.identity}">magnet</a></td>
@@ -127,12 +143,20 @@ href="/details/{upstream.identity}">{escape(upstream.title)}</a>
                 body_text = "<!doctype html><html><body>No releases</body></html>"
             if upstream.invalid_size:
                 body_text = body_text.replace("1048576", "not-a-size")
+            if upstream.links == "unsafe":
+                body_text = body_text.replace(
+                    f"/details/{upstream.identity}",
+                    f"/details/{upstream.identity}?apikey={secrets.token_hex(16)}",
+                )
+            if upstream.response_gate is not None and not upstream.response_gate.wait(10):
+                return
             body = body_text.encode()
             self.send_response(upstream.status_code)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            upstream.responded.set()
 
         def log_message(self, format: str, *args: object) -> None:
             return
@@ -145,6 +169,8 @@ href="/details/{upstream.identity}">{escape(upstream.title)}</a>
     try:
         yield upstream
     finally:
+        if upstream.response_gate is not None:
+            upstream.response_gate.set()
         server.shutdown()
         server.server_close()
         thread.join(timeout=1)

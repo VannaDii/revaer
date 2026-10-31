@@ -97,4 +97,4 @@ applyTo:
 
 - Scheduled RSS claims persist a correlation lease and subscription revision. The finish procedure fences duplicate/stale results and settles withdrawn eligibility without overwriting operator subscription changes; existing apply policy owns deduplication, scheduling and outbound logging.
 
-- Cardigann executable rules are normalized by definition, query input, field and category. Publish them with definition identity in the existing import transaction; load one owned rule snapshot through `cardigann_search_plan_v1`. Metadata-only replacement removes old executable rules.
+- Cardigann executable rules are normalized by definition, query input, field and category. Publish them with definition identity in the existing import transaction; load one atomic rule snapshot through the manual-search or RSS-authorized procedure and shared projection. RSS reads require the unexpired claim correlation, matching subscription revision and current enablement independently of search profiles. Metadata-only replacement removes old executable rules.

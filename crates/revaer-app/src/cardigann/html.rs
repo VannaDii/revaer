@@ -62,6 +62,10 @@ fn request_url(run: &ManualSearchRun, plan: &CardigannPlan) -> Result<Url, Failu
     {
         return Err(Failure::configuration(UNSUPPORTED));
     }
+    listing_url(&run.query_text, plan)
+}
+
+fn listing_url(keywords: &str, plan: &CardigannPlan) -> Result<Url, Failure> {
     // Path and origin come from the same atomic persisted rule snapshot.
     let origin = Url::parse(&plan.origin).map_err(|_| INVALID)?;
     if !matches!(origin.scheme(), "http" | "https")
@@ -81,7 +85,7 @@ fn request_url(run: &ManualSearchRun, plan: &CardigannPlan) -> Result<Url, Failu
         return Err(Failure::configuration(super::REIMPORT_REQUIRED));
     }
     for (name, value) in plan.input_names.iter().zip(&plan.input_values) {
-        let value = substitute(value, &run.query_text)
+        let value = substitute(value, keywords)
             .map_err(|_| Failure::configuration(super::REIMPORT_REQUIRED))?;
         // Cardigann omits empty inputs unless its unsupported allowEmptyInputs feature is enabled.
         if !value.is_empty() {
@@ -96,11 +100,28 @@ pub(crate) async fn fetch(
     run: &ManualSearchRun,
     plan: &CardigannPlan,
 ) -> Result<Vec<Release>, Failure> {
+    fetch_page(client, request_url(run, plan)?, run.read_timeout_ms, plan).await
+}
+
+/// Recent listings reuse the definition's static search with empty keywords.
+pub(crate) async fn fetch_recent(
+    client: &Client,
+    read_timeout_ms: i32,
+    plan: &CardigannPlan,
+) -> Result<Vec<Release>, Failure> {
+    fetch_page(client, listing_url("", plan)?, read_timeout_ms, plan).await
+}
+
+async fn fetch_page(
+    client: &Client,
+    url: Url,
+    read_timeout_ms: i32,
+    plan: &CardigannPlan,
+) -> Result<Vec<Release>, Failure> {
     let fields = fields(plan)?;
     let rows = Selector::parse(&plan.rows_selector)
         .map_err(|_| Failure::configuration(super::REIMPORT_REQUIRED))?;
-    let url = request_url(run, plan)?;
-    let text = fetch_text(client, url.clone(), run.read_timeout_ms).await?;
+    let text = fetch_text(client, url.clone(), read_timeout_ms).await?;
     parse(&text, &url, plan, &rows, &fields)
 }
 
