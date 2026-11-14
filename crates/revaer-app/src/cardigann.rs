@@ -4,7 +4,7 @@ mod definition;
 mod html;
 
 pub(crate) use definition::prepare;
-pub(crate) use html::fetch;
+pub(crate) use html::{fetch, fetch_recent};
 
 /// Configuration diagnostics are fixed strings; YAML, query and upstream text are never errors.
 pub(crate) const REIMPORT_REQUIRED: &str =

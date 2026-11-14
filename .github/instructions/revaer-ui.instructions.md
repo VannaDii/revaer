@@ -81,4 +81,4 @@ applyTo:
 
 - Distributed coverage validates each producer’s completion summary and required Chromium line capture before exposing its phase inputs; keep this validation independent of browser startup and preserve every existing shard check.
 
-- Scheduled RSS browser acceptance fetches actual poll status and recent identifiers through the existing explicit controls on `/indexers`; do not inject seen items or add automatic refresh.
+- Scheduled RSS browser acceptance fetches actual Torznab or public Cardigann poll status and recent identifiers through the existing explicit controls on `/indexers`; do not inject seen items or add automatic refresh. Cardigann scenarios import real YAML, let the production scheduler request both HTML layouts with empty keywords and retained literal inputs, and verify repeated polls preserve first-seen data without acquisition.

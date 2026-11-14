@@ -7,9 +7,9 @@ from pathlib import Path
 from uuid import UUID
 
 from revaer_tooling.e2e.api import ApiClient, ApiRequest, Method
-from revaer_tooling.external.database import Psql, with_database
-from revaer_tooling.json_data import JsonObject, array_value, object_value
-from revaer_tooling.process import ProcessRunner, stderr_message
+from revaer_tooling.external.database import LibpqConnection, Psql, with_database
+from revaer_tooling.json_data import JsonObject, array_value, decode, object_value
+from revaer_tooling.process import Invocation, ProcessRunner, stderr_message
 
 from tests.conftest import E2eRuntime
 
@@ -56,6 +56,55 @@ WHERE job_key = 'rss_poll';
 
 
 RSS_ROUTE = "/v1/indexers/instances/{indexer_instance_public_id}/rss"
+
+
+def discovery_state(runtime: E2eRuntime, identifier: str) -> JsonObject:
+    """Observe side effects only in the coordinator-owned disposable database."""
+    name = os.environ.get("REVAER_E2E_DATABASE_NAME", "")
+    assert re.fullmatch(r"revaer_test_\d+_\d+", name, flags=re.ASCII)
+    admin = runtime.settings.admin_url
+    assert admin is not None
+    identifier = str(UUID(identifier))
+    sql = f"""
+DO $$ BEGIN
+    IF current_database() <> '{name}' OR NOT EXISTS (
+        SELECT 1 FROM pg_database d JOIN pg_roles r ON r.oid = d.datdba
+        WHERE d.datname = current_database() AND r.rolname = current_database() || '_owner'
+    ) THEN RAISE EXCEPTION 'RSS observation requires the owned disposable database'; END IF;
+END $$;
+SELECT json_build_object(
+    'search_requests', (SELECT count(*) FROM search_request),
+    'canonical_results', (SELECT count(*) FROM canonical_torrent),
+    'rss_requests', count(*) FILTER (WHERE log.request_type = 'rss'),
+    'unexpected_requests', count(*) FILTER (
+        WHERE log.request_type <> 'rss' OR log.search_request_id IS NOT NULL)
+)
+FROM outbound_request_log log JOIN indexer_instance inst USING (indexer_instance_id)
+WHERE inst.indexer_instance_public_id = '{identifier}'::uuid;
+"""
+    connection = LibpqConnection.from_url(with_database(admin, name))
+    result = ProcessRunner(stderr_message).run(
+        Invocation(
+            (
+                "psql",
+                "--no-psqlrc",
+                "--no-password",
+                "--quiet",
+                "--tuples-only",
+                "--no-align",
+                "--set=ON_ERROR_STOP=1",
+                "--single-transaction",
+                "--dbname",
+                connection.uri,
+                "--command",
+                sql,
+            ),
+            runtime.root,
+            {**os.environ, **connection.environment()},
+            capture=True,
+        )
+    )
+    return object_value(decode(result.stdout.strip()))
 
 
 def enable_rss(api: ApiClient, identifier: str) -> None:

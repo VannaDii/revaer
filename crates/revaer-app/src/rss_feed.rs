@@ -14,6 +14,47 @@ pub(crate) struct Item {
     pub magnet: Option<String>,
 }
 
+pub(crate) struct Listing {
+    pub parsed_count: usize,
+    pub items: Vec<Item>,
+}
+
+pub(crate) fn html_listing(releases: Vec<crate::manual_search::torznab::Release>) -> Listing {
+    let parsed_count = releases.len();
+    let items = releases
+        .into_iter()
+        .filter_map(|release| {
+            let guid = release
+                .details_url
+                .as_deref()
+                .filter(|value| Some(*value) != release.download_url.as_deref())
+                .filter(|value| stable_identifier(value, ""))
+                .unwrap_or("")
+                .to_owned();
+            if guid.is_empty() && release.magnet.is_none() {
+                return None;
+            }
+            Some(Item {
+                guid,
+                infohash_v1: String::new(),
+                infohash_v2: String::new(),
+                magnet: release.magnet,
+            })
+        })
+        .collect();
+    Listing {
+        parsed_count,
+        items,
+    }
+}
+
+fn stable_identifier(value: &str, api_key: &str) -> bool {
+    !(value.is_empty()
+        || value.chars().count() > 256
+        || (!api_key.is_empty() && value.contains(api_key))
+        || (value.contains("://") && private_url(Some(value), api_key)))
+}
+
 pub(crate) fn request_url(endpoint: &str, api_key: &str) -> Result<Url, Failure> {
     let mut url = Url::parse(endpoint).map_err(|_| Failure::classified("unknown"))?;
     if !matches!(url.scheme(), "http" | "https")
@@ -108,13 +149,10 @@ fn parse_item(node: roxmltree::Node<'_, '_>, atom: bool, api_key: &str) -> Item 
     let guid = text(if atom { "id" } else { "guid" })
         .or(link)
         .unwrap_or("");
-    let guid = if guid.chars().count() > 256
-        || (!api_key.is_empty() && guid.contains(api_key))
-        || (guid.contains("://") && private_url(Some(guid), api_key))
-    {
-        ""
-    } else {
+    let guid = if stable_identifier(guid, api_key) {
         guid
+    } else {
+        ""
     };
     let hash = |value: Option<&str>, width| {
         value
@@ -135,6 +173,44 @@ fn parse_item(node: roxmltree::Node<'_, '_>, atom: bool, api_key: &str) -> Item 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn html_rss_counts_rows_without_persisting_private_or_download_identifiers() {
+        let releases = [
+            (Some("https://public.example/details/1"), None),
+            (Some("https://public.example/details/2?apikey=opaque"), None),
+            (
+                Some("https://public.example/download/3"),
+                Some("https://public.example/download/3"),
+            ),
+        ]
+        .into_iter()
+        .map(
+            |(details, download)| crate::manual_search::torznab::Release {
+                privacy: revaer_data::indexers::manual_search::ManualSearchLinkPrivacy {
+                    details: private_url(details, ""),
+                    download: false,
+                    magnet: false,
+                },
+                title: "RSS metadata".to_owned(),
+                guid: None,
+                details_url: details.map(ToOwned::to_owned),
+                download_url: download.map(ToOwned::to_owned),
+                magnet: None,
+                infohash: None,
+                size: 1,
+                seeders: None,
+                leechers: None,
+                published_at: None,
+                tracker_category: None,
+            },
+        )
+        .collect();
+        let listing = html_listing(releases);
+        assert_eq!(listing.parsed_count, 3);
+        assert_eq!(listing.items.len(), 1);
+        assert_eq!(listing.items[0].guid, "https://public.example/details/1");
+    }
 
     #[test]
     fn rss_identifiers_do_not_require_search_metadata() -> Result<(), Failure> {

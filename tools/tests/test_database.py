@@ -235,16 +235,18 @@ def managed_database(
         "INSERT INTO fixture_rows VALUES (43) ON CONFLICT DO NOTHING;\n"
     )
     context = make_context(Options())
-    security = json.loads(
+    daemon = json.loads(
         subprocess.run(
-            ["docker", "info", "--format", "{{json .SecurityOptions}}"],
+            ["docker", "info", "--format", "{{json .}}"],
             check=True,
             capture_output=True,
             text=True,
             timeout=30,
         ).stdout
     )
-    rootless = "name=rootless" in security
+    rootless = "name=rootless" in daemon["SecurityOptions"]
+    caller_owned = rootless and Path(daemon["DockerRootDir"]).stat().st_uid == context.host.uid
+    caller_identity = "0:0" if caller_owned else f"{context.host.uid}:{context.host.gid}"
     directory = tmp_path / "data, with spaces"
     image = PostgresPin.load(assignments(tmp_path, context.fs, BUILD_INPUTS)).image
     mkdir = context.fs.mkdir
@@ -252,8 +254,8 @@ def managed_database(
     def shared_directory(path: Path) -> None:
         mkdir(path)
         if rootless and path == directory:
-            # Namespace root maps to the caller. Grant only the server's mapped
-            # group access to this owned directory; PGDATA keeps its own 0700.
+            # Grant only the server's mapped group access to this owned
+            # directory; PGDATA keeps its own 0700.
             storage_permissions(path, image, "chown", f"0:{context.host.gid}")
             storage_permissions(path, image, "chmod", "0770")
 
@@ -306,8 +308,9 @@ def managed_database(
         if rootless and directory.is_dir():
             # Restore caller ownership before pytest removes its private tree.
             # chown's default physical traversal does not follow placed links.
-            storage_permissions(directory, image, "chown", "-R", "0:0")
+            storage_permissions(directory, image, "chown", "-R", caller_identity)
             storage_permissions(directory, image, "chmod", "0700")
+            assert directory.stat().st_uid == context.host.uid
 
 
 def test_managed_database_preserves_data_and_resets_only_when_requested(

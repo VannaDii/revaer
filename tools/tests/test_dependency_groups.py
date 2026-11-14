@@ -110,18 +110,22 @@ def test_alpine_core_uses_uv_managed_python_and_the_installed_cli(tmp_path: Path
         "ghcr.io/astral-sh/uv@sha256:"
         "e73003739c99f562680444e8e9a0c605dad7a87ff2fbcc0a715efe875713623e"
     )
-    security = json.loads(
+    daemon = json.loads(
         subprocess.run(
-            ["docker", "info", "--format", "{{json .SecurityOptions}}"],
+            ["docker", "info", "--format", "{{json .}}"],
             check=True,
             capture_output=True,
             text=True,
             timeout=30,
         ).stdout
     )
-    # Rootless container root already maps to the caller. Rootful Docker must
-    # explicitly use that caller so bind-mounted files remain caller-owned.
-    user = [] if "name=rootless" in security else ["--user", f"{os.getuid()}:{os.getgid()}"]
+    # These bind-mounted fixtures share the daemon's local filesystem. Only a
+    # caller-owned rootless daemon maps container root to the fixture owner.
+    caller_owned = (
+        "name=rootless" in daemon["SecurityOptions"]
+        and Path(daemon["DockerRootDir"]).stat().st_uid == os.getuid()
+    )
+    user = [] if caller_owned else ["--user", f"{os.getuid()}:{os.getgid()}"]
     identifier = subprocess.run(
         [
             "docker",

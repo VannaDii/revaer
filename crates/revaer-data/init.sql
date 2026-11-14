@@ -19742,7 +19742,7 @@ BEGIN
         JOIN indexer_instance inst
             ON inst.indexer_instance_id = sub.indexer_instance_id
         JOIN indexer_definition definition USING (indexer_definition_id)
-        WHERE definition.engine = 'torznab' AND sub.is_enabled = TRUE
+        WHERE definition.engine IN ('torznab', 'cardigann') AND sub.is_enabled = TRUE
           AND sub.next_poll_at <= now()
           AND (sub.claim_expires_at IS NULL OR sub.claim_expires_at <= now())
           AND inst.is_enabled = TRUE
@@ -46725,7 +46725,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.cardigann_search_plan_v1(request_input uuid, instance_input uuid, token_input uuid) RETURNS TABLE(
+CREATE FUNCTION public.cardigann_definition_plan_v1(definition_input bigint) RETURNS TABLE(
     origin text, search_path text, rows_selector text, input_names text[], input_values text[],
     field_names text[], field_selectors text[], field_attributes text[], category_sources text[], category_targets integer[]
 )
@@ -46739,12 +46739,47 @@ CREATE FUNCTION public.cardigann_search_plan_v1(request_input uuid, instance_inp
         ARRAY(SELECT attribute FROM cardigann_search_field WHERE indexer_definition_id = plan.indexer_definition_id ORDER BY name),
         ARRAY(SELECT source FROM cardigann_search_category WHERE indexer_definition_id = plan.indexer_definition_id ORDER BY source),
         ARRAY(SELECT target FROM cardigann_search_category WHERE indexer_definition_id = plan.indexer_definition_id ORDER BY source)
-    FROM indexer_instance instance JOIN cardigann_search_definition plan USING (indexer_definition_id)
+    FROM cardigann_search_definition plan
+    WHERE plan.indexer_definition_id = definition_input;
+$$;
+
+CREATE FUNCTION public.cardigann_search_plan_v1(request_input uuid, instance_input uuid, token_input uuid) RETURNS TABLE(
+    origin text, search_path text, rows_selector text, input_names text[], input_values text[],
+    field_names text[], field_selectors text[], field_attributes text[], category_sources text[], category_targets integer[]
+)
+    LANGUAGE sql
+    AS $$
+    SELECT plan.* FROM indexer_instance instance
+    CROSS JOIN LATERAL cardigann_definition_plan_v1(instance.indexer_definition_id) plan
     WHERE instance.indexer_instance_public_id = instance_input
       AND manual_search_active_v1(request_input, instance_input, token_input);
 $$;
 
+CREATE FUNCTION public.cardigann_rss_plan_v1(subscription_input bigint, correlation_input uuid) RETURNS TABLE(
+    origin text, search_path text, rows_selector text, input_names text[], input_values text[],
+    field_names text[], field_selectors text[], field_attributes text[], category_sources text[], category_targets integer[]
+)
+    LANGUAGE sql
+    AS $$
+    WITH owned AS MATERIALIZED (
+        SELECT inst.indexer_definition_id
+        FROM indexer_rss_subscription sub JOIN indexer_instance inst USING (indexer_instance_id)
+        JOIN indexer_definition definition USING (indexer_definition_id)
+        WHERE sub.indexer_rss_subscription_id = subscription_input
+          AND sub.claim_correlation_id = correlation_input
+          AND sub.claim_revision = sub.revision
+          AND sub.claim_expires_at > clock_timestamp()
+          AND sub.is_enabled AND inst.is_enabled AND inst.enable_rss
+          AND inst.deleted_at IS NULL AND definition.engine = 'cardigann'
+        FOR UPDATE OF sub FOR SHARE OF inst
+    )
+    SELECT plan.* FROM owned
+    CROSS JOIN LATERAL cardigann_definition_plan_v1(owned.indexer_definition_id) plan;
+$$;
+
 -- Generated authored routine security begins.
+ALTER FUNCTION public.cardigann_definition_plan_v1(bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.cardigann_rss_plan_v1(bigint, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.cardigann_search_plan_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.cardigann_search_import_v1(uuid, text, text, text, text, text[], text[], text[], text[], text[], text[], integer[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
 ALTER FUNCTION public.policy_action_to_decision_type(public.policy_action) SECURITY DEFINER SET search_path TO pg_catalog, public;
@@ -47326,6 +47361,7 @@ BEGIN
             'public.media_job_policy_snapshot_root_list_v1(uuid,integer,bigint)',
         -- Generated authored routine grants begin.
             'public.cardigann_search_plan_v1(uuid, uuid, uuid)',
+            'public.cardigann_rss_plan_v1(bigint, uuid)',
             'public.cardigann_search_import_v1(uuid, text, text, text, text, text[], text[], text[], text[], text[], text[], integer[])',
             'public.policy_action_to_decision_type(public.policy_action)',
             'public.app_user_create(character varying, character varying)',
